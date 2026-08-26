@@ -1,0 +1,236 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
+import { afterEach, describe, expect, it } from "bun:test";
+
+import {
+  createRequestHandler,
+  createRuntime,
+  createServerConfig,
+  type ServerRuntime,
+} from "./server";
+
+const runtimes: ServerRuntime[] = [];
+
+const createTestRuntime = (env: Record<string, string | undefined> = {}) => {
+  const root = Bun.env.TEMP || Bun.env.TMP || ".";
+  const directory = `${root}/excalidraw-server-test-${crypto.randomUUID()}`;
+  const config = createServerConfig({
+    NODE_ENV: "test",
+    AUTH_PASSWORD: "test-password",
+    ...env,
+  });
+  const runtime = createRuntime({
+    dbPath: path.join(directory, "excalidraw.db"),
+    filesDir: path.join(directory, "files"),
+    config,
+  });
+  runtimes.push(runtime);
+  return { runtime, directory, handler: createRequestHandler(runtime) };
+};
+
+const request = (
+  handler: ReturnType<typeof createRequestHandler>,
+  pathname: string,
+  init: RequestInit = {},
+) => handler(new Request(`http://localhost${pathname}`, init));
+
+const jsonRequest = (
+  handler: ReturnType<typeof createRequestHandler>,
+  pathname: string,
+  body: unknown,
+  init: RequestInit = {},
+) =>
+  request(handler, pathname, {
+    method: "POST",
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+const responseJson = async <T>(response: Response) =>
+  (await response.json()) as T;
+
+const authenticate = async (
+  handler: ReturnType<typeof createRequestHandler>,
+) => {
+  const response = await jsonRequest(handler, "/api/auth/verify", {
+    password: "test-password",
+  });
+  expect(response.status).toBe(200);
+  const cookie = response.headers.get("set-cookie");
+  expect(cookie).toBeTruthy();
+  expect(cookie).not.toContain("test-password");
+  return cookie!.split(";", 1)[0];
+};
+
+afterEach(async () => {
+  for (const runtime of runtimes.splice(0)) {
+    runtime.db.close();
+  }
+});
+
+describe("cloud persistence server", () => {
+  it("requires explicit production authentication configuration", () => {
+    expect(() => createServerConfig({ NODE_ENV: "production" })).toThrow();
+    expect(
+      createServerConfig({ NODE_ENV: "production", ALLOW_ANONYMOUS: "true" })
+        .allowAnonymous,
+    ).toBe(true);
+  });
+
+  it("uses a session cookie and preserves scene data while renaming", async () => {
+    const { handler } = createTestRuntime();
+    const unauthorized = await request(handler, "/api/scenes");
+    expect(unauthorized.status).toBe(401);
+
+    const cookie = await authenticate(handler);
+    const createdResponse = await jsonRequest(
+      handler,
+      "/api/scenes",
+      {
+        id: "scene_test",
+        name: "原始名称",
+        elements: [{ id: "element-1", type: "rectangle" }],
+        appState: { viewBackgroundColor: "#fff" },
+      },
+      { headers: { Cookie: cookie } },
+    );
+    expect(createdResponse.status).toBe(201);
+    const created = await responseJson<{ revision: number }>(createdResponse);
+    expect(created.revision).toBe(1);
+
+    const renamedResponse = await jsonRequest(
+      handler,
+      "/api/scenes/scene_test",
+      { name: "新名称", baseRevision: created.revision },
+      { method: "PATCH", headers: { Cookie: cookie } },
+    );
+    expect(renamedResponse.status).toBe(200);
+
+    const sceneResponse = await request(handler, "/api/scenes/scene_test", {
+      headers: { Cookie: cookie },
+    });
+    const scene = await responseJson<{
+      name: string;
+      elements: unknown[];
+      appState: Record<string, unknown>;
+      revision: number;
+    }>(sceneResponse);
+    expect(scene.name).toBe("新名称");
+    expect(scene.elements).toHaveLength(1);
+    expect(scene.appState.viewBackgroundColor).toBe("#fff");
+    expect(scene.revision).toBe(2);
+
+    const conflict = await jsonRequest(
+      handler,
+      "/api/scenes/scene_test",
+      {
+        elements: [],
+        appState: {},
+        baseRevision: 1,
+      },
+      { method: "PUT", headers: { Cookie: cookie } },
+    );
+    expect(conflict.status).toBe(409);
+  });
+
+  it("stores files on disk and prevents deleted scenes from being recreated", async () => {
+    const { handler, runtime, directory } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+
+    const upload = await request(handler, "/api/files/file_test", {
+      method: "PUT",
+      headers: {
+        Cookie: cookie,
+        "Content-Type": "image/png",
+      },
+      body: bytes,
+    });
+    expect(upload.status).toBe(201);
+    expect(
+      await fs.readFile(path.join(directory, "files", "file_test")),
+    ).toEqual(Buffer.from(bytes));
+    const metadata = runtime.db
+      .query("SELECT storage_path, byte_size FROM files WHERE id = ?")
+      .get("file_test") as {
+      storage_path: string;
+      byte_size: number;
+    };
+    expect(metadata.storage_path).toBe("file_test");
+    expect(metadata.byte_size).toBe(4);
+    expect(
+      (
+        runtime.db.query("PRAGMA table_info(files)").all() as Array<{
+          name: string;
+        }>
+      ).some((column) => column.name === "data_url"),
+    ).toBe(false);
+
+    const download = await request(handler, "/api/files/file_test", {
+      headers: { Cookie: cookie, Accept: "application/octet-stream" },
+    });
+    expect(download.status).toBe(200);
+    expect(new Uint8Array(await download.arrayBuffer())).toEqual(bytes);
+    expect(download.headers.get("content-type")).toContain("image/png");
+
+    const createScene = await jsonRequest(
+      handler,
+      "/api/scenes",
+      {
+        id: "scene_delete",
+        elements: [{ id: "image-1", type: "image", fileId: "file_test" }],
+        appState: {},
+      },
+      { headers: { Cookie: cookie } },
+    );
+    expect(createScene.status).toBe(201);
+
+    const deleted = await request(handler, "/api/scenes/scene_delete", {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(deleted.status).toBe(200);
+
+    const resurrected = await jsonRequest(
+      handler,
+      "/api/scenes/scene_delete",
+      { elements: [], appState: {} },
+      { method: "PUT", headers: { Cookie: cookie } },
+    );
+    expect(resurrected.status).toBe(404);
+    expect(
+      runtime.db.query("SELECT COUNT(*) AS count FROM scene_files").get() as {
+        count: number;
+      },
+    ).toEqual({ count: 0 });
+  });
+
+  it("rejects oversized, invalid and traversal file requests", async () => {
+    const { handler } = createTestRuntime({ MAX_FILE_BYTES: "3" });
+    const cookie = await authenticate(handler);
+
+    const oversized = await request(handler, "/api/files/file_test", {
+      method: "PUT",
+      headers: { Cookie: cookie, "Content-Type": "image/png" },
+      body: new Uint8Array([1, 2, 3, 4]),
+    });
+    expect(oversized.status).toBe(413);
+
+    const invalidMime = await request(handler, "/api/files/file_test", {
+      method: "PUT",
+      headers: { Cookie: cookie, "Content-Type": "text/html" },
+      body: new Uint8Array([1]),
+    });
+    expect(invalidMime.status).toBe(415);
+
+    const traversal = await request(handler, "/api/files/..%2Fsecret", {
+      headers: { Cookie: cookie },
+    });
+    expect(traversal.status).toBe(400);
+  });
+});
