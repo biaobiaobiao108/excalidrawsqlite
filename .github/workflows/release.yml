@@ -127,6 +127,8 @@ jobs:
           ```bash
           # 1. 创建本地数据持久化目录
           mkdir -p ./data
+          # Linux bind mount 需要允许容器 UID 10001 写入
+          sudo chown -R 10001:10001 ./data
 
           # 2. 启动容器
           docker run -d \

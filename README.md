@@ -43,6 +43,13 @@
    AUTH_PASSWORD=your-strong-password
    ```
 
+   Linux 使用宿主机目录挂载时，请先确保容器用户（UID 10001）可以写入数据目录：
+
+   ```bash
+   mkdir -p ./data
+   sudo chown -R 10001:10001 ./data
+   ```
+
    如果明确只在可信局域网免密使用，可额外设置 `ALLOW_ANONYMOUS=true`。
 
 3. **运行容器**
