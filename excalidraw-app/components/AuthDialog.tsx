@@ -39,6 +39,7 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
     try {
       const ok = await verifyAuthPassword(password.trim());
       if (ok) {
+        setPassword("");
         onSuccess();
       } else {
         setError("访问密码错误，请重试");
@@ -52,7 +53,10 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
 
   return (
     <Dialog
-      onCloseRequest={() => onClose?.()}
+      onCloseRequest={() => {
+        setPassword("");
+        onClose?.();
+      }}
       title="访问授权验证"
       className="auth-dialog"
       size="small"
