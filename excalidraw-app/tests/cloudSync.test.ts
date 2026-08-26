@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OrderedExcalidrawElement } from "@excalidraw/element/types";
-import type { MockedFunction } from "vitest";
 
 import { CloudApiError } from "../data/cloudStorage";
 import { CloudSaveQueue, type CloudSaveSnapshot } from "../data/cloudSync";
@@ -15,12 +14,10 @@ const makeSnapshot = (name: string): CloudSaveSnapshot => ({
 });
 
 describe("cloud save queue", () => {
-  const saveCloudScene = vi.fn() as unknown as MockedFunction<
-    typeof import("../data/cloudStorage").saveCloudScene
-  >;
-  const saveFilesToCloud = vi.fn() as unknown as MockedFunction<
-    typeof import("../data/cloudStorage").saveFilesToCloud
-  >;
+  const saveCloudScene =
+    vi.fn<typeof import("../data/cloudStorage").saveCloudScene>();
+  const saveFilesToCloud =
+    vi.fn<typeof import("../data/cloudStorage").saveFilesToCloud>();
 
   beforeEach(() => {
     vi.useFakeTimers();
