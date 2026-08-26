@@ -659,7 +659,7 @@ const ExcalidrawWrapper = () => {
           await loadSelectedCloudScene(requestedId, false);
           return;
         } catch (error: any) {
-          if (error?.status !== 404) {
+          if (error?.status !== 400 && error?.status !== 404) {
             throw error;
           }
           window.history.replaceState({}, "", window.location.pathname);
