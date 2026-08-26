@@ -90,7 +90,9 @@ describe("cloud persistence server", () => {
 
   it("uses a session cookie and preserves scene data while renaming", async () => {
     const { handler } = createTestRuntime();
-    const unauthorized = await request(handler, "/api/scenes");
+    const unauthorized = await request(handler, "/api/scenes", {
+      headers: { Origin: "http://localhost" },
+    });
     expect(unauthorized.status).toBe(401);
 
     const cookie = await authenticate(handler);
@@ -103,7 +105,7 @@ describe("cloud persistence server", () => {
         elements: [{ id: "element-1", type: "rectangle" }],
         appState: { viewBackgroundColor: "#fff" },
       },
-      { headers: { Cookie: cookie } },
+      { headers: { Cookie: cookie, Origin: "http://localhost" } },
     );
     expect(createdResponse.status).toBe(201);
     const created = await responseJson<{ revision: number }>(createdResponse);
