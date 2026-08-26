@@ -1,6 +1,5 @@
-import fs from "node:fs/promises";
+import fs, { rm } from "node:fs/promises";
 import path from "node:path";
-import { rm } from "node:fs/promises";
 
 import { afterEach, describe, expect, it } from "bun:test";
 
@@ -86,6 +85,21 @@ describe("cloud persistence server", () => {
       createServerConfig({ NODE_ENV: "production", ALLOW_ANONYMOUS: "true" })
         .allowAnonymous,
     ).toBe(true);
+  });
+
+  it("rate limits repeated failed authentication attempts", async () => {
+    const { handler } = createTestRuntime();
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const response = await jsonRequest(handler, "/api/auth/verify", {
+        password: "wrong-password",
+      });
+      expect(response.status).toBe(401);
+    }
+    const limited = await jsonRequest(handler, "/api/auth/verify", {
+      password: "wrong-password",
+    });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBeTruthy();
   });
 
   it("uses a session cookie and preserves scene data while renaming", async () => {
@@ -228,6 +242,13 @@ describe("cloud persistence server", () => {
       body: new Uint8Array([1, 2, 3, 4]),
     });
     expect(oversized.status).toBe(413);
+
+    const missingMime = await request(handler, "/api/files/file_test", {
+      method: "PUT",
+      headers: { Cookie: cookie },
+      body: new Uint8Array([1]),
+    });
+    expect(missingMime.status).toBe(415);
 
     const invalidMime = await request(handler, "/api/files/file_test", {
       method: "PUT",
