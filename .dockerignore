@@ -17,7 +17,7 @@
 **/build
 **/dist
 **/node_modules
-data/
+/data/
 *.db
 *.db-journal
 *.db-wal

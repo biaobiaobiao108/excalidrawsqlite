@@ -26,7 +26,7 @@ coverage
 dev-dist
 html
 .claude
-data/
+/data/
 *.db
 *.db-journal
 *.db-wal
