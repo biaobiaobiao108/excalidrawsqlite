@@ -34,7 +34,7 @@ interface CloudScenesDialogProps {
   isOpen: boolean;
   currentSceneId: string | null;
   onClose: () => void;
-  onSelectScene: (sceneId: string) => void;
+  onSelectScene: (sceneId: string) => void | Promise<void>;
   onAuthRequired: () => void;
   onSceneDeleted: (sceneId: string) => void | Promise<void>;
 }
@@ -131,6 +131,12 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
       const scene = scenes.find((item) => item.id === id);
       await renameCloudScene(id, editingName.trim(), scene?.revision);
       setEditingId(null);
+      if (currentSceneId === id) {
+        // Refresh the scene so the save queue observes the new revision and
+        // the current canvas receives the renamed app state without clearing
+        // its elements.
+        await onSelectScene(id);
+      }
       await loadScenes();
     } catch (err: any) {
       if (err.status === 401 || err.code === "AUTH_REQUIRED") {
