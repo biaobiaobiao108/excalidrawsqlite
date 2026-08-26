@@ -1,0 +1,150 @@
+name: Release & Publish Docker Image
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: Build, Publish & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub (Optional)
+        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push Docker image
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate Release Body
+        id: release_body
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          cat << 'EOF' > release_notes.md
+          ## 📦 容器镜像已发布 (Container Images)
+
+          本版本的多架构容器镜像（`linux/amd64` 与 `linux/arm64`）已成功构建并发布至 GitHub Packages。
+
+          - **GHCR 镜像地址**: `ghcr.io/$REPO_LOWER:$TAG_NAME` / `ghcr.io/$REPO_LOWER:latest`
+          - **全栈轻量架构**: Bun 1.4+ + 原生 SQLite 持久化 + 纯净无广告 UI (镜像体积仅 ~130MB)
+
+          ---
+
+          ## 🚀 部署方法 (Deployment Guide)
+
+          ### 方式一：Docker 一键运行 (CLI)
+
+          ```bash
+          # 1. 创建本地数据持久化目录
+          mkdir -p ./data
+
+          # 2. 启动容器
+          docker run -d \
+            --name excalidraw \
+            --restart unless-stopped \
+            -p 8080:8080 \
+            -v $(pwd)/data:/app/data \
+            -e AUTH_PASSWORD="" \
+            ghcr.io/$REPO_LOWER:$TAG_NAME
+          ```
+
+          > 如需开启密码保护，将 `-e AUTH_PASSWORD="your_password"` 填入您的访问密码即可。
+
+          ---
+
+          ### 方式二：Docker Compose 编排部署 (推荐)
+
+          在服务器创建 `docker-compose.yml` 文件：
+
+          ```yaml
+          services:
+            excalidraw:
+              image: ghcr.io/$REPO_LOWER:$TAG_NAME
+              container_name: excalidraw
+              restart: unless-stopped
+              ports:
+                - "8080:8080"
+              environment:
+                - PORT=8080
+                - DB_PATH=/app/data/excalidraw.db
+                # 可选：配置访问密码保护（留空则不开启密码验证）
+                - AUTH_PASSWORD=
+              volumes:
+                - ./data:/app/data
+          ```
+
+          启动服务：
+          ```bash
+          docker compose up -d
+          ```
+
+          ---
+
+          ### 💾 数据持久化与备份
+          - 画板元数据、矢量图元结构及上传的图片附件全部存储在宿主机的 `./data/excalidraw.db` 中；
+          - 备份只需打包或复制 `./data` 文件夹即可。
+          EOF
+
+          sed -i "s|\$REPO_LOWER|$REPO_LOWER|g" release_notes.md
+          sed -i "s|\$TAG_NAME|$TAG_NAME|g" release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
