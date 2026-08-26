@@ -1,22 +1,22 @@
 import type { OrderedExcalidrawElement } from "@excalidraw/element/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const cloudStorageMocks = vi.hoisted(() => ({
+  saveCloudScene: vi.fn(),
+  saveFilesToCloud: vi.fn(),
+}));
+
 vi.mock("../data/cloudStorage", async () => {
   const actual = await vi.importActual<typeof import("../data/cloudStorage")>(
     "../data/cloudStorage",
   );
   return {
     ...actual,
-    saveCloudScene: vi.fn(),
-    saveFilesToCloud: vi.fn(),
+    ...cloudStorageMocks,
   };
 });
 
-import {
-  CloudApiError,
-  saveCloudScene,
-  saveFilesToCloud,
-} from "../data/cloudStorage";
+import { CloudApiError } from "../data/cloudStorage";
 import { CloudSaveQueue, type CloudSaveSnapshot } from "../data/cloudSync";
 
 const makeSnapshot = (name: string): CloudSaveSnapshot => ({
@@ -30,8 +30,8 @@ const makeSnapshot = (name: string): CloudSaveSnapshot => ({
 describe("cloud save queue", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.mocked(saveFilesToCloud).mockReset().mockResolvedValue();
-    vi.mocked(saveCloudScene).mockReset().mockResolvedValue({
+    cloudStorageMocks.saveFilesToCloud.mockReset().mockResolvedValue();
+    cloudStorageMocks.saveCloudScene.mockReset().mockResolvedValue({
       success: true,
       id: "scene-1",
       updated_at: 2,
@@ -41,7 +41,7 @@ describe("cloud save queue", () => {
 
   it("uploads attachments before the scene and keeps only the newest pending snapshot", async () => {
     const calls: string[] = [];
-    vi.mocked(saveFilesToCloud).mockImplementation(async () => {
+    cloudStorageMocks.saveFilesToCloud.mockImplementation(async () => {
       calls.push("files");
     });
     let releaseFirstSave!: (value: {
@@ -50,7 +50,7 @@ describe("cloud save queue", () => {
       updated_at: number;
       revision: number;
     }) => void;
-    vi.mocked(saveCloudScene)
+    cloudStorageMocks.saveCloudScene
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -78,14 +78,14 @@ describe("cloud save queue", () => {
     releaseFirstSave({ success: true, id: "scene-1", updated_at: 2, revision: 2 });
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(calls).toEqual(["files", "scene:latest"]);
-    expect(saveCloudScene).toHaveBeenCalledTimes(2);
+    expect(calls).toEqual(["files", "files", "scene:latest"]);
+    expect(cloudStorageMocks.saveCloudScene).toHaveBeenCalledTimes(2);
     queue.dispose();
   });
 
   it("pauses on auth failure and resumes the pending snapshot after authentication", async () => {
     const onAuthRequired = vi.fn();
-    vi.mocked(saveCloudScene)
+    cloudStorageMocks.saveCloudScene
       .mockRejectedValueOnce(new CloudApiError("未授权", 401, "UNAUTHORIZED"))
       .mockResolvedValueOnce({
         success: true,
@@ -105,7 +105,7 @@ describe("cloud save queue", () => {
 
     queue.resumeAfterAuth("scene-1");
     await vi.advanceTimersByTimeAsync(0);
-    expect(saveCloudScene).toHaveBeenCalledTimes(2);
+    expect(cloudStorageMocks.saveCloudScene).toHaveBeenCalledTimes(2);
     queue.dispose();
   });
 });
