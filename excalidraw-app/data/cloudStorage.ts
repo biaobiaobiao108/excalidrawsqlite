@@ -248,22 +248,33 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
 
 export async function fetchCloudFiles(
   fileIds: readonly FileId[],
-): Promise<BinaryFileData[]> {
+): Promise<{
+  loadedFiles: BinaryFileData[];
+  erroredFiles: Map<FileId, true>;
+}> {
   const uniqueIds = [...new Set(fileIds)];
   const loadedFiles: BinaryFileData[] = [];
+  const erroredFiles = new Map<FileId, true>();
   await runWithConcurrency(uniqueIds, async (id) => {
-    const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
-      credentials: "same-origin",
-      headers: { Accept: "application/octet-stream" },
-    });
-    await assertResponse(res, "加载云端图片失败");
-    const blob = await res.blob();
-    loadedFiles.push({
-      id,
-      mimeType: (blob.type || "application/octet-stream") as BinaryFileData["mimeType"],
-      dataURL: (await blobToDataUrl(blob)) as BinaryFileData["dataURL"],
-      created: Number(res.headers.get("X-File-Created-At")) || Date.now(),
-    });
+    try {
+      const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
+        credentials: "same-origin",
+        headers: { Accept: "application/octet-stream" },
+      });
+      await assertResponse(res, "加载云端图片失败");
+      const blob = await res.blob();
+      loadedFiles.push({
+        id,
+        mimeType: (blob.type || "application/octet-stream") as BinaryFileData["mimeType"],
+        dataURL: (await blobToDataUrl(blob)) as BinaryFileData["dataURL"],
+        created: Number(res.headers.get("X-File-Created-At")) || Date.now(),
+      });
+    } catch (error) {
+      if (error instanceof CloudApiError && error.status === 401) {
+        throw error;
+      }
+      erroredFiles.set(id, true);
+    }
   });
-  return loadedFiles;
+  return { loadedFiles, erroredFiles };
 }

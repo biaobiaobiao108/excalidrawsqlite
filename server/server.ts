@@ -245,6 +245,7 @@ const securityHeaders = (runtime: ServerRuntime, req: Request) => {
   if (origin && runtime.config.corsOrigins.has(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
     headers.set("Access-Control-Allow-Credentials", "true");
+    headers.set("Access-Control-Expose-Headers", "X-File-Created-At");
     headers.set("Vary", "Origin");
   }
   return headers;
@@ -1061,6 +1062,7 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           headers: {
             "Content-Type": row.mime_type,
             "Content-Length": String(row.byte_size),
+            "X-File-Created-At": String(row.created_at),
             "Cache-Control": "private, max-age=31536000, immutable",
           },
         });

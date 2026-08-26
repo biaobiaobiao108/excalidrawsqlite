@@ -96,6 +96,7 @@ import Collab, {
 import { AppFooter } from "./components/AppFooter";
 import { AppMainMenu } from "./components/AppMainMenu";
 import { AppWelcomeScreen } from "./components/AppWelcomeScreen";
+import { CloudConflictDialog } from "./components/CloudConflictDialog";
 import { CloudScenesDialog } from "./components/CloudScenesDialog";
 import { AuthDialog } from "./components/AuthDialog";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
@@ -110,11 +111,12 @@ import {
 import {
   checkAuthStatus,
   fetchCloudScene,
+  fetchCloudFiles,
   fetchCloudScenes,
-  saveCloudScene,
   createCloudScene,
-  saveFilesToCloud,
 } from "./data/cloudStorage";
+import { CloudSaveQueue } from "./data/cloudSync";
+import type { CloudSaveSnapshot } from "./data/cloudSync";
 
 import { updateStaleImageStatuses } from "./data/FileManager";
 import { FileStatusStore } from "./data/fileStatusStore";
@@ -213,15 +215,19 @@ const shareableLinkConfirmDialog = {
   color: "danger",
 } as const;
 
+type InitializeSceneResult = {
+  scene: ExcalidrawInitialDataState | null;
+  isExternalScene: boolean;
+  id?: string;
+  key?: string;
+  isCloudScene?: boolean;
+  cloudRevision?: number;
+};
+
 const initializeScene = async (opts: {
   collabAPI: CollabAPI | null;
   excalidrawAPI: ExcalidrawImperativeAPI;
-}): Promise<
-  { scene: ExcalidrawInitialDataState | null } & (
-    | { isExternalScene: true; id: string; key: string }
-    | { isExternalScene: false; id?: null; key?: null }
-  )
-> => {
+}): Promise<InitializeSceneResult> => {
   const searchParams = new URLSearchParams(window.location.search);
   const id = searchParams.get("id");
   const jsonBackendMatch = window.location.hash.match(
@@ -247,6 +253,7 @@ const initializeScene = async (opts: {
   };
 
   let roomLinkData = getCollaborationLinkData(window.location.href);
+  let cloudRevision: number | undefined;
   const isExternalScene = !!(id || jsonBackendMatch || roomLinkData);
   if (isExternalScene) {
     if (
@@ -261,6 +268,7 @@ const initializeScene = async (opts: {
         try {
           const imported = await fetchCloudScene(id);
           if (imported) {
+            cloudRevision = imported.revision;
             scene = {
               elements: bumpElementVersions(
                 restoreElements(imported.elements, null, {
@@ -383,6 +391,15 @@ const initializeScene = async (opts: {
       key: roomLinkData.roomKey,
     };
   } else if (scene) {
+    if (id && cloudRevision !== undefined) {
+      return {
+        scene,
+        isExternalScene: false,
+        isCloudScene: true,
+        id,
+        cloudRevision,
+      };
+    }
     return isExternalScene && jsonBackendMatch
       ? {
           scene,
@@ -393,6 +410,16 @@ const initializeScene = async (opts: {
       : { scene, isExternalScene: false };
   }
   return { scene: null, isExternalScene: false };
+};
+
+const getCloudFileIds = (elements: readonly any[]) => {
+  const fileIds = new Set<FileId>();
+  for (const element of elements) {
+    if (isInitializedImageElement(element)) {
+      fileIds.add(element.fileId);
+    }
+  }
+  return [...fileIds];
 };
 
 const ExcalidrawWrapper = () => {
@@ -495,133 +522,218 @@ const ExcalidrawWrapper = () => {
   // Cloud Whiteboard (SQLite) State & Handlers
   const [isCloudScenesOpen, setIsCloudScenesOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authSceneId, setAuthSceneId] = useState<string | null>(null);
+  const [cloudConflict, setCloudConflict] = useState<{
+    sceneId: string;
+    snapshot: CloudSaveSnapshot;
+  } | null>(null);
   const [currentSceneId, setCurrentSceneId] = useState<string | null>(() => {
     const searchParams = new URLSearchParams(window.location.search);
     return searchParams.get("id");
   });
 
-  useEffect(() => {
-    checkAuthStatus().then((status) => {
-      if (status.authRequired) {
-        fetchCloudScenes().catch((err) => {
-          if (err.message === "AUTH_REQUIRED") {
-            setIsAuthOpen(true);
-          }
-        });
+  const cloudSaveQueue = useMemo(
+    () =>
+      new CloudSaveQueue({
+        onAuthRequired: (sceneId) => {
+          setIsAuthOpen(true);
+          setAuthSceneId(sceneId);
+          setCurrentSceneId(sceneId);
+        },
+        onConflict: (sceneId, snapshot) => {
+          setCloudConflict({ sceneId, snapshot });
+        },
+        onError: (error) => {
+          setErrorMessage(`云端自动保存失败：${error.message}`);
+        },
+      }),
+    [],
+  );
+
+  useEffect(() => () => cloudSaveQueue.dispose(), [cloudSaveQueue]);
+
+  const loadCloudFilesIntoScene = useCallback(
+    async (elements: readonly any[]) => {
+      if (!excalidrawAPI) {
+        return;
       }
-    });
-  }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get("id");
-    if (id) {
-      setCurrentSceneId(id);
-    } else {
-      fetchCloudScenes()
-        .then((scenes) => {
-          if (scenes && scenes.length > 0) {
-            const latest = scenes[0];
-            setCurrentSceneId(latest.id);
-            window.history.replaceState({}, "", `?id=${latest.id}`);
-            if (excalidrawAPI) {
-              fetchCloudScene(latest.id).then((data) => {
-                if (data) {
-                  excalidrawAPI.updateScene({
-                    elements: restoreElements(data.elements, null, {
-                      repairBindings: true,
-                      deleteInvisibleElements: true,
-                    }),
-                    appState: restoreAppState(
-                      {
-                        ...data.appState,
-                        name: data.name,
-                      },
-                      excalidrawAPI.getAppState(),
-                    ),
-                    captureUpdate: CaptureUpdateAction.NEVER,
-                  });
-                }
-              });
-            }
-          } else {
-            createCloudScene({ name: "我的画板" }).then((created) => {
-              if (created) {
-                setCurrentSceneId(created.id);
-                window.history.replaceState({}, "", `?id=${created.id}`);
-              }
-            });
-          }
-        })
-        .catch((err) => {
-          if (err.message === "AUTH_REQUIRED") {
-            setIsAuthOpen(true);
-          }
+      const fileIds = getCloudFileIds(elements);
+      if (!fileIds.length) {
+        return;
+      }
+      FileStatusStore.updateStatuses(
+        fileIds.map((id) => [id, "loading"] as [FileId, "loading"]),
+      );
+      try {
+        const { loadedFiles, erroredFiles } = await fetchCloudFiles(fileIds);
+        excalidrawAPI.addFiles(loadedFiles);
+        updateStaleImageStatuses({
+          excalidrawAPI,
+          erroredFiles,
+          elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
         });
-    }
-  }, [excalidrawAPI]);
+        FileStatusStore.updateStatuses([
+          ...loadedFiles.map((file) => [file.id, "loaded"] as [FileId, "loaded"]),
+          ...[...erroredFiles.keys()].map(
+            (id) => [id, "error"] as [FileId, "error"],
+          ),
+        ]);
+      } catch (error: any) {
+        if (error?.status === 401) {
+          setIsAuthOpen(true);
+        }
+        FileStatusStore.updateStatuses(
+          fileIds.map((id) => [id, "error"] as [FileId, "error"]),
+        );
+      }
+    },
+    [excalidrawAPI],
+  );
 
-  const debouncedCloudSave = useMemo(() => {
-    return debounce(
-      (
-        sceneId: string,
-        name: string,
-        elements: readonly OrderedExcalidrawElement[],
-        appState: AppState,
-        files: BinaryFiles,
-      ) => {
-        saveCloudScene(sceneId, {
-          name,
-          elements: elements as unknown as readonly NonDeletedExcalidrawElement[],
-          appState: {
-            viewBackgroundColor: appState.viewBackgroundColor,
-            gridSize: appState.gridSize,
-          },
-        });
-        saveFilesToCloud(files);
-      },
-      1000,
-    );
-  }, []);
-
-  const handleSelectScene = async (sceneId: string) => {
-    setCurrentSceneId(sceneId);
-    const newUrl = `${window.location.pathname}?id=${sceneId}`;
-    window.history.replaceState({}, "", newUrl);
-
-    try {
+  const loadSelectedCloudScene = useCallback(
+    async (sceneId: string, updateUrl = true) => {
       const cloudData = await fetchCloudScene(sceneId);
-      if (cloudData && excalidrawAPI) {
+      setCurrentSceneId(sceneId);
+      cloudSaveQueue.setRevision(sceneId, cloudData.revision);
+      if (updateUrl) {
+        window.history.replaceState(
+          {},
+          "",
+          `${window.location.pathname}?id=${encodeURIComponent(sceneId)}`,
+        );
+      }
+      if (excalidrawAPI) {
+        const elements = restoreElements(cloudData.elements, null, {
+          repairBindings: true,
+          deleteInvisibleElements: true,
+        });
         excalidrawAPI.updateScene({
-          elements: restoreElements(cloudData.elements, null, {
-            repairBindings: true,
-            deleteInvisibleElements: true,
-          }),
+          elements,
           appState: restoreAppState(
-            {
-              ...cloudData.appState,
-              name: cloudData.name,
-            },
+            { ...cloudData.appState, name: cloudData.name },
             excalidrawAPI.getAppState(),
           ),
           captureUpdate: CaptureUpdateAction.NEVER,
         });
-        setTimeout(() => {
-          if (cloudData.elements?.length) {
+        void loadCloudFilesIntoScene(elements);
+        if (cloudData.elements.length) {
+          setTimeout(() => {
             excalidrawAPI.setViewport({
               target: cloudData.elements,
               fit: "scale-down",
               animation: true,
             });
-          }
-        }, 50);
+          }, 50);
+        }
       }
-    } catch (err: any) {
-      if (err.message === "AUTH_REQUIRED") {
+      return cloudData;
+    },
+    [cloudSaveQueue, excalidrawAPI, loadCloudFilesIntoScene],
+  );
+
+  const handleSelectScene = useCallback(
+    async (sceneId: string) => {
+      try {
+        await loadSelectedCloudScene(sceneId);
+      } catch (error: any) {
+        if (error?.status === 401) {
+          setIsAuthOpen(true);
+        } else {
+          setErrorMessage(error?.message || "打开云端画板失败");
+        }
+      }
+    },
+    [loadSelectedCloudScene],
+  );
+
+  const bootstrapCloud = useCallback(async () => {
+    try {
+      const status = await checkAuthStatus();
+      if (status.authRequired && !status.authenticated) {
         setIsAuthOpen(true);
+        return;
+      }
+
+      const requestedId = new URLSearchParams(window.location.search).get("id");
+      if (requestedId) {
+        try {
+          await loadSelectedCloudScene(requestedId, false);
+          return;
+        } catch (error: any) {
+          if (error?.status !== 404) {
+            throw error;
+          }
+          window.history.replaceState({}, "", window.location.pathname);
+        }
+      }
+
+      const scenes = await fetchCloudScenes();
+      const scene =
+        scenes[0] || (await createCloudScene({ name: "我的画板" }));
+      await loadSelectedCloudScene(scene.id);
+    } catch (error: any) {
+      if (error?.status === 401) {
+        setIsAuthOpen(true);
+      } else {
+        setErrorMessage(error?.message || "初始化云端画板失败");
       }
     }
-  };
+  }, [loadSelectedCloudScene]);
+
+  useEffect(() => {
+    void bootstrapCloud();
+  }, [bootstrapCloud]);
+
+  const resolveCloudConflict = useCallback(
+    async (keepLocal: boolean) => {
+      if (!cloudConflict) {
+        return;
+      }
+      try {
+        const remote = await fetchCloudScene(cloudConflict.sceneId);
+        cloudSaveQueue.resolveConflict(
+          cloudConflict.sceneId,
+          remote.revision,
+          keepLocal,
+        );
+        if (!keepLocal) {
+          await loadSelectedCloudScene(cloudConflict.sceneId, false);
+        }
+        setCloudConflict(null);
+      } catch (error: any) {
+        if (error?.status === 401) {
+          setIsAuthOpen(true);
+        } else {
+          setErrorMessage(error?.message || "处理云端冲突失败");
+        }
+      }
+    },
+    [cloudConflict, cloudSaveQueue, loadSelectedCloudScene],
+  );
+
+  const handleSceneDeleted = useCallback(
+    async (sceneId: string) => {
+      cloudSaveQueue.cancel(sceneId);
+      if (currentSceneId !== sceneId) {
+        return;
+      }
+      setCurrentSceneId(null);
+      window.history.replaceState({}, "", window.location.pathname);
+      try {
+        const scenes = await fetchCloudScenes();
+        const nextScene =
+          scenes[0] || (await createCloudScene({ name: "我的画板" }));
+        await loadSelectedCloudScene(nextScene.id);
+      } catch (error: any) {
+        if (error?.status === 401) {
+          setIsAuthOpen(true);
+        } else {
+          setErrorMessage(error?.message || "删除画板后切换失败");
+        }
+      }
+    },
+    [cloudSaveQueue, currentSceneId, loadSelectedCloudScene],
+  );
 
   // ---------------------------------------------------------------------------
   // Hoisted loadImages
@@ -657,7 +769,9 @@ const ExcalidrawWrapper = () => {
             return acc;
           }, [] as FileId[]) || [];
 
-        if (data.isExternalScene) {
+        if (data.isCloudScene) {
+          void loadCloudFilesIntoScene(data.scene.elements || []);
+        } else if (data.isExternalScene && data.id && data.key) {
           if (fileIds.length) {
             // Direct Firebase call (not through FileManager), so track manually
             FileStatusStore.updateStatuses(
@@ -705,7 +819,7 @@ const ExcalidrawWrapper = () => {
         }
       }
     },
-    [collabAPI, excalidrawAPI],
+    [collabAPI, excalidrawAPI, loadCloudFilesIntoScene],
   );
 
   useEffect(() => {
@@ -714,6 +828,9 @@ const ExcalidrawWrapper = () => {
     }
 
     initializeScene({ collabAPI, excalidrawAPI }).then(async (data) => {
+      if (data.isCloudScene && data.id && data.cloudRevision) {
+        cloudSaveQueue.setRevision(data.id, data.cloudRevision);
+      }
       loadImages(data, /* isInitialLoad */ true);
       initialStatePromiseRef.current.promise.resolve(data.scene);
     });
@@ -905,13 +1022,23 @@ const ExcalidrawWrapper = () => {
     }
 
     if (currentSceneId) {
-      debouncedCloudSave(
-        currentSceneId,
-        excalidrawAPI?.getName() || "未命名白板",
+      const referencedFiles: BinaryFiles = {};
+      for (const fileId of getCloudFileIds(elements)) {
+        const file = files[fileId];
+        if (file) {
+          referencedFiles[fileId] = file;
+        }
+      }
+      cloudSaveQueue.enqueue({
+        sceneId: currentSceneId,
+        name: excalidrawAPI?.getName() || "未命名白板",
         elements,
-        appState,
-        files,
-      );
+        appState: {
+          viewBackgroundColor: appState.viewBackgroundColor,
+          gridSize: appState.gridSize,
+        },
+        files: referencedFiles,
+      });
     }
 
     // Render the debug scene if the debug canvas is available
@@ -1176,16 +1303,28 @@ const ExcalidrawWrapper = () => {
           onClose={() => setIsCloudScenesOpen(false)}
           onSelectScene={handleSelectScene}
           onAuthRequired={() => setIsAuthOpen(true)}
+          onSceneDeleted={handleSceneDeleted}
         />
         <AuthDialog
           isOpen={isAuthOpen}
           onSuccess={() => {
             setIsAuthOpen(false);
-            if (currentSceneId) {
-              handleSelectScene(currentSceneId);
+            if (authSceneId) {
+              cloudSaveQueue.resumeAfterAuth(authSceneId);
+              setAuthSceneId(null);
+            } else {
+              void bootstrapCloud();
             }
           }}
-          onClose={() => setIsAuthOpen(false)}
+          onClose={() => {
+            setIsAuthOpen(false);
+            setAuthSceneId(null);
+          }}
+        />
+        <CloudConflictDialog
+          isOpen={!!cloudConflict}
+          onReload={() => resolveCloudConflict(false)}
+          onOverwrite={() => resolveCloudConflict(true)}
         />
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
         {excalidrawAPI && <AIComponents excalidrawAPI={excalidrawAPI} />}

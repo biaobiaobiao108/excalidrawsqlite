@@ -5,12 +5,10 @@ import {
   fetchCloudScenes,
   createCloudScene,
   deleteCloudScene,
-  saveCloudScene,
+  renameCloudScene,
   type CloudSceneSummary,
 } from "../data/cloudStorage";
-import {
-  TrashIcon,
-} from "@excalidraw/excalidraw/components/icons";
+import { TrashIcon } from "@excalidraw/excalidraw/components/icons";
 
 const EditIcon = (
   <svg
@@ -36,6 +34,7 @@ interface CloudScenesDialogProps {
   onClose: () => void;
   onSelectScene: (sceneId: string) => void;
   onAuthRequired: () => void;
+  onSceneDeleted: (sceneId: string) => void | Promise<void>;
 }
 
 export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
@@ -44,6 +43,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
   onClose,
   onSelectScene,
   onAuthRequired,
+  onSceneDeleted,
 }) => {
   const [scenes, setScenes] = useState<CloudSceneSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,15 +52,20 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
   const [editingName, setEditingName] = useState("");
   const [newSceneName, setNewSceneName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
 
   const loadScenes = async () => {
     setLoading(true);
+    setActionError("");
     try {
       const list = await fetchCloudScenes();
       setScenes(list);
     } catch (err: any) {
       if (err.message === "AUTH_REQUIRED") {
         onAuthRequired();
+      } else {
+        setActionError(err.message || "加载画板列表失败");
       }
     } finally {
       setLoading(false);
@@ -78,7 +83,12 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
   if (!isOpen) return null;
 
   const handleCreate = async () => {
+    if (pendingAction) {
+      return;
+    }
     const name = newSceneName.trim() || "未命名白板";
+    setPendingAction("create");
+    setActionError("");
     try {
       const created = await createCloudScene({ name, elements: [], appState: {} });
       if (created) {
@@ -91,7 +101,11 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
     } catch (err: any) {
       if (err.message === "AUTH_REQUIRED") {
         onAuthRequired();
+      } else {
+        setActionError(err.message || "创建画板失败");
       }
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -100,23 +114,49 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
       setEditingId(null);
       return;
     }
-    await saveCloudScene(id, {
-      name: editingName.trim(),
-      elements: [],
-      appState: {},
-    });
-    setEditingId(null);
-    loadScenes();
+    if (pendingAction) {
+      return;
+    }
+    setPendingAction(`rename:${id}`);
+    setActionError("");
+    try {
+      await renameCloudScene(id, editingName.trim());
+      setEditingId(null);
+      await loadScenes();
+    } catch (err: any) {
+      if (err.message === "AUTH_REQUIRED") {
+        onAuthRequired();
+      } else {
+        setActionError(err.message || "重命名画板失败");
+      }
+    } finally {
+      setPendingAction(null);
+    }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (window.confirm(`确定要删除画板 "${name}" 吗？该操作无法恢复。`)) {
+    if (!window.confirm(`确定要删除画板 "${name}" 吗？该操作无法恢复。`)) {
+      return;
+    }
+    if (pendingAction) {
+      return;
+    }
+    setPendingAction(`delete:${id}`);
+    setActionError("");
+    try {
       await deleteCloudScene(id);
       await loadScenes();
       if (currentSceneId === id) {
-        // If current scene was deleted, create or switch to another
-        window.history.replaceState({}, "", window.location.pathname);
+        await onSceneDeleted(id);
       }
+    } catch (err: any) {
+      if (err.message === "AUTH_REQUIRED") {
+        onAuthRequired();
+      } else {
+        setActionError(err.message || "删除画板失败");
+      }
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -154,9 +194,16 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
               onClick={() => setIsCreating(true)}
               size="medium"
               className="create-btn"
+              disabled={!!pendingAction}
             />
           )}
         </div>
+
+        {actionError && (
+          <div className="cloud-scenes-error" role="alert">
+            {actionError}
+          </div>
+        )}
 
         {isCreating && (
           <div className="create-scene-row">
@@ -168,14 +215,25 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
               className="create-scene-input"
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleCreate();
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleCreate();
+                }
                 if (e.key === "Escape") setIsCreating(false);
               }}
             />
-            <button className="btn-confirm" onClick={handleCreate}>
+            <button
+              className="btn-confirm"
+              onClick={handleCreate}
+              disabled={!!pendingAction}
+            >
               创建
             </button>
-            <button className="btn-cancel" onClick={() => setIsCreating(false)}>
+            <button
+              className="btn-cancel"
+              onClick={() => setIsCreating(false)}
+              disabled={!!pendingAction}
+            >
               取消
             </button>
           </div>
@@ -206,11 +264,15 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                         onChange={(e) => setEditingName(e.target.value)}
                         onBlur={() => handleRename(scene.id)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") handleRename(scene.id);
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            e.currentTarget.blur();
+                          }
                           if (e.key === "Escape") setEditingId(null);
                         }}
                         autoFocus
                         className="rename-input"
+                        disabled={pendingAction === `rename:${scene.id}`}
                       />
                     ) : (
                       <span
@@ -238,6 +300,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                         onClose();
                       }}
                       title="打开画板"
+                      disabled={!!pendingAction}
                     >
                       打开
                     </button>
@@ -248,6 +311,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                         setEditingName(scene.name);
                       }}
                       title="重命名"
+                      disabled={!!pendingAction}
                     >
                       {EditIcon}
                     </button>
@@ -255,6 +319,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                       className="action-btn icon-btn delete-btn"
                       onClick={() => handleDelete(scene.id, scene.name)}
                       title="删除画板"
+                      disabled={!!pendingAction}
                     >
                       {TrashIcon}
                     </button>
