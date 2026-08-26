@@ -1,5 +1,7 @@
-import type { OrderedExcalidrawElement } from "@excalidraw/element/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { OrderedExcalidrawElement } from "@excalidraw/element/types";
+import type { MockedFunction } from "vitest";
 
 import { CloudApiError } from "../data/cloudStorage";
 import { CloudSaveQueue, type CloudSaveSnapshot } from "../data/cloudSync";
@@ -8,15 +10,17 @@ const makeSnapshot = (name: string): CloudSaveSnapshot => ({
   sceneId: "scene-1",
   name,
   elements: [] as OrderedExcalidrawElement[],
-  appState: { viewBackgroundColor: "#fff", gridSize: null },
+  appState: { viewBackgroundColor: "#fff", gridSize: 0 },
   files: {},
 });
 
 describe("cloud save queue", () => {
-  const saveCloudScene =
-    vi.fn() as typeof import("../data/cloudStorage").saveCloudScene;
-  const saveFilesToCloud =
-    vi.fn() as typeof import("../data/cloudStorage").saveFilesToCloud;
+  const saveCloudScene = vi.fn() as unknown as MockedFunction<
+    typeof import("../data/cloudStorage").saveCloudScene
+  >;
+  const saveFilesToCloud = vi.fn() as unknown as MockedFunction<
+    typeof import("../data/cloudStorage").saveFilesToCloud
+  >;
 
   beforeEach(() => {
     vi.useFakeTimers();

@@ -1,6 +1,7 @@
-import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
-import type { FileId } from "@excalidraw/element/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type { FileId } from "@excalidraw/element/types";
+import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 
 import {
   fetchCloudFiles,
@@ -62,9 +63,9 @@ describe("cloud storage", () => {
 
     expect(result.loadedFiles).toEqual([
       expect.objectContaining<Partial<BinaryFileData>>({
-        id: "file-ok",
+        id: "file-ok" as FileId,
         mimeType: "image/png",
-        dataURL: "data:image/png;base64,AQID",
+        dataURL: "data:image/png;base64,AQID" as BinaryFileData["dataURL"],
         created: 123,
       }),
     ]);
