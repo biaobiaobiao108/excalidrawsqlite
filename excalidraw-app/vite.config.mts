@@ -127,7 +127,7 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
-      sourcemap: true,
+      sourcemap: mode === "development" || envVars.VITE_APP_ENABLE_SOURCEMAP === "true",
       // don't auto-inline small assets (i.e. fonts hosted on CDN)
       assetsInlineLimit: 0,
     },
