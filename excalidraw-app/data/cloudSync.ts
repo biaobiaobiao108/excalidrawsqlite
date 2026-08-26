@@ -26,6 +26,11 @@ type QueueCallbacks = {
 
 type BlockReason = "auth" | "conflict";
 
+type CloudSaveDependencies = {
+  saveCloudScene: typeof saveCloudScene;
+  saveFilesToCloud: typeof saveFilesToCloud;
+};
+
 const RETRY_DELAYS_MS = [500, 1000, 2000];
 
 const sleep = (duration: number) =>
@@ -36,11 +41,21 @@ export class CloudSaveQueue {
   private readonly conflicts = new Map<string, CloudSaveSnapshot>();
   private readonly revisions = new Map<string, number>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly inFlight = new Set<string>();
   private readonly blocked = new Map<string, BlockReason>();
   private readonly disposed = new Set<string>();
+  private isSaving = false;
+  private readonly dependencies: CloudSaveDependencies;
 
-  constructor(private readonly callbacks: QueueCallbacks) {}
+  constructor(
+    private readonly callbacks: QueueCallbacks,
+    dependencies: Partial<CloudSaveDependencies> = {},
+  ) {
+    this.dependencies = {
+      saveCloudScene,
+      saveFilesToCloud,
+      ...dependencies,
+    };
+  }
 
   setRevision(sceneId: string, revision: number) {
     this.revisions.set(sceneId, revision);
@@ -117,7 +132,7 @@ export class CloudSaveQueue {
 
   private async flush(sceneId: string) {
     if (
-      this.inFlight.has(sceneId) ||
+      this.isSaving ||
       this.disposed.has(sceneId) ||
       this.blocked.has(sceneId)
     ) {
@@ -128,13 +143,13 @@ export class CloudSaveQueue {
       return;
     }
     this.pending.delete(sceneId);
-    this.inFlight.add(sceneId);
+    this.isSaving = true;
 
     try {
       for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt++) {
         try {
-          await saveFilesToCloud(snapshot.files);
-          const saved = await saveCloudScene(sceneId, {
+          await this.dependencies.saveFilesToCloud(snapshot.files);
+          const saved = await this.dependencies.saveCloudScene(sceneId, {
             name: snapshot.name,
             elements:
               snapshot.elements as readonly NonDeletedExcalidrawElement[],
@@ -167,9 +182,11 @@ export class CloudSaveQueue {
         }
       }
     } finally {
-      this.inFlight.delete(sceneId);
-      if (this.pending.has(sceneId) && !this.blocked.has(sceneId)) {
-        this.schedule(sceneId, 0);
+      this.isSaving = false;
+      for (const pendingSceneId of this.pending.keys()) {
+        if (!this.blocked.has(pendingSceneId)) {
+          this.schedule(pendingSceneId, 0);
+        }
       }
     }
   }
