@@ -43,4 +43,3 @@ export const AppWelcomeScreen: React.FC<{
     </WelcomeScreen>
   );
 });
-

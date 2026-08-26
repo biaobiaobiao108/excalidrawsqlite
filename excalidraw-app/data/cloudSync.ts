@@ -1,4 +1,7 @@
-import type { NonDeletedExcalidrawElement, OrderedExcalidrawElement } from "@excalidraw/element/types";
+import type {
+  NonDeletedExcalidrawElement,
+  OrderedExcalidrawElement,
+} from "@excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 
 import {
@@ -133,7 +136,8 @@ export class CloudSaveQueue {
           await saveFilesToCloud(snapshot.files);
           const saved = await saveCloudScene(sceneId, {
             name: snapshot.name,
-            elements: snapshot.elements as readonly NonDeletedExcalidrawElement[],
+            elements:
+              snapshot.elements as readonly NonDeletedExcalidrawElement[],
             appState: snapshot.appState,
             baseRevision: this.revisions.get(sceneId),
           });

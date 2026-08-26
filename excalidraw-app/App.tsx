@@ -37,10 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadFromBlob } from "@excalidraw/excalidraw/data/blob";
 import { t } from "@excalidraw/excalidraw/i18n";
 
-import {
-  usersIcon,
-  share,
-} from "@excalidraw/excalidraw/components/icons";
+import { usersIcon, share } from "@excalidraw/excalidraw/components/icons";
 import { isElementLink } from "@excalidraw/element";
 import {
   bumpElementVersions,
@@ -116,6 +113,7 @@ import {
   createCloudScene,
 } from "./data/cloudStorage";
 import { CloudSaveQueue } from "./data/cloudSync";
+
 import type { CloudSaveSnapshot } from "./data/cloudSync";
 
 import { updateStaleImageStatuses } from "./data/FileManager";
@@ -573,7 +571,9 @@ const ExcalidrawWrapper = () => {
           elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
         });
         FileStatusStore.updateStatuses([
-          ...loadedFiles.map((file) => [file.id, "loaded"] as [FileId, "loaded"]),
+          ...loadedFiles.map(
+            (file) => [file.id, "loaded"] as [FileId, "loaded"],
+          ),
           ...[...erroredFiles.keys()].map(
             (id) => [id, "error"] as [FileId, "error"],
           ),
@@ -668,8 +668,7 @@ const ExcalidrawWrapper = () => {
       }
 
       const scenes = await fetchCloudScenes();
-      const scene =
-        scenes[0] || (await createCloudScene({ name: "我的画板" }));
+      const scene = scenes[0] || (await createCloudScene({ name: "我的画板" }));
       await loadSelectedCloudScene(scene.id);
     } catch (error: any) {
       if (error?.status === 401) {
@@ -1257,7 +1256,9 @@ const ExcalidrawWrapper = () => {
 
               {!isMobile && collabAPI && !isCollabDisabled && (
                 <>
-                  {collabError.message && <CollabError collabError={collabError} />}
+                  {collabError.message && (
+                    <CollabError collabError={collabError} />
+                  )}
                   <LiveCollaborationTrigger
                     isCollaborating={isCollaborating}
                     onSelect={() =>

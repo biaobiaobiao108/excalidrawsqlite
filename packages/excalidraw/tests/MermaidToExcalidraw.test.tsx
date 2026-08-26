@@ -1,6 +1,7 @@
 import { expect, vi } from "vitest";
 
 import { pointFrom, type LocalPoint } from "@excalidraw/math";
+
 import { Excalidraw } from "../index";
 
 import { mockMermaidToExcalidraw } from "./helpers/mocks";

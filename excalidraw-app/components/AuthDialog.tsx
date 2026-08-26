@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Dialog } from "@excalidraw/excalidraw/components/Dialog";
 import { FilledButton } from "@excalidraw/excalidraw/components/FilledButton";
+
 import { verifyAuthPassword } from "../data/cloudStorage";
 
 import "./AuthDialog.scss";
@@ -20,10 +21,14 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return null;
+  }
 
   const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+    if (e) {
+      e.preventDefault();
+    }
     if (!password.trim()) {
       setError("请输入访问密码");
       return;

@@ -91,7 +91,9 @@ const blobToDataUrl = async (blob: Blob) => {
       ...bytes.subarray(index, Math.min(index + chunkSize, bytes.length)),
     );
   }
-  return `data:${blob.type || "application/octet-stream"};base64,${btoa(binary)}`;
+  return `data:${blob.type || "application/octet-stream"};base64,${btoa(
+    binary,
+  )}`;
 };
 
 const runWithConcurrency = async <T>(
@@ -190,7 +192,12 @@ export async function saveCloudScene(
     appState?: any;
     baseRevision?: number;
   },
-): Promise<{ success: boolean; id: string; updated_at: number; revision: number }> {
+): Promise<{
+  success: boolean;
+  id: string;
+  updated_at: number;
+  revision: number;
+}> {
   return fetchJson(
     `/api/scenes/${encodeURIComponent(id)}`,
     {
@@ -206,7 +213,12 @@ export async function renameCloudScene(
   id: string,
   name: string,
   baseRevision?: number,
-): Promise<{ success: boolean; id: string; updated_at: number; revision: number }> {
+): Promise<{
+  success: boolean;
+  id: string;
+  updated_at: number;
+  revision: number;
+}> {
   return fetchJson(
     `/api/scenes/${encodeURIComponent(id)}`,
     {
@@ -246,9 +258,7 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
   });
 }
 
-export async function fetchCloudFiles(
-  fileIds: readonly FileId[],
-): Promise<{
+export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
   loadedFiles: BinaryFileData[];
   erroredFiles: Map<FileId, true>;
 }> {
@@ -265,7 +275,8 @@ export async function fetchCloudFiles(
       const blob = await res.blob();
       loadedFiles.push({
         id,
-        mimeType: (blob.type || "application/octet-stream") as BinaryFileData["mimeType"],
+        mimeType: (blob.type ||
+          "application/octet-stream") as BinaryFileData["mimeType"],
         dataURL: (await blobToDataUrl(blob)) as BinaryFileData["dataURL"],
         created: Number(res.headers.get("X-File-Created-At")) || Date.now(),
       });

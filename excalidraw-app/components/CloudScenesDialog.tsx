@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { Dialog } from "@excalidraw/excalidraw/components/Dialog";
 import { FilledButton } from "@excalidraw/excalidraw/components/FilledButton";
+
+import { TrashIcon } from "@excalidraw/excalidraw/components/icons";
+
 import {
   fetchCloudScenes,
   createCloudScene,
@@ -8,7 +11,8 @@ import {
   renameCloudScene,
   type CloudSceneSummary,
 } from "../data/cloudStorage";
-import { TrashIcon } from "@excalidraw/excalidraw/components/icons";
+
+import "./CloudScenesDialog.scss";
 
 const EditIcon = (
   <svg
@@ -25,8 +29,6 @@ const EditIcon = (
     <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
   </svg>
 );
-
-import "./CloudScenesDialog.scss";
 
 interface CloudScenesDialogProps {
   isOpen: boolean;
@@ -80,7 +82,9 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return null;
+  }
 
   const handleCreate = async () => {
     if (pendingAction) {
@@ -90,7 +94,11 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
     setPendingAction("create");
     setActionError("");
     try {
-      const created = await createCloudScene({ name, elements: [], appState: {} });
+      const created = await createCloudScene({
+        name,
+        elements: [],
+        appState: {},
+      });
       if (created) {
         setNewSceneName("");
         setIsCreating(false);
@@ -167,9 +175,9 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
   const formatDate = (timestamp: number) => {
     const d = new Date(timestamp);
     const pad = (n: number) => n.toString().padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
-      d.getHours(),
-    )}:${pad(d.getMinutes())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+      d.getDate(),
+    )} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
   return (
@@ -219,7 +227,9 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                   e.preventDefault();
                   void handleCreate();
                 }
-                if (e.key === "Escape") setIsCreating(false);
+                if (e.key === "Escape") {
+                  setIsCreating(false);
+                }
               }}
             />
             <button
@@ -244,7 +254,9 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
             <div className="cloud-scenes-empty">正在加载画板列表...</div>
           ) : filteredScenes.length === 0 ? (
             <div className="cloud-scenes-empty">
-              {searchQuery ? "未找到匹配的画板" : "暂无已保存的云端画板，点击上方新建"}
+              {searchQuery
+                ? "未找到匹配的画板"
+                : "暂无已保存的云端画板，点击上方新建"}
             </div>
           ) : (
             filteredScenes.map((scene) => {
@@ -268,7 +280,9 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                             e.preventDefault();
                             e.currentTarget.blur();
                           }
-                          if (e.key === "Escape") setEditingId(null);
+                          if (e.key === "Escape") {
+                            setEditingId(null);
+                          }
                         }}
                         autoFocus
                         className="rename-input"
@@ -284,7 +298,9 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                         }}
                       >
                         {scene.name || "未命名白板"}
-                        {isCurrent && <span className="current-badge">当前使用</span>}
+                        {isCurrent && (
+                          <span className="current-badge">当前使用</span>
+                        )}
                       </span>
                     )}
                     <span className="scene-time">

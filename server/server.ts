@@ -1,7 +1,8 @@
-import { Database } from "bun:sqlite";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+
+import { Database } from "bun:sqlite";
 
 const DEFAULT_PORT = 8080;
 const DEFAULT_MAX_FILE_BYTES = 4 * 1024 * 1024;
@@ -64,7 +65,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const parseBooleanEnv = (value: string | undefined) =>
   value?.toLowerCase() === "true";
 
-const parsePositiveIntegerEnv = (value: string | undefined, fallback: number) => {
+const parsePositiveIntegerEnv = (
+  value: string | undefined,
+  fallback: number,
+) => {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
@@ -274,7 +278,11 @@ const jsonResponse = (
     headers: { "Content-Type": "application/json; charset=utf-8", ...headers },
   });
 
-const errorResponse = (runtime: ServerRuntime, req: Request, error: unknown) => {
+const errorResponse = (
+  runtime: ServerRuntime,
+  req: Request,
+  error: unknown,
+) => {
   const normalized =
     error instanceof HttpError
       ? error
@@ -332,7 +340,11 @@ const readBody = async (req: Request, maxBytes: number) => {
 const readJson = async (req: Request, maxBytes: number) => {
   const contentType = req.headers.get("content-type") || "";
   if (!contentType.toLowerCase().includes("application/json")) {
-    throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "请求必须使用 JSON 格式");
+    throw new HttpError(
+      415,
+      "UNSUPPORTED_MEDIA_TYPE",
+      "请求必须使用 JSON 格式",
+    );
   }
   const body = await readBody(req, maxBytes);
   try {
@@ -356,7 +368,11 @@ const validateName = (value: unknown) => {
   }
   const name = value.trim();
   if (!name || name.length > MAX_SCENE_NAME_LENGTH) {
-    throw new HttpError(400, "INVALID_NAME", "画板名称不能为空且不能超过 120 个字符");
+    throw new HttpError(
+      400,
+      "INVALID_NAME",
+      "画板名称不能为空且不能超过 120 个字符",
+    );
   }
   return name;
 };
@@ -375,7 +391,11 @@ const validateAppState = (value: unknown) => {
   return value;
 };
 
-const getPathId = (pathname: string, prefix: string, kind: "file" | "scene") => {
+const getPathId = (
+  pathname: string,
+  prefix: string,
+  kind: "file" | "scene",
+) => {
   const rawId = pathname.slice(prefix.length);
   if (!rawId || rawId.includes("/")) {
     throw new HttpError(400, "INVALID_ID", "无效的资源 ID");
@@ -398,11 +418,15 @@ const issueSessionCookie = (runtime: ServerRuntime) => {
   const token = randomBytes(32).toString("base64url");
   runtime.sessions.set(token, Date.now() + runtime.config.sessionTtlMs);
   const secure = runtime.config.nodeEnv === "production" ? "; Secure" : "";
-  return `${getSessionCookieName(runtime)}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}${secure}`;
+  return `${getSessionCookieName(
+    runtime,
+  )}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}${secure}`;
 };
 
 const clearSessionCookie = (runtime: ServerRuntime) =>
-  `${getSessionCookieName(runtime)}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`;
+  `${getSessionCookieName(
+    runtime,
+  )}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`;
 
 const isAuthorized = (runtime: ServerRuntime, req: Request) => {
   if (runtime.config.allowAnonymous || !runtime.config.authPassword) {
@@ -547,7 +571,11 @@ const decodeDataUrl = (value: unknown, expectedMimeType: string) => {
   }
   const match = value.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=_-]+)$/);
   if (!match || match[1].toLowerCase() !== expectedMimeType.toLowerCase()) {
-    throw new HttpError(400, "INVALID_FILE_DATA", "文件必须是有效的 Base64 data URL");
+    throw new HttpError(
+      400,
+      "INVALID_FILE_DATA",
+      "文件必须是有效的 Base64 data URL",
+    );
   }
   const data = Buffer.from(match[2], "base64");
   if (!data.byteLength) {
@@ -779,13 +807,9 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           !runtime.config.authPassword ||
           verifyPassword(password, runtime.config.authPassword)
         ) {
-          return jsonResponse(
-            runtime,
-            req,
-            { success: true },
-            200,
-            { "Set-Cookie": issueSessionCookie(runtime) },
-          );
+          return jsonResponse(runtime, req, { success: true }, 200, {
+            "Set-Cookie": issueSessionCookie(runtime),
+          });
         }
         return jsonResponse(
           runtime,
@@ -852,7 +876,9 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         );
         const id = body.id
           ? validateId(body.id, "scene")
-          : `scene_${Date.now().toString(36)}_${randomBytes(4).toString("hex")}`;
+          : `scene_${Date.now().toString(36)}_${randomBytes(4).toString(
+              "hex",
+            )}`;
         const name = hasOwn(body, "name")
           ? validateName(body.name)
           : "未命名白板";
@@ -883,7 +909,11 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           });
           transaction();
         } catch (error: any) {
-          if (String(error?.message || "").toLowerCase().includes("unique")) {
+          if (
+            String(error?.message || "")
+              .toLowerCase()
+              .includes("unique")
+          ) {
             throw new HttpError(409, "SCENE_EXISTS", "画板 ID 已存在");
           }
           throw error;
@@ -898,7 +928,9 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
 
       if (pathname.startsWith("/api/scenes/") && req.method === "GET") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
-        const row = runtime.db.query("SELECT * FROM scenes WHERE id = ?").get(id);
+        const row = runtime.db
+          .query("SELECT * FROM scenes WHERE id = ?")
+          .get(id);
         if (!row) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
         }
@@ -920,7 +952,11 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
         }
         if (baseRevision !== undefined && baseRevision !== existing.revision) {
-          throw new HttpError(409, "REVISION_CONFLICT", "云端画板已被其他操作更新");
+          throw new HttpError(
+            409,
+            "REVISION_CONFLICT",
+            "云端画板已被其他操作更新",
+          );
         }
         const now = Date.now();
         const revision = existing.revision + 1;
@@ -950,7 +986,11 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         const baseRevision = requireRevision(body.baseRevision);
         const currentRevision = Number(existing.revision) || 1;
         if (baseRevision !== undefined && baseRevision !== currentRevision) {
-          throw new HttpError(409, "REVISION_CONFLICT", "云端画板已被其他设备更新");
+          throw new HttpError(
+            409,
+            "REVISION_CONFLICT",
+            "云端画板已被其他设备更新",
+          );
         }
         const name = hasOwn(body, "name")
           ? validateName(body.name)
@@ -992,9 +1032,15 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
 
       if (pathname.startsWith("/api/scenes/") && req.method === "DELETE") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
-        const existing = runtime.db.query("SELECT id FROM scenes WHERE id = ?").get(id);
+        const existing = runtime.db
+          .query("SELECT id FROM scenes WHERE id = ?")
+          .get(id);
         if (!existing) {
-          return jsonResponse(runtime, req, { success: true, id, deleted: false });
+          return jsonResponse(runtime, req, {
+            success: true,
+            id,
+            deleted: false,
+          });
         }
         const transaction = runtime.db.transaction(() => {
           runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [id]);
@@ -1015,10 +1061,21 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           const mimeType = validateMimeType(data.mimeType || "image/png");
           const bytes = decodeDataUrl(data.dataURL, mimeType);
           uploaded.push(
-            await upsertFile(runtime, id, mimeType, bytes, Number(data.created)),
+            await upsertFile(
+              runtime,
+              id,
+              mimeType,
+              bytes,
+              Number(data.created),
+            ),
           );
         }
-        return jsonResponse(runtime, req, { success: true, files: uploaded }, 201);
+        return jsonResponse(
+          runtime,
+          req,
+          { success: true, files: uploaded },
+          201,
+        );
       }
 
       if (pathname.startsWith("/api/files/") && req.method === "PUT") {
@@ -1048,12 +1105,15 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         }
         const accept = req.headers.get("accept") || "";
         const wantsBinary =
-          accept.includes("application/octet-stream") || accept.includes("image/");
+          accept.includes("application/octet-stream") ||
+          accept.includes("image/");
         if (!wantsBinary) {
           const bytes = await Bun.file(filePath).arrayBuffer();
           return jsonResponse(runtime, req, {
             id,
-            dataURL: `data:${row.mime_type};base64,${Buffer.from(bytes).toString("base64")}`,
+            dataURL: `data:${row.mime_type};base64,${Buffer.from(
+              bytes,
+            ).toString("base64")}`,
             mimeType: row.mime_type,
             created_at: row.created_at,
           });
