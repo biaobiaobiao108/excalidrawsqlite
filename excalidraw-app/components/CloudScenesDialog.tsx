@@ -64,7 +64,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
       const list = await fetchCloudScenes();
       setScenes(list);
     } catch (err: any) {
-      if (err.message === "AUTH_REQUIRED") {
+      if (err.status === 401 || err.code === "AUTH_REQUIRED") {
         onAuthRequired();
       } else {
         setActionError(err.message || "加载画板列表失败");
@@ -107,7 +107,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
         onClose();
       }
     } catch (err: any) {
-      if (err.message === "AUTH_REQUIRED") {
+      if (err.status === 401 || err.code === "AUTH_REQUIRED") {
         onAuthRequired();
       } else {
         setActionError(err.message || "创建画板失败");
@@ -128,11 +128,12 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
     setPendingAction(`rename:${id}`);
     setActionError("");
     try {
-      await renameCloudScene(id, editingName.trim());
+      const scene = scenes.find((item) => item.id === id);
+      await renameCloudScene(id, editingName.trim(), scene?.revision);
       setEditingId(null);
       await loadScenes();
     } catch (err: any) {
-      if (err.message === "AUTH_REQUIRED") {
+      if (err.status === 401 || err.code === "AUTH_REQUIRED") {
         onAuthRequired();
       } else {
         setActionError(err.message || "重命名画板失败");
@@ -158,7 +159,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
         await onSceneDeleted(id);
       }
     } catch (err: any) {
-      if (err.message === "AUTH_REQUIRED") {
+      if (err.status === 401 || err.code === "AUTH_REQUIRED") {
         onAuthRequired();
       } else {
         setActionError(err.message || "删除画板失败");
