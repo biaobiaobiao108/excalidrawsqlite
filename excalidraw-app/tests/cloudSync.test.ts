@@ -78,7 +78,7 @@ describe("cloud save queue", () => {
       updated_at: 2,
       revision: 2,
     });
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.runAllTimersAsync();
 
     expect(calls).toEqual(["files", "files", "scene:latest"]);
     expect(saveCloudScene).toHaveBeenCalledTimes(2);
