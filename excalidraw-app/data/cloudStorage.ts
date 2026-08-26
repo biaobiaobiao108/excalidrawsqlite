@@ -1,116 +1,168 @@
-import type { BinaryFiles } from "@excalidraw/excalidraw/types";
-import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
-
-const AUTH_STORAGE_KEY = "excalidraw_sqlite_auth_password";
+import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
+import type { FileId } from "@excalidraw/element/types";
 
 export interface CloudSceneSummary {
   id: string;
   name: string;
   created_at: number;
   updated_at: number;
+  revision: number;
   size?: number;
 }
 
 export interface CloudSceneData {
   id: string;
   name: string;
-  elements: readonly NonDeletedExcalidrawElement[];
+  elements: readonly any[];
   appState: Record<string, any>;
   created_at: number;
   updated_at: number;
+  revision: number;
 }
 
-export function getAuthPassword(): string {
+export class CloudApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code: string,
+  ) {
+    super(message);
+    this.name = "CloudApiError";
+  }
+}
+
+const getHeaders = (extraHeaders: Record<string, string> = {}) => ({
+  "Content-Type": "application/json",
+  ...extraHeaders,
+});
+
+const parseError = async (res: Response, fallback: string) => {
   try {
-    return localStorage.getItem(AUTH_STORAGE_KEY) || "";
+    const body = (await res.json()) as { error?: string; code?: string };
+    return new CloudApiError(
+      body.error || fallback,
+      res.status,
+      body.code || "HTTP_ERROR",
+    );
   } catch {
-    return "";
+    return new CloudApiError(fallback, res.status, "HTTP_ERROR");
   }
-}
+};
 
-export function setAuthPassword(password: string): void {
-  try {
-    localStorage.setItem(AUTH_STORAGE_KEY, password);
-  } catch {
-    // ignore
+const assertResponse = async (res: Response, fallback: string) => {
+  if (!res.ok) {
+    throw await parseError(res, fallback);
   }
-}
+};
 
-export function clearAuthPassword(): void {
-  try {
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-  } catch {
-    // ignore
+const fetchJson = async <T>(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  fallback: string,
+) => {
+  const res = await fetch(input, {
+    credentials: "same-origin",
+    ...init,
+  });
+  await assertResponse(res, fallback);
+  return (await res.json()) as T;
+};
+
+const dataUrlToBlob = (dataURL: string, mimeType: string) => {
+  const commaIndex = dataURL.indexOf(",");
+  if (!dataURL.startsWith("data:") || commaIndex < 0) {
+    throw new CloudApiError("图片数据格式无效", 0, "INVALID_FILE_DATA");
   }
-}
-
-function getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
-  const password = getAuthPassword();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...extraHeaders,
-  };
-  if (password) {
-    headers["Authorization"] = `Bearer ${password}`;
-    headers["x-auth-password"] = password;
+  const encoded = dataURL.slice(commaIndex + 1);
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index);
   }
-  return headers;
-}
+  return new Blob([bytes], { type: mimeType });
+};
 
-export async function checkAuthStatus(): Promise<{ authRequired: boolean }> {
-  try {
-    const res = await fetch("/api/auth/status");
-    if (!res.ok) {
-      return { authRequired: false };
+const blobToDataUrl = async (blob: Blob) => {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(
+      ...bytes.subarray(index, Math.min(index + chunkSize, bytes.length)),
+    );
+  }
+  return `data:${blob.type || "application/octet-stream"};base64,${btoa(binary)}`;
+};
+
+const runWithConcurrency = async <T>(
+  items: readonly T[],
+  worker: (item: T) => Promise<void>,
+  concurrency = 4,
+) => {
+  let nextIndex = 0;
+  const run = async () => {
+    while (nextIndex < items.length) {
+      const item = items[nextIndex++];
+      await worker(item);
     }
-    const data = await res.json();
-    return { authRequired: Boolean(data.authRequired) };
-  } catch {
-    return { authRequired: false };
-  }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, run),
+  );
+};
+
+export async function checkAuthStatus(): Promise<{
+  authRequired: boolean;
+  authenticated: boolean;
+}> {
+  return fetchJson(
+    "/api/auth/status",
+    { headers: getHeaders() },
+    "无法检查访问授权状态",
+  );
 }
 
 export async function verifyAuthPassword(password: string): Promise<boolean> {
   try {
     const res = await fetch("/api/auth/verify", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      headers: getHeaders(),
       body: JSON.stringify({ password }),
     });
-    if (res.ok) {
-      setAuthPassword(password);
-      return true;
+    if (!res.ok) {
+      return false;
     }
-    return false;
+    await res.json();
+    return true;
   } catch {
     return false;
   }
 }
 
-export async function fetchCloudScenes(): Promise<CloudSceneSummary[]> {
-  const res = await fetch("/api/scenes", {
+export async function logoutCloudSession(): Promise<void> {
+  const res = await fetch("/api/auth/logout", {
+    method: "POST",
+    credentials: "same-origin",
     headers: getHeaders(),
   });
-  if (res.status === 401) {
-    throw new Error("AUTH_REQUIRED");
-  }
-  if (!res.ok) {
-    throw new Error(`Failed to fetch scenes: ${res.statusText}`);
-  }
-  return (await res.json()) as CloudSceneSummary[];
+  await assertResponse(res, "退出授权失败");
+}
+
+export async function fetchCloudScenes(): Promise<CloudSceneSummary[]> {
+  return fetchJson(
+    "/api/scenes",
+    { headers: getHeaders() },
+    "获取云端画板列表失败",
+  );
 }
 
 export async function fetchCloudScene(id: string): Promise<CloudSceneData> {
-  const res = await fetch(`/api/scenes/${encodeURIComponent(id)}`, {
-    headers: getHeaders(),
-  });
-  if (res.status === 401) {
-    throw new Error("AUTH_REQUIRED");
-  }
-  if (!res.ok) {
-    throw new Error(`Failed to fetch scene: ${res.statusText}`);
-  }
-  return (await res.json()) as CloudSceneData;
+  return fetchJson(
+    `/api/scenes/${encodeURIComponent(id)}`,
+    { headers: getHeaders() },
+    "获取云端画板失败",
+  );
 }
 
 export async function createCloudScene(data: {
@@ -119,18 +171,15 @@ export async function createCloudScene(data: {
   elements?: readonly any[];
   appState?: any;
 }): Promise<CloudSceneSummary> {
-  const res = await fetch("/api/scenes", {
-    method: "POST",
-    headers: getHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (res.status === 401) {
-    throw new Error("AUTH_REQUIRED");
-  }
-  if (!res.ok) {
-    throw new Error(`Failed to create scene: ${res.statusText}`);
-  }
-  return (await res.json()) as CloudSceneSummary;
+  return fetchJson(
+    "/api/scenes",
+    {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    },
+    "创建云端画板失败",
+  );
 }
 
 export async function saveCloudScene(
@@ -139,48 +188,82 @@ export async function saveCloudScene(
     name?: string;
     elements?: readonly any[];
     appState?: any;
+    baseRevision?: number;
   },
-): Promise<{ success: boolean; id: string; updated_at: number }> {
-  const res = await fetch(`/api/scenes/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    headers: getHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (res.status === 401) {
-    throw new Error("AUTH_REQUIRED");
-  }
-  if (!res.ok) {
-    throw new Error(`Failed to save scene: ${res.statusText}`);
-  }
-  return (await res.json()) as {
-    success: boolean;
-    id: string;
-    updated_at: number;
-  };
+): Promise<{ success: boolean; id: string; updated_at: number; revision: number }> {
+  return fetchJson(
+    `/api/scenes/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    },
+    "保存云端画板失败",
+  );
+}
+
+export async function renameCloudScene(
+  id: string,
+  name: string,
+  baseRevision?: number,
+): Promise<{ success: boolean; id: string; updated_at: number; revision: number }> {
+  return fetchJson(
+    `/api/scenes/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify({ name, baseRevision }),
+    },
+    "重命名云端画板失败",
+  );
 }
 
 export async function deleteCloudScene(id: string): Promise<boolean> {
-  const res = await fetch(`/api/scenes/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-    headers: getHeaders(),
-  });
-  if (res.status === 401) {
-    throw new Error("AUTH_REQUIRED");
-  }
-  return res.ok;
+  const result = await fetchJson<{ success: boolean }>(
+    `/api/scenes/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+      headers: getHeaders(),
+    },
+    "删除云端画板失败",
+  );
+  return result.success;
 }
 
 export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
-  if (!files || Object.keys(files).length === 0) {
-    return;
-  }
-  try {
-    await fetch("/api/files", {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify(files),
+  const entries = Object.values(files || {});
+  await runWithConcurrency(entries, async (file) => {
+    const res = await fetch(`/api/files/${encodeURIComponent(file.id)}`, {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": file.mimeType,
+      },
+      body: dataUrlToBlob(file.dataURL, file.mimeType),
     });
-  } catch (err) {
-    console.error("Failed to save files to cloud:", err);
-  }
+    await assertResponse(res, "保存云端图片失败");
+  });
+}
+
+export async function fetchCloudFiles(
+  fileIds: readonly FileId[],
+): Promise<BinaryFileData[]> {
+  const uniqueIds = [...new Set(fileIds)];
+  const loadedFiles: BinaryFileData[] = [];
+  await runWithConcurrency(uniqueIds, async (id) => {
+    const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
+      credentials: "same-origin",
+      headers: { Accept: "application/octet-stream" },
+    });
+    await assertResponse(res, "加载云端图片失败");
+    const blob = await res.blob();
+    loadedFiles.push({
+      id,
+      mimeType: (blob.type || "application/octet-stream") as BinaryFileData["mimeType"],
+      dataURL: (await blobToDataUrl(blob)) as BinaryFileData["dataURL"],
+      created: Number(res.headers.get("X-File-Created-At")) || Date.now(),
+    });
+  });
+  return loadedFiles;
 }
