@@ -13,8 +13,10 @@ const makeSnapshot = (name: string): CloudSaveSnapshot => ({
 });
 
 describe("cloud save queue", () => {
-  const saveCloudScene = vi.fn() as typeof import("../data/cloudStorage").saveCloudScene;
-  const saveFilesToCloud = vi.fn() as typeof import("../data/cloudStorage").saveFilesToCloud;
+  const saveCloudScene =
+    vi.fn() as typeof import("../data/cloudStorage").saveCloudScene;
+  const saveFilesToCloud =
+    vi.fn() as typeof import("../data/cloudStorage").saveFilesToCloud;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -58,16 +60,24 @@ describe("cloud save queue", () => {
           revision: 3,
         };
       });
-    const queue = new CloudSaveQueue({
-      onAuthRequired: vi.fn(),
-      onConflict: vi.fn(),
-      onError: vi.fn(),
-    }, { saveCloudScene, saveFilesToCloud });
+    const queue = new CloudSaveQueue(
+      {
+        onAuthRequired: vi.fn(),
+        onConflict: vi.fn(),
+        onError: vi.fn(),
+      },
+      { saveCloudScene, saveFilesToCloud },
+    );
 
     queue.enqueue(makeSnapshot("first"));
     await vi.advanceTimersByTimeAsync(1000);
     queue.enqueue(makeSnapshot("latest"));
-    releaseFirstSave({ success: true, id: "scene-1", updated_at: 2, revision: 2 });
+    releaseFirstSave({
+      success: true,
+      id: "scene-1",
+      updated_at: 2,
+      revision: 2,
+    });
     await vi.advanceTimersByTimeAsync(0);
 
     expect(calls).toEqual(["files", "files", "scene:latest"]);
@@ -85,11 +95,14 @@ describe("cloud save queue", () => {
         updated_at: 2,
         revision: 2,
       });
-    const queue = new CloudSaveQueue({
-      onAuthRequired,
-      onConflict: vi.fn(),
-      onError: vi.fn(),
-    }, { saveCloudScene, saveFilesToCloud });
+    const queue = new CloudSaveQueue(
+      {
+        onAuthRequired,
+        onConflict: vi.fn(),
+        onError: vi.fn(),
+      },
+      { saveCloudScene, saveFilesToCloud },
+    );
 
     queue.enqueue(makeSnapshot("pending"));
     await vi.advanceTimersByTimeAsync(1000);
