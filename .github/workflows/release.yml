@@ -15,8 +15,46 @@ permissions:
   packages: write
 
 jobs:
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run test:typecheck
+
+      - name: Lint
+        run: bun run test:code
+
+      - name: Formatting
+        run: bun run test:other
+
+      - name: Server tests
+        run: bun run test:server
+
+      - name: Frontend tests
+        run: bun run test:app --watch=false
+
+      - name: Build packages
+        run: bun run build:packages
+
+      - name: Build frontend
+        run: bun run build:app:docker
+
   release:
     name: Build, Publish & Release
+    needs: quality
     runs-on: ubuntu-latest
 
     steps:
@@ -96,11 +134,11 @@ jobs:
             --restart unless-stopped \
             -p 8080:8080 \
             -v $(pwd)/data:/app/data \
-            -e AUTH_PASSWORD="" \
+            -e AUTH_PASSWORD="your-strong-password" \
             ghcr.io/$REPO_LOWER:$TAG_NAME
           ```
 
-          > 如需开启密码保护，将 `-e AUTH_PASSWORD="your_password"` 填入您的访问密码即可。
+          > 生产环境必须设置非空 `AUTH_PASSWORD`；仅可信局域网免密时才显式设置 `ALLOW_ANONYMOUS=true`。
 
           ---
 
@@ -119,8 +157,9 @@ jobs:
               environment:
                 - PORT=8080
                 - DB_PATH=/app/data/excalidraw.db
-                # 可选：配置访问密码保护（留空则不开启密码验证）
-                - AUTH_PASSWORD=
+                - FILES_DIR=/app/data/files
+                - AUTH_PASSWORD=your-strong-password
+                - ALLOW_ANONYMOUS=false
               volumes:
                 - ./data:/app/data
           ```
@@ -133,8 +172,8 @@ jobs:
           ---
 
           ### 💾 数据持久化与备份
-          - 画板元数据、矢量图元结构及上传的图片附件全部存储在宿主机的 `./data/excalidraw.db` 中；
-          - 备份只需打包或复制 `./data` 文件夹即可。
+          - 画板元数据和矢量图元结构存储在 `./data/excalidraw.db`，图片附件存储在 `./data/files/`；
+          - 备份前先停止容器，再整体复制 `./data` 文件夹，避免复制 WAL 状态下的不一致数据库。
           EOF
 
           sed -i "s|\$REPO_LOWER|$REPO_LOWER|g" release_notes.md

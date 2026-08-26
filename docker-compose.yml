@@ -8,10 +8,10 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - PORT=8080
-      - DB_PATH=/app/data/excalidraw.db
-      # Optional: set password protection for the app
-      - AUTH_PASSWORD=
+      PORT: "8080"
+      DB_PATH: /app/data/excalidraw.db
+      FILES_DIR: /app/data/files
+      AUTH_PASSWORD: ${AUTH_PASSWORD:?Set AUTH_PASSWORD before starting the container}
+      ALLOW_ANONYMOUS: ${ALLOW_ANONYMOUS:-false}
     volumes:
       - ./data:/app/data
-

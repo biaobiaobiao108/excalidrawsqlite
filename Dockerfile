@@ -31,17 +31,25 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV DB_PATH=/app/data/excalidraw.db
+ENV FILES_DIR=/app/data/files
 
 # Create data directory for SQLite persistence
-RUN mkdir -p /app/data
+RUN addgroup -S excalidraw && adduser -S -G excalidraw excalidraw \
+    && mkdir -p /app/data/files \
+    && chown -R excalidraw:excalidraw /app/data
 
 # Copy backend server code and built frontend static assets
-COPY server ./server
-COPY package.json ./
-COPY --from=builder /app/excalidraw-app/build ./excalidraw-app/build
+COPY --chown=excalidraw:excalidraw server ./server
+COPY --chown=excalidraw:excalidraw package.json ./
+COPY --from=builder --chown=excalidraw:excalidraw /app/excalidraw-app/build ./excalidraw-app/build
 
 EXPOSE 8080
 
 VOLUME ["/app/data"]
+
+USER excalidraw
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD bun -e "fetch('http://127.0.0.1:8080/api/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
 
 CMD ["bun", "run", "server/server.ts"]

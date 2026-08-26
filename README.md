@@ -10,17 +10,18 @@
 - 💾 **SQLite 云端持久化**：
   - 基于 Bun 原生 `bun:sqlite`（开启 WAL 高性能并发模式）；
   - 支持多画板管理（列表浏览、新建、重命名、快速切换、删除）；
-  - 画布修改防抖 1000ms 自动同步至 SQLite；
-  - 图片/文件附件二进制自动存入 SQLite 数据库；
+  - 画布修改防抖 1000ms 自动同步至 SQLite，并使用 revision 防止旧快照覆盖新快照；
+  - 图片/文件附件保存于 `data/files`，SQLite 只保存文件元数据；
   - 支持 URL 参数 `?id=xxx` 自动识别与加载指定画板。
 - 🧼 **100% 纯净体验**：
   - 彻底移除 Excalidraw+ 商业广告、试用导流、虚假功能卡片与外部社交链接；
   - 界面简洁高效，专为私有化与局域网部署打造。
 - 🔐 **轻量鉴权保护**：
-  - 支持通过环境变量 `AUTH_PASSWORD` 开启访问密码保护，保障私有化数据安全。
+  - 通过 `AUTH_PASSWORD` 开启密码保护，使用 HttpOnly 会话 Cookie，不在浏览器保存明文密码；
+  - 生产环境必须配置密码，免密模式只能通过 `ALLOW_ANONYMOUS=true` 显式开启。
 - 🐳 **极致轻量容器化**：
-  - 基于 `oven/bun:1.4-alpine` 多阶段构建，**生产镜像仅 ~130MB**；
-  - 单一卷挂载 `./data:/app/data` 即可实现全量数据持久化与备份迁移。
+  - 基于固定版本的 `oven/bun:1.4.0-alpine` 多阶段构建；
+  - 单一卷挂载 `./data:/app/data` 即可持久化数据库和图片附件。
 
 ---
 
@@ -29,28 +30,20 @@
 ### 方式一：Docker Compose 容器化部署（推荐）
 
 1. **克隆本仓库**
+
    ```bash
    git clone <your-repo-url>
    cd excalidraw
    ```
 
-2. **配置与启动**
-   如需设置访问密码，可编辑 `docker-compose.yml` 中的 `AUTH_PASSWORD`：
+2. **配置与启动** 生产环境必须先设置访问密码：
+
    ```yaml
-   services:
-     excalidraw:
-       build: .
-       container_name: excalidraw
-       restart: unless-stopped
-       ports:
-         - "8080:8080"
-       environment:
-         - PORT=8080
-         - DB_PATH=/app/data/excalidraw.db
-         - AUTH_PASSWORD=your_password  # 留空则不开启密码验证
-       volumes:
-         - ./data:/app/data
+   # .env（不要提交到 Git）
+   AUTH_PASSWORD=your-strong-password
    ```
+
+   如果明确只在可信局域网免密使用，可额外设置 `ALLOW_ANONYMOUS=true`。
 
 3. **运行容器**
    ```bash
@@ -63,16 +56,19 @@
 ### 方式二：本地直接运行 (使用 Bun)
 
 #### 前置要求
+
 - 安装 [Bun](https://bun.sh/) (v1.4.0+)
 
 #### 操作步骤
 
 1. **安装依赖**
+
    ```bash
    bun install
    ```
 
 2. **编译核心 Packages**
+
    ```bash
    bun run build:packages
    ```
@@ -80,6 +76,7 @@
 3. **启动模式**
 
    - **全栈模式 (推荐，含 SQLite 后端与前端托管)**：
+
      ```bash
      # 1. 编译前端静态产物
      bun run build
@@ -87,6 +84,7 @@
      # 2. 启动服务 (默认端口 8080)
      bun run start:server
      ```
+
      访问：`http://localhost:8080`
 
    - **前端开发热重载模式**：
@@ -107,7 +105,8 @@
 │   │   ├── AuthDialog.tsx        # 密码验证弹窗
 │   │   └── ...
 │   └── data/
-│       └── cloudStorage.ts # 前端与 SQLite 交互的 API 客户端
+│       ├── cloudStorage.ts  # 前端云端 API 客户端
+│       └── cloudSync.ts     # 串行自动保存队列
 ├── packages/               # Excalidraw 核心内部包 (Monorepo)
 │   ├── common/
 │   ├── element/
@@ -125,21 +124,36 @@
 
 ## 📡 后端 API 接口概览
 
-| Method | Endpoint | 描述 |
-| :--- | :--- | :--- |
-| `GET` | `/api/auth/status` | 检查是否开启了密码验证及当前登录态 |
-| `POST` | `/api/auth/verify` | 提交密码进行验证 |
-| `GET` | `/api/scenes` | 获取所有云端画板列表（按更新时间降序） |
-| `POST` | `/api/scenes` | 创建新画板 |
-| `GET` | `/api/scenes/:id` | 获取指定画板的图元数据与状态 |
-| `PUT` | `/api/scenes/:id` | 保存/更新指定画板（防抖自动同步） |
-| `DELETE` | `/api/scenes/:id` | 删除指定画板 |
-| `POST` | `/api/files` | 上传图片等二进制附件 |
-| `GET` | `/api/files/:id` | 获取图片附件内容 |
+| Method   | Endpoint           | 描述                                         |
+| :------- | :----------------- | :------------------------------------------- |
+| `GET`    | `/api/auth/status` | 检查是否开启了密码验证及当前登录态           |
+| `POST`   | `/api/auth/verify` | 提交密码进行验证                             |
+| `GET`    | `/api/scenes`      | 获取所有云端画板列表（按更新时间降序）       |
+| `POST`   | `/api/scenes`      | 创建新画板                                   |
+| `GET`    | `/api/scenes/:id`  | 获取指定画板的图元数据与状态                 |
+| `PATCH`  | `/api/scenes/:id`  | 只修改画板名称                               |
+| `PUT`    | `/api/scenes/:id`  | 保存指定画板，携带 `baseRevision` 做并发校验 |
+| `DELETE` | `/api/scenes/:id`  | 删除指定画板                                 |
+| `PUT`    | `/api/files/:id`   | 上传单个二进制图片到本地文件系统             |
+| `POST`   | `/api/files`       | 兼容旧客户端的 JSON data URL 上传入口        |
+| `GET`    | `/api/files/:id`   | 按 `Accept` 返回二进制内容或兼容 JSON        |
+| `GET`    | `/api/health`      | 容器健康检查                                 |
+
+### 数据与备份
+
+- 数据目录包含 `excalidraw.db`、SQLite WAL 文件以及 `files/` 图片目录。
+- 备份前请先停止容器，再整体复制 `data/` 目录；不要在服务运行时直接复制 SQLite 主文件。
+- 恢复时将完整 `data/` 目录挂载回 `/app/data` 后再启动容器。
+
+### 质量检查
+
+```bash
+bun run test:all
+bun run build:app:docker
+```
 
 ---
 
 ## 📄 开源许可证
 
 本项目基于 [MIT License](LICENSE) 开源。原项目由 Excalidraw 团队开发。
-
