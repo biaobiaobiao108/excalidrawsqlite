@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Dialog } from "@excalidraw/excalidraw/components/Dialog";
 import { FilledButton } from "@excalidraw/excalidraw/components/FilledButton";
 
@@ -57,7 +57,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
 
-  const loadScenes = async () => {
+  const loadScenes = useCallback(async () => {
     setLoading(true);
     setActionError("");
     try {
@@ -72,7 +72,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [onAuthRequired]);
 
   useEffect(() => {
     if (isOpen) {
@@ -80,7 +80,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
       setIsCreating(false);
       setEditingId(null);
     }
-  }, [isOpen]);
+  }, [isOpen, loadScenes]);
 
   if (!isOpen) {
     return null;

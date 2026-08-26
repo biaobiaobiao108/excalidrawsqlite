@@ -1,5 +1,4 @@
 import { eyeIcon } from "@excalidraw/excalidraw/components/icons";
-import { useI18n } from "@excalidraw/excalidraw/i18n";
 import { MainMenu } from "@excalidraw/excalidraw/index";
 import React from "react";
 
@@ -19,7 +18,6 @@ export const AppMainMenu: React.FC<{
   refresh: () => void;
   onOpenCloudScenes?: () => void;
 }> = React.memo((props) => {
-  const { t } = useI18n();
   return (
     <MainMenu>
       <MainMenu.DefaultItems.LoadScene />

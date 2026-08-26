@@ -80,7 +80,6 @@ import {
 } from "./app-jotai";
 import {
   FIREBASE_STORAGE_PREFIXES,
-  isExcalidrawPlusSignedUser,
   STORAGE_KEYS,
   SYNC_BROWSER_TABS_TIMEOUT,
 } from "./app_constants";
@@ -112,9 +111,6 @@ import {
   fetchCloudScenes,
   createCloudScene,
 } from "./data/cloudStorage";
-import { CloudSaveQueue } from "./data/cloudSync";
-
-import type { CloudSaveSnapshot } from "./data/cloudSync";
 
 import { updateStaleImageStatuses } from "./data/FileManager";
 import { FileStatusStore } from "./data/fileStatusStore";
@@ -147,6 +143,9 @@ import { AIComponents } from "./components/AI";
 import "./index.scss";
 
 import { AppSidebar } from "./components/AppSidebar";
+import { CloudSaveQueue } from "./data/cloudSync";
+
+import type { CloudSaveSnapshot } from "./data/cloudSync";
 
 import type { CollabAPI } from "./collab/Collab";
 
@@ -952,7 +951,14 @@ const ExcalidrawWrapper = () => {
         false,
       );
     };
-  }, [isCollabDisabled, collabAPI, excalidrawAPI, setLangCode, loadImages]);
+  }, [
+    isCollabDisabled,
+    collabAPI,
+    excalidrawAPI,
+    setLangCode,
+    loadImages,
+    cloudSaveQueue,
+  ]);
 
   useEffect(() => {
     const unloadHandler = (event: BeforeUnloadEvent) => {

@@ -1183,9 +1183,11 @@ const startServer = () => {
     );
   }, 60 * 60 * 1000);
 
-  console.log(`[Database] SQLite initialized at: ${dbPath}`);
-  console.log(`[Files] Persistent file directory: ${filesDir}`);
-  console.log(`🚀 Excalidraw server is running at http://localhost:${port}`);
+  process.stdout.write(`[Database] SQLite initialized at: ${dbPath}\n`);
+  process.stdout.write(`[Files] Persistent file directory: ${filesDir}\n`);
+  process.stdout.write(
+    `🚀 Excalidraw server is running at http://localhost:${port}\n`,
+  );
 };
 
 if (import.meta.main) {
