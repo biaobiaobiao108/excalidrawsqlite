@@ -1,0 +1,57 @@
+{
+  "name": "excalidraw-app",
+  "version": "1.0.0",
+  "private": true,
+  "homepage": ".",
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not ie <= 11",
+      "not op_mini all",
+      "not safari < 12",
+      "not kaios <= 2.5",
+      "not edge < 79",
+      "not chrome < 70",
+      "not and_uc < 13",
+      "not samsung < 10"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "dependencies": {
+    "@excalidraw/random-username": "1.0.0",
+    "@sentry/browser": "9.0.1",
+    "callsites": "4.2.0",
+    "firebase": "11.3.1",
+    "i18next-browser-languagedetector": "6.1.4",
+    "idb-keyval": "6.0.3",
+    "jotai": "2.11.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "socket.io-client": "4.7.2",
+    "uqr": "0.1.2",
+    "vite-plugin-html": "3.2.2"
+  },
+  "prettier": "@excalidraw/prettier-config",
+  "scripts": {
+    "build-node": "bun ./scripts/build-node.js",
+    "build:app:docker": "vite build",
+    "build:app": "vite build",
+    "build:version": "bun ../scripts/build-version.js",
+    "build": "bun run build:app && bun run build:version",
+    "start": "vite",
+    "start:production": "bun run build && bun run serve",
+    "serve": "http-server build -a localhost -p 5001 -o",
+    "build:preview": "bun run build && vite preview --port 5000"
+  },
+  "devDependencies": {
+    "vite-plugin-sitemap": "0.7.1"
+  }
+}

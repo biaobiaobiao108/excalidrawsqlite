@@ -1,0 +1,54 @@
+.auth-dialog {
+  .auth-dialog-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding: 0.5rem 0;
+  }
+
+  .auth-dialog-desc {
+    font-size: 0.95rem;
+    color: var(--text-color-primary, #333);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .auth-dialog-input-group {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .auth-dialog-input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--default-border-color, #ccc);
+    border-radius: 8px;
+    font-size: 1rem;
+    outline: none;
+    background-color: var(--input-bg-color, #fff);
+    color: var(--text-color-primary, #333);
+    transition: border-color 0.2s;
+
+    &:focus {
+      border-color: var(--color-primary, #6965db);
+    }
+  }
+
+  .auth-dialog-error {
+    color: #e03131;
+    font-size: 0.875rem;
+    background: #ffe3e3;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+  }
+
+  .auth-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+  }
+
+  .auth-submit-btn {
+    width: 100%;
+  }
+}

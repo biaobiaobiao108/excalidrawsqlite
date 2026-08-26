@@ -1,0 +1,17 @@
+services:
+  excalidraw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: excalidraw
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DB_PATH=/app/data/excalidraw.db
+      # Optional: set password protection for the app
+      - AUTH_PASSWORD=
+    volumes:
+      - ./data:/app/data
+
