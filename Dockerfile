@@ -1,5 +1,5 @@
 # Stage 1: Build packages and frontend app with Bun
-FROM oven/bun:1.4-alpine AS builder
+FROM oven/bun:1.4.0-alpine AS builder
 
 WORKDIR /app
 
@@ -24,7 +24,7 @@ COPY . .
 RUN bun run build:packages && bun run build
 
 # Stage 2: Production runtime with Bun + SQLite
-FROM oven/bun:1.4-alpine AS runner
+FROM oven/bun:1.4.0-alpine AS runner
 
 WORKDIR /app
 
@@ -34,7 +34,7 @@ ENV DB_PATH=/app/data/excalidraw.db
 ENV FILES_DIR=/app/data/files
 
 # Create data directory for SQLite persistence
-RUN addgroup -S excalidraw && adduser -S -G excalidraw excalidraw \
+RUN addgroup -S -g 10001 excalidraw && adduser -S -D -u 10001 -G excalidraw excalidraw \
     && mkdir -p /app/data/files \
     && chown -R excalidraw:excalidraw /app/data
 

@@ -235,7 +235,16 @@ const getClientKey = (req: Request) =>
 
 const isAllowedOrigin = (runtime: ServerRuntime, req: Request) => {
   const origin = req.headers.get("origin");
-  return !origin || runtime.config.corsOrigins.has(origin);
+  if (!origin) {
+    return true;
+  }
+
+  // Browsers include Origin on same-origin JSON POST/PATCH/PUT requests too.
+  // Treat the request URL's origin as same-origin, then require an explicit
+  // allow-list entry for cross-origin credentialed requests.
+  return (
+    origin === new URL(req.url).origin || runtime.config.corsOrigins.has(origin)
+  );
 };
 
 const securityHeaders = (runtime: ServerRuntime, req: Request) => {

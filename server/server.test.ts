@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { rm } from "node:fs/promises";
 
 import { afterEach, describe, expect, it } from "bun:test";
 
@@ -11,6 +12,7 @@ import {
 } from "./server";
 
 const runtimes: ServerRuntime[] = [];
+const testDirectories: string[] = [];
 
 const createTestRuntime = (env: Record<string, string | undefined> = {}) => {
   const root = Bun.env.TEMP || Bun.env.TMP || ".";
@@ -26,6 +28,7 @@ const createTestRuntime = (env: Record<string, string | undefined> = {}) => {
     config,
   });
   runtimes.push(runtime);
+  testDirectories.push(directory);
   return { runtime, directory, handler: createRequestHandler(runtime) };
 };
 
@@ -70,6 +73,9 @@ const authenticate = async (
 afterEach(async () => {
   for (const runtime of runtimes.splice(0)) {
     runtime.db.close();
+  }
+  for (const directory of testDirectories.splice(0)) {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
