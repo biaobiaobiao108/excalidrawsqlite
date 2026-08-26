@@ -432,10 +432,12 @@ const issueSessionCookie = (runtime: ServerRuntime) => {
   )}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}${secure}`;
 };
 
-const clearSessionCookie = (runtime: ServerRuntime) =>
-  `${getSessionCookieName(
+const clearSessionCookie = (runtime: ServerRuntime) => {
+  const secure = runtime.config.nodeEnv === "production" ? "; Secure" : "";
+  return `${getSessionCookieName(
     runtime,
-  )}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`;
+  )}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure}`;
+};
 
 const isAuthorized = (runtime: ServerRuntime, req: Request) => {
   if (runtime.config.allowAnonymous || !runtime.config.authPassword) {
