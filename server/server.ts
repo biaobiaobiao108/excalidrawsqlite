@@ -1089,9 +1089,15 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
 
       if (pathname.startsWith("/api/files/") && req.method === "PUT") {
         const id = getPathId(pathname, "/api/files/", "file");
-        const mimeType = validateMimeType(
-          req.headers.get("content-type") || "application/octet-stream",
-        );
+        const contentType = req.headers.get("content-type");
+        if (!contentType) {
+          throw new HttpError(
+            415,
+            "UNSUPPORTED_MEDIA_TYPE",
+            "文件上传必须指定 MIME 类型",
+          );
+        }
+        const mimeType = validateMimeType(contentType);
         const bytes = await readBody(req, runtime.config.maxFileBytes);
         if (!bytes.byteLength) {
           throw new HttpError(400, "EMPTY_FILE", "文件内容不能为空");
