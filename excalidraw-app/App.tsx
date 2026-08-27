@@ -945,9 +945,7 @@ const ExcalidrawWrapper = () => {
       })
       .catch((error) => {
         console.error("Failed to initialize the local scene:", error);
-        if (!cancelled) {
-          initialStatePromiseRef.current.promise.resolve(null);
-        }
+        initialStatePromiseRef.current.promise.resolve(null);
       });
   }, []);
 
@@ -1123,7 +1121,6 @@ const ExcalidrawWrapper = () => {
     document.addEventListener(EVENT.VISIBILITY_CHANGE, visibilityChange, false);
     window.addEventListener(EVENT.FOCUS, visibilityChange, false);
     return () => {
-      cancelled = true;
       window.removeEventListener(EVENT.HASHCHANGE, onHashChange, false);
       window.removeEventListener(EVENT.UNLOAD, onUnload, false);
       window.removeEventListener(EVENT.BLUR, visibilityChange, false);
