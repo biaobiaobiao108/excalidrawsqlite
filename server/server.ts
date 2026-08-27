@@ -203,6 +203,8 @@ export const createRuntime = (options: {
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     fs.mkdirSync(filesDir, { recursive: true });
+    fs.accessSync(path.dirname(dbPath), fs.constants.W_OK);
+    fs.accessSync(filesDir, fs.constants.W_OK);
     const db = new Database(dbPath, { create: true });
     initializeDatabase(db);
 
