@@ -36,7 +36,7 @@ ENV STATIC_DIR=/app/excalidraw-app/build
 
 # Create data directory for SQLite persistence. The runtime intentionally keeps
 # root as its default user so bind mounts work with rootful and rootless
-# Podman/Docker without requiring a host-side UID 10001 setup.
+# Podman/Docker without requiring a fixed host-side container UID setup.
 RUN mkdir -p /app/data/files
 
 # Copy backend server code and built frontend static assets
