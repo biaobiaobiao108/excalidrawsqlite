@@ -43,19 +43,13 @@
    AUTH_PASSWORD=your-strong-password
    ```
 
-   Linux 使用宿主机目录挂载时，请先确保容器用户（UID 10001）可以写入数据目录。rootful Podman 或 Docker 可执行：
+   镜像默认以 root 身份运行，以兼容 rootful/rootless Podman、Docker 以及已有 bind mount 的属主设置；不需要把宿主机目录改成固定 UID。先创建数据目录：
 
    ```bash
    mkdir -p ./data
-   sudo chown -R 10001:10001 ./data
    ```
 
-   rootless Podman 请在用户命名空间内设置权限：
-
-   ```bash
-   mkdir -p ./data
-   podman unshare chown -R 10001:10001 ./data
-   ```
+   rootless Podman 会把容器内的 root 映射到当前用户命名空间，通常可以直接写入目录；rootful Docker/Podman 产生的文件可能属于宿主机 root，维护或备份时按宿主机权限使用 `sudo`。
 
    Compose 文件中的 `:Z` 用于 SELinux 主机的目录重新标记。若 Docker Desktop 的 Compose 实现不接受该后缀，可删除 `:Z`，但不要删除数据卷。启动失败时先检查 `data/` 是否可写，并查看 `podman logs excalidraw`。
 
@@ -77,6 +71,8 @@
    ```
 
    健康检查会验证 SQLite 数据库目录和 `data/files` 文件目录可读写；返回非 200 时优先排查目录权限和卷挂载。直接 HTTP 适合可信局域网，公网部署必须在反向代理后使用 HTTPS。只有明确配置 `TRUST_PROXY=true` 时，服务才会信任 `X-Forwarded-Proto` 并发放 Secure 会话 Cookie。
+
+   > 容器 root 只表示容器内的默认运行身份；rootless Podman 仍受宿主机用户命名空间和 SELinux 限制。若组织安全策略禁止 root 容器，可通过 Compose 的 `user` 或运行参数自行指定用户，但必须提前确保该用户对 `/app/data` 有读写权限。
 
 ---
 
@@ -171,7 +167,7 @@
 - 数据目录包含 `excalidraw.db`、SQLite WAL 文件以及 `files/` 图片目录。数据库只保存图片元数据，图片实际位于 `data/files/`。
 - 备份前请先停止容器，再整体复制 `data/` 目录；不要在服务运行时直接复制 SQLite 主文件。
 - 恢复时将完整 `data/` 目录挂载回 `/app/data` 后再启动容器。
-- 如果使用 rootless Podman，恢复后再次执行 `podman unshare chown -R 10001:10001 ./data`。
+- rootless Podman 恢复数据后通常无需重新调整 UID；如果宿主机启用了 SELinux，请确保数据卷仍使用 `:Z` 标记。
 
 ### 质量检查
 

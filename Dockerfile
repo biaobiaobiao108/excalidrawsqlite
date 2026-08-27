@@ -34,21 +34,23 @@ ENV DB_PATH=/app/data/excalidraw.db
 ENV FILES_DIR=/app/data/files
 ENV STATIC_DIR=/app/excalidraw-app/build
 
-# Create data directory for SQLite persistence
-RUN addgroup -S -g 10001 excalidraw && adduser -S -D -u 10001 -G excalidraw excalidraw \
-    && mkdir -p /app/data/files \
-    && chown -R excalidraw:excalidraw /app/data
+# Create data directory for SQLite persistence. The runtime intentionally keeps
+# root as its default user so bind mounts work with rootful and rootless
+# Podman/Docker without requiring a host-side UID 10001 setup.
+RUN mkdir -p /app/data/files
 
 # Copy backend server code and built frontend static assets
-COPY --chown=excalidraw:excalidraw server ./server
-COPY --chown=excalidraw:excalidraw package.json ./
-COPY --from=builder --chown=excalidraw:excalidraw /app/excalidraw-app/build ./excalidraw-app/build
+COPY server ./server
+COPY package.json ./
+COPY --from=builder /app/excalidraw-app/build ./excalidraw-app/build
 
 EXPOSE 8080
 
 VOLUME ["/app/data"]
 
-USER excalidraw
+# Keep the image runtime identity explicit. Rootless Podman still maps this
+# container root to the invoking host user in its user namespace.
+USER root
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD bun -e "fetch('http://127.0.0.1:8080/api/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
