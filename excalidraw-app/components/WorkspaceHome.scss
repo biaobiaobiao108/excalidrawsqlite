@@ -911,6 +911,10 @@
   position: relative;
   z-index: 1;
   inline-size: min(550px, 100%);
+  min-inline-size: 0;
+  min-block-size: 0;
+  max-block-size: min(100%, calc(100dvh - 2.5rem));
+  overflow-y: auto;
   box-sizing: border-box;
   padding: 1.7rem;
   border: 1px solid var(--workspace-border);
