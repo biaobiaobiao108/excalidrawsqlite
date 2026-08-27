@@ -535,20 +535,24 @@ const validateTags = (value: unknown) => {
       `标签必须是数组且不能超过 ${MAX_TAGS} 个`,
     );
   }
-  const tags = [...new Set(value.map((tag) => {
-    if (typeof tag !== "string") {
-      throw new HttpError(400, "INVALID_TAGS", "标签必须是字符串");
-    }
-    const normalized = tag.trim();
-    if (!normalized || normalized.length > MAX_TAG_LENGTH) {
-      throw new HttpError(
-        400,
-        "INVALID_TAGS",
-        `标签不能为空且不能超过 ${MAX_TAG_LENGTH} 个字符`,
-      );
-    }
-    return normalized;
-  }))];
+  const tags = [
+    ...new Set(
+      value.map((tag) => {
+        if (typeof tag !== "string") {
+          throw new HttpError(400, "INVALID_TAGS", "标签必须是字符串");
+        }
+        const normalized = tag.trim();
+        if (!normalized || normalized.length > MAX_TAG_LENGTH) {
+          throw new HttpError(
+            400,
+            "INVALID_TAGS",
+            `标签不能为空且不能超过 ${MAX_TAG_LENGTH} 个字符`,
+          );
+        }
+        return normalized;
+      }),
+    ),
+  ];
   return tags;
 };
 
@@ -1095,7 +1099,10 @@ const getSceneSummary = (row: any) => ({
   thumbnail_file_id: row.thumbnail_file_id || null,
 });
 
-const assertFolderExists = (runtime: ServerRuntime, folderId: string | null) => {
+const assertFolderExists = (
+  runtime: ServerRuntime,
+  folderId: string | null,
+) => {
   if (
     folderId &&
     !runtime.db.query("SELECT id FROM folders WHERE id = ?").get(folderId)
@@ -1690,7 +1697,11 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
             [id, name, now, now],
           );
         } catch (error: any) {
-          if (String(error?.message || "").toLowerCase().includes("unique")) {
+          if (
+            String(error?.message || "")
+              .toLowerCase()
+              .includes("unique")
+          ) {
             throw new HttpError(409, "FOLDER_EXISTS", "文件夹 ID 已存在");
           }
           throw error;
@@ -1739,9 +1750,10 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           });
         }
         const transaction = runtime.db.transaction(() => {
-          runtime.db.run("UPDATE scenes SET folder_id = NULL WHERE folder_id = ?", [
-            id,
-          ]);
+          runtime.db.run(
+            "UPDATE scenes SET folder_id = NULL WHERE folder_id = ?",
+            [id],
+          );
           runtime.db.run("DELETE FROM folders WHERE id = ?", [id]);
         });
         transaction();
@@ -1776,10 +1788,10 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
         }
         const lastOpenedAt = Date.now();
-        runtime.db.run(
-          "UPDATE scenes SET last_opened_at = ? WHERE id = ?",
-          [lastOpenedAt, id],
-        );
+        runtime.db.run("UPDATE scenes SET last_opened_at = ? WHERE id = ?", [
+          lastOpenedAt,
+          id,
+        ]);
         return jsonResponse(runtime, req, { success: true, id, lastOpenedAt });
       }
 
@@ -1819,10 +1831,10 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           .update(id)
           .digest("hex")}`;
         await upsertFile(runtime, thumbnailId, contentType, bytes);
-        runtime.db.run(
-          "UPDATE scenes SET thumbnail_file_id = ? WHERE id = ?",
-          [thumbnailId, id],
-        );
+        runtime.db.run("UPDATE scenes SET thumbnail_file_id = ? WHERE id = ?", [
+          thumbnailId,
+          id,
+        ]);
         return jsonResponse(runtime, req, {
           success: true,
           id,
@@ -1866,7 +1878,15 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
            SET name = ?, tags_json = ?, is_favorite = ?, folder_id = ?,
                updated_at = ?, revision = ?
            WHERE id = ?`,
-          [name, JSON.stringify(tags), favorite ? 1 : 0, folderId, now, revision, id],
+          [
+            name,
+            JSON.stringify(tags),
+            favorite ? 1 : 0,
+            folderId,
+            now,
+            revision,
+            id,
+          ],
         );
         const updated = runtime.db
           .query(

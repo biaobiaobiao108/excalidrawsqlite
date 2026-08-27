@@ -1,14 +1,8 @@
-import {
-  exportToBlob,
-  MIME_TYPES,
-} from "@excalidraw/excalidraw";
+import { exportToBlob, MIME_TYPES } from "@excalidraw/excalidraw";
 import { getNonDeletedElements } from "@excalidraw/element";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
-import type {
-  AppState,
-  BinaryFiles,
-} from "@excalidraw/excalidraw/types";
+import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 
 export const createSceneThumbnail = async ({
   elements,

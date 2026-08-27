@@ -1781,7 +1781,9 @@ const ExcalidrawWrapper = () => {
           isCollabEnabled={!isCollabDisabled}
           theme={appTheme}
           refresh={() => forceRefresh((prev) => !prev)}
-          onOpenCloudScenes={() => window.location.assign(window.location.pathname)}
+          onOpenCloudScenes={() =>
+            window.location.assign(window.location.pathname)
+          }
         />
         <AppWelcomeScreen
           onCollabDialogOpen={onCollabDialogOpen}

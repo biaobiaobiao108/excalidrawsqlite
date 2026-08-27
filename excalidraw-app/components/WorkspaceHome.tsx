@@ -1,7 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Dialog } from "@excalidraw/excalidraw/components/Dialog";
 
-import { AuthDialog } from "./AuthDialog";
+import { restoreElements } from "@excalidraw/excalidraw/data/restore";
+
+import type { BinaryFiles } from "@excalidraw/excalidraw/types";
+import type { FileId } from "@excalidraw/element/types";
+
 import {
   checkAuthStatus,
   createCloudFolder,
@@ -12,15 +22,23 @@ import {
   fetchCloudScenes,
   markCloudSceneOpened,
   renameCloudFolder,
+  saveFilesToCloud,
   updateCloudSceneMetadata,
   type CloudFolder,
   type CloudSceneSummary,
 } from "../data/cloudStorage";
+import { LocalData } from "../data/LocalData";
+import { importFromLocalStorage } from "../data/localStorage";
+
+import { AuthDialog } from "./AuthDialog";
 
 import "./WorkspaceHome.scss";
 
 type BoardView = "all" | "recent" | "favorites";
 type SortMode = "updated" | "opened" | "created";
+type LayoutMode = "grid" | "list";
+
+const LOCAL_SCENE_MIGRATION_KEY = "excalidraw-cloud-scene-migration-v1";
 
 type SceneMetadataDialogState = {
   scene: CloudSceneSummary;
@@ -58,16 +76,18 @@ const formatDate = (timestamp: number | null) => {
   if (isYesterday) {
     return `昨天 ${time}`;
   }
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate(),
-  ).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
 const formatCreatedDate = (timestamp: number) => {
   const date = new Date(timestamp);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate(),
-  ).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
 const sortScenes = (scenes: CloudSceneSummary[], sort: SortMode) =>
@@ -86,6 +106,67 @@ const sortScenes = (scenes: CloudSceneSummary[], sort: SortMode) =>
         : right.updated_at;
     return rightValue - leftValue;
   });
+
+const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
+  try {
+    if (localStorage.getItem(LOCAL_SCENE_MIGRATION_KEY)) {
+      return null;
+    }
+  } catch {
+    // Continue when localStorage is unavailable; the cloud workspace still works.
+  }
+
+  const localData = importFromLocalStorage();
+  const elements = restoreElements(localData.elements, null, {
+    repairBindings: true,
+    deleteInvisibleElements: true,
+  });
+  if (!elements.length) {
+    try {
+      localStorage.setItem(LOCAL_SCENE_MIGRATION_KEY, "empty");
+    } catch {
+      // Ignore storage errors.
+    }
+    return null;
+  }
+
+  const fileIds = [
+    ...new Set(
+      elements
+        .filter(
+          (element) =>
+            element.type === "image" &&
+            !element.isDeleted &&
+            typeof (element as any).fileId === "string",
+        )
+        .map((element) => (element as any).fileId as FileId),
+    ),
+  ];
+  const files: BinaryFiles = {};
+  if (fileIds.length) {
+    const { loadedFiles } = await LocalData.fileStorage.getFiles(fileIds);
+    for (const file of loadedFiles) {
+      files[file.id] = file;
+    }
+    try {
+      await saveFilesToCloud(files);
+    } catch (error) {
+      console.warn("迁移本地图片到云端失败，将在后续保存时重试", error);
+    }
+  }
+
+  const scene = await createCloudScene({
+    name: "本地画板",
+    elements,
+    appState: localData.appState || undefined,
+  });
+  try {
+    localStorage.setItem(LOCAL_SCENE_MIGRATION_KEY, "completed");
+  } catch {
+    // Ignore storage errors.
+  }
+  return scene;
+};
 
 const SearchIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -111,7 +192,11 @@ const ClockIcon = () => (
 );
 
 const StarIcon = ({ filled = false }: { filled?: boolean }) => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" className={filled ? "is-filled" : ""}>
+  <svg
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+    className={filled ? "is-filled" : ""}
+  >
     <path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" />
   </svg>
 );
@@ -151,7 +236,13 @@ const EmptyThumbnail = () => (
   </div>
 );
 
-const BoardThumbnail = ({ scene, eager = false }: { scene: CloudSceneSummary; eager?: boolean }) => {
+const BoardThumbnail = ({
+  scene,
+  eager = false,
+}: {
+  scene: CloudSceneSummary;
+  eager?: boolean;
+}) => {
   if (!scene.thumbnail_file_id) {
     return <EmptyThumbnail />;
   }
@@ -188,15 +279,25 @@ const BoardCard = ({
   eager?: boolean;
 }) => (
   <article className="board-card">
-    <button className="board-card-open" onClick={() => onOpen(scene)} type="button">
+    <button
+      className="board-card-open"
+      onClick={() => onOpen(scene)}
+      type="button"
+    >
       <BoardThumbnail scene={scene} eager={eager} />
       <span className="board-card-title">{scene.name || "未命名白板"}</span>
     </button>
     <div className="board-card-footer">
       <div className="board-card-details">
-        <span className="board-card-mobile-title">{scene.name || "未命名白板"}</span>
-        <span className="board-card-updated">更新于 {formatDate(scene.updated_at)}</span>
-        <span className="board-card-created">创建于 {formatCreatedDate(scene.created_at)}</span>
+        <span className="board-card-mobile-title">
+          {scene.name || "未命名白板"}
+        </span>
+        <span className="board-card-updated">
+          更新于 {formatDate(scene.updated_at)}
+        </span>
+        <span className="board-card-created">
+          创建于 {formatCreatedDate(scene.created_at)}
+        </span>
         {scene.folder_name && (
           <span className="board-card-folder">
             <FolderIcon />
@@ -214,7 +315,9 @@ const BoardCard = ({
       <div className="board-card-actions">
         <button
           type="button"
-          className={`icon-button favorite-button ${scene.favorite ? "is-favorite" : ""}`}
+          className={`icon-button favorite-button ${
+            scene.favorite ? "is-favorite" : ""
+          }`}
           aria-label={scene.favorite ? "取消收藏" : "收藏画板"}
           aria-pressed={scene.favorite}
           onClick={() => onToggleFavorite(scene)}
@@ -233,13 +336,26 @@ const BoardCard = ({
           </button>
           {menuOpen && (
             <div className="board-card-menu" role="menu">
-              <button type="button" role="menuitem" onClick={() => onEdit(scene)}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => onEdit(scene)}
+              >
                 编辑信息
               </button>
-              <button type="button" role="menuitem" onClick={() => onOpen(scene)}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => onOpen(scene)}
+              >
                 打开画板
               </button>
-              <button type="button" role="menuitem" className="danger" onClick={() => onDelete(scene)}>
+              <button
+                type="button"
+                role="menuitem"
+                className="danger"
+                onClick={() => onDelete(scene)}
+              >
                 删除画板
               </button>
             </div>
@@ -265,7 +381,12 @@ const MetadataDialog = ({
   onClose: () => void;
   onSave: () => void;
 }) => (
-  <Dialog onCloseRequest={onClose} title="编辑画板信息" className="workspace-dialog" size="small">
+  <Dialog
+    onCloseRequest={onClose}
+    title="编辑画板信息"
+    className="workspace-dialog"
+    size="small"
+  >
     <form
       className="metadata-form"
       onSubmit={(event) => {
@@ -305,7 +426,12 @@ const MetadataDialog = ({
         </select>
       </label>
       <div className="dialog-actions">
-        <button type="button" className="secondary-button" onClick={onClose} disabled={pending}>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={onClose}
+          disabled={pending}
+        >
           取消
         </button>
         <button type="submit" className="primary-button" disabled={pending}>
@@ -322,12 +448,14 @@ const FolderDialog = ({
   onChange,
   onClose,
   onSave,
+  onDelete,
 }: {
   state: FolderDialogState;
   pending: boolean;
   onChange: (name: string) => void;
   onClose: () => void;
   onSave: () => void;
+  onDelete?: () => void;
 }) => (
   <Dialog
     onCloseRequest={onClose}
@@ -352,7 +480,22 @@ const FolderDialog = ({
         />
       </label>
       <div className="dialog-actions">
-        <button type="button" className="secondary-button" onClick={onClose} disabled={pending}>
+        {state.id && onDelete && (
+          <button
+            type="button"
+            className="danger-button"
+            onClick={onDelete}
+            disabled={pending}
+          >
+            删除文件夹
+          </button>
+        )}
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={onClose}
+          disabled={pending}
+        >
           取消
         </button>
         <button type="submit" className="primary-button" disabled={pending}>
@@ -369,6 +512,7 @@ export const WorkspaceHome = () => {
   const [folders, setFolders] = useState<CloudFolder[]>([]);
   const [view, setView] = useState<BoardView>("all");
   const [sort, setSort] = useState<SortMode>("updated");
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -376,8 +520,11 @@ export const WorkspaceHome = () => {
   const [error, setError] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
   const [menuSceneId, setMenuSceneId] = useState<string | null>(null);
-  const [metadataDialog, setMetadataDialog] = useState<SceneMetadataDialogState | null>(null);
-  const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(null);
+  const [metadataDialog, setMetadataDialog] =
+    useState<SceneMetadataDialogState | null>(null);
+  const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(
+    null,
+  );
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const loadWorkspace = useCallback(async () => {
@@ -393,10 +540,21 @@ export const WorkspaceHome = () => {
         fetchCloudScenes(),
         fetchCloudFolders(),
       ]);
-      setScenes(sceneList);
+      let migratedScene: CloudSceneSummary | null = null;
+      if (sceneList.length === 0) {
+        try {
+          migratedScene = await migrateLocalScene();
+        } catch (migrationError) {
+          console.warn("迁移本地画板失败", migrationError);
+        }
+      }
+      setScenes(migratedScene ? [migratedScene] : sceneList);
       setFolders(folderList);
     } catch (requestError: any) {
-      if (requestError?.status === 401 || requestError?.code === "AUTH_REQUIRED") {
+      if (
+        requestError?.status === 401 ||
+        requestError?.code === "AUTH_REQUIRED"
+      ) {
         setAuthOpen(true);
       } else {
         setError(requestError?.message || "加载画板首页失败");
@@ -411,7 +569,10 @@ export const WorkspaceHome = () => {
   }, [loadWorkspace]);
 
   const allTags = useMemo(
-    () => [...new Set(scenes.flatMap((scene) => scene.tags))].sort((a, b) => a.localeCompare(b, "zh-CN")),
+    () =>
+      [...new Set(scenes.flatMap((scene) => scene.tags))].sort((a, b) =>
+        a.localeCompare(b, "zh-CN"),
+      ),
     [scenes],
   );
 
@@ -442,7 +603,11 @@ export const WorkspaceHome = () => {
   }, [scenes, searchQuery, selectedFolderId, selectedTag, sort, view]);
 
   const recentScenes = useMemo(
-    () => sortScenes(scenes.filter((scene) => scene.last_opened_at), "opened").slice(0, 4),
+    () =>
+      sortScenes(
+        scenes.filter((scene) => scene.last_opened_at),
+        "opened",
+      ).slice(0, 4),
     [scenes],
   );
 
@@ -481,7 +646,9 @@ export const WorkspaceHome = () => {
     }
     const nextFavorite = !scene.favorite;
     setScenes((current) =>
-      current.map((item) => (item.id === scene.id ? { ...item, favorite: nextFavorite } : item)),
+      current.map((item) =>
+        item.id === scene.id ? { ...item, favorite: nextFavorite } : item,
+      ),
     );
     setPendingAction(`favorite:${scene.id}`);
     try {
@@ -489,10 +656,14 @@ export const WorkspaceHome = () => {
         favorite: nextFavorite,
         baseRevision: scene.revision,
       });
-      setScenes((current) => current.map((item) => (item.id === scene.id ? updated : item)));
+      setScenes((current) =>
+        current.map((item) => (item.id === scene.id ? updated : item)),
+      );
     } catch (requestError: any) {
       setScenes((current) =>
-        current.map((item) => (item.id === scene.id ? { ...item, favorite: scene.favorite } : item)),
+        current.map((item) =>
+          item.id === scene.id ? { ...item, favorite: scene.favorite } : item,
+        ),
       );
       setError(requestError?.message || "更新收藏状态失败");
     } finally {
@@ -518,7 +689,9 @@ export const WorkspaceHome = () => {
         folder_id: metadataDialog.folderId || null,
         baseRevision: metadataDialog.scene.revision,
       });
-      setScenes((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setScenes((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
       setMetadataDialog(null);
     } catch (requestError: any) {
       setError(requestError?.message || "保存画板信息失败");
@@ -529,7 +702,9 @@ export const WorkspaceHome = () => {
 
   const handleDeleteScene = async (scene: CloudSceneSummary) => {
     const ownerWindow = getOwnerWindow(rootRef.current);
-    if (!ownerWindow.confirm(`确定要删除画板“${scene.name}”吗？该操作无法恢复。`)) {
+    if (
+      !ownerWindow.confirm(`确定要删除画板“${scene.name}”吗？该操作无法恢复。`)
+    ) {
       return;
     }
     setPendingAction(`delete:${scene.id}`);
@@ -551,11 +726,20 @@ export const WorkspaceHome = () => {
     setPendingAction(`folder:${folderDialog.id || "new"}`);
     try {
       if (folderDialog.id) {
-        const updated = await renameCloudFolder(folderDialog.id, folderDialog.name.trim());
-        setFolders((current) => current.map((folder) => (folder.id === updated.id ? updated : folder)));
+        const updated = await renameCloudFolder(
+          folderDialog.id,
+          folderDialog.name.trim(),
+        );
+        setFolders((current) =>
+          current.map((folder) =>
+            folder.id === updated.id ? updated : folder,
+          ),
+        );
         setScenes((current) =>
           current.map((scene) =>
-            scene.folder_id === updated.id ? { ...scene, folder_name: updated.name } : scene,
+            scene.folder_id === updated.id
+              ? { ...scene, folder_name: updated.name }
+              : scene,
           ),
         );
       } else {
@@ -572,7 +756,11 @@ export const WorkspaceHome = () => {
 
   const handleDeleteFolder = async (folder: CloudFolder) => {
     const ownerWindow = getOwnerWindow(rootRef.current);
-    if (!ownerWindow.confirm(`删除文件夹“${folder.name}”？其中的画板会移动到根目录。`)) {
+    if (
+      !ownerWindow.confirm(
+        `删除文件夹“${folder.name}”？其中的画板会移动到根目录。`,
+      )
+    ) {
       return;
     }
     setPendingAction(`delete-folder:${folder.id}`);
@@ -607,7 +795,11 @@ export const WorkspaceHome = () => {
   };
 
   return (
-    <div className="workspace-home" ref={rootRef} onClick={() => setMenuSceneId(null)}>
+    <div
+      className="workspace-home"
+      ref={rootRef}
+      onClick={() => setMenuSceneId(null)}
+    >
       <header className="workspace-header">
         <a className="workspace-brand" href="/" aria-label="返回画板首页">
           <ExcalidrawMark />
@@ -627,29 +819,64 @@ export const WorkspaceHome = () => {
             />
             <kbd>⌘K</kbd>
           </label>
-          <button className="primary-button header-create-button" type="button" onClick={handleCreateScene} disabled={!!pendingAction}>
+          <button
+            className="primary-button header-create-button"
+            type="button"
+            onClick={handleCreateScene}
+            disabled={!!pendingAction}
+          >
             <span aria-hidden="true">＋</span>
             新建画板
           </button>
-          <button className="profile-button" type="button" aria-label="个人设置">
+          <button
+            className="profile-button"
+            type="button"
+            aria-label="个人设置"
+          >
             L
           </button>
         </div>
       </header>
 
       <div className="workspace-layout">
-        <aside className="workspace-sidebar" onClick={(event) => event.stopPropagation()}>
+        <aside
+          className="workspace-sidebar"
+          onClick={(event) => event.stopPropagation()}
+        >
           <nav className="workspace-nav" aria-label="画板导航">
-            <button className={view === "all" && !selectedFolderId ? "is-selected" : ""} onClick={() => { setView("all"); setSelectedFolderId(null); }} type="button">
+            <button
+              className={
+                view === "all" && !selectedFolderId ? "is-selected" : ""
+              }
+              onClick={() => {
+                setView("all");
+                setSelectedFolderId(null);
+              }}
+              type="button"
+            >
               <GridIcon />
               所有画板
               <span>{scenes.length}</span>
             </button>
-            <button className={view === "recent" ? "is-selected" : ""} onClick={() => { setView("recent"); setSelectedFolderId(null); }} type="button">
+            <button
+              className={view === "recent" ? "is-selected" : ""}
+              onClick={() => {
+                setView("recent");
+                setSelectedFolderId(null);
+              }}
+              type="button"
+            >
               <ClockIcon />
               最近打开
             </button>
-            <button className={view === "favorites" ? "is-selected" : ""} onClick={() => { setView("favorites"); setSelectedFolderId(null); }} type="button">
+            <button
+              className={view === "favorites" ? "is-selected" : ""}
+              onClick={() => {
+                setView("favorites");
+                setSelectedFolderId(null);
+              }}
+              type="button"
+            >
               <StarIcon />
               收藏
               <span>{scenes.filter((scene) => scene.favorite).length}</span>
@@ -657,7 +884,11 @@ export const WorkspaceHome = () => {
           </nav>
           <div className="folder-heading">
             <span>文件夹</span>
-            <button type="button" aria-label="新建文件夹" onClick={() => setFolderDialog({ id: null, name: "" })}>
+            <button
+              type="button"
+              aria-label="新建文件夹"
+              onClick={() => setFolderDialog({ id: null, name: "" })}
+            >
               ＋
             </button>
           </div>
@@ -666,14 +897,26 @@ export const WorkspaceHome = () => {
               <div className="folder-row" key={folder.id}>
                 <button
                   type="button"
-                  className={selectedFolderId === folder.id ? "is-selected" : ""}
-                  onClick={() => { setSelectedFolderId(folder.id); setView("all"); }}
+                  className={
+                    selectedFolderId === folder.id ? "is-selected" : ""
+                  }
+                  onClick={() => {
+                    setSelectedFolderId(folder.id);
+                    setView("all");
+                  }}
                 >
                   <FolderIcon />
                   <span>{folder.name}</span>
                   <small>{folder.scene_count}</small>
                 </button>
-                <button type="button" className="folder-more" aria-label={`${folder.name} 文件夹操作`} onClick={() => setFolderDialog({ id: folder.id, name: folder.name })}>
+                <button
+                  type="button"
+                  className="folder-more"
+                  aria-label={`${folder.name} 文件夹操作`}
+                  onClick={() =>
+                    setFolderDialog({ id: folder.id, name: folder.name })
+                  }
+                >
                   <MoreIcon />
                 </button>
               </div>
@@ -684,12 +927,17 @@ export const WorkspaceHome = () => {
               <span>云端存储</span>
               <span>SQLite</span>
             </div>
-            <div className="storage-progress"><span /></div>
+            <div className="storage-progress">
+              <span />
+            </div>
             <span className="storage-caption">数据持续保存中</span>
           </div>
         </aside>
 
-        <main className="workspace-main" onClick={(event) => event.stopPropagation()}>
+        <main
+          className="workspace-main"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div className="workspace-main-heading">
             <div>
               <h1>我的画板</h1>
@@ -697,72 +945,164 @@ export const WorkspaceHome = () => {
             </div>
             <div className="view-toggle" role="tablist" aria-label="画板筛选">
               {(["all", "recent", "favorites"] as BoardView[]).map((item) => (
-                <button key={item} className={view === item && !selectedFolderId ? "is-selected" : ""} onClick={() => { setView(item); setSelectedFolderId(null); }} type="button" role="tab" aria-selected={view === item && !selectedFolderId}>
-                  {item === "all" ? "全部" : item === "recent" ? "最近打开" : "收藏"}
+                <button
+                  key={item}
+                  className={
+                    view === item && !selectedFolderId ? "is-selected" : ""
+                  }
+                  onClick={() => {
+                    setView(item);
+                    setSelectedFolderId(null);
+                  }}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === item && !selectedFolderId}
+                >
+                  {item === "all"
+                    ? "全部"
+                    : item === "recent"
+                    ? "最近打开"
+                    : "收藏"}
                 </button>
               ))}
             </div>
           </div>
 
-          {error && <div className="workspace-error" role="alert">{error}</div>}
-
-          {!loading && recentScenes.length > 0 && view === "all" && !searchQuery && !selectedFolderId && !selectedTag && (
-            <section className="recent-section">
-              <div className="section-heading">
-                <h2>最近打开</h2>
-                <button type="button" onClick={() => setView("recent")}>查看全部 <span aria-hidden="true">→</span></button>
-              </div>
-              <div className="recent-board-row">
-                {recentScenes.map((scene) => (
-                  <BoardCard
-                    key={scene.id}
-                    scene={scene}
-                    onOpen={navigateToScene}
-                    onToggleFavorite={handleToggleFavorite}
-                    onEdit={openMetadataDialog}
-                    onDelete={handleDeleteScene}
-                    menuOpen={menuSceneId === scene.id}
-                    onMenuToggle={() => setMenuSceneId(menuSceneId === scene.id ? null : scene.id)}
-                    eager
-                  />
-                ))}
-              </div>
-            </section>
+          {error && (
+            <div className="workspace-error" role="alert">
+              {error}
+            </div>
           )}
+
+          {!loading &&
+            recentScenes.length > 0 &&
+            view === "all" &&
+            !searchQuery &&
+            !selectedFolderId &&
+            !selectedTag && (
+              <section className="recent-section">
+                <div className="section-heading">
+                  <h2>最近打开</h2>
+                  <button type="button" onClick={() => setView("recent")}>
+                    查看全部 <span aria-hidden="true">→</span>
+                  </button>
+                </div>
+                <div className="recent-board-row">
+                  {recentScenes.map((scene) => (
+                    <BoardCard
+                      key={scene.id}
+                      scene={scene}
+                      onOpen={navigateToScene}
+                      onToggleFavorite={handleToggleFavorite}
+                      onEdit={openMetadataDialog}
+                      onDelete={handleDeleteScene}
+                      menuOpen={menuSceneId === scene.id}
+                      onMenuToggle={() =>
+                        setMenuSceneId(
+                          menuSceneId === scene.id ? null : scene.id,
+                        )
+                      }
+                      eager
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
 
           <section className="all-boards-section">
             <div className="section-heading all-boards-heading">
               <div className="section-heading-title">
-                <h2>{selectedFolderId ? folders.find((folder) => folder.id === selectedFolderId)?.name : view === "favorites" ? "收藏" : view === "recent" ? "最近打开" : "所有画板"}</h2>
+                <h2>
+                  {selectedFolderId
+                    ? folders.find((folder) => folder.id === selectedFolderId)
+                        ?.name
+                    : view === "favorites"
+                    ? "收藏"
+                    : view === "recent"
+                    ? "最近打开"
+                    : "所有画板"}
+                </h2>
                 <span>{filteredScenes.length}</span>
               </div>
               <div className="section-tools">
                 {allTags.length > 0 && (
-                  <select value={selectedTag || ""} onChange={(event) => setSelectedTag(event.target.value || null)} aria-label="按标签筛选">
+                  <select
+                    value={selectedTag || ""}
+                    onChange={(event) =>
+                      setSelectedTag(event.target.value || null)
+                    }
+                    aria-label="按标签筛选"
+                  >
                     <option value="">所有标签</option>
-                    {allTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+                    {allTags.map((tag) => (
+                      <option key={tag} value={tag}>
+                        {tag}
+                      </option>
+                    ))}
                   </select>
                 )}
-                <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} aria-label="排序方式">
+                <select
+                  value={sort}
+                  onChange={(event) => setSort(event.target.value as SortMode)}
+                  aria-label="排序方式"
+                >
                   <option value="updated">按最近修改</option>
                   <option value="opened">按最近打开</option>
                   <option value="created">按创建时间</option>
                 </select>
-                <button className="list-mode-button" type="button" aria-label="网格视图"><GridIcon /></button>
+                <button
+                  className="list-mode-button"
+                  type="button"
+                  aria-label={layoutMode === "grid" ? "列表视图" : "网格视图"}
+                  title={
+                    layoutMode === "grid" ? "切换到列表视图" : "切换到网格视图"
+                  }
+                  onClick={() =>
+                    setLayoutMode((current) =>
+                      current === "grid" ? "list" : "grid",
+                    )
+                  }
+                >
+                  <GridIcon />
+                </button>
               </div>
             </div>
 
             {loading ? (
-              <div className="workspace-empty-state loading-state">正在加载画板...</div>
+              <div className="workspace-empty-state loading-state">
+                正在加载画板...
+              </div>
             ) : filteredScenes.length === 0 ? (
               <div className="workspace-empty-state">
-                <div className="empty-state-icon"><ExcalidrawMark /></div>
-                <h3>{searchQuery || selectedTag || selectedFolderId ? "没有找到匹配的画板" : "还没有画板"}</h3>
-                <p>{searchQuery || selectedTag || selectedFolderId ? "试试更换关键词或筛选条件。" : "创建一个画板，把下一个想法画出来。"}</p>
-                {!searchQuery && !selectedTag && !selectedFolderId && <button className="primary-button" type="button" onClick={handleCreateScene}>新建第一个画板</button>}
+                <div className="empty-state-icon">
+                  <ExcalidrawMark />
+                </div>
+                <h3>
+                  {searchQuery || selectedTag || selectedFolderId
+                    ? "没有找到匹配的画板"
+                    : "还没有画板"}
+                </h3>
+                <p>
+                  {searchQuery || selectedTag || selectedFolderId
+                    ? "试试更换关键词或筛选条件。"
+                    : "创建一个画板，把下一个想法画出来。"}
+                </p>
+                {!searchQuery && !selectedTag && !selectedFolderId && (
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={handleCreateScene}
+                  >
+                    新建第一个画板
+                  </button>
+                )}
               </div>
             ) : (
-              <div className="board-grid">
+              <div
+                className={`board-grid ${
+                  layoutMode === "list" ? "is-list" : ""
+                }`}
+              >
                 {filteredScenes.map((scene) => (
                   <BoardCard
                     key={scene.id}
@@ -772,7 +1112,9 @@ export const WorkspaceHome = () => {
                     onEdit={openMetadataDialog}
                     onDelete={handleDeleteScene}
                     menuOpen={menuSceneId === scene.id}
-                    onMenuToggle={() => setMenuSceneId(menuSceneId === scene.id ? null : scene.id)}
+                    onMenuToggle={() =>
+                      setMenuSceneId(menuSceneId === scene.id ? null : scene.id)
+                    }
                   />
                 ))}
               </div>
@@ -786,7 +1128,11 @@ export const WorkspaceHome = () => {
           state={metadataDialog}
           folders={folders}
           pending={pendingAction === `metadata:${metadataDialog.scene.id}`}
-          onChange={(next) => setMetadataDialog((current) => current ? { ...current, ...next } : current)}
+          onChange={(next) =>
+            setMetadataDialog((current) =>
+              current ? { ...current, ...next } : current,
+            )
+          }
           onClose={() => setMetadataDialog(null)}
           onSave={() => void handleSaveMetadata()}
         />
@@ -795,9 +1141,19 @@ export const WorkspaceHome = () => {
         <FolderDialog
           state={folderDialog}
           pending={pendingAction === `folder:${folderDialog.id || "new"}`}
-          onChange={(name) => setFolderDialog((current) => current ? { ...current, name } : current)}
+          onChange={(name) =>
+            setFolderDialog((current) =>
+              current ? { ...current, name } : current,
+            )
+          }
           onClose={() => setFolderDialog(null)}
           onSave={() => void handleSaveFolder()}
+          onDelete={() => {
+            const folder = folders.find((item) => item.id === folderDialog.id);
+            if (folder) {
+              void handleDeleteFolder(folder);
+            }
+          }}
         />
       )}
       <AuthDialog

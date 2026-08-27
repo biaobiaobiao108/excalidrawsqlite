@@ -414,7 +414,9 @@ describe("cloud persistence server", () => {
     const thumbnailResult = await responseJson<{
       thumbnail_file_id: string;
     }>(thumbnail);
-    expect(thumbnailResult.thumbnail_file_id).toMatch(/^thumbnail_[a-f0-9]{64}$/);
+    expect(thumbnailResult.thumbnail_file_id).toMatch(
+      /^thumbnail_[a-f0-9]{64}$/,
+    );
 
     const updated = await jsonRequest(
       handler,
@@ -457,9 +459,9 @@ describe("cloud persistence server", () => {
     const scene = await request(handler, "/api/scenes/scene_metadata", {
       headers: { Cookie: cookie },
     });
-    expect((await responseJson<{ folder_id: string | null }>(scene)).folder_id).toBe(
-      null,
-    );
+    expect(
+      (await responseJson<{ folder_id: string | null }>(scene)).folder_id,
+    ).toBe(null);
   });
 
   it("rejects oversized, invalid and traversal file requests", async () => {
