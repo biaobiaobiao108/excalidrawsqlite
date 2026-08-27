@@ -721,8 +721,23 @@
   stroke: #f2ad22;
 }
 
+.icon-button.danger:hover,
+.icon-button.danger:focus-visible {
+  background: #fdf2f2;
+  color: #e03131;
+}
+
 .favorite-button.is-favorite {
   color: #e9a621;
+}
+
+.board-card.is-trash-card {
+  opacity: 0.88;
+}
+
+.board-card-open.is-disabled {
+  cursor: default;
+  user-select: none;
 }
 
 .board-card-menu-wrap {

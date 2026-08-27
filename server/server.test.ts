@@ -338,7 +338,7 @@ describe("cloud persistence server", () => {
     );
     expect(createScene.status).toBe(201);
 
-    const deleted = await request(handler, "/api/scenes/scene_delete", {
+    const deleted = await request(handler, "/api/scenes/scene_delete?permanent=true", {
       method: "DELETE",
       headers: { Cookie: cookie },
     });
@@ -356,6 +356,111 @@ describe("cloud persistence server", () => {
         count: number;
       },
     ).toEqual({ count: 0 });
+  });
+
+  it("persists sessions across runtime restarts", async () => {
+    const { runtime, directory, handler } = createTestRuntime();
+    const cookie = await authenticate(handler);
+
+    // Verify session works on current runtime
+    const initialStatus = await request(handler, "/api/auth/status", {
+      headers: { Cookie: cookie },
+    });
+    expect(initialStatus.status).toBe(200);
+    expect(await responseJson<{ authenticated: boolean }>(initialStatus)).toEqual({
+      authRequired: true,
+      authenticated: true,
+    });
+
+    // Close runtime and create a new runtime with empty in-memory sessions pointing to same db
+    runtime.db.close();
+    const config = createServerConfig({
+      NODE_ENV: "test",
+      AUTH_PASSWORD: "test-password",
+    });
+    const restartedRuntime = createRuntime({
+      dbPath: path.join(directory, "excalidraw.db"),
+      filesDir: path.join(directory, "files"),
+      config,
+    });
+    runtimes.push(restartedRuntime);
+    const restartedHandler = createRequestHandler(restartedRuntime);
+
+    // Verify session is restored from SQLite
+    const restoredStatus = await request(restartedHandler, "/api/auth/status", {
+      headers: { Cookie: cookie },
+    });
+    expect(restoredStatus.status).toBe(200);
+    expect(await responseJson<{ authenticated: boolean }>(restoredStatus)).toEqual({
+      authRequired: true,
+      authenticated: true,
+    });
+  });
+
+  it("supports soft deleting scenes, trash viewing, restoring and permanent deletion", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+
+    // Create scene
+    await jsonRequest(
+      handler,
+      "/api/scenes",
+      { id: "scene_trash_test", name: "待删除画板", elements: [], appState: {} },
+      { headers: { Cookie: cookie } },
+    );
+
+    // 1. Soft delete
+    const softDelete = await request(handler, "/api/scenes/scene_trash_test", {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(softDelete.status).toBe(200);
+    const softDeleteBody = await responseJson<{ permanent: boolean }>(softDelete);
+    expect(softDeleteBody.permanent).toBe(false);
+
+    // 2. Normal /api/scenes should not contain it
+    const activeList = await request(handler, "/api/scenes", {
+      headers: { Cookie: cookie },
+    });
+    expect(await responseJson<Array<{ id: string }>>(activeList)).toEqual([]);
+
+    // 3. /api/scenes/trash should contain it
+    const trashList = await request(handler, "/api/scenes/trash", {
+      headers: { Cookie: cookie },
+    });
+    const trashItems = await responseJson<Array<{ id: string; name: string; deleted_at: number | null }>>(trashList);
+    expect(trashItems.length).toBe(1);
+    expect(trashItems[0].id).toBe("scene_trash_test");
+    expect(trashItems[0].deleted_at).toBeTruthy();
+
+    // 4. Restore scene
+    const restoreRes = await request(handler, "/api/scenes/scene_trash_test/restore", {
+      method: "POST",
+      headers: { Cookie: cookie },
+    });
+    expect(restoreRes.status).toBe(200);
+
+    // 5. Normal /api/scenes should contain it again
+    const activeAfterRestore = await request(handler, "/api/scenes", {
+      headers: { Cookie: cookie },
+    });
+    const activeItems = await responseJson<Array<{ id: string }>>(activeAfterRestore);
+    expect(activeItems.length).toBe(1);
+    expect(activeItems[0].id).toBe("scene_trash_test");
+
+    // 6. Permanent delete
+    const permanentDelete = await request(handler, "/api/scenes/scene_trash_test?permanent=true", {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(permanentDelete.status).toBe(200);
+    expect((await responseJson<{ permanent: boolean }>(permanentDelete)).permanent).toBe(true);
+
+    // 7. Should be absent from both active and trash
+    const trashAfterPerm = await request(handler, "/api/scenes/trash", {
+      headers: { Cookie: cookie },
+    });
+    expect(await responseJson<Array<unknown>>(trashAfterPerm)).toEqual([]);
   });
 
   it("persists board metadata, folders, recent opens and thumbnails", async () => {

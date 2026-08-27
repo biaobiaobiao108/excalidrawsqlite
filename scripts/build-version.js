@@ -46,16 +46,8 @@ const data = JSON.stringify(
 
 fs.writeFileSync(versionFile, data);
 
-// https://stackoverflow.com/a/14181136/8418
-fs.readFile(indexFile, "utf8", (error, data) => {
-  if (error) {
-    return console.error(error);
-  }
-  const result = data.replace(/{version}/g, getFullVersion());
-
-  fs.writeFile(indexFile, result, "utf8", (error) => {
-    if (error) {
-      return console.error(error);
-    }
-  });
-});
+if (fs.existsSync(indexFile)) {
+  const content = fs.readFileSync(indexFile, "utf8");
+  const result = content.replace(/{version}/g, getFullVersion());
+  fs.writeFileSync(indexFile, result, "utf8");
+}

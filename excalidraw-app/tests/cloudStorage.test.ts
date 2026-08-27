@@ -4,8 +4,11 @@ import type { FileId } from "@excalidraw/element/types";
 import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 
 import {
+  deleteCloudScene,
   fetchCloudFiles,
   fetchCloudScenes,
+  fetchCloudTrashScenes,
+  restoreCloudScene,
   saveFilesToCloud,
   verifyAuthPassword,
 } from "../data/cloudStorage";
@@ -110,5 +113,48 @@ describe("cloud storage", () => {
 
     await expect(fetchCloudScenes()).resolves.toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("handles trash retrieval, scene restoration, and permanent deletion", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((input: RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/api/scenes/trash")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([{ id: "scene-1", name: "已删除", deleted_at: 1000 }]),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.endsWith("/api/scenes/scene-1/restore") && init?.method === "POST") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ success: true, id: "scene-1", restored: true }), {
+              status: 200,
+            }),
+          );
+        }
+        if (url.includes("/api/scenes/scene-1?permanent=true") && init?.method === "DELETE") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ success: true, id: "scene-1", deleted: true }), {
+              status: 200,
+            }),
+          );
+        }
+        return Promise.resolve(new Response(null, { status: 404 }));
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const trash = await fetchCloudTrashScenes();
+    expect(trash).toEqual([
+      expect.objectContaining({ id: "scene-1", name: "已删除" }),
+    ]);
+
+    const restored = await restoreCloudScene("scene-1");
+    expect(restored).toBe(true);
+
+    const permanentlyDeleted = await deleteCloudScene("scene-1", true);
+    expect(permanentlyDeleted).toBe(true);
   });
 });

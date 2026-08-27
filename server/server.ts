@@ -201,10 +201,19 @@ export const initializeDatabase = (db: Database) => {
   ensureColumn(db, "scenes", "folder_id", "TEXT");
   ensureColumn(db, "scenes", "last_opened_at", "INTEGER");
   ensureColumn(db, "scenes", "thumbnail_file_id", "TEXT");
+  ensureColumn(db, "scenes", "deleted_at", "INTEGER");
   ensureColumn(db, "files", "storage_path", "TEXT");
   ensureColumn(db, "files", "byte_size", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "files", "sha256", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "files", "updated_at", "INTEGER NOT NULL DEFAULT 0");
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `);
 
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_scenes_updated_at ON scenes(updated_at DESC)",
@@ -213,10 +222,16 @@ export const initializeDatabase = (db: Database) => {
     "CREATE INDEX IF NOT EXISTS idx_scenes_last_opened_at ON scenes(last_opened_at DESC)",
   );
   db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_deleted_at ON scenes(deleted_at)",
+  );
+  db.run(
     "CREATE INDEX IF NOT EXISTS idx_scenes_folder_id ON scenes(folder_id)",
   );
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_scene_files_file_id ON scene_files(file_id)",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",
   );
 };
 
@@ -262,6 +277,11 @@ export const cleanupExpiredSessions = (runtime: ServerRuntime, now: number) => {
     if (expiresAt <= now) {
       runtime.sessions.delete(token);
     }
+  }
+  try {
+    runtime.db.run("DELETE FROM sessions WHERE expires_at <= ?", [now]);
+  } catch (error) {
+    console.error("[Sessions] cleanup failed", error);
   }
 };
 
@@ -639,7 +659,16 @@ const getSessionToken = (runtime: ServerRuntime, req: Request) => {
 
 const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
   const token = randomBytes(32).toString("base64url");
-  runtime.sessions.set(token, Date.now() + runtime.config.sessionTtlMs);
+  const expiresAt = Date.now() + runtime.config.sessionTtlMs;
+  runtime.sessions.set(token, expiresAt);
+  try {
+    runtime.db.run(
+      "INSERT OR REPLACE INTO sessions (token, expires_at, created_at) VALUES (?, ?, ?)",
+      [token, expiresAt, Date.now()],
+    );
+  } catch (error) {
+    console.error("[Sessions] failed to persist session", error);
+  }
   const secure = isSecureRequest(runtime, req);
   const name =
     runtime.config.nodeEnv === "production" && secure
@@ -668,9 +697,30 @@ const isAuthorized = (runtime: ServerRuntime, req: Request) => {
     return true;
   }
   const token = getSessionToken(runtime, req);
-  const expiresAt = runtime.sessions.get(token);
+  if (!token) {
+    return false;
+  }
+  let expiresAt = runtime.sessions.get(token);
+  if (expiresAt === undefined) {
+    try {
+      const row = runtime.db
+        .query("SELECT expires_at FROM sessions WHERE token = ?")
+        .get(token) as { expires_at: number } | null;
+      if (row) {
+        expiresAt = row.expires_at;
+        runtime.sessions.set(token, expiresAt);
+      }
+    } catch (error) {
+      console.error("[Sessions] query failed", error);
+    }
+  }
   if (!expiresAt || expiresAt <= Date.now()) {
     runtime.sessions.delete(token);
+    try {
+      runtime.db.run("DELETE FROM sessions WHERE token = ?", [token]);
+    } catch {
+      // ignore
+    }
     return false;
   }
   return true;
@@ -1077,6 +1127,7 @@ const parseStoredScene = (row: any) => {
       folder_id: row.folder_id || null,
       last_opened_at: row.last_opened_at || null,
       thumbnail_file_id: row.thumbnail_file_id || null,
+      deleted_at: row.deleted_at || null,
       revision: Number(row.revision) || 1,
     };
   } catch {
@@ -1097,6 +1148,7 @@ const getSceneSummary = (row: any) => ({
   folder_name: row.folder_name || null,
   last_opened_at: row.last_opened_at || null,
   thumbnail_file_id: row.thumbnail_file_id || null,
+  deleted_at: row.deleted_at || null,
 });
 
 const assertFolderExists = (
@@ -1532,7 +1584,14 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
 
       if (pathname === "/api/auth/logout" && req.method === "POST") {
         const token = getSessionToken(runtime, req);
-        runtime.sessions.delete(token);
+        if (token) {
+          runtime.sessions.delete(token);
+          try {
+            runtime.db.run("DELETE FROM sessions WHERE token = ?", [token]);
+          } catch {
+            // ignore
+          }
+        }
         const headers = new Headers({
           "Clear-Site-Data": '"cookies"',
         });
@@ -1581,11 +1640,30 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
             `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
                     scenes.revision, length(scenes.elements) AS size,
                     scenes.tags_json, scenes.is_favorite, scenes.folder_id,
-                    scenes.last_opened_at, scenes.thumbnail_file_id,
+                    scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
                     folders.name AS folder_name
              FROM scenes
              LEFT JOIN folders ON folders.id = scenes.folder_id
+             WHERE scenes.deleted_at IS NULL
              ORDER BY scenes.updated_at DESC`,
+          )
+          .all()
+          .map(getSceneSummary);
+        return jsonResponse(runtime, req, rows);
+      }
+
+      if (pathname === "/api/scenes/trash" && req.method === "GET") {
+        const rows = runtime.db
+          .query(
+            `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
+                    scenes.revision, length(scenes.elements) AS size,
+                    scenes.tags_json, scenes.is_favorite, scenes.folder_id,
+                    scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
+                    folders.name AS folder_name
+             FROM scenes
+             LEFT JOIN folders ON folders.id = scenes.folder_id
+             WHERE scenes.deleted_at IS NOT NULL
+             ORDER BY scenes.deleted_at DESC`,
           )
           .all()
           .map(getSceneSummary);
@@ -1760,13 +1838,35 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         return jsonResponse(runtime, req, { success: true, id, deleted: true });
       }
 
+      if (
+        pathname.startsWith("/api/scenes/") &&
+        pathname.endsWith("/restore") &&
+        req.method === "POST"
+      ) {
+        const id = getPathId(
+          pathname.slice(0, -"/restore".length),
+          "/api/scenes/",
+          "scene",
+        );
+        const existing = runtime.db
+          .query("SELECT id, deleted_at FROM scenes WHERE id = ?")
+          .get(id) as { id: string; deleted_at: number | null } | null;
+        if (!existing) {
+          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+        }
+        runtime.db.run("UPDATE scenes SET deleted_at = NULL WHERE id = ?", [
+          id,
+        ]);
+        return jsonResponse(runtime, req, { success: true, id, restored: true });
+      }
+
       if (pathname.startsWith("/api/scenes/") && req.method === "GET") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
         const row = runtime.db
-          .query("SELECT * FROM scenes WHERE id = ?")
+          .query("SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL")
           .get(id);
         if (!row) {
-          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
         return jsonResponse(runtime, req, parseStoredScene(row));
       }
@@ -1782,10 +1882,10 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           "scene",
         );
         const existing = runtime.db
-          .query("SELECT id FROM scenes WHERE id = ?")
+          .query("SELECT id FROM scenes WHERE id = ? AND deleted_at IS NULL")
           .get(id);
         if (!existing) {
-          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
         const lastOpenedAt = Date.now();
         runtime.db.run("UPDATE scenes SET last_opened_at = ? WHERE id = ?", [
@@ -1806,10 +1906,10 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           "scene",
         );
         const existing = runtime.db
-          .query("SELECT id FROM scenes WHERE id = ?")
+          .query("SELECT id FROM scenes WHERE id = ? AND deleted_at IS NULL")
           .get(id);
         if (!existing) {
-          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
         const contentType = req.headers.get("content-type")?.toLowerCase();
         if (
@@ -1854,10 +1954,10 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         }
         const baseRevision = requireRevision(body.baseRevision);
         const existing = runtime.db
-          .query("SELECT * FROM scenes WHERE id = ?")
+          .query("SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL")
           .get(id) as { revision: number } | null;
         if (!existing) {
-          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
         if (baseRevision !== undefined && baseRevision !== existing.revision) {
           throw new HttpError(
@@ -1893,7 +1993,7 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
             `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
                     scenes.revision, length(scenes.elements) AS size,
                     scenes.tags_json, scenes.is_favorite, scenes.folder_id,
-                    scenes.last_opened_at, scenes.thumbnail_file_id,
+                    scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
                     folders.name AS folder_name
              FROM scenes
              LEFT JOIN folders ON folders.id = scenes.folder_id
@@ -1909,10 +2009,10 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           await readJson(req, runtime.config.maxSceneBodyBytes),
         );
         const existing = runtime.db
-          .query("SELECT * FROM scenes WHERE id = ?")
+          .query("SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL")
           .get(id) as any;
         if (!existing) {
-          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
         const baseRevision = requireRevision(body.baseRevision);
         const currentRevision = Number(existing.revision) || 1;
@@ -1970,8 +2070,8 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
       if (pathname.startsWith("/api/scenes/") && req.method === "DELETE") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
         const existing = runtime.db
-          .query("SELECT id FROM scenes WHERE id = ?")
-          .get(id);
+          .query("SELECT id, deleted_at FROM scenes WHERE id = ?")
+          .get(id) as { id: string; deleted_at: number | null } | null;
         if (!existing) {
           return jsonResponse(runtime, req, {
             success: true,
@@ -1979,12 +2079,32 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
             deleted: false,
           });
         }
-        const transaction = runtime.db.transaction(() => {
-          runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [id]);
-          runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
+        const isPermanent = url.searchParams.get("permanent") === "true";
+        if (isPermanent) {
+          const transaction = runtime.db.transaction(() => {
+            runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [id]);
+            runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
+          });
+          transaction();
+          return jsonResponse(runtime, req, {
+            success: true,
+            id,
+            deleted: true,
+            permanent: true,
+          });
+        }
+        const now = Date.now();
+        runtime.db.run("UPDATE scenes SET deleted_at = ? WHERE id = ?", [
+          now,
+          id,
+        ]);
+        return jsonResponse(runtime, req, {
+          success: true,
+          id,
+          deleted: true,
+          permanent: false,
+          deleted_at: now,
         });
-        transaction();
-        return jsonResponse(runtime, req, { success: true, id, deleted: true });
       }
 
       if (pathname === "/api/files" && req.method === "POST") {

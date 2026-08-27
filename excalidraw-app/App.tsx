@@ -448,7 +448,7 @@ const waitForCloudFiles = async (
   }
 };
 
-const ExcalidrawWrapper = () => {
+const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   const excalidrawAPI = useExcalidrawAPI();
 
   const [errorMessage, setErrorMessage] = useState("");
@@ -1781,8 +1781,9 @@ const ExcalidrawWrapper = () => {
           isCollabEnabled={!isCollabDisabled}
           theme={appTheme}
           refresh={() => forceRefresh((prev) => !prev)}
-          onOpenCloudScenes={() =>
-            window.location.assign(window.location.pathname)
+          onOpenCloudScenes={
+            props.onNavigateHome ||
+            (() => window.location.assign(window.location.pathname))
           }
         />
         <AppWelcomeScreen
@@ -2002,19 +2003,46 @@ const ExcalidrawWrapper = () => {
 };
 
 const ExcalidrawApp = () => {
-  const location = new URL(window.location.href);
+  const [currentUrl, setCurrentUrl] = useState(() => window.location.href);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentUrl(window.location.href);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  const location = new URL(currentUrl);
+  const sceneId = location.searchParams.get("id");
   const hasExternalSceneHash =
     /^#json=/.test(location.hash) || /^#url=/.test(location.hash);
   const shouldRenderWorkspaceHome =
-    !location.searchParams.get("id") &&
+    !sceneId &&
     !hasExternalSceneHash &&
     !isCollaborationLink(location.href);
+
+  const navigateToScene = useCallback((targetSceneId: string) => {
+    const url = new URL(window.location.href);
+    url.search = `?id=${encodeURIComponent(targetSceneId)}`;
+    url.hash = "";
+    window.history.pushState(null, "", `${url.pathname}${url.search}`);
+    setCurrentUrl(window.location.href);
+  }, []);
+
+  const navigateToWorkspace = useCallback(() => {
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.hash = "";
+    window.history.pushState(null, "", `${url.pathname}`);
+    setCurrentUrl(window.location.href);
+  }, []);
 
   if (shouldRenderWorkspaceHome) {
     return (
       <TopErrorBoundary>
         <Provider store={appJotaiStore}>
-          <WorkspaceHome />
+          <WorkspaceHome onSelectScene={navigateToScene} />
         </Provider>
       </TopErrorBoundary>
     );
@@ -2024,7 +2052,10 @@ const ExcalidrawApp = () => {
     <TopErrorBoundary>
       <Provider store={appJotaiStore}>
         <ExcalidrawAPIProvider>
-          <ExcalidrawWrapper />
+          <ExcalidrawWrapper
+            key={sceneId || currentUrl}
+            onNavigateHome={navigateToWorkspace}
+          />
         </ExcalidrawAPIProvider>
       </Provider>
     </TopErrorBoundary>

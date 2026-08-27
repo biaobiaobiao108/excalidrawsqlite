@@ -17,6 +17,7 @@ export interface CloudSceneSummary {
   folder_name: string | null;
   last_opened_at: number | null;
   thumbnail_file_id: string | null;
+  deleted_at?: number | null;
 }
 
 export interface CloudSceneData {
@@ -411,14 +412,39 @@ export async function renameCloudScene(
   );
 }
 
-export async function deleteCloudScene(id: string): Promise<boolean> {
+export async function fetchCloudTrashScenes(): Promise<CloudSceneSummary[]> {
+  return fetchJson(
+    "/api/scenes/trash",
+    { headers: getHeaders() },
+    "获取回收站画板失败",
+    CLOUD_READ_RETRIES,
+  );
+}
+
+export async function restoreCloudScene(id: string): Promise<boolean> {
+  const result = await fetchJson<{ success: boolean; id: string; restored: boolean }>(
+    `/api/scenes/${encodeURIComponent(id)}/restore`,
+    {
+      method: "POST",
+      headers: getHeaders(),
+    },
+    "还原画板失败",
+  );
+  return result.success;
+}
+
+export async function deleteCloudScene(
+  id: string,
+  permanent = false,
+): Promise<boolean> {
+  const query = permanent ? "?permanent=true" : "";
   const result = await fetchJson<{ success: boolean }>(
-    `/api/scenes/${encodeURIComponent(id)}`,
+    `/api/scenes/${encodeURIComponent(id)}${query}`,
     {
       method: "DELETE",
       headers: getHeaders(),
     },
-    "删除云端画板失败",
+    permanent ? "彻底删除画板失败" : "删除画板失败",
   );
   return result.success;
 }
@@ -457,12 +483,23 @@ export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
         "加载云端图片失败",
       );
       await assertResponse(res, "加载云端图片失败");
-      const blob = await res.blob();
+      const contentType =
+        res.headers.get("content-type")?.split(";")[0].trim() ||
+        "application/octet-stream";
+      const buffer = await res.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let index = 0; index < bytes.length; index += chunkSize) {
+        binary += String.fromCharCode(
+          ...bytes.subarray(index, Math.min(index + chunkSize, bytes.length)),
+        );
+      }
+      const dataURL = `data:${contentType};base64,${btoa(binary)}`;
       loadedFiles.push({
         id,
-        mimeType: (blob.type ||
-          "application/octet-stream") as BinaryFileData["mimeType"],
-        dataURL: (await blobToDataUrl(blob)) as BinaryFileData["dataURL"],
+        mimeType: contentType as BinaryFileData["mimeType"],
+        dataURL: dataURL as BinaryFileData["dataURL"],
         created: Number(res.headers.get("X-File-Created-At")) || Date.now(),
       });
     } catch (error) {

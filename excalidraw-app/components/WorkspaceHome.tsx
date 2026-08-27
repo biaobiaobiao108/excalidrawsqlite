@@ -18,8 +18,10 @@ import {
   deleteCloudScene,
   fetchCloudFolders,
   fetchCloudScenes,
+  fetchCloudTrashScenes,
   markCloudSceneOpened,
   renameCloudFolder,
+  restoreCloudScene,
   saveFilesToCloud,
   updateCloudSceneMetadata,
   type CloudFolder,
@@ -32,7 +34,7 @@ import { AuthDialog } from "./AuthDialog";
 
 import "./WorkspaceHome.scss";
 
-type BoardView = "all" | "recent" | "favorites";
+type BoardView = "all" | "recent" | "favorites" | "trash";
 type SortMode = "updated" | "opened" | "created";
 type LayoutMode = "grid" | "list";
 
@@ -213,6 +215,21 @@ const MoreIcon = () => (
   </svg>
 );
 
+const TrashIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M3 6h18" />
+    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+  </svg>
+);
+
+const RestoreIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <polyline points="1 4 1 10 7 10" />
+    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+  </svg>
+);
+
 const ExcalidrawMark = () => (
   <div className="workspace-mark" aria-hidden="true">
     <svg viewBox="0 0 32 32">
@@ -263,6 +280,8 @@ const BoardCard = ({
   onToggleFavorite,
   onEdit,
   onDelete,
+  onRestore,
+  isTrash = false,
   menuOpen,
   onMenuToggle,
   eager,
@@ -272,37 +291,54 @@ const BoardCard = ({
   onToggleFavorite: (scene: CloudSceneSummary) => void;
   onEdit: (scene: CloudSceneSummary) => void;
   onDelete: (scene: CloudSceneSummary) => void;
+  onRestore?: (scene: CloudSceneSummary) => void;
+  isTrash?: boolean;
   menuOpen: boolean;
   onMenuToggle: () => void;
   eager?: boolean;
 }) => (
-  <article className="board-card">
-    <button
-      className="board-card-open"
-      onClick={() => onOpen(scene)}
-      type="button"
-    >
-      <BoardThumbnail scene={scene} eager={eager} />
-      <span className="board-card-title">{scene.name || "未命名白板"}</span>
-    </button>
+  <article className={`board-card ${isTrash ? "is-trash-card" : ""}`}>
+    {isTrash ? (
+      <div className="board-card-open is-disabled" title="已在回收站中，还原后可打开">
+        <BoardThumbnail scene={scene} eager={eager} />
+        <span className="board-card-title">{scene.name || "未命名白板"}</span>
+      </div>
+    ) : (
+      <button
+        className="board-card-open"
+        onClick={() => onOpen(scene)}
+        type="button"
+      >
+        <BoardThumbnail scene={scene} eager={eager} />
+        <span className="board-card-title">{scene.name || "未命名白板"}</span>
+      </button>
+    )}
     <div className="board-card-footer">
       <div className="board-card-details">
         <span className="board-card-mobile-title">
           {scene.name || "未命名白板"}
         </span>
-        <span className="board-card-updated">
-          更新于 {formatDate(scene.updated_at)}
-        </span>
-        <span className="board-card-created">
-          创建于 {formatCreatedDate(scene.created_at)}
-        </span>
-        {scene.folder_name && (
+        {isTrash && scene.deleted_at ? (
+          <span className="board-card-updated">
+            删除于 {formatDate(scene.deleted_at)}
+          </span>
+        ) : (
+          <>
+            <span className="board-card-updated">
+              更新于 {formatDate(scene.updated_at)}
+            </span>
+            <span className="board-card-created">
+              创建于 {formatCreatedDate(scene.created_at)}
+            </span>
+          </>
+        )}
+        {scene.folder_name && !isTrash && (
           <span className="board-card-folder">
             <FolderIcon />
             {scene.folder_name}
           </span>
         )}
-        {scene.tags.length > 0 && (
+        {scene.tags.length > 0 && !isTrash && (
           <div className="board-card-tags">
             {scene.tags.slice(0, 2).map((tag) => (
               <span key={tag}>{tag}</span>
@@ -311,54 +347,81 @@ const BoardCard = ({
         )}
       </div>
       <div className="board-card-actions">
-        <button
-          type="button"
-          className={`icon-button favorite-button ${
-            scene.favorite ? "is-favorite" : ""
-          }`}
-          aria-label={scene.favorite ? "取消收藏" : "收藏画板"}
-          aria-pressed={scene.favorite}
-          onClick={() => onToggleFavorite(scene)}
-        >
-          <StarIcon filled={scene.favorite} />
-        </button>
-        <div className="board-card-menu-wrap">
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="更多画板操作"
-            aria-expanded={menuOpen}
-            onClick={onMenuToggle}
-          >
-            <MoreIcon />
-          </button>
-          {menuOpen && (
-            <div className="board-card-menu" role="menu">
+        {isTrash ? (
+          <>
+            {onRestore && (
               <button
                 type="button"
-                role="menuitem"
-                onClick={() => onEdit(scene)}
+                className="icon-button"
+                aria-label="还原画板"
+                title="还原画板"
+                onClick={() => onRestore(scene)}
               >
-                编辑信息
+                <RestoreIcon />
               </button>
+            )}
+            <button
+              type="button"
+              className="icon-button danger"
+              aria-label="彻底删除"
+              title="彻底删除"
+              onClick={() => onDelete(scene)}
+            >
+              <TrashIcon />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className={`icon-button favorite-button ${
+                scene.favorite ? "is-favorite" : ""
+              }`}
+              aria-label={scene.favorite ? "取消收藏" : "收藏画板"}
+              aria-pressed={scene.favorite}
+              onClick={() => onToggleFavorite(scene)}
+            >
+              <StarIcon filled={scene.favorite} />
+            </button>
+            <div className="board-card-menu-wrap">
               <button
                 type="button"
-                role="menuitem"
-                onClick={() => onOpen(scene)}
+                className="icon-button"
+                aria-label="更多画板操作"
+                aria-expanded={menuOpen}
+                onClick={onMenuToggle}
               >
-                打开画板
+                <MoreIcon />
               </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="danger"
-                onClick={() => onDelete(scene)}
-              >
-                删除画板
-              </button>
+              {menuOpen && (
+                <div className="board-card-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => onEdit(scene)}
+                  >
+                    编辑信息
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => onOpen(scene)}
+                  >
+                    打开画板
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="danger"
+                    onClick={() => onDelete(scene)}
+                  >
+                    移至回收站
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   </article>
@@ -533,9 +596,15 @@ const FolderDialog = ({
   </WorkspaceModal>
 );
 
-export const WorkspaceHome = () => {
+export const WorkspaceHome = ({
+  onSelectScene,
+}: {
+  onSelectScene?: (sceneId: string) => void;
+}) => {
   const rootRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [scenes, setScenes] = useState<CloudSceneSummary[]>([]);
+  const [trashScenes, setTrashScenes] = useState<CloudSceneSummary[]>([]);
   const [folders, setFolders] = useState<CloudFolder[]>([]);
   const [view, setView] = useState<BoardView>("all");
   const [sort, setSort] = useState<SortMode>("updated");
@@ -563,12 +632,13 @@ export const WorkspaceHome = () => {
         setAuthOpen(true);
         return;
       }
-      const [sceneList, folderList] = await Promise.all([
+      const [sceneList, folderList, trashList] = await Promise.all([
         fetchCloudScenes(),
         fetchCloudFolders(),
+        fetchCloudTrashScenes().catch(() => []),
       ]);
       let migratedScene: CloudSceneSummary | null = null;
-      if (sceneList.length === 0) {
+      if (sceneList.length === 0 && trashList.length === 0) {
         try {
           migratedScene = await migrateLocalScene();
         } catch (migrationError) {
@@ -577,6 +647,7 @@ export const WorkspaceHome = () => {
       }
       setScenes(migratedScene ? [migratedScene] : sceneList);
       setFolders(folderList);
+      setTrashScenes(trashList);
     } catch (requestError: any) {
       if (
         requestError?.status === 401 ||
@@ -595,6 +666,21 @@ export const WorkspaceHome = () => {
     void loadWorkspace();
   }, [loadWorkspace]);
 
+  useEffect(() => {
+    const ownerWindow = getOwnerWindow(rootRef.current);
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    ownerWindow.addEventListener("keydown", handleGlobalKeyDown);
+    return () => {
+      ownerWindow.removeEventListener("keydown", handleGlobalKeyDown);
+    };
+  }, []);
+
   const allTags = useMemo(
     () =>
       [...new Set(scenes.flatMap((scene) => scene.tags))].sort((a, b) =>
@@ -604,8 +690,9 @@ export const WorkspaceHome = () => {
   );
 
   const filteredScenes = useMemo(() => {
+    const targetScenes = view === "trash" ? trashScenes : scenes;
     const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
-    const filtered = scenes.filter((scene) => {
+    const filtered = targetScenes.filter((scene) => {
       if (view === "recent" && !scene.last_opened_at) {
         return false;
       }
@@ -627,7 +714,7 @@ export const WorkspaceHome = () => {
       return searchable.includes(normalizedQuery);
     });
     return sortScenes(filtered, view === "recent" ? "opened" : sort);
-  }, [scenes, searchQuery, selectedFolderId, selectedTag, sort, view]);
+  }, [scenes, trashScenes, searchQuery, selectedFolderId, selectedTag, sort, view]);
 
   const recentScenes = useMemo(
     () =>
@@ -640,6 +727,10 @@ export const WorkspaceHome = () => {
 
   const navigateToScene = (scene: CloudSceneSummary) => {
     void markCloudSceneOpened(scene.id).catch(() => {});
+    if (onSelectScene) {
+      onSelectScene(scene.id);
+      return;
+    }
     const ownerWindow = getOwnerWindow(rootRef.current);
     const url = new URL(ownerWindow.location.href);
     url.search = `?id=${encodeURIComponent(scene.id)}`;
@@ -732,18 +823,57 @@ export const WorkspaceHome = () => {
 
   const handleDeleteScene = async (scene: CloudSceneSummary) => {
     const ownerWindow = getOwnerWindow(rootRef.current);
-    if (
-      !ownerWindow.confirm(`确定要删除画板“${scene.name}”吗？该操作无法恢复。`)
-    ) {
+    if (view === "trash") {
+      if (
+        !ownerWindow.confirm(`确定要彻底删除画板“${scene.name}”吗？该操作无法恢复。`)
+      ) {
+        return;
+      }
+      setPendingAction(`delete:${scene.id}`);
+      try {
+        await deleteCloudScene(scene.id, true);
+        setTrashScenes((current) =>
+          current.filter((item) => item.id !== scene.id),
+        );
+        setMenuSceneId(null);
+      } catch (requestError: any) {
+        setError(requestError?.message || "彻底删除画板失败");
+      } finally {
+        setPendingAction(null);
+      }
       return;
     }
+
     setPendingAction(`delete:${scene.id}`);
     try {
-      await deleteCloudScene(scene.id);
+      await deleteCloudScene(scene.id, false);
       setScenes((current) => current.filter((item) => item.id !== scene.id));
+      setTrashScenes((current) => [
+        { ...scene, deleted_at: Date.now() },
+        ...current,
+      ]);
       setMenuSceneId(null);
     } catch (requestError: any) {
       setError(requestError?.message || "删除画板失败");
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleRestoreScene = async (scene: CloudSceneSummary) => {
+    setPendingAction(`restore:${scene.id}`);
+    setError("");
+    try {
+      await restoreCloudScene(scene.id);
+      setTrashScenes((current) =>
+        current.filter((item) => item.id !== scene.id),
+      );
+      setScenes((current) => [
+        { ...scene, deleted_at: null },
+        ...current,
+      ]);
+    } catch (requestError: any) {
+      setError(requestError?.message || "还原画板失败");
     } finally {
       setPendingAction(null);
     }
@@ -831,7 +961,20 @@ export const WorkspaceHome = () => {
       onClick={() => setMenuSceneId(null)}
     >
       <header className="workspace-header">
-        <a className="workspace-brand" href="/" aria-label="返回画板首页">
+        <a
+          className="workspace-brand"
+          href="/"
+          aria-label="返回画板首页"
+          onClick={(event) => {
+            if (onSelectScene) {
+              event.preventDefault();
+              setView("all");
+              setSelectedFolderId(null);
+              setSelectedTag(null);
+              setSearchQuery("");
+            }
+          }}
+        >
           <ExcalidrawMark />
           <span>Excalidraw</span>
         </a>
@@ -841,11 +984,17 @@ export const WorkspaceHome = () => {
           <label className="workspace-search">
             <SearchIcon />
             <input
+              ref={searchInputRef}
               value={searchQuery}
               placeholder="搜索画板"
               aria-label="搜索画板"
               onChange={(event) => setSearchQuery(event.target.value)}
               onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  searchInputRef.current?.blur();
+                }
+              }}
             />
             <kbd>⌘K</kbd>
           </label>
@@ -912,6 +1061,18 @@ export const WorkspaceHome = () => {
               收藏
               <span>{scenes.filter((scene) => scene.favorite).length}</span>
             </button>
+            <button
+              className={view === "trash" ? "is-selected" : ""}
+              onClick={() => {
+                setView("trash");
+                setSelectedFolderId(null);
+              }}
+              type="button"
+            >
+              <TrashIcon />
+              回收站
+              {trashScenes.length > 0 && <span>{trashScenes.length}</span>}
+            </button>
           </nav>
           <div className="folder-heading">
             <span>文件夹</span>
@@ -929,7 +1090,9 @@ export const WorkspaceHome = () => {
                 <button
                   type="button"
                   className={
-                    selectedFolderId === folder.id ? "is-selected" : ""
+                    selectedFolderId === folder.id && view !== "trash"
+                      ? "is-selected"
+                      : ""
                   }
                   onClick={() => {
                     setSelectedFolderId(folder.id);
@@ -961,32 +1124,40 @@ export const WorkspaceHome = () => {
         >
           <div className="workspace-main-heading">
             <div>
-              <h1>我的画板</h1>
-              <p>把想法留在画布上，随时继续。</p>
+              <h1>
+                {view === "trash" ? "回收站" : "我的画板"}
+              </h1>
+              <p>
+                {view === "trash"
+                  ? "管理已删除的画板，支持一键还原或彻底清除。"
+                  : "把想法留在画布上，随时继续。"}
+              </p>
             </div>
-            <div className="view-toggle" role="tablist" aria-label="画板筛选">
-              {(["all", "recent", "favorites"] as BoardView[]).map((item) => (
-                <button
-                  key={item}
-                  className={
-                    view === item && !selectedFolderId ? "is-selected" : ""
-                  }
-                  onClick={() => {
-                    setView(item);
-                    setSelectedFolderId(null);
-                  }}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === item && !selectedFolderId}
-                >
-                  {item === "all"
-                    ? "全部"
-                    : item === "recent"
-                    ? "最近打开"
-                    : "收藏"}
-                </button>
-              ))}
-            </div>
+            {view !== "trash" && (
+              <div className="view-toggle" role="tablist" aria-label="画板筛选">
+                {(["all", "recent", "favorites"] as BoardView[]).map((item) => (
+                  <button
+                    key={item}
+                    className={
+                      view === item && !selectedFolderId ? "is-selected" : ""
+                    }
+                    onClick={() => {
+                      setView(item);
+                      setSelectedFolderId(null);
+                    }}
+                    type="button"
+                    role="tab"
+                    aria-selected={view === item && !selectedFolderId}
+                  >
+                    {item === "all"
+                      ? "全部"
+                      : item === "recent"
+                      ? "最近打开"
+                      : "收藏"}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {error && (
@@ -1036,7 +1207,9 @@ export const WorkspaceHome = () => {
             <div className="section-heading all-boards-heading">
               <div className="section-heading-title">
                 <h2>
-                  {selectedFolderId
+                  {view === "trash"
+                    ? "已删除画板"
+                    : selectedFolderId
                     ? folders.find((folder) => folder.id === selectedFolderId)
                         ?.name
                     : view === "favorites"
@@ -1048,7 +1221,7 @@ export const WorkspaceHome = () => {
                 <span>{filteredScenes.length}</span>
               </div>
               <div className="section-tools">
-                {allTags.length > 0 && (
+                {allTags.length > 0 && view !== "trash" && (
                   <select
                     value={selectedTag || ""}
                     onChange={(event) =>
@@ -1098,27 +1271,34 @@ export const WorkspaceHome = () => {
             ) : filteredScenes.length === 0 ? (
               <div className="workspace-empty-state">
                 <div className="empty-state-icon">
-                  <ExcalidrawMark />
+                  {view === "trash" ? <TrashIcon /> : <ExcalidrawMark />}
                 </div>
                 <h3>
-                  {searchQuery || selectedTag || selectedFolderId
+                  {view === "trash"
+                    ? "回收站为空"
+                    : searchQuery || selectedTag || selectedFolderId
                     ? "没有找到匹配的画板"
                     : "还没有画板"}
                 </h3>
                 <p>
-                  {searchQuery || selectedTag || selectedFolderId
+                  {view === "trash"
+                    ? "删除的画板会暂存在这里，方便随时还原。"
+                    : searchQuery || selectedTag || selectedFolderId
                     ? "试试更换关键词或筛选条件。"
                     : "创建一个画板，把下一个想法画出来。"}
                 </p>
-                {!searchQuery && !selectedTag && !selectedFolderId && (
-                  <button
-                    className="primary-button"
-                    type="button"
-                    onClick={handleCreateScene}
-                  >
-                    新建第一个画板
-                  </button>
-                )}
+                {!searchQuery &&
+                  !selectedTag &&
+                  !selectedFolderId &&
+                  view !== "trash" && (
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={handleCreateScene}
+                    >
+                      新建第一个画板
+                    </button>
+                  )}
               </div>
             ) : (
               <div
@@ -1130,10 +1310,12 @@ export const WorkspaceHome = () => {
                   <BoardCard
                     key={scene.id}
                     scene={scene}
+                    isTrash={view === "trash"}
                     onOpen={navigateToScene}
                     onToggleFavorite={handleToggleFavorite}
                     onEdit={openMetadataDialog}
                     onDelete={handleDeleteScene}
+                    onRestore={handleRestoreScene}
                     menuOpen={menuSceneId === scene.id}
                     onMenuToggle={() =>
                       setMenuSceneId(menuSceneId === scene.id ? null : scene.id)
