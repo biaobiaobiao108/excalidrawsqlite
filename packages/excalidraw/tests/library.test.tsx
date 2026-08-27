@@ -24,6 +24,10 @@ import type { LibraryItem, LibraryItems } from "../types";
 
 const { h } = window;
 
+const { mockNativeFileOpen } = vi.hoisted(() => ({
+  mockNativeFileOpen: vi.fn(),
+}));
+
 const libraryJSONPromise = API.readFile(
   "./fixtures/fixture_library.excalidrawlib",
   "utf8",
@@ -39,13 +43,13 @@ const mockLibraryFilePromise = new Promise<Blob>(async (resolve, reject) => {
   }
 });
 
-vi.mock("../data/filesystem.ts", async (importOriginal) => {
+mockNativeFileOpen.mockImplementation(() => mockLibraryFilePromise);
+
+vi.mock("browser-fs-access", async (importOriginal) => {
   const module = await importOriginal();
   return {
-    __esmodule: true,
-    //@ts-ignore
     ...module,
-    fileOpen: vi.fn(() => mockLibraryFilePromise),
+    fileOpen: mockNativeFileOpen,
   };
 });
 
