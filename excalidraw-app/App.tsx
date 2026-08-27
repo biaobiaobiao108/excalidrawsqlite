@@ -1647,7 +1647,8 @@ const ExcalidrawWrapper = () => {
             <span>
               {cloudSaveStatus === "saving" && "云端保存中..."}
               {cloudSaveStatus === "saved" && "已保存到云端"}
-              {cloudSaveStatus === "error" && "云端保存失败，数据仍在本地待重试"}
+              {cloudSaveStatus === "error" &&
+                "云端保存失败，数据仍在本地待重试"}
               {cloudSaveStatus === "auth" && "需要重新认证后才能保存"}
               {cloudSaveStatus === "conflict" && "云端版本冲突，等待处理"}
             </span>

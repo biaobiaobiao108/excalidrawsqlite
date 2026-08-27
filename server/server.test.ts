@@ -158,6 +158,14 @@ describe("cloud persistence server", () => {
     expect(response.headers.get("set-cookie")).toContain("Secure");
   });
 
+  it("uses the configured session TTL for the browser cookie", async () => {
+    const { handler } = createTestRuntime({ AUTH_SESSION_TTL_MS: "1234" });
+    const response = await jsonRequest(handler, "/api/auth/verify", {
+      password: "test-password",
+    });
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=2");
+  });
+
   it("accepts same-origin API writes behind a trusted HTTPS proxy", async () => {
     const { handler } = createTestRuntime({
       NODE_ENV: "production",
@@ -502,5 +510,147 @@ describe("cloud persistence server", () => {
     // Header for sqlite database starts with "SQLite format 3\0"
     const header = new TextDecoder().decode(buffer.slice(0, 15));
     expect(header).toBe("SQLite format 3");
+  });
+
+  it("exports a complete backup containing the database, manifest and attachments", async () => {
+    const { handler } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const upload = await request(handler, "/api/files/file_full_backup", {
+      method: "PUT",
+      headers: { Cookie: cookie, "Content-Type": "image/png" },
+      body: new Uint8Array([1, 2, 3]),
+    });
+    expect(upload.status).toBe(201);
+    const scene = await jsonRequest(
+      handler,
+      "/api/scenes",
+      {
+        id: "scene_full_backup",
+        name: "完整备份画板",
+        elements: [
+          { id: "image-1", type: "image", fileId: "file_full_backup" },
+        ],
+        appState: {},
+      },
+      { headers: { Cookie: cookie } },
+    );
+    expect(scene.status).toBe(201);
+
+    const backup = await request(handler, "/api/backup/full", {
+      headers: { Cookie: cookie },
+    });
+    expect(backup.status).toBe(200);
+    expect(backup.headers.get("content-type")).toContain("application/x-tar");
+    const archive = new Bun.Archive(await backup.blob());
+    const files = await archive.files();
+    expect([...files.keys()]).toEqual(
+      expect.arrayContaining([
+        "excalidraw.db",
+        "manifest.json",
+        "files/file_full_backup",
+      ]),
+    );
+    const manifest = JSON.parse(await files.get("manifest.json")!.text()) as {
+      format: string;
+      files: Array<{ id: string; path: string }>;
+    };
+    expect(manifest.format).toBe("excalidraw-full-backup");
+    expect(manifest.files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "file_full_backup",
+          path: "files/file_full_backup",
+        }),
+      ]),
+    );
+  });
+
+  it("migrates legacy data URLs and rebuilds scene file references", async () => {
+    const root = Bun.env.TEMP || Bun.env.TMP || ".";
+    const directory = `${root}/excalidraw-server-legacy-${crypto.randomUUID()}`;
+    const dbPath = path.join(directory, "excalidraw.db");
+    const filesDir = path.join(directory, "files");
+    await fs.mkdir(filesDir, { recursive: true });
+    const legacyDb = new Database(dbPath);
+    legacyDb.run(
+      `CREATE TABLE scenes (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, elements TEXT NOT NULL,
+        app_state TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      )`,
+    );
+    legacyDb.run(
+      `CREATE TABLE files (
+        id TEXT PRIMARY KEY, data_url TEXT NOT NULL, mime_type TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )`,
+    );
+    legacyDb.run(
+      `CREATE TABLE scene_files (
+        scene_id TEXT NOT NULL, file_id TEXT NOT NULL,
+        PRIMARY KEY (scene_id, file_id)
+      )`,
+    );
+    legacyDb.run(
+      "INSERT INTO files (id, data_url, mime_type, created_at) VALUES (?, ?, ?, ?)",
+      ["legacy_image", "data:image/png;base64,AQID", "image/png", 1],
+    );
+    legacyDb.run(
+      "INSERT INTO files (id, data_url, mime_type, created_at) VALUES (?, ?, ?, ?)",
+      ["legacy_invalid", "not-a-data-url", "image/png", 1],
+    );
+    legacyDb.run(
+      "INSERT INTO scenes (id, name, elements, app_state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [
+        "legacy_scene",
+        "旧画板",
+        JSON.stringify([
+          { id: "image-1", type: "image", fileId: "legacy_image" },
+        ]),
+        "{}",
+        1,
+        1,
+      ],
+    );
+    legacyDb.close();
+
+    const config = createServerConfig({
+      NODE_ENV: "test",
+      AUTH_PASSWORD: "test-password",
+      ALLOW_ANONYMOUS: "true",
+    });
+    const runtime = createRuntime({ dbPath, filesDir, config });
+    runtimes.push(runtime);
+    testDirectories.push(directory);
+    const migrated = runtime.db
+      .query("SELECT storage_path, byte_size, data_url FROM files WHERE id = ?")
+      .get("legacy_image") as {
+      storage_path: string;
+      byte_size: number;
+      data_url: string;
+    };
+    expect(migrated).toMatchObject({
+      storage_path: "legacy_image",
+      byte_size: 3,
+      data_url: "",
+    });
+    expect(await fs.readFile(path.join(filesDir, "legacy_image"))).toEqual(
+      Buffer.from([1, 2, 3]),
+    );
+    expect(
+      runtime.db
+        .query("SELECT COUNT(*) AS count FROM scene_files WHERE scene_id = ?")
+        .get("legacy_scene"),
+    ).toEqual({ count: 1 });
+    const invalid = runtime.db
+      .query("SELECT data_url FROM files WHERE id = ?")
+      .get("legacy_invalid") as { data_url: string };
+    expect(invalid.data_url).toBe("not-a-data-url");
+    expect(
+      (
+        runtime.db.query("PRAGMA user_version").get() as {
+          user_version: number;
+        }
+      ).user_version,
+    ).toBe(2);
   });
 });

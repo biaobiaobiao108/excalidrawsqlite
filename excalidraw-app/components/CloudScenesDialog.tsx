@@ -9,7 +9,7 @@ import {
   createCloudScene,
   deleteCloudScene,
   renameCloudScene,
-  downloadCloudBackup,
+  downloadCloudFullBackup,
   type CloudSceneSummary,
 } from "../data/cloudStorage";
 import { broadcastCloudSync } from "../data/cloudSync";
@@ -101,17 +101,17 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
     setIsExportingBackup(true);
     setActionError("");
     try {
-      const blob = await downloadCloudBackup();
+      const blob = await downloadCloudFullBackup();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = `excalidraw-backup-${new Date()
         .toISOString()
-        .slice(0, 10)}.db`;
+        .slice(0, 10)}.tar`;
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
-      setActionError(err?.message || "导出数据库备份失败");
+      setActionError(err?.message || "导出完整备份失败");
     } finally {
       setIsExportingBackup(false);
     }
@@ -319,7 +319,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                 disabled={!!pendingAction || isExportingBackup}
               />
               <FilledButton
-                label={isExportingBackup ? "导出中..." : "备份数据库"}
+                label={isExportingBackup ? "导出中..." : "导出完整备份"}
                 onClick={() => void handleDownloadBackup()}
                 size="medium"
                 variant="outlined"

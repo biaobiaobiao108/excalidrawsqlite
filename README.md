@@ -70,7 +70,11 @@
    curl http://localhost:8080/api/health
    ```
 
-   健康检查会验证 SQLite 数据库目录和 `data/files` 文件目录可读写；返回非 200 时优先排查目录权限和卷挂载。直接 HTTP 适合可信局域网，公网部署必须在反向代理后使用 HTTPS。只有明确配置 `TRUST_PROXY=true` 时，服务才会信任 `X-Forwarded-Proto` 并发放 Secure 会话 Cookie。
+   服务默认监听 `0.0.0.0:8080`，因此局域网内其他设备可以访问同一个容器。健康检查会验证 SQLite 数据库目录和 `data/files` 文件目录可用，并在发现数据库记录与附件不一致时通过响应和日志提示；返回非 200 时优先排查目录权限和卷挂载。直接 HTTP 适合可信局域网，公网部署必须在反向代理后使用 HTTPS。只有明确配置 `TRUST_PROXY=true` 时，服务才会信任 `X-Forwarded-Proto` 并发放 Secure 会话 Cookie。
+
+   服务端会话只保存在内存中，容器重启后所有设备都需要重新输入密码；认证 token 不会写入 SQLite。`AUTH_SESSION_TTL_MS` 同时控制服务端会话和浏览器 Cookie 的有效期。
+
+   设备接力使用时，请先在设备 A 停止编辑，等待页面显示“已保存到云端”后，再在设备 B 打开根路径或带 `?id=画板ID` 的链接。页面隐藏或关闭时也会主动等待云端保存，但离开前确认状态是最可靠的交接方式。
 
    > 容器 root 只表示容器内的默认运行身份；rootless Podman 仍受宿主机用户命名空间和 SELinux 限制。若组织安全策略禁止 root 容器，可通过 Compose 的 `user` 或运行参数自行指定用户，但必须提前确保该用户对 `/app/data` 有读写权限。
 
@@ -147,25 +151,29 @@
 
 ## 📡 后端 API 接口概览
 
-| Method   | Endpoint           | 描述                                         |
-| :------- | :----------------- | :------------------------------------------- |
-| `GET`    | `/api/auth/status` | 检查是否开启了密码验证及当前登录态           |
-| `POST`   | `/api/auth/verify` | 提交密码进行验证                             |
-| `GET`    | `/api/scenes`      | 获取所有云端画板列表（按更新时间降序）       |
-| `POST`   | `/api/scenes`      | 创建新画板                                   |
-| `GET`    | `/api/scenes/:id`  | 获取指定画板的图元数据与状态                 |
-| `PATCH`  | `/api/scenes/:id`  | 只修改画板名称                               |
-| `PUT`    | `/api/scenes/:id`  | 保存指定画板，携带 `baseRevision` 做并发校验 |
-| `DELETE` | `/api/scenes/:id`  | 删除指定画板                                 |
-| `PUT`    | `/api/files/:id`   | 上传单个二进制图片到本地文件系统             |
-| `POST`   | `/api/files`       | 兼容旧客户端的 JSON data URL 上传入口        |
-| `GET`    | `/api/files/:id`   | 按 `Accept` 返回二进制内容或兼容 JSON        |
-| `GET`    | `/api/health`      | 容器健康检查                                 |
+| Method | Endpoint | 描述 |
+| :-- | :-- | :-- |
+| `GET` | `/api/auth/status` | 检查是否开启了密码验证及当前登录态 |
+| `POST` | `/api/auth/verify` | 提交密码进行验证 |
+| `GET` | `/api/scenes` | 获取所有云端画板列表（按更新时间降序） |
+| `POST` | `/api/scenes` | 创建新画板 |
+| `GET` | `/api/scenes/:id` | 获取指定画板的图元数据与状态 |
+| `PATCH` | `/api/scenes/:id` | 只修改画板名称 |
+| `PUT` | `/api/scenes/:id` | 保存指定画板，携带 `baseRevision` 做并发校验 |
+| `DELETE` | `/api/scenes/:id` | 删除指定画板 |
+| `PUT` | `/api/files/:id` | 上传单个二进制图片到本地文件系统 |
+| `POST` | `/api/files` | 兼容旧客户端的 JSON data URL 上传入口 |
+| `GET` | `/api/files/:id` | 按 `Accept` 返回二进制内容或兼容 JSON |
+| `GET` | `/api/backup/full` | 导出包含 SQLite 和图片附件的完整 `.tar` 备份 |
+| `GET` | `/api/backup/snapshot` | 兼容接口：仅导出 SQLite 快照 |
+| `GET` | `/api/health` | 容器健康检查与存储一致性提示 |
 
 ### 数据与备份
 
 - 数据目录包含 `excalidraw.db`、SQLite WAL 文件以及 `files/` 图片目录。数据库只保存图片元数据，图片实际位于 `data/files/`。
-- 备份前请先停止容器，再整体复制 `data/` 目录；不要在服务运行时直接复制 SQLite 主文件。
+- 页面中的“导出完整备份”会生成包含 SQLite 一致性快照、`files/` 图片附件和 `manifest.json` 的归档；数据库单独快照接口仅为兼容旧脚本保留。
+- 文件级恢复前请先停止容器，再整体复制 `data/` 目录；不要在服务运行时直接复制 SQLite 主文件。
+- 使用完整归档恢复时，请先停止容器，将归档中的 `excalidraw.db` 和 `files/` 一起替换宿主机整个 `data/` 目录（不要只替换数据库），再启动容器。
 - 恢复时将完整 `data/` 目录挂载回 `/app/data` 后再启动容器。
 - rootless Podman 恢复数据后通常无需重新调整 UID；如果宿主机启用了 SELinux，请确保数据卷仍使用 `:Z` 标记。
 

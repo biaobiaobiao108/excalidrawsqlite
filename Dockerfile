@@ -29,6 +29,7 @@ FROM oven/bun:1.4.0-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV HOST=0.0.0.0
 ENV PORT=8080
 ENV DB_PATH=/app/data/excalidraw.db
 ENV FILES_DIR=/app/data/files

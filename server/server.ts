@@ -9,7 +9,6 @@ const DEFAULT_MAX_FILE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_SCENE_BODY_BYTES = 16 * 1024 * 1024;
 const DEFAULT_MAX_FILES_BODY_BYTES = 32 * 1024 * 1024;
 const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const AUTH_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 const AUTH_COOKIE_PRODUCTION = "__Host-excalidraw_session";
 const AUTH_COOKIE_DEVELOPMENT = "excalidraw_session";
 const FILE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
@@ -24,6 +23,8 @@ const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000;
 const WRITE_REQUESTS_PER_WINDOW = 120;
 const WRITE_RATE_WINDOW_MS = 60 * 1000;
 const ORPHAN_FILE_GRACE_MS = 24 * 60 * 60 * 1000;
+const STALE_FILE_ARTIFACT_MS = 60 * 60 * 1000;
+const SCHEMA_VERSION = 2;
 
 export type ServerConfig = {
   authPassword: string;
@@ -138,6 +139,8 @@ const ensureColumn = (
 export const initializeDatabase = (db: Database) => {
   db.run("PRAGMA journal_mode = WAL;");
   db.run("PRAGMA foreign_keys = ON;");
+  db.run("PRAGMA busy_timeout = 10000;");
+  db.run("PRAGMA synchronous = FULL;");
   db.run("PRAGMA wal_autocheckpoint = 1000;");
 
   db.run(`
@@ -183,14 +186,10 @@ export const initializeDatabase = (db: Database) => {
 
   // Keep scene records usable if a database created by an earlier build is reused.
   ensureColumn(db, "scenes", "revision", "INTEGER NOT NULL DEFAULT 1");
-  // The old data_url column, when present, is intentionally left untouched. New
-  // writes never use it; this project does not perform an implicit data migration.
   ensureColumn(db, "files", "storage_path", "TEXT");
   ensureColumn(db, "files", "byte_size", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "files", "sha256", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "files", "updated_at", "INTEGER NOT NULL DEFAULT 0");
-
-  db.run("PRAGMA user_version = 1");
 };
 
 export const createRuntime = (options: {
@@ -208,6 +207,7 @@ export const createRuntime = (options: {
     fs.accessSync(filesDir, fs.constants.W_OK);
     const db = new Database(dbPath, { create: true });
     initializeDatabase(db);
+    migrateLegacyDatabase(db, filesDir);
 
     return {
       db,
@@ -551,9 +551,9 @@ const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
     runtime.config.nodeEnv === "production" && secure
       ? AUTH_COOKIE_PRODUCTION
       : AUTH_COOKIE_DEVELOPMENT;
-  return `${name}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}${
-    secure ? "; Secure" : ""
-  }`;
+  return `${name}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.ceil(
+    runtime.config.sessionTtlMs / 1000,
+  )}${secure ? "; Secure" : ""}`;
 };
 
 const clearSessionCookies = (runtime: ServerRuntime, req: Request) => {
@@ -699,7 +699,15 @@ const upsertFile = async (
   createdAt?: number,
 ) => {
   if (data.byteLength > runtime.config.maxFileBytes) {
-    throw new HttpError(413, "FILE_TOO_LARGE", "单个文件不能超过 4 MiB");
+    const limit = runtime.config.maxFileBytes / (1024 * 1024);
+    const formattedLimit = Number.isInteger(limit)
+      ? `${limit} MiB`
+      : `${runtime.config.maxFileBytes} 字节`;
+    throw new HttpError(
+      413,
+      "FILE_TOO_LARGE",
+      `单个文件不能超过 ${formattedLimit}`,
+    );
   }
   const filePath = getFilePath(runtime, id);
   const hash = createHash("sha256").update(data).digest("hex");
@@ -710,9 +718,20 @@ const upsertFile = async (
 
   const atomicWrite = await writeFileAtomically(filePath, data);
   try {
+    const hasLegacyDataUrl = (
+      runtime.db.query("PRAGMA table_info(files)").all() as Array<{
+        name: string;
+      }>
+    ).some((column) => column.name === "data_url");
+    const columns = hasLegacyDataUrl
+      ? "id, storage_path, data_url, mime_type, byte_size, sha256, created_at, updated_at"
+      : "id, storage_path, mime_type, byte_size, sha256, created_at, updated_at";
+    const values = hasLegacyDataUrl
+      ? "?, ?, '', ?, ?, ?, ?, ?"
+      : "?, ?, ?, ?, ?, ?, ?";
     runtime.db.run(
-      `INSERT INTO files (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO files (${columns})
+       VALUES (${values})
        ON CONFLICT(id) DO UPDATE SET
          storage_path = excluded.storage_path,
          mime_type = excluded.mime_type,
@@ -775,6 +794,127 @@ const decodeDataUrl = (value: unknown, expectedMimeType: string) => {
     throw new HttpError(400, "INVALID_FILE_DATA", "文件内容不能为空");
   }
   return new Uint8Array(data);
+};
+
+const migrateLegacyDatabase = (db: Database, filesDir: string) => {
+  const versionRow = db.query("PRAGMA user_version").get() as {
+    user_version?: number;
+  } | null;
+  const version = Number(versionRow?.user_version) || 0;
+  const fileColumns = db.query("PRAGMA table_info(files)").all() as Array<{
+    name: string;
+  }>;
+  const hasLegacyDataUrl = fileColumns.some(
+    (column) => column.name === "data_url",
+  );
+
+  if (version >= SCHEMA_VERSION && !hasLegacyDataUrl) {
+    return;
+  }
+  if (!hasLegacyDataUrl && version === 0) {
+    db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    return;
+  }
+
+  let migratedFiles = 0;
+  let invalidFiles = 0;
+  if (hasLegacyDataUrl) {
+    const legacyRows = db
+      .query(
+        `SELECT id, data_url, mime_type, created_at, storage_path
+         FROM files
+         WHERE data_url IS NOT NULL AND data_url <> ''`,
+      )
+      .all() as Array<{
+      id: string;
+      data_url: string;
+      mime_type: string;
+      created_at: number;
+      storage_path: string | null;
+    }>;
+
+    for (const row of legacyRows) {
+      try {
+        const id = validateId(row.id, "file");
+        const bytes = decodeDataUrl(row.data_url, row.mime_type);
+        const filePath = path.resolve(filesDir, id);
+        const tempPath = `${filePath}.${randomBytes(8).toString("hex")}.tmp`;
+        try {
+          fs.writeFileSync(tempPath, bytes);
+          try {
+            fs.renameSync(tempPath, filePath);
+          } catch (error: any) {
+            if (error?.code !== "EEXIST" && error?.code !== "EPERM") {
+              throw error;
+            }
+            fs.rmSync(filePath, { force: true });
+            fs.renameSync(tempPath, filePath);
+          }
+        } finally {
+          fs.rmSync(tempPath, { force: true });
+        }
+        const hash = createHash("sha256").update(bytes).digest("hex");
+        const now = Date.now();
+        db.run(
+          `UPDATE files
+           SET storage_path = ?, byte_size = ?, sha256 = ?, updated_at = ?
+           WHERE id = ?`,
+          [id, bytes.byteLength, hash, now, id],
+        );
+        db.run("UPDATE files SET data_url = '' WHERE id = ?", [id]);
+        migratedFiles += 1;
+      } catch (error) {
+        invalidFiles += 1;
+        console.warn("[Migration] 无法迁移旧图片附件", {
+          id: row.id,
+          error: error instanceof Error ? error.message : error,
+        });
+      }
+    }
+  }
+
+  db.run("DELETE FROM scene_files");
+  const scenes = db.query("SELECT id, elements FROM scenes").all() as Array<{
+    id: string;
+    elements: string;
+  }>;
+  let references = 0;
+  for (const scene of scenes) {
+    try {
+      const elements = JSON.parse(scene.elements || "[]");
+      for (const fileId of extractFileIds(elements)) {
+        const exists = db.query("SELECT 1 FROM files WHERE id = ?").get(fileId);
+        if (!exists) {
+          console.warn("[Migration] 场景引用的图片记录不存在", {
+            sceneId: scene.id,
+            fileId,
+          });
+          continue;
+        }
+        db.run(
+          "INSERT OR IGNORE INTO scene_files (scene_id, file_id) VALUES (?, ?)",
+          [scene.id, fileId],
+        );
+        references += 1;
+      }
+    } catch (error) {
+      console.warn("[Migration] 无法重建场景图片引用", {
+        sceneId: scene.id,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
+  }
+
+  db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  console.info("[Migration] 数据库迁移完成", {
+    fromVersion: version,
+    toVersion: SCHEMA_VERSION,
+    migratedFiles,
+    invalidFiles,
+    scenes: scenes.length,
+    references,
+    filesDir,
+  });
 };
 
 const extractFileIds = (elements: unknown[]) => {
@@ -908,6 +1048,134 @@ const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
   }
 };
 
+export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
+  const cutoff = Date.now() - STALE_FILE_ARTIFACT_MS;
+  const entries = await fs.promises.readdir(runtime.filesDir, {
+    withFileTypes: true,
+  });
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.(?:tmp|bak)$/.test(entry.name)) {
+      continue;
+    }
+    const filePath = path.join(runtime.filesDir, entry.name);
+    const stat = await fs.promises.stat(filePath).catch(() => null);
+    if (stat && stat.mtimeMs < cutoff) {
+      await fs.promises.rm(filePath, { force: true });
+      console.info("[Files] 清理过期临时附件", { filePath });
+    }
+  }
+};
+
+export const inspectStorageConsistency = async (runtime: ServerRuntime) => {
+  const rows = runtime.db
+    .query("SELECT id, storage_path FROM files")
+    .all() as Array<{ id: string; storage_path: string | null }>;
+  const missingFiles: string[] = [];
+  const knownFileIds = new Set<string>();
+  for (const row of rows) {
+    knownFileIds.add(row.id);
+    if (
+      row.storage_path &&
+      !(await fs.promises.stat(getFilePath(runtime, row.id)).catch(() => null))
+    ) {
+      missingFiles.push(row.id);
+    }
+  }
+  const untrackedFiles: string[] = [];
+  for (const entry of await fs.promises.readdir(runtime.filesDir, {
+    withFileTypes: true,
+  })) {
+    if (
+      entry.isFile() &&
+      FILE_ID_PATTERN.test(entry.name) &&
+      !knownFileIds.has(entry.name)
+    ) {
+      untrackedFiles.push(entry.name);
+    }
+  }
+  const orphanedReferences = (
+    runtime.db
+      .query(
+        `SELECT COUNT(*) AS count FROM scene_files
+         LEFT JOIN files ON files.id = scene_files.file_id
+         WHERE files.id IS NULL`,
+      )
+      .get() as { count: number }
+  ).count;
+  return { missingFiles, untrackedFiles, orphanedReferences };
+};
+
+const createDatabaseSnapshot = async (
+  runtime: ServerRuntime,
+  timestamp: string,
+) => {
+  const tempBackupFile = path.join(
+    path.dirname(runtime.dbPath),
+    `excalidraw-backup-${timestamp}-${randomBytes(4).toString("hex")}.db`,
+  );
+  const escapedPath = tempBackupFile.replace(/'/g, "''");
+  runtime.db.run(`VACUUM INTO '${escapedPath}'`);
+  return {
+    tempBackupFile,
+    cleanup: () => fs.promises.rm(tempBackupFile, { force: true }),
+  };
+};
+
+const createFullBackup = async (runtime: ServerRuntime, timestamp: string) => {
+  const snapshot = await createDatabaseSnapshot(runtime, timestamp);
+  try {
+    const fileRows = runtime.db
+      .query(
+        `SELECT id, storage_path, mime_type, byte_size, sha256, created_at, updated_at
+         FROM files ORDER BY id`,
+      )
+      .all() as Array<{
+      id: string;
+      storage_path: string | null;
+      mime_type: string;
+      byte_size: number;
+      sha256: string;
+      created_at: number;
+      updated_at: number;
+    }>;
+    const entries: Record<string, string | Blob> = {
+      "excalidraw.db": Bun.file(snapshot.tempBackupFile),
+      "manifest.json": JSON.stringify(
+        {
+          format: "excalidraw-full-backup",
+          version: 1,
+          createdAt: new Date().toISOString(),
+          database: "excalidraw.db",
+          filesDirectory: "files",
+          files: fileRows.map(({ id, storage_path, ...metadata }) => ({
+            id,
+            path: storage_path ? `files/${id}` : null,
+            ...metadata,
+          })),
+        },
+        null,
+        2,
+      ),
+    };
+
+    for (const row of fileRows) {
+      if (!row.storage_path) {
+        continue;
+      }
+      const filePath = getFilePath(runtime, row.id);
+      if (!(await fs.promises.stat(filePath).catch(() => null))) {
+        throw new Error(`附件文件缺失：${row.id}`);
+      }
+      entries[`files/${row.id}`] = Bun.file(filePath);
+    }
+
+    const archive = new Bun.Archive(entries);
+    return await archive.blob();
+  } finally {
+    await snapshot.cleanup().catch(() => {});
+  }
+};
+
 const requireJsonObject = (value: unknown): Record<string, unknown> => {
   if (!isRecord(value)) {
     throw new HttpError(400, "INVALID_BODY", "请求体必须是对象");
@@ -982,10 +1250,49 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           runtime.db.query("SELECT 1").get();
           fs.accessSync(path.dirname(runtime.dbPath), fs.constants.W_OK);
           fs.accessSync(runtime.filesDir, fs.constants.W_OK);
+          const consistency = await inspectStorageConsistency(runtime);
+          const warningCount =
+            consistency.missingFiles.length +
+            consistency.untrackedFiles.length +
+            consistency.orphanedReferences;
+          if (warningCount) {
+            console.warn("[Storage] 一致性检查发现问题", consistency);
+          }
+          return jsonResponse(runtime, req, {
+            status: "ok",
+            ...(warningCount ? { warnings: consistency } : {}),
+          });
         } catch {
           throw new HttpError(503, "STORAGE_UNAVAILABLE", "持久化存储不可用");
         }
-        return jsonResponse(runtime, req, { status: "ok" });
+      }
+
+      if (pathname === "/api/backup/full" && req.method === "GET") {
+        if (!isAuthorized(runtime, req)) {
+          return jsonResponse(
+            runtime,
+            req,
+            { error: "请先完成访问授权", code: "AUTH_REQUIRED" },
+            401,
+          );
+        }
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        try {
+          const archive = await createFullBackup(runtime, timestamp);
+          return response(runtime, req, archive, {
+            headers: {
+              "Content-Type": "application/x-tar",
+              "Content-Disposition": `attachment; filename="excalidraw-full-backup-${timestamp}.tar"`,
+              "Cache-Control": "no-store",
+            },
+          });
+        } catch (error: any) {
+          throw new HttpError(
+            500,
+            "BACKUP_FAILED",
+            `创建完整备份失败: ${error?.message || "未知错误"}`,
+          );
+        }
       }
 
       if (pathname === "/api/backup/snapshot" && req.method === "GET") {
@@ -998,25 +1305,23 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           );
         }
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const tempBackupDir = path.resolve(path.dirname(runtime.dbPath));
-        const tempBackupFile = path.join(
-          tempBackupDir,
-          `excalidraw-backup-${timestamp}-${randomBytes(4).toString("hex")}.db`,
-        );
         try {
-          const escapedPath = tempBackupFile.replace(/'/g, "''");
-          runtime.db.run(`VACUUM INTO '${escapedPath}'`);
-          const backupBytes = await Bun.file(tempBackupFile).arrayBuffer();
-          await fs.promises.rm(tempBackupFile, { force: true });
-          return response(runtime, req, backupBytes, {
-            headers: {
-              "Content-Type": "application/x-sqlite3",
-              "Content-Disposition": `attachment; filename="excalidraw-backup-${timestamp}.db"`,
-              "Cache-Control": "no-store",
-            },
-          });
+          const snapshot = await createDatabaseSnapshot(runtime, timestamp);
+          try {
+            const backupBytes = await Bun.file(
+              snapshot.tempBackupFile,
+            ).arrayBuffer();
+            return response(runtime, req, backupBytes, {
+              headers: {
+                "Content-Type": "application/x-sqlite3",
+                "Content-Disposition": `attachment; filename="excalidraw-backup-${timestamp}.db"`,
+                "Cache-Control": "no-store",
+              },
+            });
+          } finally {
+            await snapshot.cleanup().catch(() => {});
+          }
         } catch (error: any) {
-          await fs.promises.rm(tempBackupFile, { force: true }).catch(() => {});
           throw new HttpError(
             500,
             "BACKUP_FAILED",
@@ -1447,6 +1752,7 @@ const startServer = () => {
   const runtime = createRuntime({ dbPath, filesDir, staticDir });
   const handler = createRequestHandler(runtime);
   const port = Number(process.env.PORT) || DEFAULT_PORT;
+  const hostname = process.env.HOST || "0.0.0.0";
 
   const runMaintenance = () => {
     cleanupExpiredSessions(runtime, Date.now());
@@ -1455,12 +1761,45 @@ const startServer = () => {
     void cleanupOrphanedFiles(runtime).catch((error) =>
       console.error("[Files] cleanup failed", error),
     );
+    void cleanupStaleFileArtifacts(runtime).catch((error) =>
+      console.error("[Files] stale artifact cleanup failed", error),
+    );
+    void inspectStorageConsistency(runtime).then((consistency) => {
+      if (
+        consistency.missingFiles.length ||
+        consistency.untrackedFiles.length ||
+        consistency.orphanedReferences
+      ) {
+        console.warn("[Storage] 一致性检查发现问题", consistency);
+      }
+    });
   };
 
-  Bun.serve({ port, fetch: handler });
+  const server = Bun.serve({ hostname, port, fetch: handler });
+  console.info("[Server] 已启动", {
+    address: `http://${hostname}:${server.port}`,
+    dbPath,
+    filesDir,
+    staticDir,
+  });
   void cleanupOrphanedFiles(runtime).catch((error) =>
     console.error("[Files] initial cleanup failed", error),
   );
+  void cleanupStaleFileArtifacts(runtime).catch((error) =>
+    console.error("[Files] initial stale artifact cleanup failed", error),
+  );
+  void inspectStorageConsistency(runtime).then((consistency) => {
+    if (
+      consistency.missingFiles.length ||
+      consistency.untrackedFiles.length ||
+      consistency.orphanedReferences
+    ) {
+      console.warn(
+        "[Storage] initial consistency check found issues",
+        consistency,
+      );
+    }
+  });
   setInterval(runMaintenance, 60 * 60 * 1000);
 
   const handleShutdown = () => {
