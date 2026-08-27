@@ -127,7 +127,8 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
-      sourcemap: mode === "development" || envVars.VITE_APP_ENABLE_SOURCEMAP === "true",
+      sourcemap:
+        mode === "development" || envVars.VITE_APP_ENABLE_SOURCEMAP === "true",
       // don't auto-inline small assets (i.e. fonts hosted on CDN)
       assetsInlineLimit: 0,
     },
@@ -176,6 +177,18 @@ export default defineConfig(({ mode }) => {
           ],
           runtimeCaching: [
             {
+              urlPattern: ({ request }) => request.mode === "navigate",
+              handler: "NetworkFirst",
+              options: {
+                cacheName: "html",
+                networkTimeoutSeconds: 3,
+                expiration: {
+                  maxEntries: 10,
+                  maxAgeSeconds: 60 * 60,
+                },
+              },
+            },
+            {
               urlPattern: new RegExp(".+.woff2"),
               handler: "CacheFirst",
               options: {
@@ -201,10 +214,11 @@ export default defineConfig(({ mode }) => {
               },
             },
             {
-              urlPattern: new RegExp("locales/[^/]+.js"),
-              handler: "CacheFirst",
+              urlPattern: new RegExp("locales/[^/]+\\.js$"),
+              handler: "NetworkFirst",
               options: {
                 cacheName: "locales",
+                networkTimeoutSeconds: 3,
                 expiration: {
                   maxEntries: 50,
                   maxAgeSeconds: 60 * 60 * 24 * 30, // <== 30 days
