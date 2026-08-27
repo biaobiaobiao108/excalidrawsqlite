@@ -136,6 +136,46 @@ describe("WorkspaceHome component", () => {
     });
   });
 
+  it("keeps the recent board row inside a safe overflow wrapper", async () => {
+    render(<WorkspaceHome />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".recent-board-scroller")).not.toBeNull();
+    });
+
+    expect(
+      document.querySelector(".recent-board-scroller .recent-board-row"),
+    ).not.toBeNull();
+  });
+
+  it("opens the board actions menu in a portal and restores focus on Escape", async () => {
+    render(<WorkspaceHome />);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", { name: "更多画板操作" }).length,
+      ).toBeGreaterThan(0);
+    });
+
+    const trigger = screen.getAllByRole("button", {
+      name: "更多画板操作",
+    })[0];
+    fireEvent.click(trigger);
+
+    const menu = await screen.findByRole("menu");
+    expect(menu.parentElement).toBe(document.body);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(
+      menu.querySelectorAll('[role="menuitem"]')[1],
+    );
+
+    fireEvent.keyDown(menu, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
   it("focuses search input when pressing Ctrl+K / ⌘K shortcut", async () => {
     render(<WorkspaceHome />);
 

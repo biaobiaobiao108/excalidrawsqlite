@@ -466,16 +466,24 @@
   font-size: 1rem;
 }
 
-.recent-board-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
+.recent-board-scroller {
+  margin-block: -0.65rem -0.9rem;
+  margin-inline: -0.65rem;
+  padding-block: 0.65rem 0.9rem;
+  padding-inline: 0.65rem;
   overflow-x: auto;
   scrollbar-width: none;
 }
 
-.recent-board-row::-webkit-scrollbar {
+.recent-board-scroller::-webkit-scrollbar {
   display: none;
+}
+
+.recent-board-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  overflow: visible;
 }
 
 .board-grid {
@@ -486,6 +494,7 @@
 
 .board-card {
   position: relative;
+  box-sizing: border-box;
   container-type: inline-size;
   min-inline-size: 0;
   overflow: visible;
@@ -559,6 +568,11 @@
   cursor: pointer;
   overflow: hidden;
   text-align: start;
+}
+
+.board-card-open:focus-visible {
+  outline: 2px solid var(--workspace-primary);
+  outline-offset: 3px;
 }
 
 .board-thumbnail {
@@ -711,11 +725,16 @@
   cursor: pointer;
 }
 
-.icon-button:hover,
+.icon-button:hover {
+  background: var(--workspace-surface-hover);
+  color: var(--workspace-primary);
+}
+
 .icon-button:focus-visible {
   background: var(--workspace-surface-hover);
   color: var(--workspace-primary);
-  outline: none;
+  outline: 2px solid var(--workspace-primary);
+  outline-offset: 2px;
 }
 
 .icon-button svg.is-filled {
@@ -723,10 +742,15 @@
   stroke: #f2ad22;
 }
 
-.icon-button.danger:hover,
+.icon-button.danger:hover {
+  background: #fdf2f2;
+  color: #e03131;
+}
+
 .icon-button.danger:focus-visible {
   background: #fdf2f2;
   color: #e03131;
+  outline-color: #e03131;
 }
 
 .favorite-button.is-favorite {
@@ -747,18 +771,19 @@
 }
 
 .board-card-menu {
-  position: absolute;
-  z-index: 4;
-  inset-inline-end: 0;
-  inset-block-end: calc(100% - 2px);
+  position: fixed;
+  z-index: 100;
   display: grid;
   min-inline-size: 130px;
+  max-block-size: calc(100dvh - 1rem);
   padding: 0.3rem;
+  box-sizing: border-box;
+  overflow-y: auto;
   border: 1px solid var(--workspace-border);
   border-radius: 9px;
   background: #fff;
   box-shadow: 0 10px 28px rgba(36, 33, 85, 0.14);
-  transform-origin: bottom right;
+  transform-origin: top right;
   animation: workspace-menu-enter 150ms ease-out both;
 }
 
@@ -775,6 +800,12 @@
 
 .board-card-menu button:hover {
   background: var(--workspace-surface-hover);
+}
+
+.board-card-menu button:focus-visible {
+  background: var(--workspace-surface-hover);
+  outline: 2px solid var(--workspace-primary);
+  outline-offset: -2px;
 }
 
 .board-card-menu button.danger {
@@ -1123,8 +1154,6 @@
 
   .recent-board-row {
     grid-template-columns: repeat(3, minmax(225px, 1fr));
-    margin-inline-end: -1rem;
-    padding-inline-end: 1rem;
   }
 
   .all-boards-section {
@@ -1215,11 +1244,6 @@
 
   .board-grid .board-card-actions {
     align-self: start;
-  }
-
-  .board-grid .board-card-menu {
-    inset-block-start: calc(100% - 2px);
-    inset-block-end: auto;
   }
 }
 

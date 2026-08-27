@@ -1,10 +1,12 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { restoreElements } from "@excalidraw/excalidraw/data/restore";
 
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
@@ -301,6 +303,91 @@ const BoardCard = ({
   onMenuToggle: () => void;
   eager?: boolean;
 }) => {
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState<{
+    top: number;
+    left: number;
+    placement: "top" | "bottom";
+  } | null>(null);
+
+  const updateMenuPosition = useCallback(() => {
+    const trigger = menuTriggerRef.current;
+    const menu = menuRef.current;
+    const ownerWindow = trigger?.ownerDocument.defaultView;
+    if (!trigger || !menu || !ownerWindow) {
+      return;
+    }
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const viewportPadding = 8;
+    const menuWidth = menuRect.width || 160;
+    const menuHeight = menuRect.height || 132;
+    const canOpenBelow =
+      triggerRect.bottom + menuHeight + viewportPadding <=
+      ownerWindow.innerHeight;
+    const top = canOpenBelow
+      ? triggerRect.bottom + 2
+      : Math.max(viewportPadding, triggerRect.top - menuHeight - 2);
+    const left = Math.min(
+      Math.max(viewportPadding, triggerRect.right - menuWidth),
+      Math.max(
+        viewportPadding,
+        ownerWindow.innerWidth - menuWidth - viewportPadding,
+      ),
+    );
+
+    setMenuPosition({
+      top,
+      left,
+      placement: canOpenBelow ? "bottom" : "top",
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+    updateMenuPosition();
+    const ownerWindow = menuTriggerRef.current?.ownerDocument.defaultView;
+    if (!ownerWindow) {
+      return;
+    }
+    const handleViewportChange = () => updateMenuPosition();
+    ownerWindow.addEventListener("resize", handleViewportChange);
+    ownerWindow.addEventListener("scroll", handleViewportChange, true);
+    return () => {
+      ownerWindow.removeEventListener("resize", handleViewportChange);
+      ownerWindow.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [menuOpen, updateMenuPosition]);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+    const ownerDocument = menuTriggerRef.current?.ownerDocument;
+    if (!ownerDocument) {
+      return;
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (
+        target &&
+        (menuRef.current?.contains(target) ||
+          menuTriggerRef.current?.contains(target))
+      ) {
+        return;
+      }
+      onMenuToggle();
+    };
+    ownerDocument.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      ownerDocument.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [menuOpen, onMenuToggle]);
+
   const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const items = Array.from(
       event.currentTarget.querySelectorAll<HTMLButtonElement>(
@@ -310,9 +397,7 @@ const BoardCard = ({
     if (event.key === "Escape") {
       event.preventDefault();
       onMenuToggle();
-      event.currentTarget.parentElement
-        ?.querySelector<HTMLButtonElement>("[aria-expanded]")
-        ?.focus();
+      menuTriggerRef.current?.focus();
       return;
     }
     if (!items.length) {
@@ -336,6 +421,49 @@ const BoardCard = ({
       items[nextIndex].focus();
     }
   };
+
+  const ownerDocument = menuTriggerRef.current?.ownerDocument;
+  const menu =
+    menuOpen && ownerDocument
+      ? createPortal(
+          <div
+            ref={menuRef}
+            className="board-card-menu"
+            role="menu"
+            onKeyDown={handleMenuKeyDown}
+            style={{
+              top: menuPosition?.top ?? 0,
+              left: menuPosition?.left ?? 0,
+              visibility: menuPosition ? "visible" : "hidden",
+              transformOrigin:
+                menuPosition?.placement === "top"
+                  ? "bottom right"
+                  : "top right",
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              autoFocus
+              onClick={() => onEdit(scene)}
+            >
+              编辑信息
+            </button>
+            <button type="button" role="menuitem" onClick={() => onOpen(scene)}>
+              打开画板
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="danger"
+              onClick={() => onDelete(scene)}
+            >
+              移至回收站
+            </button>
+          </div>,
+          ownerDocument.body,
+        )
+      : null;
 
   return (
     <article className={`board-card ${isTrash ? "is-trash-card" : ""}`}>
@@ -431,6 +559,7 @@ const BoardCard = ({
                 <button
                   type="button"
                   className="icon-button"
+                  ref={menuTriggerRef}
                   aria-label="更多画板操作"
                   aria-expanded={menuOpen}
                   onClick={onMenuToggle}
@@ -443,42 +572,12 @@ const BoardCard = ({
                 >
                   <MoreIcon />
                 </button>
-                {menuOpen && (
-                  <div
-                    className="board-card-menu"
-                    role="menu"
-                    onKeyDown={handleMenuKeyDown}
-                  >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      autoFocus
-                      onClick={() => onEdit(scene)}
-                    >
-                      编辑信息
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => onOpen(scene)}
-                    >
-                      打开画板
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="danger"
-                      onClick={() => onDelete(scene)}
-                    >
-                      移至回收站
-                    </button>
-                  </div>
-                )}
               </div>
             </>
           )}
         </div>
       </div>
+      {menu}
     </article>
   );
 };
@@ -1236,26 +1335,28 @@ export const WorkspaceHome = ({
                     查看全部 <span aria-hidden="true">→</span>
                   </button>
                 </div>
-                <div className="recent-board-row">
-                  {recentScenes.map((scene) => (
-                    <BoardCard
-                      key={scene.id}
-                      scene={scene}
-                      onOpen={navigateToScene}
-                      onToggleFavorite={handleToggleFavorite}
-                      onEdit={openMetadataDialog}
-                      onDelete={handleDeleteScene}
-                      menuOpen={menuSceneId === `recent:${scene.id}`}
-                      onMenuToggle={() =>
-                        setMenuSceneId(
-                          menuSceneId === `recent:${scene.id}`
-                            ? null
-                            : `recent:${scene.id}`,
-                        )
-                      }
-                      eager
-                    />
-                  ))}
+                <div className="recent-board-scroller">
+                  <div className="recent-board-row">
+                    {recentScenes.map((scene) => (
+                      <BoardCard
+                        key={scene.id}
+                        scene={scene}
+                        onOpen={navigateToScene}
+                        onToggleFavorite={handleToggleFavorite}
+                        onEdit={openMetadataDialog}
+                        onDelete={handleDeleteScene}
+                        menuOpen={menuSceneId === `recent:${scene.id}`}
+                        onMenuToggle={() =>
+                          setMenuSceneId(
+                            menuSceneId === `recent:${scene.id}`
+                              ? null
+                              : `recent:${scene.id}`,
+                          )
+                        }
+                        eager
+                      />
+                    ))}
+                  </div>
                 </div>
               </section>
             )}
