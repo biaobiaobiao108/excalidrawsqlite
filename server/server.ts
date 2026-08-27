@@ -1256,6 +1256,7 @@ const getStaticCacheControl = (pathname: string) => {
     pathname === "/" ||
     pathname.endsWith("/index.html") ||
     pathname === "/sw.js" ||
+    pathname === "/service-worker.js" ||
     pathname === "/manifest.webmanifest"
   ) {
     return "no-cache";
