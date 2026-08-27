@@ -1,4 +1,9 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -666,6 +671,11 @@ const getSessionToken = (runtime: ServerRuntime, req: Request) => {
   return "";
 };
 
+const hashSessionToken = (runtime: ServerRuntime, token: string) =>
+  createHmac("sha256", runtime.config.authPassword)
+    .update(token)
+    .digest("hex");
+
 const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = Date.now() + runtime.config.sessionTtlMs;
@@ -673,7 +683,7 @@ const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
   try {
     runtime.db.run(
       "INSERT OR REPLACE INTO sessions (token, expires_at, created_at) VALUES (?, ?, ?)",
-      [token, expiresAt, Date.now()],
+      [hashSessionToken(runtime, token), expiresAt, Date.now()],
     );
   } catch (error) {
     console.error("[Sessions] failed to persist session", error);
@@ -713,11 +723,25 @@ const isAuthorized = (runtime: ServerRuntime, req: Request) => {
   if (expiresAt === undefined) {
     try {
       const row = runtime.db
-        .query("SELECT expires_at FROM sessions WHERE token = ?")
-        .get(token) as { expires_at: number } | null;
+        .query(
+          "SELECT token, expires_at FROM sessions WHERE token = ? OR token = ? LIMIT 1",
+        )
+        .get(hashSessionToken(runtime, token), token) as {
+        token: string;
+        expires_at: number;
+      } | null;
       if (row) {
         expiresAt = row.expires_at;
         runtime.sessions.set(token, expiresAt);
+        // Upgrade legacy plaintext rows when they are next used. This keeps
+        // existing cookies valid while preventing new bearer tokens from
+        // being exposed in SQLite backups.
+        if (row.token === token) {
+          runtime.db.run("UPDATE sessions SET token = ? WHERE token = ?", [
+            hashSessionToken(runtime, token),
+            token,
+          ]);
+        }
       }
     } catch (error) {
       console.error("[Sessions] query failed", error);
@@ -726,7 +750,10 @@ const isAuthorized = (runtime: ServerRuntime, req: Request) => {
   if (!expiresAt || expiresAt <= Date.now()) {
     runtime.sessions.delete(token);
     try {
-      runtime.db.run("DELETE FROM sessions WHERE token = ?", [token]);
+      runtime.db.run("DELETE FROM sessions WHERE token = ? OR token = ?", [
+        hashSessionToken(runtime, token),
+        token,
+      ]);
     } catch {
       // ignore
     }
@@ -1593,7 +1620,10 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         if (token) {
           runtime.sessions.delete(token);
           try {
-            runtime.db.run("DELETE FROM sessions WHERE token = ?", [token]);
+            runtime.db.run(
+              "DELETE FROM sessions WHERE token = ? OR token = ?",
+              [hashSessionToken(runtime, token), token],
+            );
           } catch {
             // ignore
           }
