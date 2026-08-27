@@ -83,6 +83,12 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     pool: "threads",
+    poolOptions: {
+      threads: {
+        minThreads: 1,
+        maxThreads: 4,
+      },
+    },
     exclude: [...configDefaults.exclude, "server/**"],
     // don't list skipped tests in the failure tree — keeps output readable
     hideSkippedTests: true,
