@@ -864,6 +864,45 @@
   color: var(--workspace-muted);
 }
 
+.workspace-dialog {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+}
+
+.workspace-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  border: 0;
+  background: rgba(25, 24, 47, 0.22);
+  cursor: default;
+}
+
+.workspace-dialog-content-shell {
+  position: relative;
+  z-index: 1;
+  inline-size: min(550px, 100%);
+  box-sizing: border-box;
+  padding: 1.7rem;
+  border: 1px solid var(--workspace-border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgba(36, 33, 85, 0.18);
+}
+
+.workspace-dialog-title {
+  margin: 0 0 1.35rem;
+  color: var(--workspace-text);
+  font-family: var(--font-family, system-ui, sans-serif);
+  font-size: 1.2rem;
+  font-weight: 650;
+}
+
 .workspace-dialog .metadata-form {
   display: grid;
   gap: 1rem;

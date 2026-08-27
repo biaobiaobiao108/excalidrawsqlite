@@ -5,8 +5,6 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Dialog } from "@excalidraw/excalidraw/components/Dialog";
-
 import { restoreElements } from "@excalidraw/excalidraw/data/restore";
 
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
@@ -366,6 +364,42 @@ const BoardCard = ({
   </article>
 );
 
+const WorkspaceModal = ({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) => (
+  <div
+    className="workspace-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="workspace-dialog-title"
+    onKeyDown={(event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    }}
+  >
+    <button
+      type="button"
+      className="workspace-dialog-backdrop"
+      aria-label="关闭弹窗"
+      onClick={onClose}
+    />
+    <div className="workspace-dialog-content-shell">
+      <h2 id="workspace-dialog-title" className="workspace-dialog-title">
+        {title}
+      </h2>
+      <div className="workspace-dialog-form-content">{children}</div>
+    </div>
+  </div>
+);
+
 const MetadataDialog = ({
   state,
   folders,
@@ -381,12 +415,7 @@ const MetadataDialog = ({
   onClose: () => void;
   onSave: () => void;
 }) => (
-  <Dialog
-    onCloseRequest={onClose}
-    title="编辑画板信息"
-    className="workspace-dialog"
-    size="small"
-  >
+  <WorkspaceModal title="编辑画板信息" onClose={onClose}>
     <form
       className="metadata-form"
       onSubmit={(event) => {
@@ -439,7 +468,7 @@ const MetadataDialog = ({
         </button>
       </div>
     </form>
-  </Dialog>
+  </WorkspaceModal>
 );
 
 const FolderDialog = ({
@@ -457,11 +486,9 @@ const FolderDialog = ({
   onSave: () => void;
   onDelete?: () => void;
 }) => (
-  <Dialog
-    onCloseRequest={onClose}
+  <WorkspaceModal
     title={state.id ? "重命名文件夹" : "新建文件夹"}
-    className="workspace-dialog"
-    size="small"
+    onClose={onClose}
   >
     <form
       className="metadata-form"
@@ -503,7 +530,7 @@ const FolderDialog = ({
         </button>
       </div>
     </form>
-  </Dialog>
+  </WorkspaceModal>
 );
 
 export const WorkspaceHome = () => {
