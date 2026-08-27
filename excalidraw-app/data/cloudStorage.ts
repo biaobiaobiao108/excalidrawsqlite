@@ -1,6 +1,9 @@
 import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { FileId } from "@excalidraw/element/types";
 
+const CLOUD_API_TIMEOUT_MS = 10_000;
+const CLOUD_READ_RETRIES = 2;
+
 export interface CloudSceneSummary {
   id: string;
   name: string;
@@ -36,6 +39,29 @@ const getHeaders = (extraHeaders: Record<string, string> = {}) => ({
   ...extraHeaders,
 });
 
+const fetchWithTimeout = async (
+  input: RequestInfo | URL,
+  init: RequestInit,
+  fallback: string,
+) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CLOUD_API_TIMEOUT_MS);
+  try {
+    return await fetch(input, {
+      credentials: "same-origin",
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw new CloudApiError(`${fallback}（请求超时）`, 0, "NETWORK_TIMEOUT");
+    }
+    throw new CloudApiError(fallback, 0, "NETWORK_ERROR");
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
 const parseError = async (res: Response, fallback: string) => {
   try {
     const body = (await res.json()) as { error?: string; code?: string };
@@ -59,13 +85,24 @@ const fetchJson = async <T>(
   input: RequestInfo | URL,
   init: RequestInit,
   fallback: string,
+  retries = 0,
 ) => {
-  const res = await fetch(input, {
-    credentials: "same-origin",
-    ...init,
-  });
-  await assertResponse(res, fallback);
-  return (await res.json()) as T;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetchWithTimeout(input, init, fallback);
+      await assertResponse(res, fallback);
+      return (await res.json()) as T;
+    } catch (error) {
+      const canRetry =
+        error instanceof CloudApiError &&
+        (error.status === 0 || error.status >= 500) &&
+        attempt < retries;
+      if (!canRetry) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+    }
+  }
 };
 
 const dataUrlToBlob = (dataURL: string, mimeType: string) => {
@@ -121,33 +158,44 @@ export async function checkAuthStatus(): Promise<{
     "/api/auth/status",
     { headers: getHeaders() },
     "无法检查访问授权状态",
+    CLOUD_READ_RETRIES,
   );
 }
 
 export async function verifyAuthPassword(password: string): Promise<boolean> {
   try {
-    const res = await fetch("/api/auth/verify", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: getHeaders(),
-      body: JSON.stringify({ password }),
-    });
-    if (!res.ok) {
+    const res = await fetchWithTimeout(
+      "/api/auth/verify",
+      {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({ password }),
+      },
+      "认证服务不可用",
+    );
+    if (res.status === 401) {
       return false;
     }
+    await assertResponse(res, "认证失败");
     await res.json();
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error instanceof CloudApiError && error.status === 401) {
+      return false;
+    }
+    throw error;
   }
 }
 
 export async function logoutCloudSession(): Promise<void> {
-  const res = await fetch("/api/auth/logout", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: getHeaders(),
-  });
+  const res = await fetchWithTimeout(
+    "/api/auth/logout",
+    {
+      method: "POST",
+      headers: getHeaders(),
+    },
+    "退出授权失败",
+  );
   await assertResponse(res, "退出授权失败");
 }
 
@@ -156,6 +204,7 @@ export async function fetchCloudScenes(): Promise<CloudSceneSummary[]> {
     "/api/scenes",
     { headers: getHeaders() },
     "获取云端画板列表失败",
+    CLOUD_READ_RETRIES,
   );
 }
 
@@ -164,6 +213,7 @@ export async function fetchCloudScene(id: string): Promise<CloudSceneData> {
     `/api/scenes/${encodeURIComponent(id)}`,
     { headers: getHeaders() },
     "获取云端画板失败",
+    CLOUD_READ_RETRIES,
   );
 }
 
@@ -245,15 +295,18 @@ export async function deleteCloudScene(id: string): Promise<boolean> {
 export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
   const entries = Object.values(files || {});
   await runWithConcurrency(entries, async (file) => {
-    const res = await fetch(`/api/files/${encodeURIComponent(file.id)}`, {
-      method: "PUT",
-      credentials: "same-origin",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": file.mimeType,
+    const res = await fetchWithTimeout(
+      `/api/files/${encodeURIComponent(file.id)}`,
+      {
+        method: "PUT",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": file.mimeType,
+        },
+        body: dataUrlToBlob(file.dataURL, file.mimeType),
       },
-      body: dataUrlToBlob(file.dataURL, file.mimeType),
-    });
+      "保存云端图片失败",
+    );
     await assertResponse(res, "保存云端图片失败");
   });
 }
@@ -267,10 +320,11 @@ export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
   const erroredFiles = new Map<FileId, true>();
   await runWithConcurrency(uniqueIds, async (id) => {
     try {
-      const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
-        credentials: "same-origin",
-        headers: { Accept: "application/octet-stream" },
-      });
+      const res = await fetchWithTimeout(
+        `/api/files/${encodeURIComponent(id)}`,
+        { headers: { Accept: "application/octet-stream" } },
+        "加载云端图片失败",
+      );
       await assertResponse(res, "加载云端图片失败");
       const blob = await res.blob();
       loadedFiles.push({
