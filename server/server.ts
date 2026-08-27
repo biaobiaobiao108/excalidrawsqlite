@@ -1346,7 +1346,11 @@ const createFullBackup = async (runtime: ServerRuntime, timestamp: string) => {
       updated_at: number;
     }>;
     const entries: Record<string, string | Blob> = {
-      "excalidraw.db": Bun.file(snapshot.tempBackupFile),
+      // Bun.Archive does not eagerly consume Bun.file() in all Bun versions.
+      // Materialize the snapshot so the archive cannot contain zero-byte entries.
+      "excalidraw.db": new Blob([
+        await Bun.file(snapshot.tempBackupFile).arrayBuffer(),
+      ]),
       "manifest.json": JSON.stringify(
         {
           format: "excalidraw-full-backup",
@@ -1373,7 +1377,9 @@ const createFullBackup = async (runtime: ServerRuntime, timestamp: string) => {
       if (!(await fs.promises.stat(filePath).catch(() => null))) {
         throw new Error(`附件文件缺失：${row.id}`);
       }
-      entries[`files/${row.id}`] = Bun.file(filePath);
+      entries[`files/${row.id}`] = new Blob([
+        await Bun.file(filePath).arrayBuffer(),
+      ]);
     }
 
     const archive = new Bun.Archive(entries);

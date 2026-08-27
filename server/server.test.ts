@@ -765,6 +765,14 @@ describe("cloud persistence server", () => {
       format: string;
       files: Array<{ id: string; path: string }>;
     };
+    const database = files.get("excalidraw.db")!;
+    expect(database.size).toBeGreaterThan(0);
+    expect(
+      new TextDecoder().decode((await database.arrayBuffer()).slice(0, 15)),
+    ).toBe("SQLite format 3");
+    expect(
+      new Uint8Array(await files.get("files/file_full_backup")!.arrayBuffer()),
+    ).toEqual(new Uint8Array([1, 2, 3]));
     expect(manifest.format).toBe("excalidraw-full-backup");
     expect(manifest.files).toEqual(
       expect.arrayContaining([
