@@ -1617,7 +1617,11 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
     if (currentSceneIdRef.current && !(await saveCurrentCloudScene())) {
       return;
     }
-    onNavigateHome?.() ?? window.location.assign(window.location.pathname);
+    if (onNavigateHome) {
+      onNavigateHome();
+      return;
+    }
+    window.location.assign(window.location.pathname);
   }, [onNavigateHome, saveCurrentCloudScene]);
 
   // browsers generally prevent infinite self-embedding, there are
