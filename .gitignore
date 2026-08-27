@@ -1,9 +1,5 @@
 .DS_Store
-.env.development
-.env.development.local
-.env.local
-.env.production.local
-.env.test.local
+.env*
 .envrc
 .eslintcache
 .history
