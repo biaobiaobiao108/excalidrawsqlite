@@ -855,13 +855,6 @@ export const WorkspaceHome = () => {
             <span aria-hidden="true">＋</span>
             新建画板
           </button>
-          <button
-            className="profile-button"
-            type="button"
-            aria-label="个人设置"
-          >
-            L
-          </button>
         </div>
       </header>
 
@@ -948,16 +941,6 @@ export const WorkspaceHome = () => {
                 </button>
               </div>
             ))}
-          </div>
-          <div className="workspace-storage">
-            <div className="storage-label">
-              <span>云端存储</span>
-              <span>SQLite</span>
-            </div>
-            <div className="storage-progress">
-              <span />
-            </div>
-            <span className="storage-caption">数据持续保存中</span>
           </div>
         </aside>
 

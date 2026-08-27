@@ -7,7 +7,12 @@
   --workspace-muted: #747487;
   --workspace-primary: #6965db;
   --workspace-primary-soft: #f0efff;
+  block-size: 100%;
   min-block-size: 100dvh;
+  overflow-x: clip;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
   background: var(--workspace-bg);
   color: var(--workspace-text);
   font-family: var(--ui-font, Assistant, system-ui, sans-serif);
@@ -20,6 +25,9 @@
 }
 
 .workspace-header {
+  position: sticky;
+  z-index: 10;
+  inset-block-start: 0;
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -207,19 +215,6 @@
   line-height: 1;
 }
 
-.profile-button {
-  display: grid;
-  place-items: center;
-  inline-size: 38px;
-  block-size: 38px;
-  border: 0;
-  border-radius: 50%;
-  background: #aaa7fa;
-  color: #3e3a9f;
-  cursor: pointer;
-  font-weight: 650;
-}
-
 .workspace-layout {
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
@@ -227,6 +222,11 @@
 }
 
 .workspace-sidebar {
+  position: sticky;
+  z-index: 5;
+  inset-block-start: 72px;
+  align-self: start;
+  max-block-size: calc(100dvh - 72px);
   display: flex;
   flex-direction: column;
   gap: 1.7rem;
@@ -340,42 +340,6 @@
 .folder-more svg {
   inline-size: 17px;
   block-size: 17px;
-}
-
-.workspace-storage {
-  margin-block-start: auto;
-  padding: 0.9rem;
-  border: 1px solid var(--workspace-border);
-  border-radius: 10px;
-  background: var(--workspace-surface);
-}
-
-.storage-label,
-.storage-caption {
-  display: flex;
-  justify-content: space-between;
-  color: #81808f;
-  font-size: 0.74rem;
-}
-
-.storage-label span:last-child {
-  color: var(--workspace-primary);
-}
-
-.storage-progress {
-  block-size: 5px;
-  margin-block: 0.75rem 0.55rem;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #e8e7f1;
-}
-
-.storage-progress span {
-  display: block;
-  inline-size: 28%;
-  block-size: 100%;
-  border-radius: inherit;
-  background: var(--workspace-primary);
 }
 
 .workspace-main {
@@ -978,8 +942,7 @@
   .workspace-brand span,
   .workspace-header-divider,
   .workspace-context,
-  .workspace-search kbd,
-  .profile-button {
+  .workspace-search kbd {
     display: none;
   }
 
@@ -1014,6 +977,10 @@
   }
 
   .workspace-sidebar {
+    position: sticky;
+    z-index: 9;
+    inset-block-start: 64px;
+    max-block-size: none;
     display: block;
     padding: 0;
     border-inline-end: 0;
@@ -1038,8 +1005,7 @@
 
   .workspace-nav button span,
   .workspace-sidebar .folder-heading,
-  .workspace-sidebar .folder-list,
-  .workspace-storage {
+  .workspace-sidebar .folder-list {
     display: none;
   }
 
