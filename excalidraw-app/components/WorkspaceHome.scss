@@ -771,6 +771,9 @@
 
 .board-grid.is-list .board-card-mobile-title {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .section-heading-title,
@@ -957,6 +960,9 @@
     min-block-size: 42px;
     padding: 0;
     justify-content: center;
+  }
+
+  .workspace-home .header-create-button {
     font-size: 0;
   }
 
@@ -1067,63 +1073,63 @@
     grid-template-columns: minmax(120px, 38%) minmax(0, 1fr);
   }
 
-  .board-card {
+  .board-grid .board-card {
     display: grid;
     grid-template-columns: minmax(120px, 38%) minmax(0, 1fr);
     min-block-size: 126px;
   }
 
-  .board-card-open {
+  .board-grid .board-card-open {
     display: grid;
     grid-template-rows: 1fr;
     block-size: 100%;
     border-radius: 12px 0 0 12px;
   }
 
-  .board-card-thumbnail,
-  .board-thumbnail {
+  .board-grid .board-card-thumbnail,
+  .board-grid .board-thumbnail {
     block-size: 100%;
     aspect-ratio: auto;
     border-block-end: 0;
     border-inline-end: 1px solid var(--workspace-border);
   }
 
-  .board-card-title {
+  .board-grid .board-card-title {
     display: none;
   }
 
-  .board-card-footer {
+  .board-grid .board-card-footer {
     display: flex;
     align-items: center;
     min-block-size: 0;
     padding: 0.8rem;
   }
 
-  .board-card-details::before {
+  .board-grid .board-card-details::before {
     content: attr(data-title);
   }
 
-  .board-card-details {
+  .board-grid .board-card-details {
     gap: 0.3rem;
   }
 
-  .board-card-mobile-title {
+  .board-grid .board-card-mobile-title {
     display: block;
   }
 
-  .board-card-updated {
+  .board-grid .board-card-updated {
     order: 2;
   }
 
-  .board-card-created {
+  .board-grid .board-card-created {
     order: 3;
   }
 
-  .board-card-actions {
+  .board-grid .board-card-actions {
     align-self: start;
   }
 
-  .board-card-menu {
+  .board-grid .board-card-menu {
     inset-block-start: calc(100% - 2px);
     inset-block-end: auto;
   }
