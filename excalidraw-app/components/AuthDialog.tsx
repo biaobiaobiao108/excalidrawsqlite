@@ -37,7 +37,9 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
     setError("");
 
     try {
-      const ok = await verifyAuthPassword(password.trim());
+      // Only trim for the empty-value check; configured passwords may
+      // intentionally contain leading or trailing whitespace.
+      const ok = await verifyAuthPassword(password);
       if (ok) {
         setPassword("");
         onSuccess();
