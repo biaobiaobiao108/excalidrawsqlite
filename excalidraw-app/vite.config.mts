@@ -11,6 +11,7 @@ import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
 export default defineConfig(({ mode }) => {
   // To load .env variables
   const envVars = loadEnv(mode, `../`);
+  const siteUrl = envVars.VITE_APP_SITE_URL?.trim();
   // https://vitejs.dev/config/
   return {
     server: {
@@ -133,13 +134,16 @@ export default defineConfig(({ mode }) => {
       assetsInlineLimit: 0,
     },
     plugins: [
-      Sitemap({
-        hostname: "https://excalidraw.com",
-        outDir: "build",
-        changefreq: "monthly",
-        // its static in public folder
-        generateRobotsTxt: false,
-      }),
+      ...(siteUrl
+        ? [
+            Sitemap({
+              hostname: siteUrl,
+              outDir: "build",
+              changefreq: "monthly",
+              generateRobotsTxt: false,
+            }),
+          ]
+        : []),
       woff2BrowserPlugin(),
       react(),
       mode === "development"

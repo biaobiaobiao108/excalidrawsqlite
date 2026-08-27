@@ -376,6 +376,8 @@ const CSP_DIRECTIVES = [
   "frame-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
+  "frame-ancestors 'self'",
+  "form-action 'self'",
 ].join("; ");
 
 const securityHeaders = (runtime: ServerRuntime, req: Request) => {
@@ -384,8 +386,15 @@ const securityHeaders = (runtime: ServerRuntime, req: Request) => {
     "X-Frame-Options": "SAMEORIGIN",
     "Referrer-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
     "Content-Security-Policy": CSP_DIRECTIVES,
   });
+  if (isSecureRequest(runtime, req)) {
+    headers.set(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains",
+    );
+  }
   const origin = req.headers.get("origin");
   if (origin && runtime.config.corsOrigins.has(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
@@ -1463,18 +1472,9 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           runtime.db.query("SELECT 1").get();
           fs.accessSync(path.dirname(runtime.dbPath), fs.constants.W_OK);
           fs.accessSync(runtime.filesDir, fs.constants.W_OK);
-          const consistency = await inspectStorageConsistency(runtime);
-          const warningCount =
-            consistency.missingFiles.length +
-            consistency.untrackedFiles.length +
-            consistency.orphanedReferences;
-          if (warningCount) {
-            console.warn("[Storage] 一致性检查发现问题", consistency);
-          }
-          return jsonResponse(runtime, req, {
-            status: "ok",
-            ...(warningCount ? { warnings: consistency } : {}),
-          });
+          // Keep health checks O(1). Full attachment consistency scans run in
+          // the maintenance loop and are intentionally not exposed publicly.
+          return jsonResponse(runtime, req, { status: "ok" });
         } catch {
           throw new HttpError(503, "STORAGE_UNAVAILABLE", "持久化存储不可用");
         }
