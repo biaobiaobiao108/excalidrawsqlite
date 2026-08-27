@@ -1604,6 +1604,13 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   //   // console.log("onExport");
   // };
 
+  const navigateHomeAfterSave = useCallback(async () => {
+    if (currentSceneIdRef.current && !(await saveCurrentCloudScene())) {
+      return;
+    }
+    props.onNavigateHome?.() ?? window.location.assign(window.location.pathname);
+  }, [props.onNavigateHome, saveCurrentCloudScene]);
+
   // browsers generally prevent infinite self-embedding, there are
   // cases where it still happens, and while we disallow self-embedding
   // by not whitelisting our own origin, this serves as an additional guard
@@ -1729,7 +1736,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
                   color: "var(--text-color-primary, #333)",
                   height: "36px",
                 }}
-                onClick={() => window.location.assign(window.location.pathname)}
+                onClick={() => void navigateHomeAfterSave()}
                 title="管理我的云端画板 (SQLite 持久化)"
               >
                 <svg
@@ -1781,10 +1788,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
           isCollabEnabled={!isCollabDisabled}
           theme={appTheme}
           refresh={() => forceRefresh((prev) => !prev)}
-          onOpenCloudScenes={
-            props.onNavigateHome ||
-            (() => window.location.assign(window.location.pathname))
-          }
+          onOpenCloudScenes={() => void navigateHomeAfterSave()}
         />
         <AppWelcomeScreen
           onCollabDialogOpen={onCollabDialogOpen}
