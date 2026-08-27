@@ -225,6 +225,24 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
     }
   };
 
+  const handleOpen = async (id: string) => {
+    if (pendingAction) {
+      return;
+    }
+    setPendingAction(`open:${id}`);
+    setActionError("");
+    try {
+      const selected = await onSelectScene(id);
+      if (selected !== false) {
+        onClose();
+      }
+    } catch (error: any) {
+      setActionError(error?.message || "打开画板失败");
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
   const filteredScenes = scenes.filter((s) =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
@@ -308,8 +326,9 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
               className="btn-confirm"
               type="submit"
               disabled={!!pendingAction}
+              aria-busy={pendingAction === "create"}
             >
-              创建
+              {pendingAction === "create" ? "创建中..." : "创建"}
             </button>
             <button
               className="btn-cancel"
@@ -369,15 +388,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                         className="scene-name"
                         title="点击打开此画板"
                         onClick={() => {
-                          if (pendingAction) {
-                            return;
-                          }
-                          void (async () => {
-                            const selected = await onSelectScene(scene.id);
-                            if (selected !== false) {
-                              onClose();
-                            }
-                          })();
+                          void handleOpen(scene.id);
                         }}
                       >
                         {scene.name || "未命名白板"}
@@ -394,14 +405,14 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                   <div className="scene-actions">
                     <button
                       className="action-btn open-btn"
-                      onClick={() => {
-                        onSelectScene(scene.id);
-                        onClose();
-                      }}
+                      onClick={() => void handleOpen(scene.id)}
                       title="打开画板"
                       disabled={!!pendingAction}
+                      aria-busy={pendingAction === `open:${scene.id}`}
                     >
-                      打开
+                      {pendingAction === `open:${scene.id}`
+                        ? "打开中..."
+                        : "打开"}
                     </button>
                     <button
                       className="action-btn icon-btn"
