@@ -43,14 +43,13 @@
    AUTH_PASSWORD=your-strong-password
    ```
 
-   镜像默认以非特权 `bun` 用户运行。先创建数据目录，并确保它对容器 UID（默认 1000）可写：
+   镜像默认保留基础镜像的 root 运行身份，以兼容 rootless Podman/Docker 的用户命名空间和绑定挂载。先创建数据目录：
 
    ```bash
    mkdir -p ./data
-   chown -R 1000:1000 ./data
    ```
 
-   如果宿主机使用其他 UID/GID，可通过 `CONTAINER_UID` 和 `CONTAINER_GID` 覆盖 Compose 默认值。
+   如需强制使用非 root 身份，请在 Compose 中显式添加 `user: "UID:GID"`，并先确保该 UID/GID 对 `data/` 有读写权限；rootless Podman 可优先使用 `--userns=keep-id`。
 
    Compose 文件中的 `:Z` 用于 SELinux 主机的目录重新标记。若 Docker Desktop 的 Compose 实现不接受该后缀，可删除 `:Z`，但不要删除数据卷。启动失败时先检查 `data/` 是否可写，并查看 `podman logs excalidraw`。
 
@@ -77,7 +76,7 @@
 
    设备接力使用时，请先在设备 A 停止编辑，等待页面显示“已保存到云端”后，再在设备 B 打开根路径或带 `?id=画板ID` 的链接。通过应用内返回主页会等待保存；浏览器强制关闭、崩溃或断网时无法保证异步请求完成，离开前确认状态是最可靠的交接方式。
 
-   > 容器默认不以 root 运行。若组织环境必须使用其他身份，请通过 `CONTAINER_UID`/`CONTAINER_GID` 指定，并提前确保该用户对 `/app/data` 有读写权限。
+   > 容器默认以 root 运行是为了兼容不同的 rootless/rootful 挂载映射。若组织安全基线禁止 root，请显式设置 `user: "UID:GID"` 并完成数据目录属主配置。
 
 ---
 
@@ -181,7 +180,7 @@
 - 文件级恢复前请先停止容器，再整体复制 `data/` 目录；不要在服务运行时直接复制 SQLite 主文件。
 - 使用完整归档恢复时，请先停止容器，将归档中的 `excalidraw.db` 和 `files/` 一起替换宿主机整个 `data/` 目录（不要只替换数据库），再启动容器。
 - 恢复时将完整 `data/` 目录挂载回 `/app/data` 后再启动容器。
-- 恢复数据后请确认目录属主与 `CONTAINER_UID`/`CONTAINER_GID` 一致；如果宿主机启用了 SELinux，请确保数据卷仍使用 `:Z` 标记。
+- 如果显式使用了 `user: "UID:GID"`，恢复数据后请确认目录属主与该 UID/GID 一致；如果宿主机启用了 SELinux，请确保数据卷仍使用 `:Z` 标记。
 
 ### 质量检查
 

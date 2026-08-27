@@ -35,10 +35,10 @@ ENV DB_PATH=/app/data/excalidraw.db
 ENV FILES_DIR=/app/data/files
 ENV STATIC_DIR=/app/excalidraw-app/build
 
-# Create data directory for SQLite persistence and run the service as the
-# unprivileged Bun user. Bind-mounted data directories should be owned by the
-# same UID (or overridden in compose with CONTAINER_UID/CONTAINER_GID).
-RUN mkdir -p /app/data/files && chown -R bun:bun /app/data
+# Create data directory for SQLite persistence. The runtime keeps the base
+# image's root default so rootless Podman/Docker bind mounts map to the
+# invoking host user without requiring a fixed container UID.
+RUN mkdir -p /app/data/files
 
 # Copy backend server code and built frontend static assets
 COPY server ./server
@@ -48,8 +48,6 @@ COPY --from=builder /app/excalidraw-app/build ./excalidraw-app/build
 EXPOSE 8080
 
 VOLUME ["/app/data"]
-
-USER bun
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD bun -e "fetch('http://127.0.0.1:8080/api/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
