@@ -996,10 +996,12 @@ export const WorkspaceHome = () => {
                       onToggleFavorite={handleToggleFavorite}
                       onEdit={openMetadataDialog}
                       onDelete={handleDeleteScene}
-                      menuOpen={menuSceneId === scene.id}
+                      menuOpen={menuSceneId === `recent:${scene.id}`}
                       onMenuToggle={() =>
                         setMenuSceneId(
-                          menuSceneId === scene.id ? null : scene.id,
+                          menuSceneId === `recent:${scene.id}`
+                            ? null
+                            : `recent:${scene.id}`,
                         )
                       }
                       eager
