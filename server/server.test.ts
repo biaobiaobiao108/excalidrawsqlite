@@ -299,7 +299,13 @@ describe("cloud persistence server", () => {
     });
     expect(initialUpload.status).toBe(201);
 
-    runtime.db.run("DROP TABLE files");
+    runtime.db.run(
+      `CREATE TRIGGER fail_file_update
+       BEFORE UPDATE ON files
+       BEGIN
+         SELECT RAISE(ABORT, 'simulated metadata failure');
+       END`,
+    );
     const failedUpload = await request(handler, "/api/files/file_rollback", {
       method: "PUT",
       headers: { Cookie: cookie, "Content-Type": "image/png" },
