@@ -228,6 +228,8 @@
   z-index: 5;
   inset-block-start: 72px;
   align-self: start;
+  box-sizing: border-box;
+  min-block-size: calc(100dvh - 72px);
   max-block-size: calc(100dvh - 72px);
   display: flex;
   flex-direction: column;
@@ -1060,6 +1062,7 @@
     position: sticky;
     z-index: 9;
     inset-block-start: 64px;
+    min-block-size: auto;
     max-block-size: none;
     display: block;
     padding: 0;

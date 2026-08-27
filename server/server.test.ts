@@ -325,6 +325,7 @@ describe("cloud persistence server", () => {
     expect(download.status).toBe(200);
     expect(new Uint8Array(await download.arrayBuffer())).toEqual(bytes);
     expect(download.headers.get("content-type")).toContain("image/png");
+    expect(download.headers.get("cache-control")).toContain("immutable");
 
     const createScene = await jsonRequest(
       handler,
@@ -550,6 +551,16 @@ describe("cloud persistence server", () => {
     }>(thumbnail);
     expect(thumbnailResult.thumbnail_file_id).toMatch(
       /^thumbnail_[a-f0-9]{64}$/,
+    );
+    const thumbnailFile = await request(
+      handler,
+      `/api/files/${thumbnailResult.thumbnail_file_id}`,
+      { headers: { Cookie: cookie, Accept: "image/jpeg" } },
+    );
+    expect(thumbnailFile.status).toBe(200);
+    expect(thumbnailFile.headers.get("cache-control")).toContain("no-cache");
+    expect(new Uint8Array(await thumbnailFile.arrayBuffer())).toEqual(
+      new Uint8Array([255, 216, 255, 217]),
     );
 
     const updated = await jsonRequest(

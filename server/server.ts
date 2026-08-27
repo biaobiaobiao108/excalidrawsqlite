@@ -2226,7 +2226,9 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
             "Content-Type": row.mime_type,
             "Content-Length": String(row.byte_size),
             "X-File-Created-At": String(row.created_at),
-            "Cache-Control": "private, max-age=31536000, immutable",
+            "Cache-Control": id.startsWith("thumbnail_")
+              ? "private, no-cache"
+              : "private, max-age=31536000, immutable",
           },
         });
       }

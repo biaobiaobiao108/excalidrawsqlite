@@ -144,6 +144,10 @@ import DebugCanvas, {
 import { useSimulatedCollaborators } from "./debugCollaborators";
 import { AIComponents } from "./components/AI";
 import { createSceneThumbnail } from "./data/sceneThumbnail";
+import {
+  LatestThumbnailSaveQueue,
+  type ThumbnailSnapshot,
+} from "./data/thumbnailSaveQueue";
 
 import { AppSidebar } from "./components/AppSidebar";
 import {
@@ -574,6 +578,10 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   const isApplyingCloudSceneRef = useRef(false);
   const cloudBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const cloudSceneLoadIdRef = useRef(0);
+  const thumbnailSaveQueue = useMemo(
+    () => new LatestThumbnailSaveQueue<ThumbnailSnapshot>(),
+    [],
+  );
   const authWaitersRef = useRef<Array<(authenticated: boolean) => void>>([]);
   const initialSceneDataRef = useRef<ResolutionType<
     typeof initializeScene
@@ -647,28 +655,28 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
           appState: AppState;
           files: BinaryFiles;
         }) => {
-          void (async () => {
-            const blob = await createSceneThumbnail(snapshot);
-            if (!blob) {
-              return;
-            }
-            await saveCloudSceneThumbnail(snapshot.sceneId, blob);
-          })().catch((error) => {
-            // A preview is auxiliary and must not affect the scene save.
-            console.warn("画板缩略图保存失败", error);
-          });
+          thumbnailSaveQueue.schedule(
+            snapshot,
+            createSceneThumbnail,
+            saveCloudSceneThumbnail,
+            (error) => {
+              // A preview is auxiliary and must not affect the scene save.
+              console.warn("画板缩略图保存失败", error);
+            },
+          );
         },
         1500,
       ),
-    [],
+    [thumbnailSaveQueue],
   );
 
   useEffect(
     () => () => {
       cloudSaveQueue.dispose();
       saveThumbnailDebounced.cancel();
+      thumbnailSaveQueue.cancel();
     },
-    [cloudSaveQueue, saveThumbnailDebounced],
+    [cloudSaveQueue, saveThumbnailDebounced, thumbnailSaveQueue],
   );
 
   const loadCloudFilesIntoScene = useCallback(

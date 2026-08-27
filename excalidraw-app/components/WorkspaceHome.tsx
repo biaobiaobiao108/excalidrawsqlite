@@ -265,11 +265,14 @@ const BoardThumbnail = ({
   return (
     <div className="board-thumbnail">
       <img
-        src={`/api/files/${encodeURIComponent(scene.thumbnail_file_id)}`}
+        src={`/api/files/${encodeURIComponent(scene.thumbnail_file_id)}?v=${
+          scene.updated_at
+        }`}
         alt={`${scene.name} 预览`}
         width={640}
         height={400}
         loading={eager ? "eager" : "lazy"}
+        fetchPriority={eager ? "high" : "low"}
       />
     </div>
   );

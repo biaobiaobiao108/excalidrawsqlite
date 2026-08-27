@@ -18,7 +18,7 @@ const mockScenes: CloudSceneSummary[] = [
     folder_id: "folder-1",
     folder_name: "工作目录",
     last_opened_at: Date.now() - 1000,
-    thumbnail_file_id: null,
+    thumbnail_file_id: "thumbnail-1",
   },
   {
     id: "scene-2",
@@ -123,6 +123,17 @@ describe("WorkspaceHome component", () => {
 
     expect(screen.getAllByText("架构设计图").length).toBeGreaterThan(0);
     expect(screen.queryByText("产品流程图")).toBeNull();
+  });
+
+  it("versions thumbnail URLs with the scene update timestamp", async () => {
+    render(<WorkspaceHome />);
+
+    await waitFor(() => {
+      expect(screen.getAllByAltText("架构设计图 预览")[0]).toHaveAttribute(
+        "src",
+        expect.stringContaining(`?v=${mockScenes[0].updated_at}`),
+      );
+    });
   });
 
   it("focuses search input when pressing Ctrl+K / ⌘K shortcut", async () => {
