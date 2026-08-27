@@ -7,9 +7,6 @@ import {
 } from "@excalidraw/excalidraw/data/encryption";
 import { restoreElements } from "@excalidraw/excalidraw/data/restore";
 import { getSceneVersion } from "@excalidraw/element";
-import type { FirebaseApp } from "firebase/app";
-import type { Firestore, Bytes as FirebaseBytes } from "firebase/firestore";
-import type { FirebaseStorage } from "firebase/storage";
 
 import type { RemoteExcalidrawElement } from "@excalidraw/excalidraw/data/reconcile";
 import type {
@@ -27,6 +24,10 @@ import type {
 import { FILE_CACHE_MAX_AGE_SEC } from "../app_constants";
 
 import { getSyncableElements } from ".";
+
+import type { FirebaseStorage } from "firebase/storage";
+import type { Firestore, Bytes as FirebaseBytes } from "firebase/firestore";
+import type { FirebaseApp } from "firebase/app";
 
 import type { SyncableExcalidrawElement } from ".";
 import type Portal from "../collab/Portal";

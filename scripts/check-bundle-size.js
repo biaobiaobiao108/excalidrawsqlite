@@ -17,7 +17,7 @@ const chunkBudgets = {
 };
 
 if (!statSync(assetsDir, { throwIfNoEntry: false })) {
-  console.error(`Build assets directory not found: ${assetsDir}`);
+  process.stderr.write(`Build assets directory not found: ${assetsDir}\n`);
   process.exit(1);
 }
 
@@ -36,10 +36,10 @@ for (const asset of assets) {
   const isEntry = /^index-[^/]+\.js$/.test(asset.name);
   const effectiveBudget = isEntry ? entryBudget : budget;
 
-  console.log(
+  process.stdout.write(
     `${asset.name}: ${formatBytes(asset.bytes)}${
       effectiveBudget ? ` / ${formatBytes(effectiveBudget)}` : ""
-    }`,
+    }\n`,
   );
 
   if (effectiveBudget && asset.bytes > effectiveBudget) {
@@ -50,9 +50,9 @@ for (const asset of assets) {
 }
 
 if (violations.length) {
-  console.error("\nBundle size budget exceeded:");
+  process.stderr.write("\nBundle size budget exceeded:\n");
   for (const violation of violations) {
-    console.error(`- ${violation}`);
+    process.stderr.write(`- ${violation}\n`);
   }
   process.exit(1);
 }
