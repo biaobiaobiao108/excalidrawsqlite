@@ -550,21 +550,60 @@ const getFilePath = (runtime: ServerRuntime, id: string) => {
   return filePath;
 };
 
-const writeFileAtomically = async (filePath: string, data: Uint8Array) => {
+type AtomicFileWrite = {
+  restore: () => Promise<void>;
+  cleanup: () => Promise<void>;
+};
+
+const writeFileAtomically = async (
+  filePath: string,
+  data: Uint8Array,
+): Promise<AtomicFileWrite> => {
   const tempPath = `${filePath}.${randomBytes(8).toString("hex")}.tmp`;
-  await Bun.write(tempPath, data);
+  const backupPath = `${filePath}.${randomBytes(8).toString("hex")}.bak`;
+  const hadExistingFile = fs.existsSync(filePath);
+
   try {
-    await fs.promises.rename(tempPath, filePath);
-  } catch (error: any) {
-    // Windows does not replace an existing file with rename(). Keep the same
-    // atomic path on POSIX and use a safe replacement fallback on Windows.
-    if (error?.code !== "EEXIST" && error?.code !== "EPERM") {
-      await fs.promises.rm(tempPath, { force: true });
-      throw error;
+    if (hadExistingFile) {
+      await fs.promises.copyFile(filePath, backupPath);
     }
-    await fs.promises.rm(filePath, { force: true });
-    await fs.promises.rename(tempPath, filePath);
+    await Bun.write(tempPath, data);
+
+    try {
+      await fs.promises.rename(tempPath, filePath);
+    } catch (error: any) {
+      // Windows does not replace an existing file with rename(). Keep the
+      // atomic path on POSIX and use a safe replacement fallback on Windows.
+      if (error?.code !== "EEXIST" && error?.code !== "EPERM") {
+        throw error;
+      }
+      await fs.promises.rm(filePath, { force: true });
+      try {
+        await fs.promises.rename(tempPath, filePath);
+      } catch (replacementError) {
+        if (hadExistingFile) {
+          await fs.promises.copyFile(backupPath, filePath);
+        }
+        throw replacementError;
+      }
+    }
+  } catch (error) {
+    await fs.promises.rm(tempPath, { force: true });
+    await fs.promises.rm(backupPath, { force: true });
+    throw error;
   }
+
+  return {
+    restore: async () => {
+      if (hadExistingFile) {
+        await fs.promises.copyFile(backupPath, filePath);
+      } else {
+        await fs.promises.rm(filePath, { force: true });
+      }
+      await fs.promises.rm(backupPath, { force: true });
+    },
+    cleanup: () => fs.promises.rm(backupPath, { force: true }),
+  };
 };
 
 const upsertFile = async (
@@ -584,7 +623,7 @@ const upsertFile = async (
     .query("SELECT created_at FROM files WHERE id = ?")
     .get(id) as { created_at: number } | null;
 
-  await writeFileAtomically(filePath, data);
+  const atomicWrite = await writeFileAtomically(filePath, data);
   try {
     runtime.db.run(
       `INSERT INTO files (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
@@ -606,11 +645,24 @@ const upsertFile = async (
       ],
     );
   } catch (error) {
-    if (!previous) {
-      await fs.promises.rm(filePath, { force: true });
+    try {
+      await atomicWrite.restore();
+    } catch (restoreError) {
+      console.error("[Files] Failed to roll back file after database error", {
+        filePath,
+        error: restoreError,
+      });
+      throw new Error("文件写入回滚失败", { cause: restoreError });
     }
     throw error;
   }
+
+  await atomicWrite.cleanup().catch((error) => {
+    console.error("[Files] Failed to remove temporary backup", {
+      filePath,
+      error,
+    });
+  });
 
   return {
     id,

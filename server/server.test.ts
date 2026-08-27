@@ -286,6 +286,30 @@ describe("cloud persistence server", () => {
     expect(traversal.status).toBe(400);
   });
 
+  it("restores the previous file when its metadata update fails", async () => {
+    const { handler, runtime, directory } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const filePath = path.join(directory, "files", "file_rollback");
+    const original = new Uint8Array([1, 2, 3]);
+
+    const initialUpload = await request(handler, "/api/files/file_rollback", {
+      method: "PUT",
+      headers: { Cookie: cookie, "Content-Type": "image/png" },
+      body: original,
+    });
+    expect(initialUpload.status).toBe(201);
+
+    runtime.db.run("DROP TABLE files");
+    const failedUpload = await request(handler, "/api/files/file_rollback", {
+      method: "PUT",
+      headers: { Cookie: cookie, "Content-Type": "image/png" },
+      body: new Uint8Array([9, 8, 7]),
+    });
+
+    expect(failedUpload.status).toBe(500);
+    expect(await fs.readFile(filePath)).toEqual(Buffer.from(original));
+  });
+
   it("does not serve the SPA shell for missing static assets", async () => {
     const { handler, runtime, directory } = createTestRuntime({
       ALLOW_ANONYMOUS: "true",
