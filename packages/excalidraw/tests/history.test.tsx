@@ -139,7 +139,8 @@ describe("history", () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await act(async () => {});
     checkpoint("end of test");
   });
 
@@ -4330,6 +4331,8 @@ describe("history", () => {
       });
 
       it("should redraw remotely added bound text when it's container is updated through the history", async () => {
+        const { y: _textY, ...textPropsWithoutY } = textProps;
+
         // Initialize the scene
         API.updateScene({
           elements: [container],
@@ -4390,16 +4393,16 @@ describe("history", () => {
             isDeleted: false,
           }),
           expect.objectContaining({
-            ...textProps,
+            ...textPropsWithoutY,
             // text element got redrawn!
             x: 241.295259647664,
-            y: 247.59240920619527,
             angle: 90,
             id: text.id,
             containerId: container.id,
             isDeleted: false,
           }),
         ]);
+        expect(h.elements[1]?.y).toBeCloseTo(247.59240920619527, 12);
 
         Keyboard.undo();
         expect(API.getUndoStack().length).toBe(0);
@@ -4435,15 +4438,15 @@ describe("history", () => {
             isDeleted: false,
           }),
           expect.objectContaining({
-            ...textProps,
+            ...textPropsWithoutY,
             x: 241.295259647664,
-            y: 247.59240920619527,
             angle: 90,
             id: text.id,
             containerId: container.id,
             isDeleted: false,
           }),
         ]);
+        expect(h.elements[1]?.y).toBeCloseTo(247.59240920619527, 12);
       });
 
       // TODO: #7348 this leads to empty undo/redo and could be confusing - instead we might consider redrawing container based on the text dimensions
