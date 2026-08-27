@@ -654,7 +654,10 @@ export const WorkspaceHome = () => {
     setPendingAction("create-scene");
     setError("");
     try {
-      const scene = await createCloudScene({ name: "未命名白板" });
+      const scene = await createCloudScene({
+        name: "未命名白板",
+        folder_id: selectedFolderId,
+      });
       navigateToScene(scene);
     } catch (requestError: any) {
       if (requestError?.status === 401) {
@@ -851,6 +854,14 @@ export const WorkspaceHome = () => {
             type="button"
             onClick={handleCreateScene}
             disabled={!!pendingAction}
+            title={
+              selectedFolderId
+                ? `在${
+                    folders.find((folder) => folder.id === selectedFolderId)
+                      ?.name || "当前文件夹"
+                  }中新建画板`
+                : "在根目录中新建画板"
+            }
           >
             <span aria-hidden="true">＋</span>
             新建画板
