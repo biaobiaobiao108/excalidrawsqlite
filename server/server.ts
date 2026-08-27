@@ -441,8 +441,7 @@ const isSecureRequest = (runtime: ServerRuntime, req: Request) => {
     return false;
   }
   return (
-    req.headers.get("x-forwarded-proto")?.split(",", 1)[0]?.trim() ===
-    "https"
+    req.headers.get("x-forwarded-proto")?.split(",", 1)[0]?.trim() === "https"
   );
 };
 
@@ -469,7 +468,9 @@ const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
     runtime.config.nodeEnv === "production" && secure
       ? AUTH_COOKIE_PRODUCTION
       : AUTH_COOKIE_DEVELOPMENT;
-  return `${name}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}${secure ? "; Secure" : ""}`;
+  return `${name}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}${
+    secure ? "; Secure" : ""
+  }`;
 };
 
 const clearSessionCookie = (runtime: ServerRuntime, req: Request) => {
@@ -478,7 +479,9 @@ const clearSessionCookie = (runtime: ServerRuntime, req: Request) => {
     runtime.config.nodeEnv === "production" && secure
       ? AUTH_COOKIE_PRODUCTION
       : AUTH_COOKIE_DEVELOPMENT;
-  return `${name}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`;
+  return `${name}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${
+    secure ? "; Secure" : ""
+  }`;
 };
 
 const isAuthorized = (runtime: ServerRuntime, req: Request) => {
@@ -838,9 +841,13 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
 
     try {
       if (pathname === "/api/health" && req.method === "GET") {
-        runtime.db.query("SELECT 1").get();
-        fs.accessSync(path.dirname(runtime.dbPath), fs.constants.W_OK);
-        fs.accessSync(runtime.filesDir, fs.constants.W_OK);
+        try {
+          runtime.db.query("SELECT 1").get();
+          fs.accessSync(path.dirname(runtime.dbPath), fs.constants.W_OK);
+          fs.accessSync(runtime.filesDir, fs.constants.W_OK);
+        } catch {
+          throw new HttpError(503, "STORAGE_UNAVAILABLE", "持久化存储不可用");
+        }
         return jsonResponse(runtime, req, { status: "ok" });
       }
 

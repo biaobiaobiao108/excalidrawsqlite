@@ -102,6 +102,29 @@ describe("cloud persistence server", () => {
     expect(limited.headers.get("retry-after")).toBeTruthy();
   });
 
+  it("keeps production HTTP sessions usable while securing HTTPS sessions", async () => {
+    const { handler } = createTestRuntime({ NODE_ENV: "production" });
+    const httpCookie = await authenticate(handler);
+    expect(httpCookie.startsWith("excalidraw_session=")).toBe(true);
+    expect(httpCookie).not.toContain("Secure");
+
+    const scenes = await request(handler, "/api/scenes", {
+      headers: { Cookie: httpCookie },
+    });
+    expect(scenes.status).toBe(200);
+
+    const httpsResponse = await handler(
+      new Request("https://localhost/api/auth/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: "test-password" }),
+      }),
+    );
+    const httpsCookie = httpsResponse.headers.get("set-cookie") || "";
+    expect(httpsCookie.startsWith("__Host-excalidraw_session=")).toBe(true);
+    expect(httpsCookie).toContain("Secure");
+  });
+
   it("uses a session cookie and preserves scene data while renaming", async () => {
     const { handler } = createTestRuntime();
     const unauthorized = await request(handler, "/api/scenes", {
@@ -261,5 +284,49 @@ describe("cloud persistence server", () => {
       headers: { Cookie: cookie },
     });
     expect(traversal.status).toBe(400);
+  });
+
+  it("does not serve the SPA shell for missing static assets", async () => {
+    const { handler, runtime, directory } = createTestRuntime({
+      ALLOW_ANONYMOUS: "true",
+    });
+    const staticDir = path.join(directory, "static");
+    await fs.mkdir(path.join(staticDir, "assets"), { recursive: true });
+    await fs.writeFile(path.join(staticDir, "index.html"), "<html>app</html>");
+    await fs.writeFile(
+      path.join(staticDir, "assets", "valid.js"),
+      "export {};",
+    );
+    runtime.staticDir = staticDir;
+
+    const page = await request(handler, "/cloud/scene", {
+      headers: { Accept: "text/html" },
+    });
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("<html>app</html>");
+
+    const missingAsset = await request(handler, "/assets/missing.js", {
+      headers: { Accept: "*/*" },
+    });
+    expect(missingAsset.status).toBe(404);
+
+    const asset = await request(handler, "/assets/valid.js", {
+      headers: { Accept: "*/*" },
+    });
+    expect(asset.status).toBe(200);
+    expect(asset.headers.get("cache-control")).toContain("immutable");
+  });
+
+  it("reports an unhealthy storage directory", async () => {
+    const { handler, runtime, directory } = createTestRuntime({
+      ALLOW_ANONYMOUS: "true",
+    });
+    runtime.filesDir = path.join(directory, "missing-files");
+
+    const health = await request(handler, "/api/health");
+    expect(health.status).toBe(503);
+    expect(await responseJson<{ code: string }>(health)).toMatchObject({
+      code: "STORAGE_UNAVAILABLE",
+    });
   });
 });
