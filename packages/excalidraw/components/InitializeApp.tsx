@@ -18,13 +18,26 @@ export const InitializeApp = (props: Props) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+
     const updateLang = async () => {
       await setLanguage(currentLang);
-      setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+      }
     };
     const currentLang =
       languages.find((lang) => lang.code === props.langCode) || defaultLang;
-    updateLang();
+    void updateLang().catch((error) => {
+      console.error("Failed to initialize language:", error);
+      if (!cancelled) {
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [props.langCode]);
 
   return loading ? <LoadingMessage theme={props.theme} /> : props.children;

@@ -4,6 +4,7 @@ import type { NestedKeyOf } from "@excalidraw/common/utility-types";
 
 import { useAtomValue, editorJotaiStore, atom } from "./editor-jotai";
 import fallbackLangData from "./locales/en.json";
+import zhCnLangData from "./locales/zh-CN.json";
 import percentages from "./locales/percentages.json";
 
 const COMPLETION_THRESHOLD = 85;
@@ -88,23 +89,43 @@ if (isDevEnv()) {
 
 let currentLang: Language = defaultLang;
 let currentLangData = {};
+let languageRequestId = 0;
 
 export const setLanguage = async (lang: Language) => {
-  currentLang = lang;
-  document.documentElement.dir = currentLang.rtl ? "rtl" : "ltr";
-  document.documentElement.lang = currentLang.code;
+  const requestId = ++languageRequestId;
+  const previousLang = currentLang;
+  const previousLangData = currentLangData;
+  let nextLangData: any;
 
   if (lang.code.startsWith(TEST_LANG_CODE)) {
-    currentLangData = {};
+    nextLangData = {};
   } else {
     try {
-      currentLangData = await import(`./locales/${currentLang.code}.json`);
+      nextLangData = await import(`./locales/${lang.code}.json`);
     } catch (error: any) {
       console.error(`Failed to load language ${lang.code}:`, error.message);
-      currentLangData = fallbackLangData;
+      // Keep Chinese available even when the production locale chunk is
+      // missing. Other failed loads retain the last working language instead
+      // of silently switching the editor back to English.
+      nextLangData = lang.code === "zh-CN" ? zhCnLangData : null;
     }
   }
 
+  if (requestId !== languageRequestId) {
+    return;
+  }
+
+  if (nextLangData === null) {
+    currentLang = previousLang;
+    currentLangData = previousLangData;
+    editorJotaiStore.set(editorLangCodeAtom, previousLang.code);
+    return;
+  }
+
+  currentLang = lang;
+  currentLangData = nextLangData || fallbackLangData;
+  document.documentElement.dir = currentLang.rtl ? "rtl" : "ltr";
+  document.documentElement.lang = currentLang.code;
   editorJotaiStore.set(editorLangCodeAtom, lang.code);
 };
 
