@@ -192,4 +192,60 @@ describe("cloud save queue", () => {
     expect(queue.hasPending("scene-1")).toBe(false);
     queue.dispose();
   });
+
+  it("flushes a pending snapshot immediately and reports its final status", async () => {
+    const statuses: string[] = [];
+    const queue = new CloudSaveQueue(
+      {
+        onAuthRequired: vi.fn(),
+        onConflict: vi.fn(),
+        onError: vi.fn(),
+        onStatusChange: (_sceneId, status) => statuses.push(status),
+      },
+      { saveCloudScene, saveFilesToCloud },
+    );
+
+    queue.enqueue(makeSnapshot("flush-now"));
+    await queue.flush("scene-1");
+
+    expect(saveFilesToCloud).toHaveBeenCalledTimes(1);
+    expect(saveCloudScene).toHaveBeenCalledTimes(1);
+    expect(queue.hasPending("scene-1")).toBe(false);
+    expect(statuses).toEqual(["saving", "saved"]);
+    queue.dispose();
+  });
+
+  it("keeps a failed snapshot for an explicit retry", async () => {
+    const onError = vi.fn();
+    saveCloudScene
+      .mockRejectedValueOnce(new Error("网络暂时不可用"))
+      .mockRejectedValueOnce(new Error("网络暂时不可用"))
+      .mockRejectedValueOnce(new Error("网络暂时不可用"))
+      .mockResolvedValueOnce({
+        success: true,
+        id: "scene-1",
+        updated_at: 2,
+        revision: 2,
+      });
+    const queue = new CloudSaveQueue(
+      {
+        onAuthRequired: vi.fn(),
+        onConflict: vi.fn(),
+        onError,
+      },
+      { saveCloudScene, saveFilesToCloud },
+    );
+
+    queue.enqueue(makeSnapshot("retry"));
+    const firstFlush = queue.flush("scene-1");
+    await vi.runAllTimersAsync();
+    await firstFlush;
+    expect(onError).toHaveBeenCalledOnce();
+    expect(queue.hasPending("scene-1")).toBe(true);
+
+    await queue.flush("scene-1");
+    expect(saveCloudScene).toHaveBeenCalledTimes(4);
+    expect(queue.hasPending("scene-1")).toBe(false);
+    queue.dispose();
+  });
 });

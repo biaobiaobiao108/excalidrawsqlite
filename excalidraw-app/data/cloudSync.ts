@@ -22,7 +22,16 @@ type QueueCallbacks = {
   onAuthRequired: (sceneId: string) => void;
   onConflict: (sceneId: string, snapshot: CloudSaveSnapshot) => void;
   onError: (error: Error) => void;
+  onStatusChange?: (sceneId: string, status: CloudSaveStatus) => void;
 };
+
+export type CloudSaveStatus =
+  | "idle"
+  | "saving"
+  | "saved"
+  | "error"
+  | "auth"
+  | "conflict";
 
 type BlockReason = "auth" | "conflict";
 
@@ -89,8 +98,10 @@ export class CloudSaveQueue {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly blocked = new Map<string, BlockReason>();
   private readonly disposed = new Set<string>();
+  private readonly statuses = new Map<string, CloudSaveStatus>();
   private isSaving = false;
   private activeSceneId: string | null = null;
+  private activeFlushPromise: Promise<void> | null = null;
   private readonly dependencies: CloudSaveDependencies;
 
   constructor(
@@ -112,6 +123,10 @@ export class CloudSaveQueue {
     );
   }
 
+  getStatus(sceneId: string): CloudSaveStatus {
+    return this.statuses.get(sceneId) || "idle";
+  }
+
   setRevision(sceneId: string, revision: number) {
     this.revisions.set(sceneId, revision);
   }
@@ -126,6 +141,7 @@ export class CloudSaveQueue {
       appState: { ...snapshot.appState },
       files: { ...snapshot.files },
     });
+    this.setStatus(snapshot.sceneId, "saving");
     this.schedule(snapshot.sceneId);
   }
 
@@ -140,11 +156,13 @@ export class CloudSaveQueue {
     this.blocked.delete(sceneId);
     this.revisions.delete(sceneId);
     this.disposed.add(sceneId);
+    this.setStatus(sceneId, "idle");
   }
 
   resumeAfterAuth(sceneId: string) {
     if (this.blocked.get(sceneId) === "auth") {
       this.blocked.delete(sceneId);
+      this.setStatus(sceneId, "saving");
       this.schedule(sceneId, 0);
     }
   }
@@ -157,8 +175,74 @@ export class CloudSaveQueue {
     this.revisions.set(sceneId, revision);
     if (keepLocal && snapshot) {
       this.pending.set(sceneId, snapshot);
+      this.setStatus(sceneId, "saving");
       this.schedule(sceneId, 0);
+    } else {
+      this.setStatus(sceneId, "idle");
     }
+  }
+
+  /**
+   * Wait until the selected scene has no pending save left, or until it is
+   * blocked by authentication/conflict handling. Failed network saves stay in
+   * the queue and can be retried by calling this method again.
+   */
+  async flush(sceneId?: string): Promise<void> {
+    if (sceneId) {
+      const timer = this.timers.get(sceneId);
+      if (timer) {
+        clearTimeout(timer);
+        this.timers.delete(sceneId);
+      }
+    } else {
+      for (const timer of this.timers.values()) {
+        clearTimeout(timer);
+      }
+      this.timers.clear();
+    }
+
+    while (true) {
+      if (this.activeFlushPromise) {
+        await this.activeFlushPromise;
+      }
+
+      const targetSceneId = sceneId
+        ? this.pending.has(sceneId)
+          ? sceneId
+          : null
+        : [...this.pending.keys()].find(
+            (pendingSceneId) =>
+              !this.blocked.has(pendingSceneId) &&
+              this.getStatus(pendingSceneId) !== "error",
+          ) || null;
+      if (!targetSceneId) {
+        return;
+      }
+
+      const flushPromise = this.flushScene(targetSceneId);
+      this.activeFlushPromise = flushPromise;
+      try {
+        await flushPromise;
+      } finally {
+        if (this.activeFlushPromise === flushPromise) {
+          this.activeFlushPromise = null;
+        }
+      }
+
+      if (
+        (sceneId &&
+          (!this.pending.has(sceneId) ||
+            this.blocked.has(sceneId) ||
+            this.getStatus(sceneId) === "error")) ||
+        (!sceneId && this.pending.size === 0)
+      ) {
+        return;
+      }
+    }
+  }
+
+  flushAll(): Promise<void> {
+    return this.flush();
   }
 
   dispose() {
@@ -190,7 +274,15 @@ export class CloudSaveQueue {
     );
   }
 
-  private async flush(sceneId: string) {
+  private setStatus(sceneId: string, status: CloudSaveStatus) {
+    if (this.statuses.get(sceneId) === status) {
+      return;
+    }
+    this.statuses.set(sceneId, status);
+    this.callbacks.onStatusChange?.(sceneId, status);
+  }
+
+  private async flushScene(sceneId: string) {
     if (
       this.isSaving ||
       this.disposed.has(sceneId) ||
@@ -205,6 +297,7 @@ export class CloudSaveQueue {
     this.pending.delete(sceneId);
     this.isSaving = true;
     this.activeSceneId = sceneId;
+    this.setStatus(sceneId, "saving");
 
     try {
       for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt++) {
@@ -226,22 +319,26 @@ export class CloudSaveQueue {
             sceneId,
             revision: saved.revision,
           });
+          this.setStatus(sceneId, "saved");
           break;
         } catch (error) {
           if (error instanceof CloudApiError && error.status === 401) {
             this.pending.set(sceneId, snapshot);
             this.blocked.set(sceneId, "auth");
+            this.setStatus(sceneId, "auth");
             this.callbacks.onAuthRequired(sceneId);
             return;
           }
           if (error instanceof CloudApiError && error.status === 409) {
             this.conflicts.set(sceneId, snapshot);
             this.blocked.set(sceneId, "conflict");
+            this.setStatus(sceneId, "conflict");
             this.callbacks.onConflict(sceneId, snapshot);
             return;
           }
           if (attempt === RETRY_DELAYS_MS.length - 1) {
             this.pending.set(sceneId, snapshot);
+            this.setStatus(sceneId, "error");
             this.callbacks.onError(
               error instanceof Error ? error : new Error("云端保存失败"),
             );
@@ -254,7 +351,10 @@ export class CloudSaveQueue {
       this.isSaving = false;
       this.activeSceneId = null;
       for (const pendingSceneId of this.pending.keys()) {
-        if (!this.blocked.has(pendingSceneId)) {
+        if (
+          !this.blocked.has(pendingSceneId) &&
+          this.getStatus(pendingSceneId) !== "error"
+        ) {
           this.schedule(pendingSceneId, 0);
         }
       }

@@ -142,7 +142,11 @@ import { useSimulatedCollaborators } from "./debugCollaborators";
 import { AIComponents } from "./components/AI";
 
 import { AppSidebar } from "./components/AppSidebar";
-import { CloudSaveQueue, subscribeCloudTabSync } from "./data/cloudSync";
+import {
+  CloudSaveQueue,
+  subscribeCloudTabSync,
+  type CloudSaveStatus,
+} from "./data/cloudSync";
 
 import type { CloudSaveSnapshot } from "./data/cloudSync";
 
@@ -496,6 +500,8 @@ const ExcalidrawWrapper = () => {
     snapshot: CloudSaveSnapshot;
   } | null>(null);
   const [currentSceneId, setCurrentSceneId] = useState<string | null>(null);
+  const [cloudSaveStatus, setCloudSaveStatus] =
+    useState<CloudSaveStatus>("idle");
   const currentSceneIdRef = useRef<string | null>(null);
   const isApplyingCloudSceneRef = useRef(false);
   const cloudBootstrapPromiseRef = useRef<Promise<void> | null>(null);
@@ -532,7 +538,13 @@ const ExcalidrawWrapper = () => {
           setCloudConflict({ sceneId, snapshot });
         },
         onError: (error) => {
+          setCloudSaveStatus("error");
           setErrorMessage(`云端自动保存失败：${error.message}`);
+        },
+        onStatusChange: (sceneId, status) => {
+          if (currentSceneIdRef.current === sceneId) {
+            setCloudSaveStatus(status);
+          }
         },
       }),
     [setActiveCloudScene],
@@ -1121,13 +1133,21 @@ const ExcalidrawWrapper = () => {
       }
     }, SYNC_BROWSER_TABS_TIMEOUT);
 
-    const onUnload = () => {
+    const flushCloudSave = () => {
       LocalData.flushSave();
+      const sceneId = currentSceneIdRef.current;
+      if (sceneId) {
+        void cloudSaveQueue.flush(sceneId);
+      }
+    };
+
+    const onUnload = () => {
+      flushCloudSave();
     };
 
     const visibilityChange = (event: FocusEvent | Event) => {
       if (event.type === EVENT.BLUR || document.hidden) {
-        LocalData.flushSave();
+        flushCloudSave();
       }
       if (
         event.type === EVENT.VISIBILITY_CHANGE ||
@@ -1139,12 +1159,14 @@ const ExcalidrawWrapper = () => {
 
     window.addEventListener(EVENT.HASHCHANGE, onHashChange, false);
     window.addEventListener(EVENT.UNLOAD, onUnload, false);
+    window.addEventListener("pagehide", onUnload, false);
     window.addEventListener(EVENT.BLUR, visibilityChange, false);
     document.addEventListener(EVENT.VISIBILITY_CHANGE, visibilityChange, false);
     window.addEventListener(EVENT.FOCUS, visibilityChange, false);
     return () => {
       window.removeEventListener(EVENT.HASHCHANGE, onHashChange, false);
       window.removeEventListener(EVENT.UNLOAD, onUnload, false);
+      window.removeEventListener("pagehide", onUnload, false);
       window.removeEventListener(EVENT.BLUR, visibilityChange, false);
       window.removeEventListener(EVENT.FOCUS, visibilityChange, false);
       document.removeEventListener(
@@ -1165,6 +1187,10 @@ const ExcalidrawWrapper = () => {
   useEffect(() => {
     const unloadHandler = (event: BeforeUnloadEvent) => {
       LocalData.flushSave();
+      const sceneId = currentSceneIdRef.current;
+      if (sceneId) {
+        void cloudSaveQueue.flush(sceneId);
+      }
 
       if (
         excalidrawAPI &&
@@ -1185,7 +1211,7 @@ const ExcalidrawWrapper = () => {
     return () => {
       window.removeEventListener(EVENT.BEFORE_UNLOAD, unloadHandler);
     };
-  }, [excalidrawAPI]);
+  }, [excalidrawAPI, cloudSaveQueue]);
 
   const onChange = (
     elements: readonly OrderedExcalidrawElement[],
@@ -1602,6 +1628,39 @@ const ExcalidrawWrapper = () => {
               重试
             </button>
           </ErrorDialog>
+        )}
+        {currentSceneId && cloudSaveStatus !== "idle" && (
+          <div
+            className="alert alert--warning"
+            role="status"
+            style={{
+              alignItems: "center",
+              bottom: "1rem",
+              display: "flex",
+              gap: "0.5rem",
+              left: "50%",
+              position: "fixed",
+              transform: "translateX(-50%)",
+              zIndex: 10,
+            }}
+          >
+            <span>
+              {cloudSaveStatus === "saving" && "云端保存中..."}
+              {cloudSaveStatus === "saved" && "已保存到云端"}
+              {cloudSaveStatus === "error" && "云端保存失败，数据仍在本地待重试"}
+              {cloudSaveStatus === "auth" && "需要重新认证后才能保存"}
+              {cloudSaveStatus === "conflict" && "云端版本冲突，等待处理"}
+            </span>
+            {cloudSaveStatus === "error" && (
+              <button
+                className="excalidraw-button"
+                type="button"
+                onClick={() => void cloudSaveQueue.flush(currentSceneId)}
+              >
+                重试保存
+              </button>
+            )}
+          </div>
         )}
         {errorMessage && (
           <ErrorDialog onClose={() => setErrorMessage("")}>
