@@ -141,4 +141,37 @@ describe("cloud save queue", () => {
     expect(saveCloudScene).not.toHaveBeenCalled();
     queue.dispose();
   });
+
+  it("uses the newest local snapshot when resolving a conflict", async () => {
+    saveCloudScene
+      .mockRejectedValueOnce(
+        new CloudApiError("版本冲突", 409, "REVISION_CONFLICT"),
+      )
+      .mockResolvedValueOnce({
+        success: true,
+        id: "scene-1",
+        updated_at: 3,
+        revision: 3,
+      });
+    const queue = new CloudSaveQueue(
+      {
+        onAuthRequired: vi.fn(),
+        onConflict: vi.fn(),
+        onError: vi.fn(),
+      },
+      { saveCloudScene, saveFilesToCloud },
+    );
+
+    queue.enqueue(makeSnapshot("conflicted"));
+    await vi.advanceTimersByTimeAsync(1000);
+    queue.enqueue(makeSnapshot("newest"));
+    queue.resolveConflict("scene-1", 2, true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(saveCloudScene).toHaveBeenLastCalledWith(
+      "scene-1",
+      expect.objectContaining({ name: "newest", baseRevision: 2 }),
+    );
+    queue.dispose();
+  });
 });

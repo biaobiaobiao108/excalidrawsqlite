@@ -96,7 +96,8 @@ export class CloudSaveQueue {
   }
 
   resolveConflict(sceneId: string, revision: number, keepLocal: boolean) {
-    const snapshot = this.conflicts.get(sceneId);
+    const snapshot = this.pending.get(sceneId) || this.conflicts.get(sceneId);
+    this.pending.delete(sceneId);
     this.conflicts.delete(sceneId);
     this.blocked.delete(sceneId);
     this.revisions.set(sceneId, revision);
