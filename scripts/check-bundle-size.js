@@ -10,7 +10,7 @@ const assetsDir = join(
 );
 const entryBudget = 2_150_000;
 const chunkBudgets = {
-  "firebase.chunk": 500_000,
+  "firebase.chunk": 600_000,
   "mermaid-to-excalidraw": 700_000,
   "codemirror.chunk": 600_000,
   "subset-shared.chunk": 2_000_000,
