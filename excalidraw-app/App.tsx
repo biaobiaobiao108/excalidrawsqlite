@@ -420,9 +420,15 @@ const waitForCloudFiles = async (
   const deadline = Date.now() + 30_000;
   while (true) {
     const statuses = FileStatusStore.getSnapshot().value;
-    const missingFile = fileIds.find((fileId) => !files[fileId]?.dataURL);
-    if (missingFile) {
-      throw new Error(`图片 ${missingFile} 尚未准备完成，请稍后重试`);
+    const loadingFiles = fileIds.filter(
+      (fileId) => statuses.get(fileId) === "loading",
+    );
+    if (loadingFiles.length) {
+      if (Date.now() >= deadline) {
+        throw new Error("图片加载超时，请稍后重试");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      continue;
     }
     const erroredFile = fileIds.find(
       (fileId) => statuses.get(fileId) === "error" && !files[fileId],
@@ -430,13 +436,11 @@ const waitForCloudFiles = async (
     if (erroredFile) {
       throw new Error(`图片 ${erroredFile} 加载失败，请重新加载后再保存`);
     }
-    if (!fileIds.some((fileId) => statuses.get(fileId) === "loading")) {
-      return;
+    const missingFile = fileIds.find((fileId) => !files[fileId]?.dataURL);
+    if (missingFile) {
+      throw new Error(`图片 ${missingFile} 尚未准备完成，请稍后重试`);
     }
-    if (Date.now() >= deadline) {
-      throw new Error("图片加载超时，请稍后重试");
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    return;
   }
 };
 
