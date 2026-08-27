@@ -49,14 +49,25 @@ try {
 }
 
 let firebaseApp: FirebaseApp | null = null;
+let firebaseAppPromise: Promise<FirebaseApp> | null = null;
 let firestore: Firestore | null = null;
 let firebaseStorage: FirebaseStorage | null = null;
 
 const _initializeFirebase = async (): Promise<FirebaseApp> => {
-  if (!firebaseApp) {
-    const { initializeApp } = await import("firebase/app");
-    firebaseApp = initializeApp(FIREBASE_CONFIG);
+  if (firebaseApp) {
+    return firebaseApp;
   }
+
+  if (!firebaseAppPromise) {
+    firebaseAppPromise = import("firebase/app")
+      .then(({ initializeApp }) => initializeApp(FIREBASE_CONFIG))
+      .catch((error) => {
+        firebaseAppPromise = null;
+        throw error;
+      });
+  }
+
+  firebaseApp = await firebaseAppPromise;
   return firebaseApp;
 };
 
