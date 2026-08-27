@@ -297,7 +297,46 @@ const BoardCard = ({
   menuOpen: boolean;
   onMenuToggle: () => void;
   eager?: boolean;
-}) => (
+}) => {
+  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitem"]',
+      ),
+    );
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onMenuToggle();
+      event.currentTarget.parentElement
+        ?.querySelector<HTMLButtonElement>('[aria-expanded]')
+        ?.focus();
+      return;
+    }
+    if (!items.length) {
+      return;
+    }
+    const currentIndex = items.indexOf(
+      event.target instanceof HTMLButtonElement
+        ? event.target
+        : items[0],
+    );
+    const nextIndex =
+      event.key === "ArrowDown"
+        ? (currentIndex + 1) % items.length
+        : event.key === "ArrowUp"
+        ? (currentIndex - 1 + items.length) % items.length
+        : event.key === "Home"
+        ? 0
+        : event.key === "End"
+        ? items.length - 1
+        : -1;
+    if (nextIndex >= 0) {
+      event.preventDefault();
+      items[nextIndex].focus();
+    }
+  };
+
+  return (
   <article className={`board-card ${isTrash ? "is-trash-card" : ""}`}>
     {isTrash ? (
       <div className="board-card-open is-disabled" title="已在回收站中，还原后可打开">
@@ -391,14 +430,25 @@ const BoardCard = ({
                 aria-label="更多画板操作"
                 aria-expanded={menuOpen}
                 onClick={onMenuToggle}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown" && !menuOpen) {
+                    event.preventDefault();
+                    onMenuToggle();
+                  }
+                }}
               >
                 <MoreIcon />
               </button>
               {menuOpen && (
-                <div className="board-card-menu" role="menu">
+                <div
+                  className="board-card-menu"
+                  role="menu"
+                  onKeyDown={handleMenuKeyDown}
+                >
                   <button
                     type="button"
                     role="menuitem"
+                    autoFocus
                     onClick={() => onEdit(scene)}
                   >
                     编辑信息
@@ -426,7 +476,8 @@ const BoardCard = ({
       </div>
     </div>
   </article>
-);
+  );
+};
 
 const WorkspaceModal = WorkspaceDialog;
 
@@ -1099,7 +1150,38 @@ export const WorkspaceHome = ({
               </p>
             </div>
             {view !== "trash" && (
-              <div className="view-toggle" role="tablist" aria-label="画板筛选">
+              <div
+                className="view-toggle"
+                role="tablist"
+                aria-label="画板筛选"
+                onKeyDown={(event) => {
+                  const tabs = Array.from(
+                    event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                      '[role="tab"]',
+                    ),
+                  );
+                  const currentIndex = tabs.indexOf(
+                    event.target instanceof HTMLButtonElement
+                      ? event.target
+                      : tabs[0],
+                  );
+                  const nextIndex =
+                    event.key === "ArrowRight"
+                      ? (currentIndex + 1) % tabs.length
+                      : event.key === "ArrowLeft"
+                      ? (currentIndex - 1 + tabs.length) % tabs.length
+                      : event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                      ? tabs.length - 1
+                      : -1;
+                  if (nextIndex >= 0) {
+                    event.preventDefault();
+                    tabs[nextIndex].focus();
+                    tabs[nextIndex].click();
+                  }
+                }}
+              >
                 {(["all", "recent", "favorites"] as BoardView[]).map((item) => (
                   <button
                     key={item}
@@ -1113,6 +1195,9 @@ export const WorkspaceHome = ({
                     type="button"
                     role="tab"
                     aria-selected={view === item && !selectedFolderId}
+                    tabIndex={
+                      view === item && !selectedFolderId ? 0 : -1
+                    }
                   >
                     {item === "all"
                       ? "全部"

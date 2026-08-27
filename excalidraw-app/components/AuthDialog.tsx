@@ -75,7 +75,6 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="auth-dialog-input"
-            autoFocus
             autoComplete="current-password"
           />
         </div>
