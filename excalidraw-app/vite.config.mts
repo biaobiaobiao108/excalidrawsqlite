@@ -125,6 +125,10 @@ export default defineConfig(({ mode }) => {
             if (id.includes("@codemirror/") || id.includes("@lezer/")) {
               return "codemirror.chunk";
             }
+
+            if (/node_modules[\\/]firebase(?:[\\/]|$)/.test(id)) {
+              return "firebase.chunk";
+            }
           },
         },
       },
