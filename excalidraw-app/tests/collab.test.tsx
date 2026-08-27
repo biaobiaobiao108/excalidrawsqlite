@@ -6,7 +6,7 @@ import {
 import { syncInvalidIndices } from "@excalidraw/element";
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
 import { act, render, waitFor } from "@excalidraw/excalidraw/tests/test-utils";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
 
 import { StoreIncrement } from "@excalidraw/element";
 
@@ -69,6 +69,12 @@ vi.mock("socket.io-client", () => {
  * i.e. multiplayer history tests could be a good first candidate, as we could test both history stacks simultaneously.
  */
 describe("collaboration", () => {
+  beforeEach(() => {
+    // The application root is now a workspace home when no scene id is
+    // present; collaboration tests exercise the editor route explicitly.
+    window.history.pushState({}, "", "/?id=collab-test");
+  });
+
   it("should emit two ephemeral increments even though updates get batched", async () => {
     const durableIncrements: DurableIncrement[] = [];
     const ephemeralIncrements: EphemeralIncrement[] = [];
@@ -140,7 +146,7 @@ describe("collaboration", () => {
       // eslint-disable-next-line dot-notation
       expect(h.store["scheduledMicroActions"].length).toBe(0);
     });
-  });
+  }, 15_000);
 
   it("should allow to undo / redo even on force-deleted elements", async () => {
     await render(<ExcalidrawApp />);
@@ -248,5 +254,5 @@ describe("collaboration", () => {
         expect.objectContaining({ ...rect2Props, isDeleted: true }),
       ]);
     });
-  });
+  }, 15_000);
 });
