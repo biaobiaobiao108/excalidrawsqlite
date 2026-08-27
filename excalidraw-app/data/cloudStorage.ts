@@ -343,3 +343,14 @@ export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
   });
   return { loadedFiles, erroredFiles };
 }
+
+export async function downloadCloudBackup(): Promise<Blob> {
+  const res = await fetchWithTimeout(
+    "/api/backup/snapshot",
+    { headers: { Accept: "application/x-sqlite3" } },
+    "下载云端数据库备份失败",
+  );
+  await assertResponse(res, "下载云端数据库备份失败");
+  return res.blob();
+}
+

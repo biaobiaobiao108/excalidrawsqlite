@@ -141,10 +141,12 @@ import DebugCanvas, {
 import { useSimulatedCollaborators } from "./debugCollaborators";
 import { AIComponents } from "./components/AI";
 
-import "./index.scss";
-
 import { AppSidebar } from "./components/AppSidebar";
-import { CloudSaveQueue } from "./data/cloudSync";
+import {
+  CloudSaveQueue,
+  subscribeCloudTabSync,
+  broadcastCloudSync,
+} from "./data/cloudSync";
 
 import type { CloudSaveSnapshot } from "./data/cloudSync";
 
@@ -844,6 +846,60 @@ const ExcalidrawWrapper = () => {
       setActiveCloudScene,
     ],
   );
+
+  useEffect(() => {
+    return subscribeCloudTabSync((message) => {
+      if (message.type === "scene_saved") {
+        cloudSaveQueue.setRevision(message.sceneId, message.revision);
+        if (
+          currentSceneIdRef.current === message.sceneId &&
+          !cloudSaveQueue.hasPending(message.sceneId)
+        ) {
+          void loadSelectedCloudScene(message.sceneId, false);
+        }
+      } else if (message.type === "scene_renamed") {
+        cloudSaveQueue.setRevision(message.sceneId, message.revision);
+        if (
+          currentSceneIdRef.current === message.sceneId &&
+          excalidrawAPI &&
+          !cloudSaveQueue.hasPending(message.sceneId)
+        ) {
+          excalidrawAPI.updateScene({
+            appState: { name: message.name },
+            captureUpdate: CaptureUpdateAction.NEVER,
+          });
+        }
+      } else if (message.type === "scene_deleted") {
+        if (currentSceneIdRef.current === message.sceneId) {
+          void handleSceneDeleted(message.sceneId);
+        }
+      }
+    });
+  }, [cloudSaveQueue, excalidrawAPI, handleSceneDeleted, loadSelectedCloudScene]);
+
+  useEffect(() => {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.storage &&
+      typeof navigator.storage.estimate === "function"
+    ) {
+      navigator.storage
+        .estimate()
+        .then((estimate) => {
+          if (estimate.quota && estimate.usage) {
+            const percentUsed = (estimate.usage / estimate.quota) * 100;
+            if (percentUsed > 85) {
+              console.warn(
+                `[Storage] 浏览器存储空间使用率已达 ${percentUsed.toFixed(
+                  1,
+                )}%，建议通过云端 SQLite 管理并保存画板。`,
+              );
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Hoisted loadImages

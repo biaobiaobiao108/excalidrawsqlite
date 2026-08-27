@@ -174,4 +174,23 @@ describe("cloud save queue", () => {
     );
     queue.dispose();
   });
+
+  it("accurately reports pending state via hasPending", () => {
+    const queue = new CloudSaveQueue(
+      {
+        onAuthRequired: vi.fn(),
+        onConflict: vi.fn(),
+        onError: vi.fn(),
+      },
+      { saveCloudScene, saveFilesToCloud },
+    );
+
+    expect(queue.hasPending("scene-1")).toBe(false);
+    queue.enqueue(makeSnapshot("pending-test"));
+    expect(queue.hasPending("scene-1")).toBe(true);
+    queue.cancel("scene-1");
+    expect(queue.hasPending("scene-1")).toBe(false);
+    queue.dispose();
+  });
 });
+

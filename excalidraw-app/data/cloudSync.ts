@@ -33,6 +33,48 @@ type CloudSaveDependencies = {
 
 const RETRY_DELAYS_MS = [500, 1000, 2000];
 
+export type CloudTabSyncMessage =
+  | { type: "scene_saved"; sceneId: string; revision: number }
+  | { type: "scene_renamed"; sceneId: string; name: string; revision: number }
+  | { type: "scene_deleted"; sceneId: string };
+
+const CLOUD_SYNC_CHANNEL_NAME = "excalidraw_cloud_tab_sync";
+
+export const broadcastCloudSync = (message: CloudTabSyncMessage) => {
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      const channel = new BroadcastChannel(CLOUD_SYNC_CHANNEL_NAME);
+      channel.postMessage(message);
+      channel.close();
+    } catch {
+      // BroadcastChannel might be unavailable or restricted in sandboxed environments
+    }
+  }
+};
+
+export const subscribeCloudTabSync = (
+  callback: (message: CloudTabSyncMessage) => void,
+) => {
+  if (typeof BroadcastChannel === "undefined") {
+    return () => {};
+  }
+  try {
+    const channel = new BroadcastChannel(CLOUD_SYNC_CHANNEL_NAME);
+    const listener = (event: MessageEvent<CloudTabSyncMessage>) => {
+      if (event.data && typeof event.data === "object" && "type" in event.data) {
+        callback(event.data);
+      }
+    };
+    channel.addEventListener("message", listener);
+    return () => {
+      channel.removeEventListener("message", listener);
+      channel.close();
+    };
+  } catch {
+    return () => {};
+  }
+};
+
 const sleep = (duration: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, duration));
 
@@ -56,6 +98,14 @@ export class CloudSaveQueue {
       saveFilesToCloud,
       ...dependencies,
     };
+  }
+
+  hasPending(sceneId: string) {
+    return (
+      this.pending.has(sceneId) ||
+      this.conflicts.has(sceneId) ||
+      (this.isSaving && this.activeSceneId === sceneId)
+    );
   }
 
   setRevision(sceneId: string, revision: number) {
@@ -167,6 +217,11 @@ export class CloudSaveQueue {
             baseRevision: this.revisions.get(sceneId),
           });
           this.revisions.set(sceneId, saved.revision);
+          broadcastCloudSync({
+            type: "scene_saved",
+            sceneId,
+            revision: saved.revision,
+          });
           break;
         } catch (error) {
           if (error instanceof CloudApiError && error.status === 401) {

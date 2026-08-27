@@ -9,8 +9,10 @@ import {
   createCloudScene,
   deleteCloudScene,
   renameCloudScene,
+  downloadCloudBackup,
   type CloudSceneSummary,
 } from "../data/cloudStorage";
+import { broadcastCloudSync } from "../data/cloudSync";
 
 import "./CloudScenesDialog.scss";
 
@@ -143,6 +145,28 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
     }
   };
 
+  const [isExportingBackup, setIsExportingBackup] = useState(false);
+
+  const handleDownloadBackup = async () => {
+    setIsExportingBackup(true);
+    setActionError("");
+    try {
+      const blob = await downloadCloudBackup();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `excalidraw-backup-${new Date()
+        .toISOString()
+        .slice(0, 10)}.db`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setActionError(err?.message || "导出数据库备份失败");
+    } finally {
+      setIsExportingBackup(false);
+    }
+  };
+
   const handleRename = async (id: string) => {
     if (!editingName.trim()) {
       setEditingId(null);
@@ -158,8 +182,15 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
       while (true) {
         try {
           const scene = scenes.find((item) => item.id === id);
+          const nextRevision = (scene?.revision || 1) + 1;
           await renameCloudScene(id, editingName.trim(), scene?.revision);
           setEditingId(null);
+          broadcastCloudSync({
+            type: "scene_renamed",
+            sceneId: id,
+            name: editingName.trim(),
+            revision: nextRevision,
+          });
           if (currentSceneId === id) {
             // Refresh the scene so the save queue observes the new revision and
             // the current canvas receives the renamed app state without clearing
@@ -201,6 +232,10 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
       while (true) {
         try {
           await deleteCloudScene(id);
+          broadcastCloudSync({
+            type: "scene_deleted",
+            sceneId: id,
+          });
           await loadScenes();
           if (currentSceneId === id) {
             await onSceneDeleted(id);
@@ -273,16 +308,26 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
             className="cloud-scenes-search"
           />
           {!isCreating && (
-            <FilledButton
-              label="新建画板"
-              onClick={() => {
-                setNewSceneName("未命名白板");
-                setIsCreating(true);
-              }}
-              size="medium"
-              className="create-btn"
-              disabled={!!pendingAction}
-            />
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <FilledButton
+                label="新建画板"
+                onClick={() => {
+                  setNewSceneName("未命名白板");
+                  setIsCreating(true);
+                }}
+                size="medium"
+                className="create-btn"
+                disabled={!!pendingAction || isExportingBackup}
+              />
+              <FilledButton
+                label={isExportingBackup ? "导出中..." : "备份数据库"}
+                onClick={() => void handleDownloadBackup()}
+                size="medium"
+                variant="outlined"
+                className="backup-btn"
+                disabled={!!pendingAction || isExportingBackup}
+              />
+            </div>
           )}
         </div>
 

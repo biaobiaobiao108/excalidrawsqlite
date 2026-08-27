@@ -391,4 +391,45 @@ describe("cloud persistence server", () => {
       code: "STORAGE_UNAVAILABLE",
     });
   });
+
+  it("includes Content-Security-Policy and security headers", async () => {
+    const { handler } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
+    const res = await request(handler, "/api/health");
+    expect(res.headers.get("content-security-policy")).toBeTruthy();
+    expect(res.headers.get("content-security-policy")).toContain("default-src 'self'");
+    expect(res.headers.get("content-security-policy")).toContain("worker-src 'self' blob:");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("provides an authenticated online SQLite backup snapshot", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const unauthorized = await request(handler, "/api/backup/snapshot");
+    expect(unauthorized.status).toBe(401);
+
+    const cookie = await authenticate(handler);
+    // Create a sample scene
+    await jsonRequest(
+      handler,
+      "/api/scenes",
+      {
+        id: "scene_backup_test",
+        name: "备份画板",
+        elements: [{ id: "elem-1", type: "rectangle" }],
+        appState: {},
+      },
+      { headers: { Cookie: cookie } },
+    );
+
+    const backupRes = await request(handler, "/api/backup/snapshot", {
+      headers: { Cookie: cookie },
+    });
+    expect(backupRes.status).toBe(200);
+    expect(backupRes.headers.get("content-type")).toContain("application/x-sqlite3");
+    expect(backupRes.headers.get("content-disposition")).toContain("attachment; filename=");
+    const buffer = await backupRes.arrayBuffer();
+    expect(buffer.byteLength).toBeGreaterThan(0);
+    // Header for sqlite database starts with "SQLite format 3\0"
+    const header = new TextDecoder().decode(buffer.slice(0, 15));
+    expect(header).toBe("SQLite format 3");
+  });
 });

@@ -138,6 +138,7 @@ const ensureColumn = (
 export const initializeDatabase = (db: Database) => {
   db.run("PRAGMA journal_mode = WAL;");
   db.run("PRAGMA foreign_keys = ON;");
+  db.run("PRAGMA wal_autocheckpoint = 1000;");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS scenes (
@@ -228,11 +229,35 @@ export const createRuntime = (options: {
   }
 };
 
-const cleanupExpiredSessions = (runtime: ServerRuntime, now: number) => {
+export const cleanupExpiredSessions = (runtime: ServerRuntime, now: number) => {
   for (const [token, expiresAt] of runtime.sessions) {
     if (expiresAt <= now) {
       runtime.sessions.delete(token);
     }
+  }
+};
+
+export const cleanupExpiredRateLimits = (
+  runtime: ServerRuntime,
+  now = Date.now(),
+) => {
+  for (const [key, record] of runtime.authAttempts) {
+    if (now - record.startedAt >= AUTH_RATE_WINDOW_MS) {
+      runtime.authAttempts.delete(key);
+    }
+  }
+  for (const [key, record] of runtime.writeAttempts) {
+    if (now - record.startedAt >= WRITE_RATE_WINDOW_MS) {
+      runtime.writeAttempts.delete(key);
+    }
+  }
+};
+
+export const performDatabaseMaintenance = (runtime: ServerRuntime) => {
+  try {
+    runtime.db.run("PRAGMA wal_checkpoint(PASSIVE);");
+  } catch (error) {
+    console.error("[Database] WAL checkpoint failed", error);
   }
 };
 
@@ -266,12 +291,26 @@ const isAllowedOrigin = (runtime: ServerRuntime, req: Request) => {
   );
 };
 
+const CSP_DIRECTIVES = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "connect-src 'self' data: blob: https: wss:",
+  "worker-src 'self' blob:",
+  "frame-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+].join("; ");
+
 const securityHeaders = (runtime: ServerRuntime, req: Request) => {
   const headers = new Headers({
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "SAMEORIGIN",
     "Referrer-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
+    "Content-Security-Policy": CSP_DIRECTIVES,
   });
   const origin = req.headers.get("origin");
   if (origin && runtime.config.corsOrigins.has(origin)) {
@@ -919,6 +958,43 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         return jsonResponse(runtime, req, { status: "ok" });
       }
 
+      if (pathname === "/api/backup/snapshot" && req.method === "GET") {
+        if (!isAuthorized(runtime, req)) {
+          return jsonResponse(
+            runtime,
+            req,
+            { error: "请先完成访问授权", code: "AUTH_REQUIRED" },
+            401,
+          );
+        }
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const tempBackupDir = path.resolve(path.dirname(runtime.dbPath));
+        const tempBackupFile = path.join(
+          tempBackupDir,
+          `excalidraw-backup-${timestamp}-${randomBytes(4).toString("hex")}.db`,
+        );
+        try {
+          const escapedPath = tempBackupFile.replace(/'/g, "''");
+          runtime.db.run(`VACUUM INTO '${escapedPath}'`);
+          const backupBytes = await Bun.file(tempBackupFile).arrayBuffer();
+          await fs.promises.rm(tempBackupFile, { force: true });
+          return response(runtime, req, backupBytes, {
+            headers: {
+              "Content-Type": "application/x-sqlite3",
+              "Content-Disposition": `attachment; filename="excalidraw-backup-${timestamp}.db"`,
+              "Cache-Control": "no-store",
+            },
+          });
+        } catch (error: any) {
+          await fs.promises.rm(tempBackupFile, { force: true }).catch(() => {});
+          throw new HttpError(
+            500,
+            "BACKUP_FAILED",
+            `创建数据库热备失败: ${error?.message || "未知错误"}`,
+          );
+        }
+      }
+
       if (pathname === "/api/auth/status" && req.method === "GET") {
         cleanupExpiredSessions(runtime, Date.now());
         return jsonResponse(runtime, req, {
@@ -1342,15 +1418,34 @@ const startServer = () => {
   const handler = createRequestHandler(runtime);
   const port = Number(process.env.PORT) || DEFAULT_PORT;
 
+  const runMaintenance = () => {
+    cleanupExpiredSessions(runtime, Date.now());
+    cleanupExpiredRateLimits(runtime, Date.now());
+    performDatabaseMaintenance(runtime);
+    void cleanupOrphanedFiles(runtime).catch((error) =>
+      console.error("[Files] cleanup failed", error),
+    );
+  };
+
   Bun.serve({ port, fetch: handler });
   void cleanupOrphanedFiles(runtime).catch((error) =>
     console.error("[Files] initial cleanup failed", error),
   );
-  setInterval(() => {
-    void cleanupOrphanedFiles(runtime).catch((error) =>
-      console.error("[Files] cleanup failed", error),
-    );
-  }, 60 * 60 * 1000);
+  setInterval(runMaintenance, 60 * 60 * 1000);
+
+  const handleShutdown = () => {
+    process.stdout.write("\n[Server] 正在优雅关闭...\n");
+    performDatabaseMaintenance(runtime);
+    try {
+      runtime.db.close();
+    } catch {
+      // ignore
+    }
+    process.exit(0);
+  };
+
+  process.on("SIGINT", handleShutdown);
+  process.on("SIGTERM", handleShutdown);
 
   process.stdout.write(`[Database] SQLite initialized at: ${dbPath}\n`);
   process.stdout.write(`[Files] Persistent file directory: ${filesDir}\n`);
