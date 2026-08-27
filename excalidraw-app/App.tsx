@@ -2013,7 +2013,9 @@ const ExcalidrawApp = () => {
   if (shouldRenderWorkspaceHome) {
     return (
       <TopErrorBoundary>
-        <WorkspaceHome />
+        <Provider store={appJotaiStore}>
+          <WorkspaceHome />
+        </Provider>
       </TopErrorBoundary>
     );
   }
