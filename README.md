@@ -62,9 +62,11 @@
    如果明确只在可信局域网免密使用，可额外设置 `ALLOW_ANONYMOUS=true`。
 
 3. **运行容器**
+
    ```bash
    docker compose up -d --build
    ```
+
    打开浏览器访问：`http://localhost:8080`。
 
    使用 Podman 时命令相同：
