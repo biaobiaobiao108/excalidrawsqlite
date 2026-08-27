@@ -247,8 +247,10 @@ const getCookie = (req: Request, name: string) => {
   return "";
 };
 
-const getClientKey = (req: Request) =>
-  req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+const getClientKey = (runtime: ServerRuntime, req: Request) =>
+  (runtime.config.trustProxy
+    ? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    : null) || "unknown";
 
 const isAllowedOrigin = (runtime: ServerRuntime, req: Request) => {
   const origin = req.headers.get("origin");
@@ -447,13 +449,13 @@ const isSecureRequest = (runtime: ServerRuntime, req: Request) => {
   );
 };
 
-const getSessionCookieNames = (runtime: ServerRuntime) =>
-  runtime.config.nodeEnv === "production"
-    ? [AUTH_COOKIE_PRODUCTION, AUTH_COOKIE_DEVELOPMENT]
-    : [AUTH_COOKIE_DEVELOPMENT];
+const getSessionCookieNames = () => [
+  AUTH_COOKIE_PRODUCTION,
+  AUTH_COOKIE_DEVELOPMENT,
+];
 
 const getSessionToken = (runtime: ServerRuntime, req: Request) => {
-  for (const name of getSessionCookieNames(runtime)) {
+  for (const name of getSessionCookieNames()) {
     const token = getCookie(req, name);
     if (token) {
       return token;
@@ -475,15 +477,17 @@ const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
   }`;
 };
 
-const clearSessionCookie = (runtime: ServerRuntime, req: Request) => {
+const clearSessionCookies = (runtime: ServerRuntime, req: Request) => {
   const secure = isSecureRequest(runtime, req);
-  const name =
-    runtime.config.nodeEnv === "production" && secure
-      ? AUTH_COOKIE_PRODUCTION
-      : AUTH_COOKIE_DEVELOPMENT;
-  return `${name}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${
-    secure ? "; Secure" : ""
-  }`;
+  const names = secure
+    ? [AUTH_COOKIE_PRODUCTION, AUTH_COOKIE_DEVELOPMENT]
+    : [AUTH_COOKIE_DEVELOPMENT];
+  return names.map(
+    (name) =>
+      `${name}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${
+        name === AUTH_COOKIE_PRODUCTION ? "; Secure" : ""
+      }`,
+  );
 };
 
 const isAuthorized = (runtime: ServerRuntime, req: Request) => {
@@ -918,7 +922,7 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
       if (pathname === "/api/auth/verify" && req.method === "POST") {
         const rate = consumeRateLimit(
           runtime.authAttempts,
-          getClientKey(req),
+          getClientKey(runtime, req),
           AUTH_ATTEMPTS_PER_WINDOW,
           AUTH_RATE_WINDOW_MS,
         );
@@ -953,12 +957,15 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
       if (pathname === "/api/auth/logout" && req.method === "POST") {
         const token = getSessionToken(runtime, req);
         runtime.sessions.delete(token);
+        const headers = new Headers({
+          "Clear-Site-Data": '"cookies"',
+        });
+        for (const cookie of clearSessionCookies(runtime, req)) {
+          headers.append("Set-Cookie", cookie);
+        }
         return response(runtime, req, null, {
           status: 204,
-          headers: {
-            "Set-Cookie": clearSessionCookie(runtime, req),
-            "Clear-Site-Data": '"cookies"',
-          },
+          headers,
         });
       }
 
@@ -977,7 +984,7 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
       ) {
         const rate = consumeRateLimit(
           runtime.writeAttempts,
-          getClientKey(req),
+          getClientKey(runtime, req),
           WRITE_REQUESTS_PER_WINDOW,
           WRITE_RATE_WINDOW_MS,
         );

@@ -123,6 +123,37 @@ describe("cloud persistence server", () => {
     const httpsCookie = httpsResponse.headers.get("set-cookie") || "";
     expect(httpsCookie.startsWith("__Host-excalidraw_session=")).toBe(true);
     expect(httpsCookie).toContain("Secure");
+
+    const logout = await handler(
+      new Request("https://localhost/api/auth/logout", {
+        method: "POST",
+        headers: { Cookie: httpsCookie.split(";", 1)[0] },
+      }),
+    );
+    const clearedCookies = logout.headers.get("set-cookie") || "";
+    expect(clearedCookies).toContain("__Host-excalidraw_session=");
+    expect(clearedCookies).toContain("excalidraw_session=");
+  });
+
+  it("trusts forwarded HTTPS only when explicitly configured", async () => {
+    const { handler } = createTestRuntime({
+      NODE_ENV: "production",
+      TRUST_PROXY: "true",
+    });
+    const response = await handler(
+      new Request("http://localhost/api/auth/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Forwarded-Proto": "https",
+        },
+        body: JSON.stringify({ password: "test-password" }),
+      }),
+    );
+    expect(response.headers.get("set-cookie")).toContain(
+      "__Host-excalidraw_session=",
+    );
+    expect(response.headers.get("set-cookie")).toContain("Secure");
   });
 
   it("uses a session cookie and preserves scene data while renaming", async () => {
