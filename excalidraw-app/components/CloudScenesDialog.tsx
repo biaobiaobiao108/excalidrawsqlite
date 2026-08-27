@@ -35,7 +35,7 @@ interface CloudScenesDialogProps {
   currentSceneId: string | null;
   onClose: () => void;
   onSelectScene: (sceneId: string) => void | Promise<void>;
-  onAuthRequired: () => void;
+  onAuthRequired: () => Promise<boolean>;
   onSceneDeleted: (sceneId: string) => void | Promise<void>;
 }
 
@@ -60,14 +60,26 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
   const loadScenes = useCallback(async () => {
     setLoading(true);
     setActionError("");
+    let retriedAfterAuth = false;
     try {
-      const list = await fetchCloudScenes();
-      setScenes(list);
-    } catch (err: any) {
-      if (err.status === 401 || err.code === "AUTH_REQUIRED") {
-        onAuthRequired();
-      } else {
-        setActionError(err.message || "加载画板列表失败");
+      while (true) {
+        try {
+          const list = await fetchCloudScenes();
+          setScenes(list);
+          return;
+        } catch (err: any) {
+          if (
+            !retriedAfterAuth &&
+            (err.status === 401 || err.code === "AUTH_REQUIRED")
+          ) {
+            retriedAfterAuth = true;
+            if (await onAuthRequired()) {
+              continue;
+            }
+          }
+          setActionError(err.message || "加载画板列表失败");
+          return;
+        }
       }
     } finally {
       setLoading(false);
@@ -93,24 +105,34 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
     const name = newSceneName.trim() || "未命名白板";
     setPendingAction("create");
     setActionError("");
+    let retriedAfterAuth = false;
     try {
-      const created = await createCloudScene({
-        name,
-        elements: [],
-        appState: {},
-      });
-      if (created) {
-        setNewSceneName("");
-        setIsCreating(false);
-        await loadScenes();
-        onSelectScene(created.id);
-        onClose();
-      }
-    } catch (err: any) {
-      if (err.status === 401 || err.code === "AUTH_REQUIRED") {
-        onAuthRequired();
-      } else {
-        setActionError(err.message || "创建画板失败");
+      while (true) {
+        try {
+          const created = await createCloudScene({
+            name,
+            elements: [],
+            appState: {},
+          });
+          setNewSceneName("");
+          setIsCreating(false);
+          await loadScenes();
+          await onSelectScene(created.id);
+          onClose();
+          return;
+        } catch (err: any) {
+          if (
+            !retriedAfterAuth &&
+            (err.status === 401 || err.code === "AUTH_REQUIRED")
+          ) {
+            retriedAfterAuth = true;
+            if (await onAuthRequired()) {
+              continue;
+            }
+          }
+          setActionError(err.message || "创建画板失败");
+          return;
+        }
       }
     } finally {
       setPendingAction(null);
@@ -127,22 +149,34 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
     }
     setPendingAction(`rename:${id}`);
     setActionError("");
+    let retriedAfterAuth = false;
     try {
-      const scene = scenes.find((item) => item.id === id);
-      await renameCloudScene(id, editingName.trim(), scene?.revision);
-      setEditingId(null);
-      if (currentSceneId === id) {
-        // Refresh the scene so the save queue observes the new revision and
-        // the current canvas receives the renamed app state without clearing
-        // its elements.
-        await onSelectScene(id);
-      }
-      await loadScenes();
-    } catch (err: any) {
-      if (err.status === 401 || err.code === "AUTH_REQUIRED") {
-        onAuthRequired();
-      } else {
-        setActionError(err.message || "重命名画板失败");
+      while (true) {
+        try {
+          const scene = scenes.find((item) => item.id === id);
+          await renameCloudScene(id, editingName.trim(), scene?.revision);
+          setEditingId(null);
+          if (currentSceneId === id) {
+            // Refresh the scene so the save queue observes the new revision and
+            // the current canvas receives the renamed app state without clearing
+            // its elements.
+            await onSelectScene(id);
+          }
+          await loadScenes();
+          return;
+        } catch (err: any) {
+          if (
+            !retriedAfterAuth &&
+            (err.status === 401 || err.code === "AUTH_REQUIRED")
+          ) {
+            retriedAfterAuth = true;
+            if (await onAuthRequired()) {
+              continue;
+            }
+          }
+          setActionError(err.message || "重命名画板失败");
+          return;
+        }
       }
     } finally {
       setPendingAction(null);
@@ -158,17 +192,29 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
     }
     setPendingAction(`delete:${id}`);
     setActionError("");
+    let retriedAfterAuth = false;
     try {
-      await deleteCloudScene(id);
-      await loadScenes();
-      if (currentSceneId === id) {
-        await onSceneDeleted(id);
-      }
-    } catch (err: any) {
-      if (err.status === 401 || err.code === "AUTH_REQUIRED") {
-        onAuthRequired();
-      } else {
-        setActionError(err.message || "删除画板失败");
+      while (true) {
+        try {
+          await deleteCloudScene(id);
+          await loadScenes();
+          if (currentSceneId === id) {
+            await onSceneDeleted(id);
+          }
+          return;
+        } catch (err: any) {
+          if (
+            !retriedAfterAuth &&
+            (err.status === 401 || err.code === "AUTH_REQUIRED")
+          ) {
+            retriedAfterAuth = true;
+            if (await onAuthRequired()) {
+              continue;
+            }
+          }
+          setActionError(err.message || "删除画板失败");
+          return;
+        }
       }
     } finally {
       setPendingAction(null);
@@ -199,6 +245,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
           <input
             type="text"
             placeholder="搜索画板名称..."
+            aria-label="搜索画板名称"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="cloud-scenes-search"
@@ -221,10 +268,21 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
         )}
 
         {isCreating && (
-          <div className="create-scene-row">
+          <form
+            className="create-scene-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleCreate();
+            }}
+          >
             <input
               type="text"
               placeholder="输入新画板名称..."
+              aria-label="新画板名称"
+              name="sceneName"
+              required
+              maxLength={120}
+              autoComplete="off"
               value={newSceneName}
               onChange={(e) => setNewSceneName(e.target.value)}
               className="create-scene-input"
@@ -241,7 +299,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
             />
             <button
               className="btn-confirm"
-              onClick={handleCreate}
+              type="submit"
               disabled={!!pendingAction}
             >
               创建
@@ -253,7 +311,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
             >
               取消
             </button>
-          </div>
+          </form>
         )}
 
         <div className="cloud-scenes-list">
@@ -280,6 +338,9 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                       <input
                         type="text"
                         value={editingName}
+                        aria-label="画板名称"
+                        maxLength={120}
+                        autoComplete="off"
                         onChange={(e) => setEditingName(e.target.value)}
                         onBlur={() => handleRename(scene.id)}
                         onKeyDown={(e) => {
