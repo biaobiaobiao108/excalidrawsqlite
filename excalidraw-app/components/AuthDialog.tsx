@@ -1,10 +1,10 @@
 import React, { useState } from "react";
-import { Dialog } from "@excalidraw/excalidraw/components/Dialog";
 import { FilledButton } from "@excalidraw/excalidraw/components/FilledButton";
 
 import { verifyAuthPassword } from "../data/cloudStorage";
 
 import "./AuthDialog.scss";
+import { WorkspaceDialog } from "./WorkspaceDialog";
 
 interface AuthDialogProps {
   isOpen: boolean;
@@ -52,14 +52,13 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
   };
 
   return (
-    <Dialog
-      onCloseRequest={() => {
+    <WorkspaceDialog
+      onClose={() => {
         setPassword("");
         onClose?.();
       }}
       title="访问授权验证"
       className="auth-dialog"
-      size="small"
     >
       <form onSubmit={handleSubmit} className="auth-dialog-form">
         <p className="auth-dialog-desc">
@@ -67,9 +66,10 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
         </p>
         <div className="auth-dialog-input-group">
           <input
-            type="password"
-            name="password"
-            placeholder="请输入访问密码"
+          type="password"
+          name="password"
+          aria-label="访问密码"
+          placeholder="请输入访问密码"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="auth-dialog-input"
@@ -91,6 +91,6 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
           />
         </div>
       </form>
-    </Dialog>
+    </WorkspaceDialog>
   );
 };

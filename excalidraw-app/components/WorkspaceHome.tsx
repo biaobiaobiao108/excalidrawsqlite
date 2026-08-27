@@ -31,6 +31,7 @@ import { LocalData } from "../data/LocalData";
 import { importFromLocalStorage } from "../data/localStorage";
 
 import { AuthDialog } from "./AuthDialog";
+import { WorkspaceDialog } from "./WorkspaceDialog";
 
 import "./WorkspaceHome.scss";
 
@@ -427,41 +428,7 @@ const BoardCard = ({
   </article>
 );
 
-const WorkspaceModal = ({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) => (
-  <div
-    className="workspace-dialog"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="workspace-dialog-title"
-    onKeyDown={(event) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    }}
-  >
-    <button
-      type="button"
-      className="workspace-dialog-backdrop"
-      aria-label="关闭弹窗"
-      onClick={onClose}
-    />
-    <div className="workspace-dialog-content-shell">
-      <h2 id="workspace-dialog-title" className="workspace-dialog-title">
-        {title}
-      </h2>
-      <div className="workspace-dialog-form-content">{children}</div>
-    </div>
-  </div>
-);
+const WorkspaceModal = WorkspaceDialog;
 
 const MetadataDialog = ({
   state,
@@ -491,7 +458,6 @@ const MetadataDialog = ({
         <input
           value={state.title}
           maxLength={120}
-          autoFocus
           onChange={(event) => onChange({ title: event.target.value })}
         />
       </label>
@@ -565,7 +531,6 @@ const FolderDialog = ({
         <input
           value={state.name}
           maxLength={80}
-          autoFocus
           onChange={(event) => onChange(event.target.value)}
         />
       </label>
