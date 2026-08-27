@@ -5,6 +5,7 @@ import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 
 import {
   fetchCloudFiles,
+  fetchCloudScenes,
   saveFilesToCloud,
   verifyAuthPassword,
 } from "../data/cloudStorage";
@@ -92,5 +93,21 @@ describe("cloud storage", () => {
     await expect(
       saveFilesToCloud({ "file-1": file } as BinaryFiles),
     ).rejects.toMatchObject({ status: 500, code: "STORAGE_ERROR" });
+  });
+
+  it("retries transient read failures and returns the successful response", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "暂时不可用" }), { status: 503 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "暂时不可用" }), { status: 502 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchCloudScenes()).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

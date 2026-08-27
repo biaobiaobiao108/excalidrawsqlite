@@ -49,6 +49,13 @@ describe("Test LanguageList", () => {
     });
     // switching to French, `thin` label should no longer exist
     await waitFor(() => expect(screen.queryByTitle(/thin/i)).toBeNull());
+    fireEvent.change(document.querySelector(".dropdown-select__language")!, {
+      target: { value: "zh-CN" },
+    });
+    await waitFor(() => {
+      expect(document.documentElement.lang).toBe("zh-CN");
+      expect(localStorage.getItem("i18nextLng")).toBe("zh-CN");
+    });
     // reset language
     fireEvent.change(document.querySelector(".dropdown-select__language")!, {
       target: { value: defaultLang.code },
