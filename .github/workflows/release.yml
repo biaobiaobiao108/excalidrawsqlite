@@ -3,16 +3,17 @@ name: Release & Publish Docker Image
 on:
   push:
     tags:
-      - "*"
       - "v*"
-      - "**"
   release:
     types: [published]
   workflow_dispatch:
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
+
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
 
 jobs:
   quality:
@@ -21,10 +22,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.0
 
@@ -52,26 +53,43 @@ jobs:
       - name: Build frontend
         run: bun run build:app:docker
 
+      - name: Check frontend bundle budgets
+        run: bun run build:check-size
+
   release:
     name: Build, Publish & Release
     needs: quality
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Determine stable release
+        id: release_flags
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: |
             ghcr.io/${{ github.repository }}
@@ -80,12 +98,11 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=ref,event=tag
-            type=ref,event=branch
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' }}
+            type=raw,value=latest,enable=${{ steps.release_flags.outputs.latest == 'true' || (github.event_name == 'release' && github.event.release.prerelease == false) }}
             type=sha,format=short
 
       - name: Log in to GitHub Container Registry (GHCR)
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -93,7 +110,7 @@ jobs:
 
       - name: Build and push Docker image
         id: docker_build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: .
           file: ./Dockerfile
@@ -127,8 +144,8 @@ jobs:
           ```bash
           # 1. 创建本地数据持久化目录
           mkdir -p ./data
-          # 镜像默认以 root 运行，不需要把数据目录改成固定 UID。
-          # rootless Podman 会在用户命名空间内映射容器 root。
+          # 镜像默认以 bun 用户（UID 1000）运行，请确保目录可写。
+          chown -R 1000:1000 ./data
 
           # 2. 启动容器
           docker run -d \
@@ -157,6 +174,7 @@ jobs:
               image: ghcr.io/$REPO_LOWER:$TAG_NAME
               container_name: excalidraw
               restart: unless-stopped
+              user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
               ports:
                 - "8080:8080"
               environment:
@@ -191,7 +209,7 @@ jobs:
 
       - name: Create or Update GitHub Release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           body_path: release_notes.md
           name: Release ${{ github.ref_name }}

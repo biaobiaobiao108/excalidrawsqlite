@@ -578,6 +578,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   const isApplyingCloudSceneRef = useRef(false);
   const cloudBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const cloudSceneLoadIdRef = useRef(0);
+  const thumbnailVersionRef = useRef(0);
   const thumbnailSaveQueue = useMemo(
     () => new LatestThumbnailSaveQueue<ThumbnailSnapshot>(),
     [],
@@ -654,11 +655,13 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
           elements: readonly OrderedExcalidrawElement[];
           appState: AppState;
           files: BinaryFiles;
+          thumbnailVersion?: number;
         }) => {
-          thumbnailSaveQueue.schedule(
+          return thumbnailSaveQueue.schedule(
             snapshot,
             createSceneThumbnail,
-            saveCloudSceneThumbnail,
+            (sceneId, blob) =>
+              saveCloudSceneThumbnail(sceneId, blob, snapshot.thumbnailVersion),
             (error) => {
               // A preview is auxiliary and must not affect the scene save.
               console.warn("画板缩略图保存失败", error);
@@ -678,6 +681,17 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
     },
     [cloudSaveQueue, saveThumbnailDebounced, thumbnailSaveQueue],
   );
+
+  useEffect(() => {
+    const retryCloudSave = () => {
+      const sceneId = currentSceneIdRef.current;
+      if (sceneId) {
+        void cloudSaveQueue.flush(sceneId);
+      }
+    };
+    window.addEventListener("online", retryCloudSave);
+    return () => window.removeEventListener("online", retryCloudSave);
+  }, [cloudSaveQueue]);
 
   const loadCloudFilesIntoScene = useCallback(
     async (
@@ -735,9 +749,13 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   const loadSelectedCloudScene = useCallback(
     async (sceneId: string, updateUrl = true) => {
       const loadId = ++cloudSceneLoadIdRef.current;
+      isApplyingCloudSceneRef.current = false;
       const cloudData = await fetchCloudScene(sceneId);
-      if (!excalidrawAPI) {
+      if (!excalidrawAPI || excalidrawAPI.isDestroyed) {
         throw new Error("编辑器尚未初始化");
+      }
+      if (loadId !== cloudSceneLoadIdRef.current) {
+        return cloudData;
       }
 
       const elements = restoreElements(cloudData.elements, null, {
@@ -748,6 +766,9 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
       cloudSaveQueue.setRevision(sceneId, cloudData.revision);
       setCloudBootstrapError("");
       if (updateUrl) {
+        if (loadId !== cloudSceneLoadIdRef.current) {
+          return cloudData;
+        }
         window.history.replaceState(
           {},
           "",
@@ -757,6 +778,9 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
 
       isApplyingCloudSceneRef.current = true;
       try {
+        if (loadId !== cloudSceneLoadIdRef.current) {
+          return cloudData;
+        }
         excalidrawAPI.updateScene({
           elements,
           appState: restoreAppState(
@@ -778,7 +802,9 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
           }, 50);
         }
       } finally {
-        isApplyingCloudSceneRef.current = false;
+        if (loadId === cloudSceneLoadIdRef.current) {
+          isApplyingCloudSceneRef.current = false;
+        }
       }
       // Do not mark the scene active until the remote snapshot has replaced
       // the editor state. Initialization onChange events must never enqueue
@@ -839,6 +865,10 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
       return false;
     }
     try {
+      // Flush the latest preview before leaving the editor. The body and
+      // thumbnail remain independently best-effort, but a normal in-app
+      // navigation must not race the preview debounce/upload.
+      const pendingThumbnail = saveThumbnailDebounced.flush();
       await waitForCloudFiles(
         getCloudFileIds(snapshot.elements),
         snapshot.files,
@@ -853,15 +883,23 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
       const status = await cloudSaveQueue.flush(snapshot.sceneId);
       if (status === "saved") {
         cloudPersistenceSignatureRef.current = signature;
+        await pendingThumbnail;
+        await thumbnailSaveQueue.flush();
         return true;
       }
+      await pendingThumbnail;
       return false;
     } catch (error: any) {
       setCloudSaveStatus("error");
       setErrorMessage(error?.message || "保存云端画板失败");
       return false;
     }
-  }, [cloudSaveQueue, createCurrentCloudSnapshot]);
+  }, [
+    cloudSaveQueue,
+    createCurrentCloudSnapshot,
+    saveThumbnailDebounced,
+    thumbnailSaveQueue,
+  ]);
 
   const handleSelectScene = useCallback(
     async (sceneId: string): Promise<boolean> => {
@@ -1021,24 +1059,28 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   useEffect(() => {
     return subscribeCloudTabSync((message) => {
       if (message.type === "scene_saved") {
-        cloudSaveQueue.setRevision(message.sceneId, message.revision);
         if (
           currentSceneIdRef.current === message.sceneId &&
           !cloudSaveQueue.hasPending(message.sceneId)
         ) {
+          cloudSaveQueue.setRevision(message.sceneId, message.revision);
           void loadSelectedCloudScene(message.sceneId, false);
+        } else if (!cloudSaveQueue.hasPending(message.sceneId)) {
+          cloudSaveQueue.setRevision(message.sceneId, message.revision);
         }
       } else if (message.type === "scene_renamed") {
-        cloudSaveQueue.setRevision(message.sceneId, message.revision);
         if (
           currentSceneIdRef.current === message.sceneId &&
           excalidrawAPI &&
           !cloudSaveQueue.hasPending(message.sceneId)
         ) {
+          cloudSaveQueue.setRevision(message.sceneId, message.revision);
           excalidrawAPI.updateScene({
             appState: { name: message.name },
             captureUpdate: CaptureUpdateAction.NEVER,
           });
+        } else if (!cloudSaveQueue.hasPending(message.sceneId)) {
+          cloudSaveQueue.setRevision(message.sceneId, message.revision);
         }
       } else if (message.type === "scene_deleted") {
         if (currentSceneIdRef.current === message.sceneId) {
@@ -1485,11 +1527,17 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
           appState: persistedAppState,
           files: referencedFiles,
         });
+        const thumbnailVersion = Math.max(
+          Date.now(),
+          thumbnailVersionRef.current + 1,
+        );
+        thumbnailVersionRef.current = thumbnailVersion;
         saveThumbnailDebounced({
           sceneId: activeSceneId,
           elements,
           appState,
           files: referencedFiles,
+          thumbnailVersion,
         });
       }
     }

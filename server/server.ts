@@ -33,6 +33,7 @@ const WRITE_RATE_WINDOW_MS = 60 * 1000;
 const ORPHAN_FILE_GRACE_MS = 24 * 60 * 60 * 1000;
 const STALE_FILE_ARTIFACT_MS = 60 * 60 * 1000;
 const SCHEMA_VERSION = 3;
+const thumbnailWriteLocks = new Map<string, Promise<void>>();
 
 export type ServerConfig = {
   authPassword: string;
@@ -91,6 +92,27 @@ const splitOrigins = (value: string | undefined) =>
       .map((origin) => origin.trim())
       .filter(Boolean),
   );
+
+const withThumbnailWriteLock = async <T>(
+  thumbnailId: string,
+  task: () => Promise<T>,
+): Promise<T> => {
+  const previous = thumbnailWriteLocks.get(thumbnailId) || Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  thumbnailWriteLocks.set(thumbnailId, current);
+  await previous;
+  try {
+    return await task();
+  } finally {
+    release();
+    if (thumbnailWriteLocks.get(thumbnailId) === current) {
+      thumbnailWriteLocks.delete(thumbnailId);
+    }
+  }
+};
 
 export const createServerConfig = (
   env: Record<string, string | undefined> = process.env,
@@ -876,6 +898,7 @@ const upsertFile = async (
   mimeType: string,
   data: Uint8Array,
   createdAt?: number,
+  updatedAt?: number,
 ) => {
   if (data.byteLength > runtime.config.maxFileBytes) {
     const limit = runtime.config.maxFileBytes / (1024 * 1024);
@@ -890,7 +913,7 @@ const upsertFile = async (
   }
   const filePath = getFilePath(runtime, id);
   const hash = createHash("sha256").update(data).digest("hex");
-  const now = Date.now();
+  const now = Number.isFinite(updatedAt) ? Number(updatedAt) : Date.now();
   const previous = runtime.db
     .query("SELECT created_at FROM files WHERE id = ?")
     .get(id) as { created_at: number } | null;
@@ -1970,15 +1993,53 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         const thumbnailId = `thumbnail_${createHash("sha256")
           .update(id)
           .digest("hex")}`;
-        await upsertFile(runtime, thumbnailId, contentType, bytes);
-        runtime.db.run("UPDATE scenes SET thumbnail_file_id = ? WHERE id = ?", [
-          thumbnailId,
-          id,
-        ]);
-        return jsonResponse(runtime, req, {
-          success: true,
-          id,
-          thumbnail_file_id: thumbnailId,
+        const thumbnailVersionHeader = req.headers.get("x-thumbnail-version");
+        const thumbnailVersion = thumbnailVersionHeader
+          ? Number(thumbnailVersionHeader)
+          : undefined;
+        if (
+          thumbnailVersion !== undefined &&
+          (!Number.isSafeInteger(thumbnailVersion) || thumbnailVersion <= 0)
+        ) {
+          throw new HttpError(
+            400,
+            "INVALID_THUMBNAIL_VERSION",
+            "画板缩略图版本无效",
+          );
+        }
+        return withThumbnailWriteLock(thumbnailId, async () => {
+          const currentThumbnail = runtime.db
+            .query("SELECT updated_at FROM files WHERE id = ?")
+            .get(thumbnailId) as { updated_at: number } | null;
+          if (
+            thumbnailVersion !== undefined &&
+            currentThumbnail &&
+            Number(currentThumbnail.updated_at) >= thumbnailVersion
+          ) {
+            return jsonResponse(runtime, req, {
+              success: true,
+              id,
+              thumbnail_file_id: thumbnailId,
+              stale: true,
+            });
+          }
+          await upsertFile(
+            runtime,
+            thumbnailId,
+            contentType,
+            bytes,
+            undefined,
+            thumbnailVersion,
+          );
+          runtime.db.run(
+            "UPDATE scenes SET thumbnail_file_id = ? WHERE id = ?",
+            [thumbnailId, id],
+          );
+          return jsonResponse(runtime, req, {
+            success: true,
+            id,
+            thumbnail_file_id: thumbnailId,
+          });
         });
       }
 

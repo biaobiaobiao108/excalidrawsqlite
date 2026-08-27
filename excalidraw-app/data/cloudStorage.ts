@@ -286,12 +286,19 @@ export async function markCloudSceneOpened(id: string): Promise<{
 export async function saveCloudSceneThumbnail(
   id: string,
   blob: Blob,
+  thumbnailVersion?: number,
 ): Promise<{ success: boolean; id: string; thumbnail_file_id: string }> {
+  const headers: Record<string, string> = {
+    "Content-Type": blob.type || "image/jpeg",
+  };
+  if (Number.isFinite(thumbnailVersion)) {
+    headers["X-Thumbnail-Version"] = String(thumbnailVersion);
+  }
   const res = await fetchWithTimeout(
     `/api/scenes/${encodeURIComponent(id)}/thumbnail`,
     {
       method: "PUT",
-      headers: { "Content-Type": blob.type || "image/jpeg" },
+      headers,
       body: blob,
     },
     "保存画板缩略图失败",

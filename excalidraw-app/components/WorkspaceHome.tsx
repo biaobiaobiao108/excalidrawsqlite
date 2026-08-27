@@ -21,7 +21,6 @@ import {
   fetchCloudFolders,
   fetchCloudScenes,
   fetchCloudTrashScenes,
-  markCloudSceneOpened,
   renameCloudFolder,
   restoreCloudScene,
   saveFilesToCloud,
@@ -29,6 +28,7 @@ import {
   type CloudFolder,
   type CloudSceneSummary,
 } from "../data/cloudStorage";
+import { subscribeCloudTabSync } from "../data/cloudSync";
 import { LocalData } from "../data/LocalData";
 import { importFromLocalStorage } from "../data/localStorage";
 
@@ -741,12 +741,18 @@ export const WorkspaceHome = ({
     null,
   );
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const loadRequestRef = useRef(0);
 
   const loadWorkspace = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
+    const isCurrent = () => loadRequestRef.current === requestId;
     setLoading(true);
     setError("");
     try {
       const auth = await checkAuthStatus();
+      if (!isCurrent()) {
+        return;
+      }
       if (auth.authRequired && !auth.authenticated) {
         setAuthOpen(true);
         return;
@@ -756,6 +762,9 @@ export const WorkspaceHome = ({
         fetchCloudFolders(),
         fetchCloudTrashScenes().catch(() => []),
       ]);
+      if (!isCurrent()) {
+        return;
+      }
       let migratedScene: CloudSceneSummary | null = null;
       if (sceneList.length === 0 && trashList.length === 0) {
         try {
@@ -777,13 +786,24 @@ export const WorkspaceHome = ({
         setError(requestError?.message || "加载画板首页失败");
       }
     } finally {
+      if (!isCurrent()) {
+        return;
+      }
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void loadWorkspace();
+    return () => {
+      loadRequestRef.current += 1;
+    };
   }, [loadWorkspace]);
+
+  useEffect(
+    () => subscribeCloudTabSync(() => void loadWorkspace()),
+    [loadWorkspace],
+  );
 
   useEffect(() => {
     const ownerWindow = getOwnerWindow(rootRef.current);
@@ -853,7 +873,6 @@ export const WorkspaceHome = ({
   );
 
   const navigateToScene = (scene: CloudSceneSummary) => {
-    void markCloudSceneOpened(scene.id).catch(() => {});
     if (onSelectScene) {
       onSelectScene(scene.id);
       return;

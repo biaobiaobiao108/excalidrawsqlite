@@ -181,6 +181,10 @@ export default defineConfig(({ mode }) => {
             "**/locales/**",
             "service-worker.js",
             "**/*.chunk-*.js",
+            "**/mermaid-to-excalidraw-*.js",
+            "**/*Diagram-*.js",
+            "**/diagram-*.js",
+            "**/treemap-*.js",
             // CodeMirrorEditor can't be assigned a `.chunk` name via
             // manualChunks because Rollup would hoist shared deps (React)
             // via a static import from the main bundle, defeating lazy
@@ -238,7 +242,9 @@ export default defineConfig(({ mode }) => {
               },
             },
             {
-              urlPattern: new RegExp("(.chunk-.+|CodeMirrorEditor-.+)\\.js"),
+              urlPattern: new RegExp(
+                "(.chunk-.+|CodeMirrorEditor-.+|mermaid-to-excalidraw-.+|.*Diagram-.+|diagram-.+|treemap-.+)\\.js",
+              ),
               handler: "CacheFirst",
               options: {
                 cacheName: "chunk",

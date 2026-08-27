@@ -43,13 +43,14 @@
    AUTH_PASSWORD=your-strong-password
    ```
 
-   镜像默认以 root 身份运行，以兼容 rootful/rootless Podman、Docker 以及已有 bind mount 的属主设置；不需要把宿主机目录改成固定 UID。先创建数据目录：
+   镜像默认以非特权 `bun` 用户运行。先创建数据目录，并确保它对容器 UID（默认 1000）可写：
 
    ```bash
    mkdir -p ./data
+   chown -R 1000:1000 ./data
    ```
 
-   rootless Podman 会把容器内的 root 映射到当前用户命名空间，通常可以直接写入目录；rootful Docker/Podman 产生的文件可能属于宿主机 root，维护或备份时按宿主机权限使用 `sudo`。
+   如果宿主机使用其他 UID/GID，可通过 `CONTAINER_UID` 和 `CONTAINER_GID` 覆盖 Compose 默认值。
 
    Compose 文件中的 `:Z` 用于 SELinux 主机的目录重新标记。若 Docker Desktop 的 Compose 实现不接受该后缀，可删除 `:Z`，但不要删除数据卷。启动失败时先检查 `data/` 是否可写，并查看 `podman logs excalidraw`。
 
@@ -76,7 +77,7 @@
 
    设备接力使用时，请先在设备 A 停止编辑，等待页面显示“已保存到云端”后，再在设备 B 打开根路径或带 `?id=画板ID` 的链接。通过应用内返回主页会等待保存；浏览器强制关闭、崩溃或断网时无法保证异步请求完成，离开前确认状态是最可靠的交接方式。
 
-   > 容器 root 只表示容器内的默认运行身份；rootless Podman 仍受宿主机用户命名空间和 SELinux 限制。若组织安全策略禁止 root 容器，可通过 Compose 的 `user` 或运行参数自行指定用户，但必须提前确保该用户对 `/app/data` 有读写权限。
+   > 容器默认不以 root 运行。若组织环境必须使用其他身份，请通过 `CONTAINER_UID`/`CONTAINER_GID` 指定，并提前确保该用户对 `/app/data` 有读写权限。
 
 ---
 
@@ -99,6 +100,8 @@
    ```bash
    bun run build:packages
    ```
+
+   构建不依赖本机未提交的 `.env` 文件；需要启用 Firebase、Sentry 等可选能力时，再按部署环境注入对应的 `VITE_APP_*` 变量。
 
 3. **启动模式**
 
@@ -162,6 +165,7 @@
 | `GET` | `/api/scenes/:id` | 获取指定画板的图元数据与状态 |
 | `PATCH` | `/api/scenes/:id` | 只修改画板名称 |
 | `PUT` | `/api/scenes/:id` | 保存指定画板，携带 `baseRevision` 做并发校验 |
+| `PUT` | `/api/scenes/:id/thumbnail` | 保存画板预览图，可携带 `X-Thumbnail-Version` 丢弃过期上传 |
 | `DELETE` | `/api/scenes/:id` | 删除指定画板 |
 | `PUT` | `/api/files/:id` | 上传单个二进制图片到本地文件系统 |
 | `POST` | `/api/files` | 兼容旧客户端的 JSON data URL 上传入口 |
@@ -177,13 +181,14 @@
 - 文件级恢复前请先停止容器，再整体复制 `data/` 目录；不要在服务运行时直接复制 SQLite 主文件。
 - 使用完整归档恢复时，请先停止容器，将归档中的 `excalidraw.db` 和 `files/` 一起替换宿主机整个 `data/` 目录（不要只替换数据库），再启动容器。
 - 恢复时将完整 `data/` 目录挂载回 `/app/data` 后再启动容器。
-- rootless Podman 恢复数据后通常无需重新调整 UID；如果宿主机启用了 SELinux，请确保数据卷仍使用 `:Z` 标记。
+- 恢复数据后请确认目录属主与 `CONTAINER_UID`/`CONTAINER_GID` 一致；如果宿主机启用了 SELinux，请确保数据卷仍使用 `:Z` 标记。
 
 ### 质量检查
 
 ```bash
 bun run test:all
 bun run build:app:docker
+bun run build:check-size
 ```
 
 ---

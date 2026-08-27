@@ -541,7 +541,11 @@ describe("cloud persistence server", () => {
       "/api/scenes/scene_metadata/thumbnail",
       {
         method: "PUT",
-        headers: { Cookie: cookie, "Content-Type": "image/jpeg" },
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "image/jpeg",
+          "X-Thumbnail-Version": "100",
+        },
         body: new Uint8Array([255, 216, 255, 217]),
       },
     );
@@ -560,6 +564,32 @@ describe("cloud persistence server", () => {
     expect(thumbnailFile.status).toBe(200);
     expect(thumbnailFile.headers.get("cache-control")).toContain("no-cache");
     expect(new Uint8Array(await thumbnailFile.arrayBuffer())).toEqual(
+      new Uint8Array([255, 216, 255, 217]),
+    );
+
+    const staleThumbnail = await request(
+      handler,
+      "/api/scenes/scene_metadata/thumbnail",
+      {
+        method: "PUT",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "image/jpeg",
+          "X-Thumbnail-Version": "99",
+        },
+        body: new Uint8Array([1, 2, 3, 4]),
+      },
+    );
+    expect(staleThumbnail.status).toBe(200);
+    expect(
+      await responseJson<{ stale?: boolean }>(staleThumbnail),
+    ).toMatchObject({ stale: true });
+    const unchangedThumbnail = await request(
+      handler,
+      `/api/files/${thumbnailResult.thumbnail_file_id}`,
+      { headers: { Cookie: cookie, Accept: "image/jpeg" } },
+    );
+    expect(new Uint8Array(await unchangedThumbnail.arrayBuffer())).toEqual(
       new Uint8Array([255, 216, 255, 217]),
     );
 

@@ -175,6 +175,28 @@ describe("cloud save queue", () => {
     queue.dispose();
   });
 
+  it("keeps a pending snapshot's base revision stable when another tab saves", async () => {
+    const queue = new CloudSaveQueue(
+      {
+        onAuthRequired: vi.fn(),
+        onConflict: vi.fn(),
+        onError: vi.fn(),
+      },
+      { saveCloudScene, saveFilesToCloud },
+    );
+    queue.setRevision("scene-1", 1);
+    queue.enqueue(makeSnapshot("local"));
+    queue.setRevision("scene-1", 2);
+
+    await queue.flush("scene-1");
+
+    expect(saveCloudScene).toHaveBeenCalledWith(
+      "scene-1",
+      expect.objectContaining({ name: "local", baseRevision: 1 }),
+    );
+    queue.dispose();
+  });
+
   it("accurately reports pending state via hasPending", () => {
     const queue = new CloudSaveQueue(
       {

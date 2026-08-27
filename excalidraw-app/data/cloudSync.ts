@@ -16,6 +16,8 @@ export interface CloudSaveSnapshot {
   elements: readonly OrderedExcalidrawElement[];
   appState: Pick<AppState, "viewBackgroundColor" | "gridSize">;
   files: BinaryFiles;
+  /** Revision observed when this snapshot was created. */
+  baseRevision?: number;
 }
 
 type QueueCallbacks = {
@@ -133,6 +135,10 @@ export class CloudSaveQueue {
     this.revisions.set(sceneId, revision);
   }
 
+  getRevision(sceneId: string) {
+    return this.revisions.get(sceneId);
+  }
+
   enqueue(snapshot: CloudSaveSnapshot) {
     if (this.disposed.has(snapshot.sceneId)) {
       return;
@@ -142,6 +148,8 @@ export class CloudSaveQueue {
       elements: [...snapshot.elements],
       appState: { ...snapshot.appState },
       files: { ...snapshot.files },
+      baseRevision:
+        snapshot.baseRevision ?? this.revisions.get(snapshot.sceneId),
     });
     if (!(this.isSaving && this.activeSceneId === snapshot.sceneId)) {
       this.setStatus(snapshot.sceneId, "pending");
@@ -178,7 +186,7 @@ export class CloudSaveQueue {
     this.blocked.delete(sceneId);
     this.revisions.set(sceneId, revision);
     if (keepLocal && snapshot) {
-      this.pending.set(sceneId, snapshot);
+      this.pending.set(sceneId, { ...snapshot, baseRevision: revision });
       this.setStatus(sceneId, "pending");
       this.schedule(sceneId, 0);
     } else {
@@ -254,11 +262,10 @@ export class CloudSaveQueue {
       clearTimeout(timer);
     }
     this.timers.clear();
-    this.pending.clear();
-    this.conflicts.clear();
-    if (this.activeSceneId) {
-      this.disposed.add(this.activeSceneId);
-    }
+    // Do not discard pending snapshots on route teardown. A component can be
+    // unmounted by browser history before its async save has completed; keep
+    // the queue alive long enough to flush the latest durable snapshot.
+    void this.flush();
   }
 
   private schedule(sceneId: string, delay = AUTO_SAVE_DELAY_MS) {
@@ -315,7 +322,7 @@ export class CloudSaveQueue {
             elements:
               snapshot.elements as readonly NonDeletedExcalidrawElement[],
             appState: snapshot.appState,
-            baseRevision: this.revisions.get(sceneId),
+            baseRevision: snapshot.baseRevision,
           });
           this.revisions.set(sceneId, saved.revision);
           broadcastCloudSync({

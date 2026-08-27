@@ -6,6 +6,8 @@ export type ThumbnailSnapshot = {
   elements: readonly ExcalidrawElement[];
   appState: AppState;
   files: BinaryFiles;
+  /** Monotonic client-side version used to reject stale cross-tab uploads. */
+  thumbnailVersion?: number;
 };
 
 /**
@@ -41,5 +43,9 @@ export class LatestThumbnailSaveQueue<Snapshot extends { sceneId: string }> {
 
   cancel() {
     this.generation += 1;
+  }
+
+  flush() {
+    return this.chain;
   }
 }

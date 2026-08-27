@@ -1,8 +1,12 @@
 const dotenv = require("dotenv");
-const { readFileSync } = require("fs");
+const { existsSync, readFileSync } = require("fs");
 const pkg = require("./package.json");
 const parseEnvVariables = (filepath) => {
-  const envVars = Object.entries(dotenv.parse(readFileSync(filepath))).reduce(
+  // Package builds must also work in clean CI/Docker checkouts where local
+  // developer env files are intentionally not committed. Runtime-specific
+  // values are injected by the application build instead.
+  const source = existsSync(filepath) ? readFileSync(filepath) : "";
+  const envVars = Object.entries(dotenv.parse(source)).reduce(
     (env, [key, value]) => {
       env[key] = value;
       return env;
