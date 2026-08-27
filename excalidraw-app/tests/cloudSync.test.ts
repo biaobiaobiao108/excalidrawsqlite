@@ -71,7 +71,7 @@ describe("cloud save queue", () => {
     );
 
     queue.enqueue(makeSnapshot("first"));
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(30_000);
     queue.enqueue(makeSnapshot("latest"));
     releaseFirstSave({
       success: true,
@@ -106,7 +106,7 @@ describe("cloud save queue", () => {
     );
 
     queue.enqueue(makeSnapshot("pending"));
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(onAuthRequired).toHaveBeenCalledWith("scene-1");
 
     queue.resumeAfterAuth("scene-1");
@@ -133,7 +133,7 @@ describe("cloud save queue", () => {
     );
 
     queue.enqueue(makeSnapshot("to-delete"));
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(30_000);
     queue.cancel("scene-1");
     releaseUpload();
     await vi.runAllTimersAsync();
@@ -163,7 +163,7 @@ describe("cloud save queue", () => {
     );
 
     queue.enqueue(makeSnapshot("conflicted"));
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(30_000);
     queue.enqueue(makeSnapshot("newest"));
     queue.resolveConflict("scene-1", 2, true);
     await vi.advanceTimersByTimeAsync(0);
@@ -211,7 +211,26 @@ describe("cloud save queue", () => {
     expect(saveFilesToCloud).toHaveBeenCalledTimes(1);
     expect(saveCloudScene).toHaveBeenCalledTimes(1);
     expect(queue.hasPending("scene-1")).toBe(false);
-    expect(statuses).toEqual(["saving", "saved"]);
+    expect(statuses).toEqual(["pending", "saving", "saved"]);
+    queue.dispose();
+  });
+
+  it("does not autosave before the 30 second handoff safety window", async () => {
+    const queue = new CloudSaveQueue(
+      {
+        onAuthRequired: vi.fn(),
+        onConflict: vi.fn(),
+        onError: vi.fn(),
+      },
+      { saveCloudScene, saveFilesToCloud },
+    );
+
+    queue.enqueue(makeSnapshot("delayed"));
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(saveCloudScene).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(saveCloudScene).toHaveBeenCalledOnce();
     queue.dispose();
   });
 

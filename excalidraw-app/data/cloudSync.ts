@@ -27,6 +27,7 @@ type QueueCallbacks = {
 
 export type CloudSaveStatus =
   | "idle"
+  | "pending"
   | "saving"
   | "saved"
   | "error"
@@ -41,6 +42,7 @@ type CloudSaveDependencies = {
 };
 
 const RETRY_DELAYS_MS = [500, 1000, 2000];
+const AUTO_SAVE_DELAY_MS = 30_000;
 
 export type CloudTabSyncMessage =
   | { type: "scene_saved"; sceneId: string; revision: number }
@@ -141,7 +143,9 @@ export class CloudSaveQueue {
       appState: { ...snapshot.appState },
       files: { ...snapshot.files },
     });
-    this.setStatus(snapshot.sceneId, "saving");
+    if (!(this.isSaving && this.activeSceneId === snapshot.sceneId)) {
+      this.setStatus(snapshot.sceneId, "pending");
+    }
     this.schedule(snapshot.sceneId);
   }
 
@@ -162,7 +166,7 @@ export class CloudSaveQueue {
   resumeAfterAuth(sceneId: string) {
     if (this.blocked.get(sceneId) === "auth") {
       this.blocked.delete(sceneId);
-      this.setStatus(sceneId, "saving");
+      this.setStatus(sceneId, "pending");
       this.schedule(sceneId, 0);
     }
   }
@@ -175,7 +179,7 @@ export class CloudSaveQueue {
     this.revisions.set(sceneId, revision);
     if (keepLocal && snapshot) {
       this.pending.set(sceneId, snapshot);
-      this.setStatus(sceneId, "saving");
+      this.setStatus(sceneId, "pending");
       this.schedule(sceneId, 0);
     } else {
       this.setStatus(sceneId, "idle");
@@ -187,7 +191,7 @@ export class CloudSaveQueue {
    * blocked by authentication/conflict handling. Failed network saves stay in
    * the queue and can be retried by calling this method again.
    */
-  async flush(sceneId?: string): Promise<void> {
+  async flush(sceneId?: string): Promise<CloudSaveStatus> {
     if (sceneId) {
       const timer = this.timers.get(sceneId);
       if (timer) {
@@ -216,7 +220,7 @@ export class CloudSaveQueue {
               this.getStatus(pendingSceneId) !== "error",
           ) || null;
       if (!targetSceneId) {
-        return;
+        return sceneId ? this.getStatus(sceneId) : "idle";
       }
 
       const flushPromise = this.flushScene(targetSceneId);
@@ -236,12 +240,12 @@ export class CloudSaveQueue {
             this.getStatus(sceneId) === "error")) ||
         (!sceneId && this.pending.size === 0)
       ) {
-        return;
+        return this.getStatus(sceneId || targetSceneId);
       }
     }
   }
 
-  flushAll(): Promise<void> {
+  flushAll(): Promise<CloudSaveStatus> {
     return this.flush();
   }
 
@@ -257,7 +261,7 @@ export class CloudSaveQueue {
     }
   }
 
-  private schedule(sceneId: string, delay = 1000) {
+  private schedule(sceneId: string, delay = AUTO_SAVE_DELAY_MS) {
     if (
       this.disposed.has(sceneId) ||
       this.blocked.has(sceneId) ||
@@ -355,6 +359,7 @@ export class CloudSaveQueue {
           !this.blocked.has(pendingSceneId) &&
           this.getStatus(pendingSceneId) !== "error"
         ) {
+          this.setStatus(pendingSceneId, "pending");
           this.schedule(pendingSceneId, 0);
         }
       }

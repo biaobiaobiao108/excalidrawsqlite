@@ -386,11 +386,58 @@ const initializeScene = async (opts: {
 const getCloudFileIds = (elements: readonly any[]) => {
   const fileIds = new Set<FileId>();
   for (const element of elements) {
-    if (isInitializedImageElement(element)) {
+    if (
+      element?.type === "image" &&
+      element.isDeleted !== true &&
+      typeof element.fileId === "string"
+    ) {
       fileIds.add(element.fileId);
     }
   }
   return [...fileIds];
+};
+
+const getCloudPersistenceSignature = (
+  name: string,
+  elements: readonly any[],
+  appState: Pick<AppState, "viewBackgroundColor" | "gridSize">,
+  files: BinaryFiles,
+) =>
+  JSON.stringify({
+    name,
+    elements,
+    appState,
+    files: getCloudFileIds(elements).map((fileId) => {
+      const file = files[fileId];
+      return [fileId, file?.mimeType, file?.dataURL, file?.created];
+    }),
+  });
+
+const waitForCloudFiles = async (
+  fileIds: readonly FileId[],
+  files: BinaryFiles,
+) => {
+  const deadline = Date.now() + 30_000;
+  while (true) {
+    const statuses = FileStatusStore.getSnapshot().value;
+    const missingFile = fileIds.find((fileId) => !files[fileId]?.dataURL);
+    if (missingFile) {
+      throw new Error(`图片 ${missingFile} 尚未准备完成，请稍后重试`);
+    }
+    const erroredFile = fileIds.find(
+      (fileId) => statuses.get(fileId) === "error" && !files[fileId],
+    );
+    if (erroredFile) {
+      throw new Error(`图片 ${erroredFile} 加载失败，请重新加载后再保存`);
+    }
+    if (!fileIds.some((fileId) => statuses.get(fileId) === "loading")) {
+      return;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error("图片加载超时，请稍后重试");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
 };
 
 const ExcalidrawWrapper = () => {
@@ -503,6 +550,10 @@ const ExcalidrawWrapper = () => {
   const [cloudSaveStatus, setCloudSaveStatus] =
     useState<CloudSaveStatus>("idle");
   const currentSceneIdRef = useRef<string | null>(null);
+  const cloudPersistenceSignatureRef = useRef<string | null>(null);
+  const savedStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const isApplyingCloudSceneRef = useRef(false);
   const cloudBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const cloudSceneLoadIdRef = useRef(0);
@@ -515,7 +566,16 @@ const ExcalidrawWrapper = () => {
   const collaborationInitializedRef = useRef(false);
 
   const setActiveCloudScene = useCallback((sceneId: string | null) => {
+    const changed = currentSceneIdRef.current !== sceneId;
     currentSceneIdRef.current = sceneId;
+    if (changed) {
+      cloudPersistenceSignatureRef.current = null;
+      if (savedStatusTimerRef.current) {
+        clearTimeout(savedStatusTimerRef.current);
+        savedStatusTimerRef.current = null;
+      }
+      setCloudSaveStatus("idle");
+    }
     setCurrentSceneId(sceneId);
   }, []);
 
@@ -539,11 +599,22 @@ const ExcalidrawWrapper = () => {
         },
         onError: (error) => {
           setCloudSaveStatus("error");
-          setErrorMessage(`云端自动保存失败：${error.message}`);
+          console.error("云端自动保存失败", error);
         },
         onStatusChange: (sceneId, status) => {
           if (currentSceneIdRef.current === sceneId) {
             setCloudSaveStatus(status);
+            if (status === "saved") {
+              if (savedStatusTimerRef.current) {
+                clearTimeout(savedStatusTimerRef.current);
+              }
+              savedStatusTimerRef.current = setTimeout(() => {
+                if (currentSceneIdRef.current === sceneId) {
+                  setCloudSaveStatus("idle");
+                }
+                savedStatusTimerRef.current = null;
+              }, 2000);
+            }
           }
         },
       }),
@@ -571,7 +642,9 @@ const ExcalidrawWrapper = () => {
       try {
         const { loadedFiles, erroredFiles } = await fetchCloudFiles(fileIds);
         if (
-          (sceneId && currentSceneIdRef.current !== sceneId) ||
+          (sceneId &&
+            currentSceneIdRef.current &&
+            currentSceneIdRef.current !== sceneId) ||
           loadId !== cloudSceneLoadIdRef.current
         ) {
           return;
@@ -593,7 +666,7 @@ const ExcalidrawWrapper = () => {
       } catch (error: any) {
         if (error?.status === 401) {
           setIsAuthOpen(true);
-          setAuthSceneId(currentSceneIdRef.current);
+          setAuthSceneId(sceneId || currentSceneIdRef.current);
         }
         FileStatusStore.updateStatuses(
           fileIds.map((id) => [id, "error"] as [FileId, "error"]),
@@ -636,7 +709,7 @@ const ExcalidrawWrapper = () => {
           ),
           captureUpdate: CaptureUpdateAction.NEVER,
         });
-        void loadCloudFilesIntoScene(elements, sceneId, loadId);
+        await loadCloudFilesIntoScene(elements, sceneId, loadId);
         if (cloudData.elements.length) {
           setTimeout(() => {
             if (!excalidrawAPI.isDestroyed) {
@@ -655,6 +728,15 @@ const ExcalidrawWrapper = () => {
       // the editor state. Initialization onChange events must never enqueue
       // the local browser cache back to the cloud scene.
       setActiveCloudScene(sceneId);
+      cloudPersistenceSignatureRef.current = getCloudPersistenceSignature(
+        cloudData.name,
+        excalidrawAPI.getSceneElementsIncludingDeleted(),
+        {
+          viewBackgroundColor: excalidrawAPI.getAppState().viewBackgroundColor,
+          gridSize: excalidrawAPI.getAppState().gridSize,
+        },
+        excalidrawAPI.getFiles(),
+      );
       return cloudData;
     },
     [
@@ -664,6 +746,63 @@ const ExcalidrawWrapper = () => {
       setActiveCloudScene,
     ],
   );
+
+  const createCurrentCloudSnapshot = useCallback(() => {
+    const sceneId = currentSceneIdRef.current;
+    if (!sceneId || !excalidrawAPI) {
+      return null;
+    }
+    const elements = excalidrawAPI.getSceneElementsIncludingDeleted();
+    const appState = excalidrawAPI.getAppState();
+    const allFiles = excalidrawAPI.getFiles();
+    const files: BinaryFiles = {};
+    for (const fileId of getCloudFileIds(elements)) {
+      const file = allFiles[fileId];
+      if (file) {
+        files[fileId] = file;
+      }
+    }
+    return {
+      sceneId,
+      name: excalidrawAPI.getName() || "未命名白板",
+      elements,
+      appState: {
+        viewBackgroundColor: appState.viewBackgroundColor,
+        gridSize: appState.gridSize,
+      },
+      files,
+    } as CloudSaveSnapshot;
+  }, [excalidrawAPI]);
+
+  const saveCurrentCloudScene = useCallback(async () => {
+    const snapshot = createCurrentCloudSnapshot();
+    if (!snapshot) {
+      return false;
+    }
+    try {
+      await waitForCloudFiles(
+        getCloudFileIds(snapshot.elements),
+        snapshot.files,
+      );
+      const signature = getCloudPersistenceSignature(
+        snapshot.name,
+        snapshot.elements,
+        snapshot.appState,
+        snapshot.files,
+      );
+      cloudSaveQueue.enqueue(snapshot);
+      const status = await cloudSaveQueue.flush(snapshot.sceneId);
+      if (status === "saved") {
+        cloudPersistenceSignatureRef.current = signature;
+        return true;
+      }
+      return false;
+    } catch (error: any) {
+      setCloudSaveStatus("error");
+      setErrorMessage(error?.message || "保存云端画板失败");
+      return false;
+    }
+  }, [cloudSaveQueue, createCurrentCloudSnapshot]);
 
   const handleSelectScene = useCallback(
     async (sceneId: string): Promise<boolean> => {
@@ -1267,16 +1406,27 @@ const ExcalidrawWrapper = () => {
           referencedFiles[fileId] = file;
         }
       }
-      cloudSaveQueue.enqueue({
-        sceneId: activeSceneId,
-        name: excalidrawAPI?.getName() || "未命名白板",
+      const name = excalidrawAPI?.getName() || "未命名白板";
+      const persistedAppState = {
+        viewBackgroundColor: appState.viewBackgroundColor,
+        gridSize: appState.gridSize,
+      };
+      const signature = getCloudPersistenceSignature(
+        name,
         elements,
-        appState: {
-          viewBackgroundColor: appState.viewBackgroundColor,
-          gridSize: appState.gridSize,
-        },
-        files: referencedFiles,
-      });
+        persistedAppState,
+        referencedFiles,
+      );
+      if (signature !== cloudPersistenceSignatureRef.current) {
+        cloudPersistenceSignatureRef.current = signature;
+        cloudSaveQueue.enqueue({
+          sceneId: activeSceneId,
+          name,
+          elements,
+          appState: persistedAppState,
+          files: referencedFiles,
+        });
+      }
     }
 
     // Render the debug scene if the debug canvas is available
@@ -1456,8 +1606,64 @@ const ExcalidrawWrapper = () => {
         theme={editorTheme}
         onThemeChange={setAppTheme}
         renderTopRightUI={(isMobile) => {
+          const isCloudSaveBusy =
+            cloudSaveStatus === "saving" ||
+            cloudSaveStatus === "auth" ||
+            cloudSaveStatus === "conflict";
+          const cloudSaveLabel =
+            cloudSaveStatus === "saving"
+              ? "保存中..."
+              : cloudSaveStatus === "error"
+              ? "重试保存"
+              : cloudSaveStatus === "saved"
+              ? "已保存"
+              : isMobile
+              ? "保存"
+              : "保存到云端";
           return (
             <div className="excalidraw-ui-top-right">
+              <button
+                type="button"
+                className="cloud-save-top-btn"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  background: "var(--color-primary, #6965db)",
+                  border: "1px solid var(--color-primary, #6965db)",
+                  borderRadius: "8px",
+                  padding: "6px 12px",
+                  fontSize: "0.85rem",
+                  fontWeight: 500,
+                  cursor:
+                    !currentSceneId || isCloudSaveBusy
+                      ? "not-allowed"
+                      : "pointer",
+                  color: "var(--color-primary-contrast, #fff)",
+                  height: "36px",
+                  opacity: !currentSceneId || isCloudSaveBusy ? 0.65 : 1,
+                }}
+                disabled={!currentSceneId || isCloudSaveBusy}
+                aria-busy={cloudSaveStatus === "saving"}
+                onClick={() => void saveCurrentCloudScene()}
+                title="将当前白板保存到云端"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 16V4" />
+                  <path d="m7 9 5-5 5 5" />
+                  <path d="M5 20h14" />
+                </svg>
+                {cloudSaveLabel}
+              </button>
               <button
                 type="button"
                 className="cloud-scenes-top-btn"
@@ -1628,40 +1834,6 @@ const ExcalidrawWrapper = () => {
               重试
             </button>
           </ErrorDialog>
-        )}
-        {currentSceneId && cloudSaveStatus !== "idle" && (
-          <div
-            className="alert alert--warning"
-            role="status"
-            style={{
-              alignItems: "center",
-              bottom: "1rem",
-              display: "flex",
-              gap: "0.5rem",
-              left: "50%",
-              position: "fixed",
-              transform: "translateX(-50%)",
-              zIndex: 10,
-            }}
-          >
-            <span>
-              {cloudSaveStatus === "saving" && "云端保存中..."}
-              {cloudSaveStatus === "saved" && "已保存到云端"}
-              {cloudSaveStatus === "error" &&
-                "云端保存失败，数据仍在本地待重试"}
-              {cloudSaveStatus === "auth" && "需要重新认证后才能保存"}
-              {cloudSaveStatus === "conflict" && "云端版本冲突，等待处理"}
-            </span>
-            {cloudSaveStatus === "error" && (
-              <button
-                className="excalidraw-button"
-                type="button"
-                onClick={() => void cloudSaveQueue.flush(currentSceneId)}
-              >
-                重试保存
-              </button>
-            )}
-          </div>
         )}
         {errorMessage && (
           <ErrorDialog onClose={() => setErrorMessage("")}>
