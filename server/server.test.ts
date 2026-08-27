@@ -358,6 +358,110 @@ describe("cloud persistence server", () => {
     ).toEqual({ count: 0 });
   });
 
+  it("persists board metadata, folders, recent opens and thumbnails", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+
+    const folderResponse = await jsonRequest(
+      handler,
+      "/api/folders",
+      { name: "产品设计" },
+      { headers: { Cookie: cookie } },
+    );
+    expect(folderResponse.status).toBe(201);
+    const folder = await responseJson<{ id: string }>(folderResponse);
+
+    const createdResponse = await jsonRequest(
+      handler,
+      "/api/scenes",
+      {
+        id: "scene_metadata",
+        name: "路线图",
+        tags: ["产品", " 规划", "产品"],
+        favorite: true,
+        folder_id: folder.id,
+        elements: [],
+        appState: {},
+      },
+      { headers: { Cookie: cookie } },
+    );
+    expect(createdResponse.status).toBe(201);
+    const created = await responseJson<{
+      tags: string[];
+      favorite: boolean;
+      folder_id: string;
+    }>(createdResponse);
+    expect(created.tags).toEqual(["产品", "规划"]);
+    expect(created.favorite).toBe(true);
+    expect(created.folder_id).toBe(folder.id);
+
+    const opened = await request(handler, "/api/scenes/scene_metadata/open", {
+      method: "POST",
+      headers: { Cookie: cookie },
+    });
+    expect(opened.status).toBe(200);
+
+    const thumbnail = await request(
+      handler,
+      "/api/scenes/scene_metadata/thumbnail",
+      {
+        method: "PUT",
+        headers: { Cookie: cookie, "Content-Type": "image/jpeg" },
+        body: new Uint8Array([255, 216, 255, 217]),
+      },
+    );
+    expect(thumbnail.status).toBe(200);
+    const thumbnailResult = await responseJson<{
+      thumbnail_file_id: string;
+    }>(thumbnail);
+    expect(thumbnailResult.thumbnail_file_id).toMatch(/^thumbnail_[a-f0-9]{64}$/);
+
+    const updated = await jsonRequest(
+      handler,
+      "/api/scenes/scene_metadata",
+      { tags: ["交付"], favorite: false, baseRevision: 1 },
+      { method: "PATCH", headers: { Cookie: cookie } },
+    );
+    expect(updated.status).toBe(200);
+
+    const list = await request(handler, "/api/scenes", {
+      headers: { Cookie: cookie },
+    });
+    const scenes = await responseJson<
+      Array<{
+        tags: string[];
+        favorite: boolean;
+        folder_id: string;
+        last_opened_at: number;
+        thumbnail_file_id: string;
+      }>
+    >(list);
+    expect(scenes[0]).toMatchObject({
+      tags: ["交付"],
+      favorite: false,
+      folder_id: folder.id,
+      thumbnail_file_id: thumbnailResult.thumbnail_file_id,
+    });
+    expect(scenes[0].last_opened_at).toBeGreaterThan(0);
+    expect(
+      runtime.db
+        .query("SELECT storage_path FROM files WHERE id = ?")
+        .get(thumbnailResult.thumbnail_file_id),
+    ).toEqual({ storage_path: thumbnailResult.thumbnail_file_id });
+
+    const deletedFolder = await request(handler, `/api/folders/${folder.id}`, {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(deletedFolder.status).toBe(200);
+    const scene = await request(handler, "/api/scenes/scene_metadata", {
+      headers: { Cookie: cookie },
+    });
+    expect((await responseJson<{ folder_id: string | null }>(scene)).folder_id).toBe(
+      null,
+    );
+  });
+
   it("rejects oversized, invalid and traversal file requests", async () => {
     const { handler } = createTestRuntime({ MAX_FILE_BYTES: "3" });
     const cookie = await authenticate(handler);
@@ -651,6 +755,6 @@ describe("cloud persistence server", () => {
           user_version: number;
         }
       ).user_version,
-    ).toBe(2);
+    ).toBe(3);
   });
 });

@@ -16,6 +16,9 @@ const SCENE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const MIME_TYPE_PATTERN =
   /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i;
 const MAX_SCENE_NAME_LENGTH = 120;
+const MAX_FOLDER_NAME_LENGTH = 80;
+const MAX_TAGS = 12;
+const MAX_TAG_LENGTH = 32;
 const MAX_AUTH_PASSWORD_LENGTH = 256;
 const MAX_BATCH_FILES = 64;
 const AUTH_ATTEMPTS_PER_WINDOW = 5;
@@ -24,7 +27,7 @@ const WRITE_REQUESTS_PER_WINDOW = 120;
 const WRITE_RATE_WINDOW_MS = 60 * 1000;
 const ORPHAN_FILE_GRACE_MS = 24 * 60 * 60 * 1000;
 const STALE_FILE_ARTIFACT_MS = 60 * 60 * 1000;
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export type ServerConfig = {
   authPassword: string;
@@ -151,7 +154,21 @@ export const initializeDatabase = (db: Database) => {
       app_state TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
-      revision INTEGER NOT NULL DEFAULT 1
+      revision INTEGER NOT NULL DEFAULT 1,
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      is_favorite INTEGER NOT NULL DEFAULT 0,
+      folder_id TEXT,
+      last_opened_at INTEGER,
+      thumbnail_file_id TEXT
+    );
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS folders (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
     );
   `);
 
@@ -177,19 +194,30 @@ export const initializeDatabase = (db: Database) => {
     );
   `);
 
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_updated_at ON scenes(updated_at DESC)",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scene_files_file_id ON scene_files(file_id)",
-  );
-
   // Keep scene records usable if a database created by an earlier build is reused.
   ensureColumn(db, "scenes", "revision", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn(db, "scenes", "tags_json", "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(db, "scenes", "is_favorite", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "scenes", "folder_id", "TEXT");
+  ensureColumn(db, "scenes", "last_opened_at", "INTEGER");
+  ensureColumn(db, "scenes", "thumbnail_file_id", "TEXT");
   ensureColumn(db, "files", "storage_path", "TEXT");
   ensureColumn(db, "files", "byte_size", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "files", "sha256", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "files", "updated_at", "INTEGER NOT NULL DEFAULT 0");
+
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_updated_at ON scenes(updated_at DESC)",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_last_opened_at ON scenes(last_opened_at DESC)",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_folder_id ON scenes(folder_id)",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scene_files_file_id ON scene_files(file_id)",
+  );
 };
 
 export const createRuntime = (options: {
@@ -482,6 +510,68 @@ const validateName = (value: unknown) => {
     );
   }
   return name;
+};
+
+const validateFolderName = (value: unknown) => {
+  if (typeof value !== "string") {
+    throw new HttpError(400, "INVALID_FOLDER_NAME", "文件夹名称必须是字符串");
+  }
+  const name = value.trim();
+  if (!name || name.length > MAX_FOLDER_NAME_LENGTH) {
+    throw new HttpError(
+      400,
+      "INVALID_FOLDER_NAME",
+      `文件夹名称不能为空且不能超过 ${MAX_FOLDER_NAME_LENGTH} 个字符`,
+    );
+  }
+  return name;
+};
+
+const validateTags = (value: unknown) => {
+  if (!Array.isArray(value) || value.length > MAX_TAGS) {
+    throw new HttpError(
+      400,
+      "INVALID_TAGS",
+      `标签必须是数组且不能超过 ${MAX_TAGS} 个`,
+    );
+  }
+  const tags = [...new Set(value.map((tag) => {
+    if (typeof tag !== "string") {
+      throw new HttpError(400, "INVALID_TAGS", "标签必须是字符串");
+    }
+    const normalized = tag.trim();
+    if (!normalized || normalized.length > MAX_TAG_LENGTH) {
+      throw new HttpError(
+        400,
+        "INVALID_TAGS",
+        `标签不能为空且不能超过 ${MAX_TAG_LENGTH} 个字符`,
+      );
+    }
+    return normalized;
+  }))];
+  return tags;
+};
+
+const validateFavorite = (value: unknown) => {
+  if (typeof value !== "boolean") {
+    throw new HttpError(400, "INVALID_FAVORITE", "收藏状态必须是布尔值");
+  }
+  return value;
+};
+
+const validateFolderId = (value: unknown) => {
+  if (value === null || value === "") {
+    return null;
+  }
+  return validateId(value, "scene");
+};
+
+const parseStoredTags = (value: unknown) => {
+  try {
+    return validateTags(JSON.parse(String(value || "[]")));
+  } catch {
+    return [];
+  }
 };
 
 const validateElements = (value: unknown) => {
@@ -812,6 +902,9 @@ const migrateLegacyDatabase = (db: Database, filesDir: string) => {
     return;
   }
   if (!hasLegacyDataUrl && version === 0) {
+    db.run(
+      "UPDATE scenes SET last_opened_at = COALESCE(last_opened_at, updated_at)",
+    );
     db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     return;
   }
@@ -905,6 +998,9 @@ const migrateLegacyDatabase = (db: Database, filesDir: string) => {
     }
   }
 
+  db.run(
+    "UPDATE scenes SET last_opened_at = COALESCE(last_opened_at, updated_at)",
+  );
   db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   console.info("[Migration] 数据库迁移完成", {
     fromVersion: version,
@@ -972,11 +1068,61 @@ const parseStoredScene = (row: any) => {
       appState: JSON.parse(row.app_state || "{}"),
       created_at: row.created_at,
       updated_at: row.updated_at,
+      tags: parseStoredTags(row.tags_json),
+      favorite: Boolean(row.is_favorite),
+      folder_id: row.folder_id || null,
+      last_opened_at: row.last_opened_at || null,
+      thumbnail_file_id: row.thumbnail_file_id || null,
       revision: Number(row.revision) || 1,
     };
   } catch {
     throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
   }
+};
+
+const getSceneSummary = (row: any) => ({
+  id: row.id,
+  name: row.name,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+  revision: Number(row.revision) || 1,
+  size: row.size === undefined ? undefined : Number(row.size),
+  tags: parseStoredTags(row.tags_json),
+  favorite: Boolean(row.is_favorite),
+  folder_id: row.folder_id || null,
+  folder_name: row.folder_name || null,
+  last_opened_at: row.last_opened_at || null,
+  thumbnail_file_id: row.thumbnail_file_id || null,
+});
+
+const assertFolderExists = (runtime: ServerRuntime, folderId: string | null) => {
+  if (
+    folderId &&
+    !runtime.db.query("SELECT id FROM folders WHERE id = ?").get(folderId)
+  ) {
+    throw new HttpError(400, "FOLDER_NOT_FOUND", "文件夹不存在");
+  }
+};
+
+const parseSceneMetadata = (
+  runtime: ServerRuntime,
+  body: Record<string, unknown>,
+  existing?: any,
+) => {
+  const name = hasOwn(body, "name")
+    ? validateName(body.name)
+    : existing?.name || "未命名白板";
+  const tags = hasOwn(body, "tags")
+    ? validateTags(body.tags)
+    : parseStoredTags(existing?.tags_json);
+  const favorite = hasOwn(body, "favorite")
+    ? validateFavorite(body.favorite)
+    : Boolean(existing?.is_favorite);
+  const folderId = hasOwn(body, "folder_id")
+    ? validateFolderId(body.folder_id)
+    : existing?.folder_id || null;
+  assertFolderExists(runtime, folderId);
+  return { name, tags, favorite, folderId };
 };
 
 const buildStaticPath = (staticDir: string, pathname: string) => {
@@ -1031,7 +1177,8 @@ const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
     .query(
       `SELECT id, storage_path FROM files
        WHERE updated_at < ?
-         AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)`,
+         AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)
+         AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)`,
     )
     .all(cutoff) as Array<{ id: string; storage_path: string | null }>;
 
@@ -1042,7 +1189,8 @@ const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
     runtime.db.run(
       `DELETE FROM files
        WHERE id = ?
-         AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)`,
+         AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)
+         AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)`,
       [row.id],
     );
   }
@@ -1423,9 +1571,17 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
       if (pathname === "/api/scenes" && req.method === "GET") {
         const rows = runtime.db
           .query(
-            "SELECT id, name, created_at, updated_at, revision, length(elements) AS size FROM scenes ORDER BY updated_at DESC",
+            `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
+                    scenes.revision, length(scenes.elements) AS size,
+                    scenes.tags_json, scenes.is_favorite, scenes.folder_id,
+                    scenes.last_opened_at, scenes.thumbnail_file_id,
+                    folders.name AS folder_name
+             FROM scenes
+             LEFT JOIN folders ON folders.id = scenes.folder_id
+             ORDER BY scenes.updated_at DESC`,
           )
-          .all();
+          .all()
+          .map(getSceneSummary);
         return jsonResponse(runtime, req, rows);
       }
 
@@ -1447,14 +1603,17 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         const appState = hasOwn(body, "appState")
           ? validateAppState(body.appState)
           : {};
+        const { tags, favorite, folderId } = parseSceneMetadata(runtime, body);
         const fileIds = extractFileIds(elements);
         await assertReferencedFilesExist(runtime, fileIds);
         const now = Date.now();
         try {
           const transaction = runtime.db.transaction(() => {
             runtime.db.run(
-              `INSERT INTO scenes (id, name, elements, app_state, created_at, updated_at, revision)
-               VALUES (?, ?, ?, ?, ?, ?, 1)`,
+              `INSERT INTO scenes
+               (id, name, elements, app_state, created_at, updated_at, revision,
+                tags_json, is_favorite, folder_id)
+               VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
               [
                 id,
                 name,
@@ -1462,6 +1621,9 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
                 JSON.stringify(appState),
                 now,
                 now,
+                JSON.stringify(tags),
+                favorite ? 1 : 0,
+                folderId,
               ],
             );
             syncSceneFileReferences(runtime, id, fileIds);
@@ -1480,9 +1642,110 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         return jsonResponse(
           runtime,
           req,
-          { id, name, created_at: now, updated_at: now, revision: 1 },
+          getSceneSummary({
+            id,
+            name,
+            created_at: now,
+            updated_at: now,
+            revision: 1,
+            size: JSON.stringify(elements).length,
+            tags_json: JSON.stringify(tags),
+            is_favorite: favorite ? 1 : 0,
+            folder_id: folderId,
+            last_opened_at: null,
+            thumbnail_file_id: null,
+          }),
           201,
         );
+      }
+
+      if (
+        pathname.startsWith("/api/folders") &&
+        pathname === "/api/folders" &&
+        req.method === "GET"
+      ) {
+        const folders = runtime.db
+          .query(
+            `SELECT folders.id, folders.name, folders.created_at, folders.updated_at,
+                    COUNT(scenes.id) AS scene_count
+             FROM folders
+             LEFT JOIN scenes ON scenes.folder_id = folders.id
+             GROUP BY folders.id
+             ORDER BY folders.name COLLATE NOCASE ASC`,
+          )
+          .all();
+        return jsonResponse(runtime, req, folders);
+      }
+
+      if (pathname === "/api/folders" && req.method === "POST") {
+        const body = requireJsonObject(await readJson(req, 64 * 1024));
+        const name = validateFolderName(body.name);
+        const id = `folder_${Date.now().toString(36)}_${randomBytes(4).toString(
+          "hex",
+        )}`;
+        const now = Date.now();
+        try {
+          runtime.db.run(
+            "INSERT INTO folders (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            [id, name, now, now],
+          );
+        } catch (error: any) {
+          if (String(error?.message || "").toLowerCase().includes("unique")) {
+            throw new HttpError(409, "FOLDER_EXISTS", "文件夹 ID 已存在");
+          }
+          throw error;
+        }
+        return jsonResponse(
+          runtime,
+          req,
+          { id, name, created_at: now, updated_at: now, scene_count: 0 },
+          201,
+        );
+      }
+
+      if (pathname.startsWith("/api/folders/") && req.method === "PATCH") {
+        const id = getPathId(pathname, "/api/folders/", "scene");
+        const body = requireJsonObject(await readJson(req, 64 * 1024));
+        const name = validateFolderName(body.name);
+        const existing = runtime.db
+          .query("SELECT id FROM folders WHERE id = ?")
+          .get(id);
+        if (!existing) {
+          throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
+        }
+        const now = Date.now();
+        runtime.db.run(
+          "UPDATE folders SET name = ?, updated_at = ? WHERE id = ?",
+          [name, now, id],
+        );
+        return jsonResponse(runtime, req, {
+          success: true,
+          id,
+          name,
+          updated_at: now,
+        });
+      }
+
+      if (pathname.startsWith("/api/folders/") && req.method === "DELETE") {
+        const id = getPathId(pathname, "/api/folders/", "scene");
+        const existing = runtime.db
+          .query("SELECT id FROM folders WHERE id = ?")
+          .get(id);
+        if (!existing) {
+          return jsonResponse(runtime, req, {
+            success: true,
+            id,
+            deleted: false,
+          });
+        }
+        const transaction = runtime.db.transaction(() => {
+          runtime.db.run("UPDATE scenes SET folder_id = NULL WHERE folder_id = ?", [
+            id,
+          ]);
+          runtime.db.run("DELETE FROM folders WHERE id = ?", [id]);
+        });
+        transaction();
+        return jsonResponse(runtime, req, { success: true, id, deleted: true });
       }
 
       if (pathname.startsWith("/api/scenes/") && req.method === "GET") {
@@ -1496,16 +1759,90 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         return jsonResponse(runtime, req, parseStoredScene(row));
       }
 
+      if (
+        pathname.startsWith("/api/scenes/") &&
+        pathname.endsWith("/open") &&
+        req.method === "POST"
+      ) {
+        const id = getPathId(
+          pathname.slice(0, -"/open".length),
+          "/api/scenes/",
+          "scene",
+        );
+        const existing = runtime.db
+          .query("SELECT id FROM scenes WHERE id = ?")
+          .get(id);
+        if (!existing) {
+          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+        }
+        const lastOpenedAt = Date.now();
+        runtime.db.run(
+          "UPDATE scenes SET last_opened_at = ? WHERE id = ?",
+          [lastOpenedAt, id],
+        );
+        return jsonResponse(runtime, req, { success: true, id, lastOpenedAt });
+      }
+
+      if (
+        pathname.startsWith("/api/scenes/") &&
+        pathname.endsWith("/thumbnail") &&
+        req.method === "PUT"
+      ) {
+        const id = getPathId(
+          pathname.slice(0, -"/thumbnail".length),
+          "/api/scenes/",
+          "scene",
+        );
+        const existing = runtime.db
+          .query("SELECT id FROM scenes WHERE id = ?")
+          .get(id);
+        if (!existing) {
+          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+        }
+        const contentType = req.headers.get("content-type")?.toLowerCase();
+        if (
+          contentType !== "image/png" &&
+          contentType !== "image/jpeg" &&
+          contentType !== "image/webp"
+        ) {
+          throw new HttpError(
+            415,
+            "UNSUPPORTED_THUMBNAIL_TYPE",
+            "画板缩略图必须是 PNG、JPEG 或 WebP",
+          );
+        }
+        const bytes = await readBody(req, runtime.config.maxFileBytes);
+        if (!bytes.byteLength) {
+          throw new HttpError(400, "EMPTY_THUMBNAIL", "画板缩略图不能为空");
+        }
+        const thumbnailId = `thumbnail_${createHash("sha256")
+          .update(id)
+          .digest("hex")}`;
+        await upsertFile(runtime, thumbnailId, contentType, bytes);
+        runtime.db.run(
+          "UPDATE scenes SET thumbnail_file_id = ? WHERE id = ?",
+          [thumbnailId, id],
+        );
+        return jsonResponse(runtime, req, {
+          success: true,
+          id,
+          thumbnail_file_id: thumbnailId,
+        });
+      }
+
       if (pathname.startsWith("/api/scenes/") && req.method === "PATCH") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
         const body = requireJsonObject(await readJson(req, 64 * 1024));
-        if (!hasOwn(body, "name")) {
-          throw new HttpError(400, "INVALID_NAME", "缺少画板名称");
+        if (
+          !["name", "tags", "favorite", "folder_id"].some((key) =>
+            hasOwn(body, key),
+          )
+        ) {
+          throw new HttpError(400, "INVALID_METADATA", "没有可更新的画板信息");
         }
-        const name = validateName(body.name);
         const baseRevision = requireRevision(body.baseRevision);
         const existing = runtime.db
-          .query("SELECT revision FROM scenes WHERE id = ?")
+          .query("SELECT * FROM scenes WHERE id = ?")
           .get(id) as { revision: number } | null;
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
@@ -1517,11 +1854,19 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
             "云端画板已被其他操作更新",
           );
         }
+        const { name, tags, favorite, folderId } = parseSceneMetadata(
+          runtime,
+          body,
+          existing,
+        );
         const now = Date.now();
         const revision = existing.revision + 1;
         runtime.db.run(
-          "UPDATE scenes SET name = ?, updated_at = ?, revision = ? WHERE id = ?",
-          [name, now, revision, id],
+          `UPDATE scenes
+           SET name = ?, tags_json = ?, is_favorite = ?, folder_id = ?,
+               updated_at = ?, revision = ?
+           WHERE id = ?`,
+          [name, JSON.stringify(tags), favorite ? 1 : 0, folderId, now, revision, id],
         );
         return jsonResponse(runtime, req, {
           success: true,
@@ -1551,9 +1896,11 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
             "云端画板已被其他设备更新",
           );
         }
-        const name = hasOwn(body, "name")
-          ? validateName(body.name)
-          : existing.name;
+        const { name, tags, favorite, folderId } = parseSceneMetadata(
+          runtime,
+          body,
+          existing,
+        );
         const elements = hasOwn(body, "elements")
           ? validateElements(body.elements)
           : JSON.parse(existing.elements || "[]");
@@ -1567,12 +1914,16 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         const transaction = runtime.db.transaction(() => {
           runtime.db.run(
             `UPDATE scenes
-             SET name = ?, elements = ?, app_state = ?, updated_at = ?, revision = ?
+             SET name = ?, elements = ?, app_state = ?, tags_json = ?,
+                 is_favorite = ?, folder_id = ?, updated_at = ?, revision = ?
              WHERE id = ?`,
             [
               name,
               JSON.stringify(elements),
               JSON.stringify(appState),
+              JSON.stringify(tags),
+              favorite ? 1 : 0,
+              folderId,
               now,
               revision,
               id,
