@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { WorkspaceHome } from "../components/WorkspaceHome";
+
 import type { CloudFolder, CloudSceneSummary } from "../data/cloudStorage";
 
 const mockScenes: CloudSceneSummary[] = [

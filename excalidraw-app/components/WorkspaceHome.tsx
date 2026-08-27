@@ -308,7 +308,7 @@ const BoardCard = ({
       event.preventDefault();
       onMenuToggle();
       event.currentTarget.parentElement
-        ?.querySelector<HTMLButtonElement>('[aria-expanded]')
+        ?.querySelector<HTMLButtonElement>("[aria-expanded]")
         ?.focus();
       return;
     }
@@ -316,9 +316,7 @@ const BoardCard = ({
       return;
     }
     const currentIndex = items.indexOf(
-      event.target instanceof HTMLButtonElement
-        ? event.target
-        : items[0],
+      event.target instanceof HTMLButtonElement ? event.target : items[0],
     );
     const nextIndex =
       event.key === "ArrowDown"
@@ -337,145 +335,148 @@ const BoardCard = ({
   };
 
   return (
-  <article className={`board-card ${isTrash ? "is-trash-card" : ""}`}>
-    {isTrash ? (
-      <div className="board-card-open is-disabled" title="已在回收站中，还原后可打开">
-        <BoardThumbnail scene={scene} eager={eager} />
-        <span className="board-card-title">{scene.name || "未命名白板"}</span>
-      </div>
-    ) : (
-      <button
-        className="board-card-open"
-        onClick={() => onOpen(scene)}
-        type="button"
-      >
-        <BoardThumbnail scene={scene} eager={eager} />
-        <span className="board-card-title">{scene.name || "未命名白板"}</span>
-      </button>
-    )}
-    <div className="board-card-footer">
-      <div className="board-card-details">
-        <span className="board-card-mobile-title">
-          {scene.name || "未命名白板"}
-        </span>
-        {isTrash && scene.deleted_at ? (
-          <span className="board-card-updated">
-            删除于 {formatDate(scene.deleted_at)}
+    <article className={`board-card ${isTrash ? "is-trash-card" : ""}`}>
+      {isTrash ? (
+        <div
+          className="board-card-open is-disabled"
+          title="已在回收站中，还原后可打开"
+        >
+          <BoardThumbnail scene={scene} eager={eager} />
+          <span className="board-card-title">{scene.name || "未命名白板"}</span>
+        </div>
+      ) : (
+        <button
+          className="board-card-open"
+          onClick={() => onOpen(scene)}
+          type="button"
+        >
+          <BoardThumbnail scene={scene} eager={eager} />
+          <span className="board-card-title">{scene.name || "未命名白板"}</span>
+        </button>
+      )}
+      <div className="board-card-footer">
+        <div className="board-card-details">
+          <span className="board-card-mobile-title">
+            {scene.name || "未命名白板"}
           </span>
-        ) : (
-          <>
+          {isTrash && scene.deleted_at ? (
             <span className="board-card-updated">
-              更新于 {formatDate(scene.updated_at)}
+              删除于 {formatDate(scene.deleted_at)}
             </span>
-            <span className="board-card-created">
-              创建于 {formatCreatedDate(scene.created_at)}
+          ) : (
+            <>
+              <span className="board-card-updated">
+                更新于 {formatDate(scene.updated_at)}
+              </span>
+              <span className="board-card-created">
+                创建于 {formatCreatedDate(scene.created_at)}
+              </span>
+            </>
+          )}
+          {scene.folder_name && !isTrash && (
+            <span className="board-card-folder">
+              <FolderIcon />
+              {scene.folder_name}
             </span>
-          </>
-        )}
-        {scene.folder_name && !isTrash && (
-          <span className="board-card-folder">
-            <FolderIcon />
-            {scene.folder_name}
-          </span>
-        )}
-        {scene.tags.length > 0 && !isTrash && (
-          <div className="board-card-tags">
-            {scene.tags.slice(0, 2).map((tag) => (
-              <span key={tag}>{tag}</span>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="board-card-actions">
-        {isTrash ? (
-          <>
-            {onRestore && (
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="还原画板"
-                title="还原画板"
-                onClick={() => onRestore(scene)}
-              >
-                <RestoreIcon />
-              </button>
-            )}
-            <button
-              type="button"
-              className="icon-button danger"
-              aria-label="彻底删除"
-              title="彻底删除"
-              onClick={() => onDelete(scene)}
-            >
-              <TrashIcon />
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              className={`icon-button favorite-button ${
-                scene.favorite ? "is-favorite" : ""
-              }`}
-              aria-label={scene.favorite ? "取消收藏" : "收藏画板"}
-              aria-pressed={scene.favorite}
-              onClick={() => onToggleFavorite(scene)}
-            >
-              <StarIcon filled={scene.favorite} />
-            </button>
-            <div className="board-card-menu-wrap">
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="更多画板操作"
-                aria-expanded={menuOpen}
-                onClick={onMenuToggle}
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowDown" && !menuOpen) {
-                    event.preventDefault();
-                    onMenuToggle();
-                  }
-                }}
-              >
-                <MoreIcon />
-              </button>
-              {menuOpen && (
-                <div
-                  className="board-card-menu"
-                  role="menu"
-                  onKeyDown={handleMenuKeyDown}
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    autoFocus
-                    onClick={() => onEdit(scene)}
-                  >
-                    编辑信息
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => onOpen(scene)}
-                  >
-                    打开画板
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="danger"
-                    onClick={() => onDelete(scene)}
-                  >
-                    移至回收站
-                  </button>
-                </div>
-              )}
+          )}
+          {scene.tags.length > 0 && !isTrash && (
+            <div className="board-card-tags">
+              {scene.tags.slice(0, 2).map((tag) => (
+                <span key={tag}>{tag}</span>
+              ))}
             </div>
-          </>
-        )}
+          )}
+        </div>
+        <div className="board-card-actions">
+          {isTrash ? (
+            <>
+              {onRestore && (
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="还原画板"
+                  title="还原画板"
+                  onClick={() => onRestore(scene)}
+                >
+                  <RestoreIcon />
+                </button>
+              )}
+              <button
+                type="button"
+                className="icon-button danger"
+                aria-label="彻底删除"
+                title="彻底删除"
+                onClick={() => onDelete(scene)}
+              >
+                <TrashIcon />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className={`icon-button favorite-button ${
+                  scene.favorite ? "is-favorite" : ""
+                }`}
+                aria-label={scene.favorite ? "取消收藏" : "收藏画板"}
+                aria-pressed={scene.favorite}
+                onClick={() => onToggleFavorite(scene)}
+              >
+                <StarIcon filled={scene.favorite} />
+              </button>
+              <div className="board-card-menu-wrap">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="更多画板操作"
+                  aria-expanded={menuOpen}
+                  onClick={onMenuToggle}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowDown" && !menuOpen) {
+                      event.preventDefault();
+                      onMenuToggle();
+                    }
+                  }}
+                >
+                  <MoreIcon />
+                </button>
+                {menuOpen && (
+                  <div
+                    className="board-card-menu"
+                    role="menu"
+                    onKeyDown={handleMenuKeyDown}
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      autoFocus
+                      onClick={() => onEdit(scene)}
+                    >
+                      编辑信息
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => onOpen(scene)}
+                    >
+                      打开画板
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="danger"
+                      onClick={() => onDelete(scene)}
+                    >
+                      移至回收站
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
-    </div>
-  </article>
+    </article>
   );
 };
 
@@ -730,7 +731,15 @@ export const WorkspaceHome = ({
       return searchable.includes(normalizedQuery);
     });
     return sortScenes(filtered, view === "recent" ? "opened" : sort);
-  }, [scenes, trashScenes, searchQuery, selectedFolderId, selectedTag, sort, view]);
+  }, [
+    scenes,
+    trashScenes,
+    searchQuery,
+    selectedFolderId,
+    selectedTag,
+    sort,
+    view,
+  ]);
 
   const recentScenes = useMemo(
     () =>
@@ -841,7 +850,9 @@ export const WorkspaceHome = ({
     const ownerWindow = getOwnerWindow(rootRef.current);
     if (view === "trash") {
       if (
-        !ownerWindow.confirm(`确定要彻底删除画板“${scene.name}”吗？该操作无法恢复。`)
+        !ownerWindow.confirm(
+          `确定要彻底删除画板“${scene.name}”吗？该操作无法恢复。`,
+        )
       ) {
         return;
       }
@@ -884,10 +895,7 @@ export const WorkspaceHome = ({
       setTrashScenes((current) =>
         current.filter((item) => item.id !== scene.id),
       );
-      setScenes((current) => [
-        { ...scene, deleted_at: null },
-        ...current,
-      ]);
+      setScenes((current) => [{ ...scene, deleted_at: null }, ...current]);
     } catch (requestError: any) {
       setError(requestError?.message || "还原画板失败");
     } finally {
@@ -1140,9 +1148,7 @@ export const WorkspaceHome = ({
         >
           <div className="workspace-main-heading">
             <div>
-              <h1>
-                {view === "trash" ? "回收站" : "我的画板"}
-              </h1>
+              <h1>{view === "trash" ? "回收站" : "我的画板"}</h1>
               <p>
                 {view === "trash"
                   ? "管理已删除的画板，支持一键还原或彻底清除。"
@@ -1195,9 +1201,7 @@ export const WorkspaceHome = ({
                     type="button"
                     role="tab"
                     aria-selected={view === item && !selectedFolderId}
-                    tabIndex={
-                      view === item && !selectedFolderId ? 0 : -1
-                    }
+                    tabIndex={view === item && !selectedFolderId ? 0 : -1}
                   >
                     {item === "all"
                       ? "全部"

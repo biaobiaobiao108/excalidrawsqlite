@@ -123,23 +123,37 @@ describe("cloud storage", () => {
         if (url.endsWith("/api/scenes/trash")) {
           return Promise.resolve(
             new Response(
-              JSON.stringify([{ id: "scene-1", name: "已删除", deleted_at: 1000 }]),
+              JSON.stringify([
+                { id: "scene-1", name: "已删除", deleted_at: 1000 },
+              ]),
               { status: 200 },
             ),
           );
         }
-        if (url.endsWith("/api/scenes/scene-1/restore") && init?.method === "POST") {
+        if (
+          url.endsWith("/api/scenes/scene-1/restore") &&
+          init?.method === "POST"
+        ) {
           return Promise.resolve(
-            new Response(JSON.stringify({ success: true, id: "scene-1", restored: true }), {
-              status: 200,
-            }),
+            new Response(
+              JSON.stringify({ success: true, id: "scene-1", restored: true }),
+              {
+                status: 200,
+              },
+            ),
           );
         }
-        if (url.includes("/api/scenes/scene-1?permanent=true") && init?.method === "DELETE") {
+        if (
+          url.includes("/api/scenes/scene-1?permanent=true") &&
+          init?.method === "DELETE"
+        ) {
           return Promise.resolve(
-            new Response(JSON.stringify({ success: true, id: "scene-1", deleted: true }), {
-              status: 200,
-            }),
+            new Response(
+              JSON.stringify({ success: true, id: "scene-1", deleted: true }),
+              {
+                status: 200,
+              },
+            ),
           );
         }
         return Promise.resolve(new Response(null, { status: 404 }));

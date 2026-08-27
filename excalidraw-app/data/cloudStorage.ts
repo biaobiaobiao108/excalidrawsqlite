@@ -143,20 +143,6 @@ const dataUrlToBlob = (dataURL: string, mimeType: string) => {
   return new Blob([bytes], { type: mimeType });
 };
 
-const blobToDataUrl = async (blob: Blob) => {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(
-      ...bytes.subarray(index, Math.min(index + chunkSize, bytes.length)),
-    );
-  }
-  return `data:${blob.type || "application/octet-stream"};base64,${btoa(
-    binary,
-  )}`;
-};
-
 const runWithConcurrency = async <T>(
   items: readonly T[],
   worker: (item: T) => Promise<void>,
@@ -422,7 +408,11 @@ export async function fetchCloudTrashScenes(): Promise<CloudSceneSummary[]> {
 }
 
 export async function restoreCloudScene(id: string): Promise<boolean> {
-  const result = await fetchJson<{ success: boolean; id: string; restored: boolean }>(
+  const result = await fetchJson<{
+    success: boolean;
+    id: string;
+    restored: boolean;
+  }>(
     `/api/scenes/${encodeURIComponent(id)}/restore`,
     {
       method: "POST",

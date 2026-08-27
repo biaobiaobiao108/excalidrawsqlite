@@ -391,7 +391,8 @@ const securityHeaders = (runtime: ServerRuntime, req: Request) => {
     "X-Frame-Options": "SAMEORIGIN",
     "Referrer-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
-    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+    "Permissions-Policy":
+      "camera=(), microphone=(), geolocation=(), payment=()",
     "Content-Security-Policy": CSP_DIRECTIVES,
   });
   if (isSecureRequest(runtime, req)) {
@@ -672,9 +673,7 @@ const getSessionToken = (runtime: ServerRuntime, req: Request) => {
 };
 
 const hashSessionToken = (runtime: ServerRuntime, token: string) =>
-  createHmac("sha256", runtime.config.authPassword)
-    .update(token)
-    .digest("hex");
+  createHmac("sha256", runtime.config.authPassword).update(token).digest("hex");
 
 const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
   const token = randomBytes(32).toString("base64url");
@@ -1894,7 +1893,11 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         runtime.db.run("UPDATE scenes SET deleted_at = NULL WHERE id = ?", [
           id,
         ]);
-        return jsonResponse(runtime, req, { success: true, id, restored: true });
+        return jsonResponse(runtime, req, {
+          success: true,
+          id,
+          restored: true,
+        });
       }
 
       if (pathname.startsWith("/api/scenes/") && req.method === "GET") {

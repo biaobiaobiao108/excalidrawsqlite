@@ -338,10 +338,14 @@ describe("cloud persistence server", () => {
     );
     expect(createScene.status).toBe(201);
 
-    const deleted = await request(handler, "/api/scenes/scene_delete?permanent=true", {
-      method: "DELETE",
-      headers: { Cookie: cookie },
-    });
+    const deleted = await request(
+      handler,
+      "/api/scenes/scene_delete?permanent=true",
+      {
+        method: "DELETE",
+        headers: { Cookie: cookie },
+      },
+    );
     expect(deleted.status).toBe(200);
 
     const resurrected = await jsonRequest(
@@ -367,7 +371,9 @@ describe("cloud persistence server", () => {
       headers: { Cookie: cookie },
     });
     expect(initialStatus.status).toBe(200);
-    expect(await responseJson<{ authenticated: boolean }>(initialStatus)).toEqual({
+    expect(
+      await responseJson<{ authenticated: boolean }>(initialStatus),
+    ).toEqual({
       authRequired: true,
       authenticated: true,
     });
@@ -391,21 +397,28 @@ describe("cloud persistence server", () => {
       headers: { Cookie: cookie },
     });
     expect(restoredStatus.status).toBe(200);
-    expect(await responseJson<{ authenticated: boolean }>(restoredStatus)).toEqual({
+    expect(
+      await responseJson<{ authenticated: boolean }>(restoredStatus),
+    ).toEqual({
       authRequired: true,
       authenticated: true,
     });
   });
 
   it("supports soft deleting scenes, trash viewing, restoring and permanent deletion", async () => {
-    const { handler, runtime } = createTestRuntime();
+    const { handler } = createTestRuntime();
     const cookie = await authenticate(handler);
 
     // Create scene
     await jsonRequest(
       handler,
       "/api/scenes",
-      { id: "scene_trash_test", name: "待删除画板", elements: [], appState: {} },
+      {
+        id: "scene_trash_test",
+        name: "待删除画板",
+        elements: [],
+        appState: {},
+      },
       { headers: { Cookie: cookie } },
     );
 
@@ -415,7 +428,9 @@ describe("cloud persistence server", () => {
       headers: { Cookie: cookie },
     });
     expect(softDelete.status).toBe(200);
-    const softDeleteBody = await responseJson<{ permanent: boolean }>(softDelete);
+    const softDeleteBody = await responseJson<{ permanent: boolean }>(
+      softDelete,
+    );
     expect(softDeleteBody.permanent).toBe(false);
 
     // 2. Normal /api/scenes should not contain it
@@ -428,33 +443,47 @@ describe("cloud persistence server", () => {
     const trashList = await request(handler, "/api/scenes/trash", {
       headers: { Cookie: cookie },
     });
-    const trashItems = await responseJson<Array<{ id: string; name: string; deleted_at: number | null }>>(trashList);
+    const trashItems = await responseJson<
+      Array<{ id: string; name: string; deleted_at: number | null }>
+    >(trashList);
     expect(trashItems.length).toBe(1);
     expect(trashItems[0].id).toBe("scene_trash_test");
     expect(trashItems[0].deleted_at).toBeTruthy();
 
     // 4. Restore scene
-    const restoreRes = await request(handler, "/api/scenes/scene_trash_test/restore", {
-      method: "POST",
-      headers: { Cookie: cookie },
-    });
+    const restoreRes = await request(
+      handler,
+      "/api/scenes/scene_trash_test/restore",
+      {
+        method: "POST",
+        headers: { Cookie: cookie },
+      },
+    );
     expect(restoreRes.status).toBe(200);
 
     // 5. Normal /api/scenes should contain it again
     const activeAfterRestore = await request(handler, "/api/scenes", {
       headers: { Cookie: cookie },
     });
-    const activeItems = await responseJson<Array<{ id: string }>>(activeAfterRestore);
+    const activeItems = await responseJson<Array<{ id: string }>>(
+      activeAfterRestore,
+    );
     expect(activeItems.length).toBe(1);
     expect(activeItems[0].id).toBe("scene_trash_test");
 
     // 6. Permanent delete
-    const permanentDelete = await request(handler, "/api/scenes/scene_trash_test?permanent=true", {
-      method: "DELETE",
-      headers: { Cookie: cookie },
-    });
+    const permanentDelete = await request(
+      handler,
+      "/api/scenes/scene_trash_test?permanent=true",
+      {
+        method: "DELETE",
+        headers: { Cookie: cookie },
+      },
+    );
     expect(permanentDelete.status).toBe(200);
-    expect((await responseJson<{ permanent: boolean }>(permanentDelete)).permanent).toBe(true);
+    expect(
+      (await responseJson<{ permanent: boolean }>(permanentDelete)).permanent,
+    ).toBe(true);
 
     // 7. Should be absent from both active and trash
     const trashAfterPerm = await request(handler, "/api/scenes/trash", {

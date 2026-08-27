@@ -68,10 +68,10 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
         </p>
         <div className="auth-dialog-input-group">
           <input
-          type="password"
-          name="password"
-          aria-label="访问密码"
-          placeholder="请输入访问密码"
+            type="password"
+            name="password"
+            aria-label="访问密码"
+            placeholder="请输入访问密码"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="auth-dialog-input"

@@ -421,12 +421,7 @@ const getCloudPersistenceSignature = (
     appState,
     files: getCloudFileIds(elements).map((fileId) => {
       const file = files[fileId];
-      return [
-        fileId,
-        file?.mimeType,
-        file?.created,
-        file?.dataURL?.length,
-      ];
+      return [fileId, file?.mimeType, file?.created, file?.dataURL?.length];
     }),
   });
 
@@ -462,6 +457,7 @@ const waitForCloudFiles = async (
 };
 
 const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
+  const { onNavigateHome } = props;
   const excalidrawAPI = useExcalidrawAPI();
 
   const [errorMessage, setErrorMessage] = useState("");
@@ -1621,8 +1617,8 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
     if (currentSceneIdRef.current && !(await saveCurrentCloudScene())) {
       return;
     }
-    props.onNavigateHome?.() ?? window.location.assign(window.location.pathname);
-  }, [props.onNavigateHome, saveCurrentCloudScene]);
+    onNavigateHome?.() ?? window.location.assign(window.location.pathname);
+  }, [onNavigateHome, saveCurrentCloudScene]);
 
   // browsers generally prevent infinite self-embedding, there are
   // cases where it still happens, and while we disallow self-embedding
@@ -2035,9 +2031,7 @@ const ExcalidrawApp = () => {
   const hasExternalSceneHash =
     /^#json=/.test(location.hash) || /^#url=/.test(location.hash);
   const shouldRenderWorkspaceHome =
-    !sceneId &&
-    !hasExternalSceneHash &&
-    !isCollaborationLink(location.href);
+    !sceneId && !hasExternalSceneHash && !isCollaborationLink(location.href);
 
   const navigateToScene = useCallback((targetSceneId: string) => {
     const url = new URL(window.location.href);

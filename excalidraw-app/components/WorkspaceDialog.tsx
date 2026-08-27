@@ -95,7 +95,9 @@ export const WorkspaceDialog = ({
       />
       <div
         ref={contentRef}
-        className={`workspace-dialog-content-shell${className ? ` ${className}` : ""}`}
+        className={`workspace-dialog-content-shell${
+          className ? ` ${className}` : ""
+        }`}
         tabIndex={-1}
       >
         <h2 id={titleId} className="workspace-dialog-title">
