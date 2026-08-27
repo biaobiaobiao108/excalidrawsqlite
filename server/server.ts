@@ -29,6 +29,7 @@ export type ServerConfig = {
   authPassword: string;
   allowAnonymous: boolean;
   nodeEnv: string;
+  trustProxy: boolean;
   corsOrigins: Set<string>;
   maxFileBytes: number;
   maxSceneBodyBytes: number;
@@ -38,6 +39,7 @@ export type ServerConfig = {
 
 export type ServerRuntime = {
   db: Database;
+  dbPath: string;
   filesDir: string;
   staticDir?: string;
   config: ServerConfig;
@@ -98,6 +100,7 @@ export const createServerConfig = (
     authPassword,
     allowAnonymous,
     nodeEnv,
+    trustProxy: parseBooleanEnv(env.TRUST_PROXY),
     corsOrigins: splitOrigins(env.CORS_ORIGIN),
     maxFileBytes: parsePositiveIntegerEnv(
       env.MAX_FILE_BYTES,
@@ -195,20 +198,32 @@ export const createRuntime = (options: {
   staticDir?: string;
   config?: ServerConfig;
 }): ServerRuntime => {
-  fs.mkdirSync(path.dirname(path.resolve(options.dbPath)), { recursive: true });
-  fs.mkdirSync(path.resolve(options.filesDir), { recursive: true });
-  const db = new Database(options.dbPath, { create: true });
-  initializeDatabase(db);
+  const dbPath = path.resolve(options.dbPath);
+  const filesDir = path.resolve(options.filesDir);
+  try {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    fs.mkdirSync(filesDir, { recursive: true });
+    const db = new Database(dbPath, { create: true });
+    initializeDatabase(db);
 
-  return {
-    db,
-    filesDir: path.resolve(options.filesDir),
-    staticDir: options.staticDir,
-    config: options.config || createServerConfig(),
-    sessions: new Map(),
-    authAttempts: new Map(),
-    writeAttempts: new Map(),
-  };
+    return {
+      db,
+      dbPath,
+      filesDir,
+      staticDir: options.staticDir
+        ? path.resolve(options.staticDir)
+        : undefined,
+      config: options.config || createServerConfig(),
+      sessions: new Map(),
+      authAttempts: new Map(),
+      writeAttempts: new Map(),
+    };
+  } catch (error) {
+    throw new Error(
+      `无法初始化持久化存储（数据库：${dbPath}，文件目录：${filesDir}）`,
+      { cause: error },
+    );
+  }
 };
 
 const cleanupExpiredSessions = (runtime: ServerRuntime, now: number) => {
@@ -418,32 +433,59 @@ const getPathId = (
   return validateId(id, kind);
 };
 
-const getSessionCookieName = (runtime: ServerRuntime) =>
-  runtime.config.nodeEnv === "production"
-    ? AUTH_COOKIE_PRODUCTION
-    : AUTH_COOKIE_DEVELOPMENT;
-
-const issueSessionCookie = (runtime: ServerRuntime) => {
-  const token = randomBytes(32).toString("base64url");
-  runtime.sessions.set(token, Date.now() + runtime.config.sessionTtlMs);
-  const secure = runtime.config.nodeEnv === "production" ? "; Secure" : "";
-  return `${getSessionCookieName(
-    runtime,
-  )}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}${secure}`;
+const isSecureRequest = (runtime: ServerRuntime, req: Request) => {
+  if (new URL(req.url).protocol === "https:") {
+    return true;
+  }
+  if (!runtime.config.trustProxy) {
+    return false;
+  }
+  return (
+    req.headers.get("x-forwarded-proto")?.split(",", 1)[0]?.trim() ===
+    "https"
+  );
 };
 
-const clearSessionCookie = (runtime: ServerRuntime) => {
-  const secure = runtime.config.nodeEnv === "production" ? "; Secure" : "";
-  return `${getSessionCookieName(
-    runtime,
-  )}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure}`;
+const getSessionCookieNames = (runtime: ServerRuntime) =>
+  runtime.config.nodeEnv === "production"
+    ? [AUTH_COOKIE_PRODUCTION, AUTH_COOKIE_DEVELOPMENT]
+    : [AUTH_COOKIE_DEVELOPMENT];
+
+const getSessionToken = (runtime: ServerRuntime, req: Request) => {
+  for (const name of getSessionCookieNames(runtime)) {
+    const token = getCookie(req, name);
+    if (token) {
+      return token;
+    }
+  }
+  return "";
+};
+
+const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
+  const token = randomBytes(32).toString("base64url");
+  runtime.sessions.set(token, Date.now() + runtime.config.sessionTtlMs);
+  const secure = isSecureRequest(runtime, req);
+  const name =
+    runtime.config.nodeEnv === "production" && secure
+      ? AUTH_COOKIE_PRODUCTION
+      : AUTH_COOKIE_DEVELOPMENT;
+  return `${name}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}${secure ? "; Secure" : ""}`;
+};
+
+const clearSessionCookie = (runtime: ServerRuntime, req: Request) => {
+  const secure = isSecureRequest(runtime, req);
+  const name =
+    runtime.config.nodeEnv === "production" && secure
+      ? AUTH_COOKIE_PRODUCTION
+      : AUTH_COOKIE_DEVELOPMENT;
+  return `${name}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`;
 };
 
 const isAuthorized = (runtime: ServerRuntime, req: Request) => {
   if (runtime.config.allowAnonymous || !runtime.config.authPassword) {
     return true;
   }
-  const token = getCookie(req, getSessionCookieName(runtime));
+  const token = getSessionToken(runtime, req);
   const expiresAt = runtime.sessions.get(token);
   if (!expiresAt || expiresAt <= Date.now()) {
     runtime.sessions.delete(token);
@@ -688,6 +730,21 @@ const getStaticDir = (runtime: ServerRuntime) => {
   );
 };
 
+const getStaticCacheControl = (pathname: string) => {
+  if (
+    pathname === "/" ||
+    pathname.endsWith("/index.html") ||
+    pathname === "/sw.js" ||
+    pathname === "/manifest.webmanifest"
+  ) {
+    return "no-cache";
+  }
+  if (pathname.startsWith("/assets/") || pathname.startsWith("/fonts/")) {
+    return "public, max-age=31536000, immutable";
+  }
+  return "public, max-age=3600";
+};
+
 const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
   const cutoff = Date.now() - ORPHAN_FILE_GRACE_MS;
   const rows = runtime.db
@@ -782,6 +839,8 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
     try {
       if (pathname === "/api/health" && req.method === "GET") {
         runtime.db.query("SELECT 1").get();
+        fs.accessSync(path.dirname(runtime.dbPath), fs.constants.W_OK);
+        fs.accessSync(runtime.filesDir, fs.constants.W_OK);
         return jsonResponse(runtime, req, { status: "ok" });
       }
 
@@ -819,7 +878,7 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
           verifyPassword(password, runtime.config.authPassword)
         ) {
           return jsonResponse(runtime, req, { success: true }, 200, {
-            "Set-Cookie": issueSessionCookie(runtime),
+            "Set-Cookie": issueSessionCookie(runtime, req),
           });
         }
         return jsonResponse(
@@ -831,12 +890,12 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
       }
 
       if (pathname === "/api/auth/logout" && req.method === "POST") {
-        const token = getCookie(req, getSessionCookieName(runtime));
+        const token = getSessionToken(runtime, req);
         runtime.sessions.delete(token);
         return response(runtime, req, null, {
           status: 204,
           headers: {
-            "Set-Cookie": clearSessionCookie(runtime),
+            "Set-Cookie": clearSessionCookie(runtime, req),
             "Clear-Site-Data": '"cookies"',
           },
         });
@@ -1151,18 +1210,30 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
 
       const staticDir = getStaticDir(runtime);
       const staticPath = buildStaticPath(staticDir, pathname);
-      if (
-        staticPath &&
-        fs.existsSync(staticPath) &&
-        fs.statSync(staticPath).isFile()
-      ) {
-        return response(runtime, req, Bun.file(staticPath));
+      if (!staticPath) {
+        throw new HttpError(400, "INVALID_PATH", "无效的资源路径");
       }
-      const indexPath = path.join(staticDir, "index.html");
-      if (fs.existsSync(indexPath)) {
-        return response(runtime, req, Bun.file(indexPath), {
-          headers: { "Content-Type": "text/html; charset=utf-8" },
+      if (fs.existsSync(staticPath) && fs.statSync(staticPath).isFile()) {
+        return response(runtime, req, Bun.file(staticPath), {
+          headers: { "Cache-Control": getStaticCacheControl(pathname) },
         });
+      }
+      const acceptsHtml = (req.headers.get("accept") || "")
+        .toLowerCase()
+        .includes("text/html");
+      if (acceptsHtml) {
+        const indexPath = path.join(staticDir, "index.html");
+        if (fs.existsSync(indexPath)) {
+          return response(runtime, req, Bun.file(indexPath), {
+            headers: {
+              "Content-Type": "text/html; charset=utf-8",
+              "Cache-Control": "no-cache",
+            },
+          });
+        }
+      }
+      if (pathname !== "/") {
+        throw new HttpError(404, "STATIC_NOT_FOUND", "资源不存在");
       }
       return response(
         runtime,
@@ -1186,7 +1257,10 @@ const startServer = () => {
   const filesDir = path.resolve(
     process.env.FILES_DIR || path.join(dataDir, "files"),
   );
-  const runtime = createRuntime({ dbPath, filesDir });
+  const staticDir = process.env.STATIC_DIR
+    ? path.resolve(process.env.STATIC_DIR)
+    : path.resolve("./excalidraw-app/build");
+  const runtime = createRuntime({ dbPath, filesDir, staticDir });
   const handler = createRequestHandler(runtime);
   const port = Number(process.env.PORT) || DEFAULT_PORT;
 
