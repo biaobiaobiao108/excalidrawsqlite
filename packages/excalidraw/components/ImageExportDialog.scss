@@ -38,7 +38,9 @@
 
     @include isMobile {
       flex-direction: column;
-      height: calc(100vh - 5rem);
+      height: calc(100dvh - 5rem);
+      max-height: calc(100dvh - 5rem);
+      overflow-y: auto;
     }
 
     &__preview {

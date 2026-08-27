@@ -54,6 +54,7 @@
     .ExportDialog__dialog,
     .ExportDialog__dialog .Island {
       height: 100%;
+      max-height: calc(100dvh - 2rem);
       box-sizing: border-box;
     }
 

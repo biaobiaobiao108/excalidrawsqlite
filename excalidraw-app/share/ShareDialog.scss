@@ -7,7 +7,9 @@
     gap: 1.5rem;
 
     @include isMobile {
-      height: calc(100vh - 5rem);
+      height: calc(100dvh - 5rem);
+      max-height: calc(100dvh - 5rem);
+      overflow-y: auto;
     }
 
     &__separator {

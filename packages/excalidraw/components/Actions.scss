@@ -96,7 +96,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  max-height: calc(100vh - 200px);
+  max-height: calc(100dvh - 200px);
   overflow-y: auto;
   padding: 0.5rem;
 
@@ -192,7 +192,7 @@
   background: transparent;
   border-radius: var(--border-radius-lg);
   box-shadow: none;
-  overflow: none;
+  overflow: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
