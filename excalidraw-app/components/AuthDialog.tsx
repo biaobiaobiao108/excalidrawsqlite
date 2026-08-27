@@ -68,14 +68,20 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
         <div className="auth-dialog-input-group">
           <input
             type="password"
+            name="password"
             placeholder="请输入访问密码"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="auth-dialog-input"
             autoFocus
+            autoComplete="current-password"
           />
         </div>
-        {error && <div className="auth-dialog-error">{error}</div>}
+        {error && (
+          <div className="auth-dialog-error" role="alert">
+            {error}
+          </div>
+        )}
         <div className="auth-dialog-actions">
           <FilledButton
             label={isLoading ? "验证中..." : "确认进入"}

@@ -253,7 +253,10 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
           {!isCreating && (
             <FilledButton
               label="新建画板"
-              onClick={() => setIsCreating(true)}
+              onClick={() => {
+                setNewSceneName("未命名白板");
+                setIsCreating(true);
+              }}
               size="medium"
               className="create-btn"
               disabled={!!pendingAction}
