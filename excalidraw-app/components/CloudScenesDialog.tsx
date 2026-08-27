@@ -58,6 +58,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
+  const [isExportingBackup, setIsExportingBackup] = useState(false);
 
   const loadScenes = useCallback(async () => {
     setLoading(true);
@@ -95,6 +96,26 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
       setEditingId(null);
     }
   }, [isOpen, loadScenes]);
+
+  const handleDownloadBackup = async () => {
+    setIsExportingBackup(true);
+    setActionError("");
+    try {
+      const blob = await downloadCloudBackup();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `excalidraw-backup-${new Date()
+        .toISOString()
+        .slice(0, 10)}.db`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setActionError(err?.message || "导出数据库备份失败");
+    } finally {
+      setIsExportingBackup(false);
+    }
+  };
 
   if (!isOpen) {
     return null;
@@ -142,28 +163,6 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
       }
     } finally {
       setPendingAction(null);
-    }
-  };
-
-  const [isExportingBackup, setIsExportingBackup] = useState(false);
-
-  const handleDownloadBackup = async () => {
-    setIsExportingBackup(true);
-    setActionError("");
-    try {
-      const blob = await downloadCloudBackup();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `excalidraw-backup-${new Date()
-        .toISOString()
-        .slice(0, 10)}.db`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      setActionError(err?.message || "导出数据库备份失败");
-    } finally {
-      setIsExportingBackup(false);
     }
   };
 

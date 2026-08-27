@@ -353,4 +353,3 @@ export async function downloadCloudBackup(): Promise<Blob> {
   await assertResponse(res, "下载云端数据库备份失败");
   return res.blob();
 }
-

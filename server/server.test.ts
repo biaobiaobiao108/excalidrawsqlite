@@ -396,13 +396,17 @@ describe("cloud persistence server", () => {
     const { handler } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
     const res = await request(handler, "/api/health");
     expect(res.headers.get("content-security-policy")).toBeTruthy();
-    expect(res.headers.get("content-security-policy")).toContain("default-src 'self'");
-    expect(res.headers.get("content-security-policy")).toContain("worker-src 'self' blob:");
+    expect(res.headers.get("content-security-policy")).toContain(
+      "default-src 'self'",
+    );
+    expect(res.headers.get("content-security-policy")).toContain(
+      "worker-src 'self' blob:",
+    );
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
   it("provides an authenticated online SQLite backup snapshot", async () => {
-    const { handler, runtime } = createTestRuntime();
+    const { handler } = createTestRuntime();
     const unauthorized = await request(handler, "/api/backup/snapshot");
     expect(unauthorized.status).toBe(401);
 
@@ -424,8 +428,12 @@ describe("cloud persistence server", () => {
       headers: { Cookie: cookie },
     });
     expect(backupRes.status).toBe(200);
-    expect(backupRes.headers.get("content-type")).toContain("application/x-sqlite3");
-    expect(backupRes.headers.get("content-disposition")).toContain("attachment; filename=");
+    expect(backupRes.headers.get("content-type")).toContain(
+      "application/x-sqlite3",
+    );
+    expect(backupRes.headers.get("content-disposition")).toContain(
+      "attachment; filename=",
+    );
     const buffer = await backupRes.arrayBuffer();
     expect(buffer.byteLength).toBeGreaterThan(0);
     // Header for sqlite database starts with "SQLite format 3\0"

@@ -142,11 +142,7 @@ import { useSimulatedCollaborators } from "./debugCollaborators";
 import { AIComponents } from "./components/AI";
 
 import { AppSidebar } from "./components/AppSidebar";
-import {
-  CloudSaveQueue,
-  subscribeCloudTabSync,
-  broadcastCloudSync,
-} from "./data/cloudSync";
+import { CloudSaveQueue, subscribeCloudTabSync } from "./data/cloudSync";
 
 import type { CloudSaveSnapshot } from "./data/cloudSync";
 
@@ -875,7 +871,12 @@ const ExcalidrawWrapper = () => {
         }
       }
     });
-  }, [cloudSaveQueue, excalidrawAPI, handleSceneDeleted, loadSelectedCloudScene]);
+  }, [
+    cloudSaveQueue,
+    excalidrawAPI,
+    handleSceneDeleted,
+    loadSelectedCloudScene,
+  ]);
 
   useEffect(() => {
     if (

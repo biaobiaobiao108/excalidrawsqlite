@@ -61,7 +61,11 @@ export const subscribeCloudTabSync = (
   try {
     const channel = new BroadcastChannel(CLOUD_SYNC_CHANNEL_NAME);
     const listener = (event: MessageEvent<CloudTabSyncMessage>) => {
-      if (event.data && typeof event.data === "object" && "type" in event.data) {
+      if (
+        event.data &&
+        typeof event.data === "object" &&
+        "type" in event.data
+      ) {
         callback(event.data);
       }
     };
