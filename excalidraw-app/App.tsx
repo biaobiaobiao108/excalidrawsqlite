@@ -936,12 +936,8 @@ const ExcalidrawWrapper = () => {
     }
     initialSceneInitializedRef.current = true;
 
-    let cancelled = false;
     initializeScene({ collabAPI: null, excalidrawAPI: null })
       .then((data) => {
-        if (cancelled) {
-          return;
-        }
         initialSceneDataRef.current = data;
         initialStatePromiseRef.current.promise.resolve(data.scene);
       })
@@ -951,10 +947,6 @@ const ExcalidrawWrapper = () => {
           initialStatePromiseRef.current.promise.resolve(null);
         }
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   useEffect(() => {
@@ -979,10 +971,9 @@ const ExcalidrawWrapper = () => {
       return;
     }
     collaborationInitializedRef.current = true;
-    let cancelled = false;
     initializeScene({ collabAPI, excalidrawAPI })
       .then((data) => {
-        if (cancelled || !data.scene) {
+        if (excalidrawAPI.isDestroyed || !data.scene) {
           return;
         }
         loadImages(data);
@@ -996,7 +987,7 @@ const ExcalidrawWrapper = () => {
       })
       .catch((error: any) => {
         console.error("Failed to initialize the collaboration scene:", error);
-        if (!cancelled) {
+        if (!excalidrawAPI.isDestroyed) {
           excalidrawAPI.updateScene({
             appState: {
               isLoading: false,
@@ -1005,10 +996,6 @@ const ExcalidrawWrapper = () => {
           });
         }
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [collabAPI, excalidrawAPI, loadImages]);
 
   useEffect(() => {
