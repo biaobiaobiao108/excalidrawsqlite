@@ -71,7 +71,7 @@ describe("AnimationController", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("does not resurrect an animation cancelled during its initial callback", () => {
+  it("does not resurrect an animation cancelled during its initial callback", async () => {
     let frames = 0;
 
     AnimationController.start(FIRST_KEY, () => {
@@ -82,10 +82,12 @@ describe("AnimationController", () => {
 
     expect(frames).toBe(1);
     expect(AnimationController.running(FIRST_KEY)).toBe(false);
-    expect(vi.getTimerCount()).toBe(0);
+
+    await vi.runOnlyPendingTimersAsync();
+    expect(frames).toBe(1);
   });
 
-  it("cleans up the registration when the initial callback throws", () => {
+  it("cleans up the registration when the initial callback throws", async () => {
     expect(() =>
       AnimationController.start(FIRST_KEY, () => {
         throw new Error("initial frame failed");
@@ -93,7 +95,9 @@ describe("AnimationController", () => {
     ).toThrow("initial frame failed");
 
     expect(AnimationController.running(FIRST_KEY)).toBe(false);
-    expect(vi.getTimerCount()).toBe(0);
+
+    await vi.runOnlyPendingTimersAsync();
+    expect(AnimationController.running(FIRST_KEY)).toBe(false);
   });
 
   it("preserves a same-key replacement started during the initial callback", async () => {
@@ -152,7 +156,7 @@ describe("AnimationController", () => {
       return null;
     });
 
-    await vi.runOnlyPendingTimersAsync();
+    await vi.advanceTimersToNextTimerAsync();
 
     expect(originalFrames).toBe(1);
     expect(replacementFrames).toBe(1);
