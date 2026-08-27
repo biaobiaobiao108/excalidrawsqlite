@@ -11,7 +11,9 @@ services:
       PORT: "8080"
       DB_PATH: /app/data/excalidraw.db
       FILES_DIR: /app/data/files
+      STATIC_DIR: /app/excalidraw-app/build
+      TRUST_PROXY: ${TRUST_PROXY:-false}
       AUTH_PASSWORD: ${AUTH_PASSWORD:?Set AUTH_PASSWORD before starting the container}
       ALLOW_ANONYMOUS: ${ALLOW_ANONYMOUS:-false}
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data:Z

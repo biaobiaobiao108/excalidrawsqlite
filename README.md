@@ -27,7 +27,7 @@
 
 ## 🚀 快速启动
 
-### 方式一：Docker Compose 容器化部署（推荐）
+### 方式一：Docker / Podman Compose 容器化部署（推荐）
 
 1. **克隆本仓库**
 
@@ -43,12 +43,21 @@
    AUTH_PASSWORD=your-strong-password
    ```
 
-   Linux 使用宿主机目录挂载时，请先确保容器用户（UID 10001）可以写入数据目录：
+   Linux 使用宿主机目录挂载时，请先确保容器用户（UID 10001）可以写入数据目录。rootful Podman 或 Docker 可执行：
 
    ```bash
    mkdir -p ./data
    sudo chown -R 10001:10001 ./data
    ```
+
+   rootless Podman 请在用户命名空间内设置权限：
+
+   ```bash
+   mkdir -p ./data
+   podman unshare chown -R 10001:10001 ./data
+   ```
+
+   Compose 文件中的 `:Z` 用于 SELinux 主机的目录重新标记。若 Docker Desktop 的 Compose 实现不接受该后缀，可删除 `:Z`，但不要删除数据卷。启动失败时先检查 `data/` 是否可写，并查看 `podman logs excalidraw`。
 
    如果明确只在可信局域网免密使用，可额外设置 `ALLOW_ANONYMOUS=true`。
 
@@ -57,6 +66,15 @@
    docker compose up -d --build
    ```
    打开浏览器访问：`http://localhost:8080`。
+
+   使用 Podman 时命令相同：
+
+   ```bash
+   podman compose up -d --build
+   curl http://localhost:8080/api/health
+   ```
+
+   健康检查会验证 SQLite 数据库目录和 `data/files` 文件目录可读写；返回非 200 时优先排查目录权限和卷挂载。直接 HTTP 适合可信局域网，公网部署必须在反向代理后使用 HTTPS。只有明确配置 `TRUST_PROXY=true` 时，服务才会信任 `X-Forwarded-Proto` 并发放 Secure 会话 Cookie。
 
 ---
 
@@ -148,9 +166,10 @@
 
 ### 数据与备份
 
-- 数据目录包含 `excalidraw.db`、SQLite WAL 文件以及 `files/` 图片目录。
+- 数据目录包含 `excalidraw.db`、SQLite WAL 文件以及 `files/` 图片目录。数据库只保存图片元数据，图片实际位于 `data/files/`。
 - 备份前请先停止容器，再整体复制 `data/` 目录；不要在服务运行时直接复制 SQLite 主文件。
 - 恢复时将完整 `data/` 目录挂载回 `/app/data` 后再启动容器。
+- 如果使用 rootless Podman，恢复后再次执行 `podman unshare chown -R 10001:10001 ./data`。
 
 ### 质量检查
 

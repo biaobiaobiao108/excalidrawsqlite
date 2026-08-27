@@ -122,21 +122,26 @@ jobs:
 
           ## 🚀 部署方法 (Deployment Guide)
 
-          ### 方式一：Docker 一键运行 (CLI)
+          ### 方式一：Docker / Podman 一键运行 (CLI)
 
           ```bash
           # 1. 创建本地数据持久化目录
           mkdir -p ./data
-          # Linux bind mount 需要允许容器 UID 10001 写入
+          # rootful Docker/Podman：bind mount 需要允许容器 UID 10001 写入
           sudo chown -R 10001:10001 ./data
+
+          # rootless Podman 请改用：podman unshare chown -R 10001:10001 ./data
 
           # 2. 启动容器
           docker run -d \
             --name excalidraw \
             --restart unless-stopped \
             -p 8080:8080 \
-            -v $(pwd)/data:/app/data \
+            -v $(pwd)/data:/app/data:Z \
             -e AUTH_PASSWORD="your-strong-password" \
+            -e DB_PATH=/app/data/excalidraw.db \
+            -e FILES_DIR=/app/data/files \
+            -e STATIC_DIR=/app/excalidraw-app/build \
             ghcr.io/$REPO_LOWER:$TAG_NAME
           ```
 
@@ -160,15 +165,19 @@ jobs:
                 - PORT=8080
                 - DB_PATH=/app/data/excalidraw.db
                 - FILES_DIR=/app/data/files
+                - STATIC_DIR=/app/excalidraw-app/build
+                - TRUST_PROXY=false
                 - AUTH_PASSWORD=your-strong-password
                 - ALLOW_ANONYMOUS=false
               volumes:
-                - ./data:/app/data
+                - ./data:/app/data:Z
           ```
 
           启动服务：
           ```bash
           docker compose up -d
+          # Podman：podman compose up -d
+          curl http://localhost:8080/api/health
           ```
 
           ---
@@ -176,6 +185,7 @@ jobs:
           ### 💾 数据持久化与备份
           - 画板元数据和矢量图元结构存储在 `./data/excalidraw.db`，图片附件存储在 `./data/files/`；
           - 备份前先停止容器，再整体复制 `./data` 文件夹，避免复制 WAL 状态下的不一致数据库。
+          - `:Z` 用于 SELinux 主机；Docker Desktop 若不接受该后缀可删除它。公网部署必须使用 HTTPS，反向代理场景只有显式设置 `TRUST_PROXY=true` 才会信任 `X-Forwarded-Proto`。
           EOF
 
           sed -i "s|\$REPO_LOWER|$REPO_LOWER|g" release_notes.md

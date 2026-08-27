@@ -32,6 +32,7 @@ ENV NODE_ENV=production
 ENV PORT=8080
 ENV DB_PATH=/app/data/excalidraw.db
 ENV FILES_DIR=/app/data/files
+ENV STATIC_DIR=/app/excalidraw-app/build
 
 # Create data directory for SQLite persistence
 RUN addgroup -S -g 10001 excalidraw && adduser -S -D -u 10001 -G excalidraw excalidraw \
