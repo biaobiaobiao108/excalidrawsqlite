@@ -290,7 +290,17 @@ const response = (
   init: ResponseInit = {},
 ) => {
   const headers = securityHeaders(runtime, req);
-  new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+  const initHeaders = new Headers(init.headers);
+  const setCookies = (
+    initHeaders as Headers & { getSetCookie?: () => string[] }
+  ).getSetCookie?.();
+  if (setCookies?.length) {
+    initHeaders.delete("set-cookie");
+    for (const cookie of setCookies) {
+      headers.append("Set-Cookie", cookie);
+    }
+  }
+  initHeaders.forEach((value, key) => headers.set(key, value));
   return new Response(body, { ...init, headers });
 };
 

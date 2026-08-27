@@ -130,9 +130,10 @@ describe("cloud persistence server", () => {
         headers: { Cookie: httpsCookie.split(";", 1)[0] },
       }),
     );
-    const clearedCookies = logout.headers.get("set-cookie") || "";
-    expect(clearedCookies).toContain("__Host-excalidraw_session=");
-    expect(clearedCookies).toContain("excalidraw_session=");
+    const clearedCookies = logout.headers.getSetCookie();
+    expect(clearedCookies).toHaveLength(2);
+    expect(clearedCookies.join("\n")).toContain("__Host-excalidraw_session=");
+    expect(clearedCookies.join("\n")).toContain("excalidraw_session=");
   });
 
   it("trusts forwarded HTTPS only when explicitly configured", async () => {
