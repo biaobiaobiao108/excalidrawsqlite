@@ -1868,12 +1868,19 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
            WHERE id = ?`,
           [name, JSON.stringify(tags), favorite ? 1 : 0, folderId, now, revision, id],
         );
-        return jsonResponse(runtime, req, {
-          success: true,
-          id,
-          updated_at: now,
-          revision,
-        });
+        const updated = runtime.db
+          .query(
+            `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
+                    scenes.revision, length(scenes.elements) AS size,
+                    scenes.tags_json, scenes.is_favorite, scenes.folder_id,
+                    scenes.last_opened_at, scenes.thumbnail_file_id,
+                    folders.name AS folder_name
+             FROM scenes
+             LEFT JOIN folders ON folders.id = scenes.folder_id
+             WHERE scenes.id = ?`,
+          )
+          .get(id);
+        return jsonResponse(runtime, req, getSceneSummary(updated));
       }
 
       if (pathname.startsWith("/api/scenes/") && req.method === "PUT") {

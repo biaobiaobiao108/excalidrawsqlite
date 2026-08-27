@@ -11,6 +11,12 @@ export interface CloudSceneSummary {
   updated_at: number;
   revision: number;
   size?: number;
+  tags: string[];
+  favorite: boolean;
+  folder_id: string | null;
+  folder_name: string | null;
+  last_opened_at: number | null;
+  thumbnail_file_id: string | null;
 }
 
 export interface CloudSceneData {
@@ -21,6 +27,19 @@ export interface CloudSceneData {
   created_at: number;
   updated_at: number;
   revision: number;
+  tags: string[];
+  favorite: boolean;
+  folder_id: string | null;
+  last_opened_at: number | null;
+  thumbnail_file_id: string | null;
+}
+
+export interface CloudFolder {
+  id: string;
+  name: string;
+  created_at: number;
+  updated_at: number;
+  scene_count: number;
 }
 
 export class CloudApiError extends Error {
@@ -226,6 +245,9 @@ export async function createCloudScene(data: {
   name?: string;
   elements?: readonly any[];
   appState?: any;
+  tags?: string[];
+  favorite?: boolean;
+  folder_id?: string | null;
 }): Promise<CloudSceneSummary> {
   return fetchJson(
     "/api/scenes",
@@ -236,6 +258,111 @@ export async function createCloudScene(data: {
     },
     "创建云端画板失败",
   );
+}
+
+export async function updateCloudSceneMetadata(
+  id: string,
+  data: {
+    name?: string;
+    tags?: string[];
+    favorite?: boolean;
+    folder_id?: string | null;
+    baseRevision?: number;
+  },
+): Promise<CloudSceneSummary> {
+  return fetchJson(
+    `/api/scenes/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    },
+    "更新画板信息失败",
+  );
+}
+
+export async function markCloudSceneOpened(id: string): Promise<{
+  success: boolean;
+  id: string;
+  lastOpenedAt: number;
+}> {
+  return fetchJson(
+    `/api/scenes/${encodeURIComponent(id)}/open`,
+    {
+      method: "POST",
+      headers: getHeaders(),
+    },
+    "更新最近打开时间失败",
+  );
+}
+
+export async function saveCloudSceneThumbnail(
+  id: string,
+  blob: Blob,
+): Promise<{ success: boolean; id: string; thumbnail_file_id: string }> {
+  const res = await fetchWithTimeout(
+    `/api/scenes/${encodeURIComponent(id)}/thumbnail`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": blob.type || "image/jpeg" },
+      body: blob,
+    },
+    "保存画板缩略图失败",
+  );
+  await assertResponse(res, "保存画板缩略图失败");
+  return (await res.json()) as {
+    success: boolean;
+    id: string;
+    thumbnail_file_id: string;
+  };
+}
+
+export async function fetchCloudFolders(): Promise<CloudFolder[]> {
+  return fetchJson(
+    "/api/folders",
+    { headers: getHeaders() },
+    "获取文件夹列表失败",
+    CLOUD_READ_RETRIES,
+  );
+}
+
+export async function createCloudFolder(name: string): Promise<CloudFolder> {
+  return fetchJson(
+    "/api/folders",
+    {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ name }),
+    },
+    "创建文件夹失败",
+  );
+}
+
+export async function renameCloudFolder(
+  id: string,
+  name: string,
+): Promise<CloudFolder> {
+  return fetchJson(
+    `/api/folders/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify({ name }),
+    },
+    "重命名文件夹失败",
+  );
+}
+
+export async function deleteCloudFolder(id: string): Promise<boolean> {
+  const result = await fetchJson<{ success: boolean }>(
+    `/api/folders/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+      headers: getHeaders(),
+    },
+    "删除文件夹失败",
+  );
+  return result.success;
 }
 
 export async function saveCloudScene(

@@ -94,6 +94,7 @@ import { AppMainMenu } from "./components/AppMainMenu";
 import { AppWelcomeScreen } from "./components/AppWelcomeScreen";
 import { CloudConflictDialog } from "./components/CloudConflictDialog";
 import { CloudScenesDialog } from "./components/CloudScenesDialog";
+import { WorkspaceHome } from "./components/WorkspaceHome";
 import { AuthDialog } from "./components/AuthDialog";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 
@@ -1685,7 +1686,7 @@ const ExcalidrawWrapper = () => {
                   color: "var(--text-color-primary, #333)",
                   height: "36px",
                 }}
-                onClick={() => setIsCloudScenesOpen(true)}
+                onClick={() => window.location.assign(window.location.pathname)}
                 title="管理我的云端画板 (SQLite 持久化)"
               >
                 <svg
@@ -1737,7 +1738,7 @@ const ExcalidrawWrapper = () => {
           isCollabEnabled={!isCollabDisabled}
           theme={appTheme}
           refresh={() => forceRefresh((prev) => !prev)}
-          onOpenCloudScenes={() => setIsCloudScenesOpen(true)}
+          onOpenCloudScenes={() => window.location.assign(window.location.pathname)}
         />
         <AppWelcomeScreen
           onCollabDialogOpen={onCollabDialogOpen}
@@ -1923,7 +1924,7 @@ const ExcalidrawWrapper = () => {
                 "云端",
               ],
               perform: () => {
-                setIsCloudScenesOpen(true);
+                window.location.assign(window.location.pathname);
               },
             },
             {
@@ -1956,6 +1957,22 @@ const ExcalidrawWrapper = () => {
 };
 
 const ExcalidrawApp = () => {
+  const location = new URL(window.location.href);
+  const hasExternalSceneHash =
+    /^#json=/.test(location.hash) || /^#url=/.test(location.hash);
+  const shouldRenderWorkspaceHome =
+    !location.searchParams.get("id") &&
+    !hasExternalSceneHash &&
+    !isCollaborationLink(location.href);
+
+  if (shouldRenderWorkspaceHome) {
+    return (
+      <TopErrorBoundary>
+        <WorkspaceHome />
+      </TopErrorBoundary>
+    );
+  }
+
   return (
     <TopErrorBoundary>
       <Provider store={appJotaiStore}>
