@@ -48,6 +48,7 @@ mockNativeFileOpen.mockImplementation(() => mockLibraryFilePromise);
 vi.mock("browser-fs-access", async (importOriginal) => {
   const module = await importOriginal();
   return {
+    //@ts-ignore browser-fs-access has no usable type for importOriginal() here
     ...module,
     fileOpen: mockNativeFileOpen,
   };
