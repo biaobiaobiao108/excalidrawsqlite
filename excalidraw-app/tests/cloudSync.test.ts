@@ -114,4 +114,31 @@ describe("cloud save queue", () => {
     expect(saveCloudScene).toHaveBeenCalledTimes(2);
     queue.dispose();
   });
+
+  it("does not submit a deleted scene after an attachment upload finishes", async () => {
+    let releaseUpload!: () => void;
+    saveFilesToCloud.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseUpload = resolve;
+        }),
+    );
+    const queue = new CloudSaveQueue(
+      {
+        onAuthRequired: vi.fn(),
+        onConflict: vi.fn(),
+        onError: vi.fn(),
+      },
+      { saveCloudScene, saveFilesToCloud },
+    );
+
+    queue.enqueue(makeSnapshot("to-delete"));
+    await vi.advanceTimersByTimeAsync(1000);
+    queue.cancel("scene-1");
+    releaseUpload();
+    await vi.runAllTimersAsync();
+
+    expect(saveCloudScene).not.toHaveBeenCalled();
+    queue.dispose();
+  });
 });

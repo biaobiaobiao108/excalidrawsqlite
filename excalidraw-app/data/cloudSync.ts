@@ -44,6 +44,7 @@ export class CloudSaveQueue {
   private readonly blocked = new Map<string, BlockReason>();
   private readonly disposed = new Set<string>();
   private isSaving = false;
+  private activeSceneId: string | null = null;
   private readonly dependencies: CloudSaveDependencies;
 
   constructor(
@@ -83,6 +84,7 @@ export class CloudSaveQueue {
     this.pending.delete(sceneId);
     this.conflicts.delete(sceneId);
     this.blocked.delete(sceneId);
+    this.revisions.delete(sceneId);
     this.disposed.add(sceneId);
   }
 
@@ -111,6 +113,9 @@ export class CloudSaveQueue {
     this.timers.clear();
     this.pending.clear();
     this.conflicts.clear();
+    if (this.activeSceneId) {
+      this.disposed.add(this.activeSceneId);
+    }
   }
 
   private schedule(sceneId: string, delay = 1000) {
@@ -144,11 +149,15 @@ export class CloudSaveQueue {
     }
     this.pending.delete(sceneId);
     this.isSaving = true;
+    this.activeSceneId = sceneId;
 
     try {
       for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt++) {
         try {
           await this.dependencies.saveFilesToCloud(snapshot.files);
+          if (this.disposed.has(sceneId)) {
+            return;
+          }
           const saved = await this.dependencies.saveCloudScene(sceneId, {
             name: snapshot.name,
             elements:
@@ -183,6 +192,7 @@ export class CloudSaveQueue {
       }
     } finally {
       this.isSaving = false;
+      this.activeSceneId = null;
       for (const pendingSceneId of this.pending.keys()) {
         if (!this.blocked.has(pendingSceneId)) {
           this.schedule(pendingSceneId, 0);
