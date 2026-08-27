@@ -224,7 +224,7 @@ type InitializeSceneResult = {
 
 const initializeScene = async (opts: {
   collabAPI: CollabAPI | null;
-  excalidrawAPI: ExcalidrawImperativeAPI;
+  excalidrawAPI: ExcalidrawImperativeAPI | null;
 }): Promise<InitializeSceneResult> => {
   const searchParams = new URLSearchParams(window.location.search);
   const id = searchParams.get("id");
@@ -335,7 +335,7 @@ const initializeScene = async (opts: {
     }
   }
 
-  if (roomLinkData && opts.collabAPI) {
+  if (roomLinkData && opts.collabAPI && opts.excalidrawAPI) {
     const { excalidrawAPI } = opts;
 
     const scene = await opts.collabAPI.startCollaboration(roomLinkData);
@@ -504,6 +504,12 @@ const ExcalidrawWrapper = () => {
   const cloudSceneLoadIdRef = useRef(0);
   const localEditGenerationRef = useRef(0);
   const authWaitersRef = useRef<Array<(authenticated: boolean) => void>>([]);
+  const initialSceneDataRef = useRef<ResolutionType<
+    typeof initializeScene
+  > | null>(null);
+  const initialSceneInitializedRef = useRef(false);
+  const initialSceneImagesLoadedRef = useRef(false);
+  const collaborationInitializedRef = useRef(false);
 
   const setActiveCloudScene = useCallback((sceneId: string | null) => {
     currentSceneIdRef.current = sceneId;
@@ -925,20 +931,18 @@ const ExcalidrawWrapper = () => {
   );
 
   useEffect(() => {
-    if (!excalidrawAPI || (!isCollabDisabled && !collabAPI)) {
+    if (initialSceneInitializedRef.current) {
       return;
     }
+    initialSceneInitializedRef.current = true;
 
     let cancelled = false;
-    initializeScene({ collabAPI, excalidrawAPI })
-      .then(async (data) => {
+    initializeScene({ collabAPI: null, excalidrawAPI: null })
+      .then((data) => {
         if (cancelled) {
           return;
         }
-        if (data.isCloudScene && data.id && data.cloudRevision) {
-          cloudSaveQueue.setRevision(data.id, data.cloudRevision);
-        }
-        loadImages(data, /* isInitialLoad */ true);
+        initialSceneDataRef.current = data;
         initialStatePromiseRef.current.promise.resolve(data.scene);
       })
       .catch((error) => {
@@ -947,6 +951,70 @@ const ExcalidrawWrapper = () => {
           initialStatePromiseRef.current.promise.resolve(null);
         }
       });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      !excalidrawAPI ||
+      !initialSceneDataRef.current ||
+      initialSceneImagesLoadedRef.current
+    ) {
+      return;
+    }
+    initialSceneImagesLoadedRef.current = true;
+    loadImages(initialSceneDataRef.current, /* isInitialLoad */ true);
+  }, [excalidrawAPI, loadImages]);
+
+  useEffect(() => {
+    if (
+      !excalidrawAPI ||
+      !collabAPI ||
+      !isCollaborationLink(window.location.href) ||
+      collaborationInitializedRef.current
+    ) {
+      return;
+    }
+    collaborationInitializedRef.current = true;
+    let cancelled = false;
+    initializeScene({ collabAPI, excalidrawAPI })
+      .then((data) => {
+        if (cancelled || !data.scene) {
+          return;
+        }
+        loadImages(data);
+        excalidrawAPI.updateScene({
+          elements: restoreElements(data.scene.elements, null, {
+            repairBindings: true,
+          }),
+          appState: restoreAppState(data.scene.appState, null),
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        });
+      })
+      .catch((error: any) => {
+        console.error("Failed to initialize the collaboration scene:", error);
+        if (!cancelled) {
+          excalidrawAPI.updateScene({
+            appState: {
+              isLoading: false,
+              errorMessage: error?.message || "无法加载协作场景",
+            },
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [collabAPI, excalidrawAPI, loadImages]);
+
+  useEffect(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
 
     const onHashChange = async (event: HashChangeEvent) => {
       event.preventDefault();
