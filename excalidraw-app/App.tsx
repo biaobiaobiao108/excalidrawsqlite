@@ -112,6 +112,8 @@ import {
   fetchCloudFiles,
   fetchCloudScenes,
   createCloudScene,
+  markCloudSceneOpened,
+  saveCloudSceneThumbnail,
 } from "./data/cloudStorage";
 
 import { updateStaleImageStatuses } from "./data/FileManager";
@@ -141,6 +143,7 @@ import DebugCanvas, {
 } from "./components/DebugCanvas";
 import { useSimulatedCollaborators } from "./debugCollaborators";
 import { AIComponents } from "./components/AI";
+import { createSceneThumbnail } from "./data/sceneThumbnail";
 
 import { AppSidebar } from "./components/AppSidebar";
 import {
@@ -626,7 +629,38 @@ const ExcalidrawWrapper = () => {
     [setActiveCloudScene],
   );
 
-  useEffect(() => () => cloudSaveQueue.dispose(), [cloudSaveQueue]);
+  const saveThumbnailDebounced = useMemo(
+    () =>
+      debounce(
+        (snapshot: {
+          sceneId: string;
+          elements: readonly OrderedExcalidrawElement[];
+          appState: AppState;
+          files: BinaryFiles;
+        }) => {
+          void (async () => {
+            const blob = await createSceneThumbnail(snapshot);
+            if (!blob) {
+              return;
+            }
+            await saveCloudSceneThumbnail(snapshot.sceneId, blob);
+          })().catch((error) => {
+            // A preview is auxiliary and must not affect the scene save.
+            console.warn("画板缩略图保存失败", error);
+          });
+        },
+        1500,
+      ),
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      cloudSaveQueue.dispose();
+      saveThumbnailDebounced.cancel();
+    },
+    [cloudSaveQueue, saveThumbnailDebounced],
+  );
 
   const loadCloudFilesIntoScene = useCallback(
     async (
@@ -733,6 +767,9 @@ const ExcalidrawWrapper = () => {
       // the editor state. Initialization onChange events must never enqueue
       // the local browser cache back to the cloud scene.
       setActiveCloudScene(sceneId);
+      void markCloudSceneOpened(sceneId).catch((error) => {
+        console.warn("最近打开时间更新失败", error);
+      });
       cloudPersistenceSignatureRef.current = getCloudPersistenceSignature(
         cloudData.name,
         excalidrawAPI.getSceneElementsIncludingDeleted(),
@@ -1429,6 +1466,12 @@ const ExcalidrawWrapper = () => {
           name,
           elements,
           appState: persistedAppState,
+          files: referencedFiles,
+        });
+        saveThumbnailDebounced({
+          sceneId: activeSceneId,
+          elements,
+          appState,
           files: referencedFiles,
         });
       }
