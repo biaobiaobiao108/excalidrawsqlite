@@ -409,11 +409,24 @@ const getCloudPersistenceSignature = (
 ) =>
   JSON.stringify({
     name,
-    elements,
+    // Excalidraw increments version/versionNonce for every persisted element
+    // change. Avoid serializing full element geometry and image data URLs on
+    // every pointer move; the autosave queue only needs a change fingerprint.
+    elements: elements.map((element) => [
+      element.id,
+      element.version,
+      element.versionNonce,
+      element.isDeleted,
+    ]),
     appState,
     files: getCloudFileIds(elements).map((fileId) => {
       const file = files[fileId];
-      return [fileId, file?.mimeType, file?.dataURL, file?.created];
+      return [
+        fileId,
+        file?.mimeType,
+        file?.created,
+        file?.dataURL?.length,
+      ];
     }),
   });
 
