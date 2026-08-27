@@ -309,6 +309,7 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
             </button>
             <button
               className="btn-cancel"
+              type="button"
               onClick={() => setIsCreating(false)}
               disabled={!!pendingAction}
             >
@@ -364,8 +365,13 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                         className="scene-name"
                         title="点击打开此画板"
                         onClick={() => {
-                          onSelectScene(scene.id);
-                          onClose();
+                          if (pendingAction) {
+                            return;
+                          }
+                          void (async () => {
+                            await onSelectScene(scene.id);
+                            onClose();
+                          })();
                         }}
                       >
                         {scene.name || "未命名白板"}
