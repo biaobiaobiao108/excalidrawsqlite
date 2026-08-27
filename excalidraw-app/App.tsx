@@ -686,15 +686,17 @@ const ExcalidrawWrapper = () => {
   );
 
   const handleSelectScene = useCallback(
-    async (sceneId: string) => {
+    async (sceneId: string): Promise<boolean> => {
       try {
         await loadSelectedCloudScene(sceneId);
+        return true;
       } catch (error: any) {
         if (error?.status === 401) {
           setIsAuthOpen(true);
         } else {
           setErrorMessage(error?.message || "打开云端画板失败");
         }
+        return false;
       }
     },
     [loadSelectedCloudScene],

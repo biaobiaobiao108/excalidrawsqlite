@@ -34,7 +34,7 @@ interface CloudScenesDialogProps {
   isOpen: boolean;
   currentSceneId: string | null;
   onClose: () => void;
-  onSelectScene: (sceneId: string) => void | Promise<void>;
+  onSelectScene: (sceneId: string) => void | Promise<boolean | void>;
   onAuthRequired: () => Promise<boolean>;
   onSceneDeleted: (sceneId: string) => void | Promise<void>;
 }
@@ -117,7 +117,11 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
           setNewSceneName("");
           setIsCreating(false);
           await loadScenes();
-          await onSelectScene(created.id);
+          const selected = await onSelectScene(created.id);
+          if (selected === false) {
+            setActionError("画板已创建，但打开画板失败");
+            return;
+          }
           onClose();
           return;
         } catch (err: any) {
@@ -369,8 +373,10 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                             return;
                           }
                           void (async () => {
-                            await onSelectScene(scene.id);
-                            onClose();
+                            const selected = await onSelectScene(scene.id);
+                            if (selected !== false) {
+                              onClose();
+                            }
                           })();
                         }}
                       >
