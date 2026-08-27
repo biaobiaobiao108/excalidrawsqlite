@@ -47,6 +47,7 @@ export const convertMermaidToExcalidraw = async ({
   setError,
   data,
   theme,
+  isCurrent,
 }: {
   canvasRef: React.RefObject<HTMLDivElement | null>;
   mermaidToExcalidrawLib: MermaidToExcalidrawLibProps;
@@ -57,6 +58,7 @@ export const convertMermaidToExcalidraw = async ({
     files: BinaryFiles | null;
   }>;
   theme: Theme;
+  isCurrent?: () => boolean;
 }): Promise<{ success: true } | { success: false; error?: Error }> => {
   const canvasNode = canvasRef.current;
   const parent = canvasNode?.parentElement;
@@ -94,6 +96,10 @@ export const convertMermaidToExcalidraw = async ({
       }
     }
 
+    if (isCurrent && !isCurrent()) {
+      return { success: false };
+    }
+
     const { elements, files = {} } = ret;
     setError(null);
 
@@ -116,12 +122,16 @@ export const convertMermaidToExcalidraw = async ({
       },
     });
 
+    if (isCurrent && !isCurrent()) {
+      return { success: false };
+    }
+
     parent.style.background = "var(--default-bg-color)";
     canvasNode.replaceChildren(canvas);
     return { success: true };
   } catch (err: any) {
     parent.style.background = "var(--default-bg-color)";
-    if (mermaidDefinition) {
+    if (mermaidDefinition && (isCurrent?.() ?? true)) {
       setError(err);
     }
 

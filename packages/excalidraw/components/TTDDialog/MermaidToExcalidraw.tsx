@@ -84,6 +84,7 @@ const MermaidToExcalidraw = ({
   })();
 
   const canvasRef = useRef<HTMLDivElement>(null);
+  const renderGenerationRef = useRef(0);
   const data = useRef<{
     elements: readonly NonDeletedExcalidrawElement[];
     files: BinaryFiles | null;
@@ -93,6 +94,8 @@ const MermaidToExcalidraw = ({
   const { theme } = useUIAppState();
 
   useEffect(() => {
+    const generation = ++renderGenerationRef.current;
+    const isCurrent = () => renderGenerationRef.current === generation;
     const doRender = async () => {
       try {
         if (!deferredText.trim()) {
@@ -106,9 +109,10 @@ const MermaidToExcalidraw = ({
           setError,
           mermaidDefinition: deferredText,
           theme,
+          isCurrent,
         });
 
-        if (!result.success) {
+        if (!result.success && isCurrent()) {
           const err = result.error ?? new Error("Invalid mermaid definition");
           setError(err);
         }
@@ -127,6 +131,7 @@ const MermaidToExcalidraw = ({
 
   useEffect(
     () => () => {
+      renderGenerationRef.current += 1;
       debouncedSaveMermaidDefinition.flush();
     },
     [],
