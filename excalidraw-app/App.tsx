@@ -592,10 +592,7 @@ const ExcalidrawWrapper = () => {
   );
 
   const loadSelectedCloudScene = useCallback(
-    async (
-      sceneId: string,
-      updateUrl = true,
-    ) => {
+    async (sceneId: string, updateUrl = true) => {
       const loadId = ++cloudSceneLoadIdRef.current;
       const cloudData = await fetchCloudScene(sceneId);
       if (!excalidrawAPI) {
@@ -696,10 +693,7 @@ const ExcalidrawWrapper = () => {
       const requestedId = new URLSearchParams(window.location.search).get("id");
       if (requestedId) {
         try {
-          await loadSelectedCloudScene(
-            requestedId,
-            false,
-          );
+          await loadSelectedCloudScene(requestedId, false);
           return;
         } catch (error: any) {
           if (error?.status !== 400 && error?.status !== 404) {
