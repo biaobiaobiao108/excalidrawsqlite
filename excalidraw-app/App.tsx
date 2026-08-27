@@ -500,7 +500,6 @@ const ExcalidrawWrapper = () => {
   const isApplyingCloudSceneRef = useRef(false);
   const cloudBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const cloudSceneLoadIdRef = useRef(0);
-  const localEditGenerationRef = useRef(0);
   const authWaitersRef = useRef<Array<(authenticated: boolean) => void>>([]);
   const initialSceneDataRef = useRef<ResolutionType<
     typeof initializeScene
@@ -596,7 +595,6 @@ const ExcalidrawWrapper = () => {
     async (
       sceneId: string,
       updateUrl = true,
-      expectedEditGeneration?: number,
     ) => {
       const loadId = ++cloudSceneLoadIdRef.current;
       const cloudData = await fetchCloudScene(sceneId);
@@ -604,15 +602,11 @@ const ExcalidrawWrapper = () => {
         throw new Error("编辑器尚未初始化");
       }
 
-      const preserveLocalEdits =
-        expectedEditGeneration !== undefined &&
-        localEditGenerationRef.current !== expectedEditGeneration;
       const elements = restoreElements(cloudData.elements, null, {
         repairBindings: true,
         deleteInvisibleElements: true,
       });
 
-      setActiveCloudScene(sceneId);
       cloudSaveQueue.setRevision(sceneId, cloudData.revision);
       setCloudBootstrapError("");
       if (updateUrl) {
@@ -621,31 +615,6 @@ const ExcalidrawWrapper = () => {
           "",
           `${window.location.pathname}?id=${encodeURIComponent(sceneId)}`,
         );
-      }
-
-      if (preserveLocalEdits) {
-        const currentElements =
-          excalidrawAPI.getSceneElementsIncludingDeleted();
-        const currentAppState = excalidrawAPI.getAppState();
-        const currentFiles = excalidrawAPI.getFiles();
-        const referencedFiles: BinaryFiles = {};
-        for (const fileId of getCloudFileIds(currentElements)) {
-          const file = currentFiles[fileId];
-          if (file) {
-            referencedFiles[fileId] = file;
-          }
-        }
-        cloudSaveQueue.enqueue({
-          sceneId,
-          name: currentAppState.name || cloudData.name || "未命名白板",
-          elements: currentElements,
-          appState: {
-            viewBackgroundColor: currentAppState.viewBackgroundColor,
-            gridSize: currentAppState.gridSize,
-          },
-          files: referencedFiles,
-        });
-        return cloudData;
       }
 
       isApplyingCloudSceneRef.current = true;
@@ -673,6 +642,10 @@ const ExcalidrawWrapper = () => {
       } finally {
         isApplyingCloudSceneRef.current = false;
       }
+      // Do not mark the scene active until the remote snapshot has replaced
+      // the editor state. Initialization onChange events must never enqueue
+      // the local browser cache back to the cloud scene.
+      setActiveCloudScene(sceneId);
       return cloudData;
     },
     [
@@ -714,7 +687,6 @@ const ExcalidrawWrapper = () => {
       }
 
       setCloudBootstrapError("");
-      const bootstrapEditGeneration = localEditGenerationRef.current;
       const status = await checkAuthStatus();
       if (status.authRequired && !status.authenticated) {
         setIsAuthOpen(true);
@@ -727,7 +699,6 @@ const ExcalidrawWrapper = () => {
           await loadSelectedCloudScene(
             requestedId,
             false,
-            bootstrapEditGeneration,
           );
           return;
         } catch (error: any) {
@@ -760,7 +731,7 @@ const ExcalidrawWrapper = () => {
           },
         });
       }
-      await loadSelectedCloudScene(scene.id, true, bootstrapEditGeneration);
+      await loadSelectedCloudScene(scene.id, true);
     })();
 
     cloudBootstrapPromiseRef.current = run;
@@ -1227,9 +1198,6 @@ const ExcalidrawWrapper = () => {
     appState: AppState,
     files: BinaryFiles,
   ) => {
-    if (!isApplyingCloudSceneRef.current) {
-      localEditGenerationRef.current += 1;
-    }
     if (collabAPI?.isCollaborating()) {
       collabAPI.syncElements(elements);
     }

@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe("cloud storage", () => {
-  it("authenticates with a same-origin cookie without sending or storing the password", async () => {
+  it("authenticates with a session cookie without sending or storing the password", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(
@@ -26,7 +26,8 @@ describe("cloud storage", () => {
     await expect(verifyAuthPassword("secret-password")).resolves.toBe(true);
 
     const [, init] = fetchMock.mock.calls[0] as [RequestInfo, RequestInit];
-    expect(init.credentials).toBe("same-origin");
+    expect(init.credentials).toBe("include");
+    expect(init.cache).toBe("no-store");
     expect(init.headers).not.toHaveProperty("Authorization");
     expect(init.headers).not.toHaveProperty("x-auth-password");
     expect(JSON.parse(String(init.body))).toEqual({

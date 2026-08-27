@@ -2,6 +2,7 @@ import fs, { rm } from "node:fs/promises";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "bun:test";
+import { Database } from "bun:sqlite";
 
 import {
   createRequestHandler,
@@ -155,6 +156,68 @@ describe("cloud persistence server", () => {
       "__Host-excalidraw_session=",
     );
     expect(response.headers.get("set-cookie")).toContain("Secure");
+  });
+
+  it("accepts same-origin API writes behind a trusted HTTPS proxy", async () => {
+    const { handler } = createTestRuntime({
+      NODE_ENV: "production",
+      TRUST_PROXY: "true",
+    });
+    const cookie = await authenticate(handler);
+    const response = await handler(
+      new Request("http://internal-proxy/api/scenes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://whiteboard.example",
+          "X-Forwarded-Host": "whiteboard.example",
+          "X-Forwarded-Proto": "https",
+          Cookie: cookie,
+        },
+        body: JSON.stringify({ name: "代理后的画板", elements: [] }),
+      }),
+    );
+    expect(response.status).toBe(201);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("migrates legacy scene databases with a default revision", async () => {
+    const root = Bun.env.TEMP || Bun.env.TMP || ".";
+    const directory = `${root}/excalidraw-server-test-${crypto.randomUUID()}`;
+    const dbPath = path.join(directory, "excalidraw.db");
+    await fs.mkdir(directory, { recursive: true });
+    const legacyDb = new Database(dbPath, { create: true });
+    legacyDb.run(`
+      CREATE TABLE scenes (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        elements TEXT NOT NULL,
+        app_state TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+    legacyDb.run(
+      `INSERT INTO scenes
+       (id, name, elements, app_state, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      ["legacy_scene", "旧画板", "[]", "{}", 1, 1],
+    );
+    legacyDb.close();
+
+    const runtime = createRuntime({
+      dbPath,
+      filesDir: path.join(directory, "files"),
+      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true" }),
+    });
+    runtimes.push(runtime);
+    testDirectories.push(directory);
+
+    expect(
+      runtime.db
+        .query("SELECT revision FROM scenes WHERE id = ?")
+        .get("legacy_scene"),
+    ).toEqual({ revision: 1 });
   });
 
   it("uses a session cookie and preserves scene data while renaming", async () => {

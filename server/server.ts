@@ -277,6 +277,31 @@ const getClientKey = (runtime: ServerRuntime, req: Request) =>
     ? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
     : null) || "unknown";
 
+const getRequestOrigin = (runtime: ServerRuntime, req: Request) => {
+  const requestUrl = new URL(req.url);
+  if (!runtime.config.trustProxy) {
+    return requestUrl.origin;
+  }
+
+  const forwardedProto = req.headers
+    .get("x-forwarded-proto")
+    ?.split(",", 1)[0]
+    ?.trim()
+    .toLowerCase();
+  const forwardedHost =
+    req.headers.get("x-forwarded-host")?.split(",", 1)[0]?.trim() ||
+    req.headers.get("host")?.trim();
+  if (!forwardedProto || !forwardedHost) {
+    return requestUrl.origin;
+  }
+
+  try {
+    return new URL(`${forwardedProto}://${forwardedHost}`).origin;
+  } catch {
+    return requestUrl.origin;
+  }
+};
+
 const isAllowedOrigin = (runtime: ServerRuntime, req: Request) => {
   const origin = req.headers.get("origin");
   if (!origin) {
@@ -287,7 +312,8 @@ const isAllowedOrigin = (runtime: ServerRuntime, req: Request) => {
   // Treat the request URL's origin as same-origin, then require an explicit
   // allow-list entry for cross-origin credentialed requests.
   return (
-    origin === new URL(req.url).origin || runtime.config.corsOrigins.has(origin)
+    origin === getRequestOrigin(runtime, req) ||
+    runtime.config.corsOrigins.has(origin)
   );
 };
 
@@ -352,7 +378,11 @@ const jsonResponse = (
 ) =>
   response(runtime, req, JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json; charset=utf-8", ...headers },
+    headers: {
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8",
+      ...headers,
+    },
   });
 
 const errorResponse = (

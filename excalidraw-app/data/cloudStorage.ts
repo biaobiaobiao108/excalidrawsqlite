@@ -48,7 +48,11 @@ const fetchWithTimeout = async (
   const timeout = setTimeout(() => controller.abort(), CLOUD_API_TIMEOUT_MS);
   try {
     return await fetch(input, {
-      credentials: "same-origin",
+      // Cloud API calls may pass through a same-origin reverse proxy or a
+      // separately hosted development server. Include the session cookie in
+      // both cases, while the server still controls cross-origin access.
+      credentials: "include",
+      cache: "no-store",
       ...init,
       signal: controller.signal,
     });
