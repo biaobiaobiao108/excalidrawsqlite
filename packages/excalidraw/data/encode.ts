@@ -36,7 +36,9 @@ const byteStringToString = (byteString: string) => {
   return new TextDecoder("utf-8").decode(byteStringToArrayBuffer(byteString));
 };
 
-const compressBytes = async (data: string | Uint8Array) => {
+const compressBytes = async (
+  data: string | Uint8Array<ArrayBuffer>,
+): Promise<Uint8Array<ArrayBuffer>> => {
   if (typeof CompressionStream !== "undefined") {
     const stream = new CompressionStream("deflate");
     const writer = stream.writable.getWriter();
@@ -55,7 +57,9 @@ const compressBytes = async (data: string | Uint8Array) => {
   );
 };
 
-const decompressBytes = async (data: Uint8Array) => {
+const decompressBytes = async (
+  data: Uint8Array<ArrayBuffer>,
+): Promise<Uint8Array<ArrayBuffer>> => {
   if (typeof DecompressionStream !== "undefined") {
     const stream = new DecompressionStream("deflate");
     const writer = stream.writable.getWriter();
