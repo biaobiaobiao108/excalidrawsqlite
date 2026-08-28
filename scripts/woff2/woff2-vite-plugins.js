@@ -18,11 +18,7 @@ module.exports.woff2BrowserPlugin = () => {
       if (!isDev && id.endsWith("excalidraw-app/index.html")) {
         return code.replace(
           "<!-- PLACEHOLDER:EXCALIDRAW_APP_FONTS -->",
-          `<script>
-        window.EXCALIDRAW_ASSET_PATH = ["/"];
-      </script>
-
-      <!-- Preload the critical local UI font to avoid swap on init -->
+          `<!-- Preload the critical local UI font to avoid swap on init -->
       <link
         rel="preload"
         href="/fonts/Assistant/Assistant-SemiBold.woff2"
