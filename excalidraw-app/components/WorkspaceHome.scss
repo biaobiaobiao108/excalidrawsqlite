@@ -601,6 +601,16 @@
 .board-card-open {
   display: block;
   inline-size: 100%;
+  border-radius: 12px 12px 0 0;
+  background: transparent;
+  color: inherit;
+  overflow: hidden;
+  text-align: start;
+}
+
+.board-card-thumbnail-button {
+  display: block;
+  inline-size: 100%;
   padding: 0;
   border: 0;
   border-radius: 12px 12px 0 0;
@@ -611,7 +621,9 @@
   text-align: start;
 }
 
-.board-card-open:focus-visible {
+.board-card-thumbnail-button:focus-visible,
+.board-card-title:focus-visible,
+.board-card-mobile-title:focus-visible {
   outline: 2px solid var(--workspace-primary);
   outline-offset: 3px;
 }
@@ -672,14 +684,33 @@
 
 .board-card-title {
   display: block;
+  inline-size: 100%;
+  box-sizing: border-box;
   padding: 0.75rem 0.75rem 0.25rem;
+  border: 0;
+  background: transparent;
   overflow: hidden;
   color: var(--workspace-text);
+  cursor: pointer;
   font-family: var(--font-family, system-ui, sans-serif);
   font-size: 0.98rem;
   font-weight: 600;
+  text-align: start;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.board-card-title:hover,
+.board-card-mobile-title:hover {
+  color: var(--workspace-primary);
+}
+
+.board-card-open.is-disabled .board-card-title {
+  cursor: default;
+}
+
+.board-card-open.is-disabled .board-card-title:hover {
+  color: var(--workspace-text);
 }
 
 .board-card-footer {
@@ -699,10 +730,16 @@
 
 .board-card-mobile-title {
   display: none;
+  inline-size: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--workspace-text);
+  cursor: pointer;
   font-family: var(--font-family, system-ui, sans-serif);
   font-size: 0.98rem;
   font-weight: 600;
+  text-align: start;
 }
 
 .board-card-updated,
@@ -864,6 +901,11 @@
 }
 
 .board-grid.is-list .board-card-open {
+  block-size: 100%;
+  border-radius: 12px 0 0 12px;
+}
+
+.board-grid.is-list .board-card-thumbnail-button {
   block-size: 100%;
   border-radius: 12px 0 0 12px;
 }
@@ -1080,8 +1122,7 @@
 
 @container (max-width: 300px) {
   .board-card-created,
-  .board-card-folder,
-  .board-card-tags {
+  .board-card-folder {
     display: none;
   }
 }

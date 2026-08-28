@@ -66,7 +66,7 @@ describe("WorkspaceHome component", () => {
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation((input: RequestInfo) => {
+      vi.fn().mockImplementation((input: RequestInfo, init?: RequestInit) => {
         const url = String(input);
         if (url.endsWith("/api/auth/status")) {
           return Promise.resolve(
@@ -89,6 +89,29 @@ describe("WorkspaceHome component", () => {
         if (url.endsWith("/api/folders")) {
           return Promise.resolve(
             new Response(JSON.stringify(mockFolders), { status: 200 }),
+          );
+        }
+        if (init?.method === "PATCH" && url.includes("/api/scenes/")) {
+          const id = decodeURIComponent(url.split("/api/scenes/")[1]);
+          const scene = mockScenes.find((item) => item.id === id);
+          const body = JSON.parse(String(init.body || "{}")) as {
+            name?: string;
+            tags?: string[];
+            favorite?: boolean;
+            folder_id?: string | null;
+          };
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ...scene,
+                ...body,
+                updated_at: Date.now(),
+                revision: (scene?.revision || 1) + 1,
+                folder_name:
+                  body.folder_id === "folder-1" ? "工作目录" : null,
+              }),
+              { status: 200 },
+            ),
           );
         }
         if (url.endsWith("/restore")) {
@@ -186,7 +209,7 @@ describe("WorkspaceHome component", () => {
     expect(document.activeElement).toBe(searchInput);
   });
 
-  it("supports switching to trash view and navigates to scene via onSelectScene", async () => {
+  it("opens a scene from its thumbnail and switches to trash view", async () => {
     const onSelectScene = vi.fn();
     render(<WorkspaceHome onSelectScene={onSelectScene} />);
 
@@ -194,12 +217,9 @@ describe("WorkspaceHome component", () => {
       expect(screen.getAllByText("架构设计图").length).toBeGreaterThan(0);
     });
 
-    // Click scene card to trigger SPA navigation
-    const openButton = screen.getAllByText("架构设计图")[0].closest("button");
-    if (openButton) {
-      fireEvent.click(openButton);
-      expect(onSelectScene).toHaveBeenCalledWith("scene-1");
-    }
+    // Click the thumbnail to trigger SPA navigation.
+    fireEvent.click(screen.getAllByAltText("架构设计图 预览")[0]);
+    expect(onSelectScene).toHaveBeenCalledWith("scene-1");
 
     // Switch to Trash view
     const trashNavButton = screen.getByText("回收站");
@@ -208,6 +228,56 @@ describe("WorkspaceHome component", () => {
     await waitFor(() => {
       expect(screen.getAllByText("废弃草稿").length).toBeGreaterThan(0);
       expect(screen.queryByText("架构设计图")).toBeNull();
+    });
+  });
+
+  it("opens metadata editing from the board name", async () => {
+    render(<WorkspaceHome />);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", {
+          name: "编辑画板名称“架构设计图”",
+        }).length,
+      ).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "编辑画板名称“架构设计图”",
+      })[0],
+    );
+
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByDisplayValue("架构设计图")).toBeTruthy();
+  });
+
+  it("updates visible tags after saving board metadata", async () => {
+    render(<WorkspaceHome />);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", {
+          name: "编辑画板名称“架构设计图”",
+        }).length,
+      ).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "编辑画板名称“架构设计图”",
+      })[0],
+    );
+    fireEvent.change(screen.getByPlaceholderText("用逗号分隔多个标签"), {
+      target: { value: "项目, 交付, 复盘, 归档" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存信息" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getAllByText("项目").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("交付").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("+2").length).toBeGreaterThan(0);
     });
   });
 

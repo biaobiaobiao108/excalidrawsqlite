@@ -314,6 +314,7 @@ const BoardCard = ({
 }) => {
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const sceneName = scene.name || "未命名白板";
   const [menuPosition, setMenuPosition] = useState<{
     top: number;
     left: number;
@@ -482,23 +483,42 @@ const BoardCard = ({
           title="已在回收站中，还原后可打开"
         >
           <BoardThumbnail scene={scene} eager={eager} />
-          <span className="board-card-title">{scene.name || "未命名白板"}</span>
+          <span className="board-card-title">{sceneName}</span>
         </div>
       ) : (
-        <button
-          className="board-card-open"
-          onClick={() => onOpen(scene)}
-          type="button"
-        >
-          <BoardThumbnail scene={scene} eager={eager} />
-          <span className="board-card-title">{scene.name || "未命名白板"}</span>
-        </button>
+        <div className="board-card-open">
+          <button
+            className="board-card-thumbnail-button"
+            onClick={() => onOpen(scene)}
+            type="button"
+            aria-label={`打开画板“${sceneName}”`}
+          >
+            <BoardThumbnail scene={scene} eager={eager} />
+          </button>
+          <button
+            className="board-card-title"
+            onClick={() => onEdit(scene)}
+            type="button"
+            aria-label={`编辑画板名称“${sceneName}”`}
+          >
+            {sceneName}
+          </button>
+        </div>
       )}
       <div className="board-card-footer">
         <div className="board-card-details">
-          <span className="board-card-mobile-title">
-            {scene.name || "未命名白板"}
-          </span>
+          {isTrash ? (
+            <span className="board-card-mobile-title">{sceneName}</span>
+          ) : (
+            <button
+              type="button"
+              className="board-card-mobile-title"
+              onClick={() => onEdit(scene)}
+              aria-label={`编辑画板名称“${sceneName}”`}
+            >
+              {sceneName}
+            </button>
+          )}
           {isTrash && scene.deleted_at ? (
             <span className="board-card-updated">
               删除于 {formatDate(scene.deleted_at)}
@@ -520,10 +540,15 @@ const BoardCard = ({
             </span>
           )}
           {scene.tags.length > 0 && !isTrash && (
-            <div className="board-card-tags">
+            <div className="board-card-tags" aria-label="画板标签">
               {scene.tags.slice(0, 2).map((tag) => (
                 <span key={tag}>{tag}</span>
               ))}
+              {scene.tags.length > 2 && (
+                <span title={scene.tags.slice(2).join("、")}>
+                  +{scene.tags.length - 2}
+                </span>
+              )}
             </div>
           )}
         </div>
