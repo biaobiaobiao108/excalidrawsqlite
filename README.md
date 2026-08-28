@@ -18,7 +18,7 @@
   - 界面简洁高效，专为私有化与局域网部署打造。上游协作、图表和字体能力仍可能按功能加载第三方依赖，请按部署策略审查网络出口。
 - ⚡ **现代浏览器性能**：
   - 生产构建使用 `esnext` 与最新 Chrome、Edge、Firefox、Safari/iOS Safari 目标，避免旧浏览器转译和兼容层开销；
-  - AI、Mermaid、CJK 字体、CodeMirror 与压缩回退实现按需加载，不进入首屏关键路径；
+  - Mermaid、CJK 字体、CodeMirror 与压缩回退实现按需加载，不进入首屏关键路径；本版本不包含云端 AI、实时协作、公共分享和错误上报；
   - 使用原生 `CompressionStream`/`DecompressionStream`，不支持时才动态加载 pako 回退；
   - Service Worker 对带 hash 的功能 chunk、字体和语言包分别缓存，应用更新使用新版本资源。
 - 🔐 **轻量鉴权保护**：
@@ -105,7 +105,7 @@
    bun run build:packages
    ```
 
-   构建不依赖本机未提交的 `.env` 文件；需要启用 Firebase、Sentry 等可选能力时，再按部署环境注入对应的 `VITE_APP_*` 变量。
+   构建不依赖本机未提交的 `.env` 文件；服务端只需按部署环境配置 `AUTH_PASSWORD`、`ALLOW_ANONYMOUS` 等变量。
 
 3. **启动模式**
 
@@ -121,8 +121,6 @@
 
      访问：`http://localhost:8080`
 
-     若需要生成部署域名对应的 sitemap，可在构建前设置 `VITE_APP_SITE_URL=https://whiteboard.example.com`；未设置时不会写入官方域名或生成 sitemap。
-
    - **前端开发热重载模式**：
      ```bash
      bun run start
@@ -134,7 +132,7 @@
 
 生产构建只面向最新版本的 Chrome、Edge、Firefox、Safari 和 iOS Safari。项目不再提供 IE、旧版 Chromium、旧版 Firefox 或旧版 Safari 的兼容保证，也不应重新引入面向这些浏览器的 polyfill、转译目标或兼容分支。
 
-大型能力会延迟到真正使用时加载：首次打开 Mermaid、AI、代码编辑器或输入 CJK 文本时会产生一次按需请求，后续由浏览器缓存复用。当前构建预算如下，原始体积和 gzip 体积均检查：
+大型能力会延迟到真正使用时加载：首次打开 Mermaid、代码编辑器或输入 CJK 文本时会产生一次按需请求，后续由浏览器缓存复用。当前构建预算如下，原始体积和 gzip 体积均检查：
 
 | 产物                    |  Raw 上限 | Gzip 上限 |
 | :---------------------- | --------: | --------: |

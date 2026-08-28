@@ -348,11 +348,6 @@ export default defineConfig(({ mode }) => {
               sizes: "462x945",
             },
             {
-              src: "/screenshots/collaboration.png",
-              type: "image/png",
-              sizes: "462x945",
-            },
-            {
               src: "/screenshots/export.png",
               type: "image/png",
               sizes: "462x945",
