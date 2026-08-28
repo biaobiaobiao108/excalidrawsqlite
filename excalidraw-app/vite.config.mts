@@ -95,6 +95,18 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "build",
       target: "esnext",
+      modulePreload: {
+        resolveDependencies(_filename, deps, context) {
+          if (context.hostType === "html") {
+            return deps.filter(
+              (dependency) =>
+                !dependency.includes("mermaid-to-excalidraw"),
+            );
+          }
+
+          return deps;
+        },
+      },
       rollupOptions: {
         output: {
           assetFileNames(chunkInfo) {
