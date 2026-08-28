@@ -1356,10 +1356,7 @@ export const inspectStorageConsistency = async (runtime: ServerRuntime) => {
   const knownFileIds = new Set<string>();
   for (const row of rows) {
     knownFileIds.add(row.id);
-    if (
-      row.storage_path &&
-      !(await fileExists(getFilePath(runtime, row.id)))
-    ) {
+    if (row.storage_path && !(await fileExists(getFilePath(runtime, row.id)))) {
       missingFiles.push(row.id);
     }
   }

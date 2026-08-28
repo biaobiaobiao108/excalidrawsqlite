@@ -83,9 +83,7 @@ const createHandler = (directory: string) => async (request: Request) => {
 
   return new Response(file, {
     headers: {
-      "Cache-Control": (requestedFile ? filePath : fallbackPath).endsWith(
-        "index.html",
-      )
+      "Cache-Control": (requestedFile ? filePath : fallbackPath).endsWith("index.html")
         ? "no-cache"
         : "public, max-age=31536000, immutable",
     },
