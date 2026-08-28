@@ -36,16 +36,16 @@ import type { Socket } from "socket.io-client";
 // private
 // -----------------------------------------------------------------------------
 
-let FIREBASE_CONFIG: Record<string, any>;
-try {
-  FIREBASE_CONFIG = JSON.parse(import.meta.env.VITE_APP_FIREBASE_CONFIG);
-} catch (error: any) {
-  console.warn(
-    `Error JSON parsing firebase config. Supplied value: ${
-      import.meta.env.VITE_APP_FIREBASE_CONFIG
-    }`,
-  );
-  FIREBASE_CONFIG = {};
+let FIREBASE_CONFIG: Record<string, any> = {};
+const firebaseConfig = import.meta.env.VITE_APP_FIREBASE_CONFIG?.trim();
+if (firebaseConfig) {
+  try {
+    FIREBASE_CONFIG = JSON.parse(firebaseConfig);
+  } catch (error: any) {
+    console.warn(
+      `Error JSON parsing firebase config. Supplied value: ${firebaseConfig}`,
+    );
+  }
 }
 
 let firebaseApp: FirebaseApp | null = null;
