@@ -792,8 +792,9 @@ export const WorkspaceHome = ({
   const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(
     null,
   );
-  const [confirmDialog, setConfirmDialog] =
-    useState<ConfirmDialogState | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(
+    null,
+  );
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const loadRequestRef = useRef(0);
 

@@ -355,7 +355,9 @@ const getClientKey = (
   requestAddressResolver?: RequestAddressResolver,
 ) => {
   if (runtime.config.trustProxy) {
-    return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    return (
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    );
   }
   return requestAddressResolver?.(req) || "unknown";
 };
@@ -2187,7 +2189,9 @@ export const createRequestHandler = (
         if (ids.length > 0) {
           const transaction = runtime.db.transaction(() => {
             for (const id of ids) {
-              runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [id]);
+              runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [
+                id,
+              ]);
               runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
             }
           });
@@ -2382,9 +2386,10 @@ const startServer = () => {
     ? path.resolve(process.env.STATIC_DIR)
     : path.resolve("./excalidraw-app/build");
   const runtime = createRuntime({ dbPath, filesDir, staticDir });
-  let server: ReturnType<typeof Bun.serve>;
-  const handler = createRequestHandler(runtime, (req) =>
-    server?.requestIP(req)?.address,
+  const serverRef: { current?: ReturnType<typeof Bun.serve> } = {};
+  const handler = createRequestHandler(
+    runtime,
+    (req) => serverRef.current?.requestIP(req)?.address,
   );
   const port = Number(process.env.PORT) || DEFAULT_PORT;
   const hostname = process.env.HOST || "0.0.0.0";
@@ -2410,7 +2415,8 @@ const startServer = () => {
     });
   };
 
-  server = Bun.serve({ hostname, port, fetch: handler });
+  const server = Bun.serve({ hostname, port, fetch: handler });
+  serverRef.current = server;
   console.info("[Server] 已启动", {
     address: `http://${hostname}:${server.port}`,
     dbPath,

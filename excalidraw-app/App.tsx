@@ -61,11 +61,7 @@ import type { ResolutionType } from "@excalidraw/common/utility-types";
 import type { ResolvablePromise } from "@excalidraw/common/utils";
 
 import CustomStats from "./CustomStats";
-import {
-  Provider,
-  useAtomValue,
-  appJotaiStore,
-} from "./app-jotai";
+import { Provider, useAtomValue, appJotaiStore } from "./app-jotai";
 import {
   FIREBASE_STORAGE_PREFIXES,
   STORAGE_KEYS,
@@ -80,9 +76,7 @@ import { WorkspaceHome } from "./components/WorkspaceHome";
 import { AuthDialog } from "./components/AuthDialog";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 
-import {
-  importFromBackend,
-} from "./data";
+import { importFromBackend } from "./data";
 
 import {
   checkAuthStatus,
@@ -97,9 +91,7 @@ import {
 
 import { updateStaleImageStatuses } from "./data/FileManager";
 import { FileStatusStore } from "./data/fileStatusStore";
-import {
-  importFromLocalStorage,
-} from "./data/localStorage";
+import { importFromLocalStorage } from "./data/localStorage";
 
 import { loadFilesFromFirebase } from "./data/firebase";
 import {
@@ -1025,9 +1017,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
       } else if (data.isExternalScene && data.id && data.key) {
         if (fileIds.length) {
           // Direct Firebase call (not through FileManager), so track manually
-          FileStatusStore.updateStatuses(
-            fileIds.map((id) => [id, "loading"]),
-          );
+          FileStatusStore.updateStatuses(fileIds.map((id) => [id, "loading"]));
         }
         loadFilesFromFirebase(
           `${FIREBASE_STORAGE_PREFIXES.shareLinkFiles}/${data.id}`,
@@ -1233,12 +1223,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
         false,
       );
     };
-  }, [
-    excalidrawAPI,
-    setLangCode,
-    loadImages,
-    cloudSaveQueue,
-  ]);
+  }, [excalidrawAPI, setLangCode, loadImages, cloudSaveQueue]);
 
   useEffect(() => {
     const unloadHandler = (event: BeforeUnloadEvent) => {
@@ -1457,10 +1442,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   }
 
   return (
-    <div
-      style={{ height: "100%" }}
-      className="excalidraw-app"
-    >
+    <div style={{ height: "100%" }} className="excalidraw-app">
       <Excalidraw
         onChange={onChange}
         onExport={onExport}
@@ -1724,8 +1706,7 @@ const ExcalidrawApp = () => {
   const sceneId = location.searchParams.get("id");
   const hasExternalSceneHash =
     /^#json=/.test(location.hash) || /^#url=/.test(location.hash);
-  const shouldRenderWorkspaceHome =
-    !sceneId && !hasExternalSceneHash;
+  const shouldRenderWorkspaceHome = !sceneId && !hasExternalSceneHash;
 
   const navigateToScene = useCallback((targetSceneId: string) => {
     const url = new URL(window.location.href);
