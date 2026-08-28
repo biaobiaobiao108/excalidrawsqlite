@@ -94,6 +94,7 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: "build",
+      target: "esnext",
       rollupOptions: {
         output: {
           assetFileNames(chunkInfo) {
