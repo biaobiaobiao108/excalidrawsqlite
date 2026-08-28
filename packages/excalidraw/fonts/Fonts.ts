@@ -41,7 +41,6 @@ import { LiberationFontFaces } from "./Liberation";
 import { LilitaFontFaces } from "./Lilita";
 import { NunitoFontFaces } from "./Nunito";
 import { VirgilFontFaces } from "./Virgil";
-import { XiaolaiFontFaces } from "./Xiaolai";
 
 export class Fonts {
   // it's ok to track fonts across multiple instances only once, so let's use
@@ -59,6 +58,8 @@ export class Fonts {
     | undefined;
 
   private static _initialized: boolean = false;
+
+  private static _cjkFontFacesPromise: Promise<void> | null = null;
 
   public static get registered() {
     // lazy load the font registration
@@ -194,6 +195,7 @@ export class Fonts {
       const characters = Fonts.getCharacters(charsPerFamily, familyWithCJK);
 
       if (containsCJK(characters)) {
+        await Fonts.ensureCJKFontFaces();
         const family = FONT_FAMILY_FALLBACKS[CJK_HAND_DRAWN_FALLBACK_FONT];
 
         // adding the same characters to the CJK handrawn family
@@ -221,6 +223,16 @@ export class Fonts {
     charsPerFamily: Record<number, Set<string>>,
     ownerDocument: Document,
   ) {
+    const needsCJKFont = fontFamilies.some(
+      (family) =>
+        getFontFamilyFallbacks(family).includes(CJK_HAND_DRAWN_FALLBACK_FONT) &&
+        containsCJK(Fonts.getCharacters(charsPerFamily, family)),
+    );
+
+    if (needsCJKFont) {
+      await Fonts.ensureCJKFontFaces();
+    }
+
     // add all registered font faces into the `document.fonts` (if not added already)
     for (const { fontFaces, metadata } of Fonts.registered.values()) {
       // skip registering font faces for local fonts (i.e. Helvetica)
@@ -245,6 +257,33 @@ export class Fonts {
     const fontFaces = await new PromisePool(iterator, concurrency).all();
     return fontFaces.flat().filter(Boolean);
   }
+
+  private static ensureCJKFontFaces = async () => {
+    const registeredFamily = Fonts.registered.get(
+      FONT_FAMILY_FALLBACKS[CJK_HAND_DRAWN_FALLBACK_FONT],
+    );
+
+    if (!registeredFamily || registeredFamily.fontFaces.length) {
+      return;
+    }
+
+    Fonts._cjkFontFacesPromise ??= import("./Xiaolai").then(
+      ({ XiaolaiFontFaces }) => {
+        registeredFamily.fontFaces.push(
+          ...XiaolaiFontFaces.map(
+            ({ uri, descriptors }) =>
+              new ExcalidrawFontFace(
+                CJK_HAND_DRAWN_FALLBACK_FONT,
+                uri,
+                descriptors,
+              ),
+          ),
+        );
+      },
+    );
+
+    await Fonts._cjkFontFacesPromise;
+  };
 
   private static *fontFacesLoader(
     fontFamilies: Array<ExcalidrawTextElement["fontFamily"]>,
@@ -406,8 +445,8 @@ export class Fonts {
     init("Nunito", ...NunitoFontFaces);
     init("Virgil", ...VirgilFontFaces);
 
-    // fallback font faces
-    init(CJK_HAND_DRAWN_FALLBACK_FONT, ...XiaolaiFontFaces);
+    // CJK fallback font faces are loaded on demand to keep the initial bundle small.
+    init(CJK_HAND_DRAWN_FALLBACK_FONT);
     init(WINDOWS_EMOJI_FALLBACK_FONT, ...EmojiFontFaces);
 
     Fonts._initialized = true;
