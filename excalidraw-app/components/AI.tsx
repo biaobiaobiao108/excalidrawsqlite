@@ -5,6 +5,7 @@ import {
   getTextFromElements,
   MIME_TYPES,
   parseSSEStream,
+  TTDStreamFetch,
 } from "@excalidraw/excalidraw";
 import { lazy, Suspense } from "react";
 import { getDataURL } from "@excalidraw/excalidraw/data/blob";
@@ -155,9 +156,6 @@ export const AIComponents = ({
           onTextSubmit={async (props) => {
             const { onChunk, onStreamCreated, signal, messages } = props;
 
-            const { TTDStreamFetch } = await import(
-              "@excalidraw/excalidraw/components/TTDDialog/utils/TTDStreamFetch"
-            );
             const result = await TTDStreamFetch({
               url: `${
                 import.meta.env.VITE_APP_AI_BACKEND
