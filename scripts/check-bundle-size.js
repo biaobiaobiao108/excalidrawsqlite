@@ -17,6 +17,7 @@ const chunkBudgets = {
   "pako.esm": { raw: 70_000, gzip: 25_000 },
   "subset-shared.chunk": { raw: 2_000_000, gzip: 800_000 },
   "xiaolai-fonts": { raw: 140_000, gzip: 55_000 },
+  "lxgw-wenkai-fonts": { raw: 160_000, gzip: 60_000 },
 };
 
 if (!statSync(assetsDir, { throwIfNoEntry: false })) {

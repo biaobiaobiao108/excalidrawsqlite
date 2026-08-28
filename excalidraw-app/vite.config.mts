@@ -147,6 +147,10 @@ export default defineConfig(({ mode }) => {
               return "xiaolai-fonts";
             }
 
+            if (id.includes("packages/excalidraw/fonts/LXGWWenKai")) {
+              return "lxgw-wenkai-fonts";
+            }
+
             if (id.includes("@codemirror/") || id.includes("@lezer/")) {
               return "codemirror.chunk";
             }

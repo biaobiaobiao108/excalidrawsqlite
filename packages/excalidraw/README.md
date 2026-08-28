@@ -125,6 +125,8 @@ For self-hosting, copy the contents of `node_modules/@excalidraw/excalidraw/dist
 </script>
 ```
 
+字体选择器中的「霞鹜文楷」也是按字符范围延迟加载的；自托管时请一并复制 `fonts/LXGWWenKai` 目录，并保留其中的 `OFL.txt` 授权文件。
+
 ## Demo
 
 Try the [CodeSandbox example](https://codesandbox.io/p/sandbox/github/excalidraw/excalidraw/tree/master/examples/with-script-in-browser).

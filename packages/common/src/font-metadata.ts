@@ -3,7 +3,11 @@ import type {
   FontFamilyValues,
 } from "@excalidraw/element/types";
 
-import { FONT_FAMILY, FONT_FAMILY_FALLBACKS } from "./constants";
+import {
+  FONT_FAMILY,
+  FONT_FAMILY_FALLBACKS,
+  LXGW_WENKAI_FONT,
+} from "./constants";
 
 /**
  * Encapsulates font metrics with additional font metadata.
@@ -110,6 +114,14 @@ export const FONT_METADATA: Record<number, FontMetadata> = {
       lineHeight: 1.25,
     },
     private: true,
+  },
+  [FONT_FAMILY[LXGW_WENKAI_FONT]]: {
+    metrics: {
+      unitsPerEm: 1000,
+      ascender: 928,
+      descender: -256,
+      lineHeight: 1.25,
+    },
   },
   [FONT_FAMILY_FALLBACKS.Xiaolai]: {
     metrics: {

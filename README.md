@@ -142,6 +142,7 @@
 | `mermaid-to-excalidraw` |   700 KiB |   200 KiB |
 | `codemirror.chunk`      |   600 KiB |   110 KiB |
 | `xiaolai-fonts`         |   140 KiB |    55 KiB |
+| `lxgw-wenkai-fonts`     |   160 KiB |    60 KiB |
 | `pako.esm`              |    70 KiB |    25 KiB |
 | `subset-shared.chunk`   | 2,000 KiB |   800 KiB |
 
@@ -151,6 +152,8 @@
 bun run build
 bun run build:check-size
 ```
+
+字体选择器新增「霞鹜文楷」。该字体按 Unicode 区间拆分并延迟加载，覆盖中文、日文假名和韩文音节；极少数未收录字符仍会使用系统回退字体。字体按 SIL Open Font License 1.1 发布，授权全文随资源保存在 `packages/excalidraw/fonts/LXGWWenKai/OFL.txt`。
 
 ---
 

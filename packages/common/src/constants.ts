@@ -117,6 +117,7 @@ export const FONT_SIZES = {
 } as const;
 
 export const CJK_HAND_DRAWN_FALLBACK_FONT = "Xiaolai";
+export const LXGW_WENKAI_FONT = "霞鹜文楷";
 export const WINDOWS_EMOJI_FALLBACK_FONT = "Segoe UI Emoji";
 
 /**
@@ -138,6 +139,7 @@ export const FONT_FAMILY = {
   "Comic Shanns": 8,
   "Liberation Sans": 9,
   Assistant: 10,
+  [LXGW_WENKAI_FONT]: 11,
 };
 
 // Segoe UI Emoji fails to properly fallback for some glyphs: ∞, ∫, ≠

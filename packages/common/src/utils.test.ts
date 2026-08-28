@@ -1,5 +1,6 @@
 import {
   getNearestScrollableContainer,
+  getFontFamilyString,
   isInputLike,
   isInteractive,
   isToolIcon,
@@ -7,6 +8,7 @@ import {
   isWritableElement,
   mapFind,
   reduceToCommonValue,
+  FONT_FAMILY,
 } from "@excalidraw/common";
 import { vi } from "vitest";
 
@@ -16,6 +18,12 @@ import { throttleRAF } from "./utils";
 type RafCallback = FrameRequestCallback;
 
 describe("@excalidraw/common/utils", () => {
+  it("returns the bundled CJK font family with safe fallbacks", () => {
+    expect(getFontFamilyString({ fontFamily: FONT_FAMILY["霞鹜文楷"] })).toBe(
+      "霞鹜文楷, sans-serif, Segoe UI Emoji",
+    );
+  });
+
   describe("cross-document element guards", () => {
     it("uses constructors from the target element's window", () => {
       const iframe = document.createElement("iframe");
