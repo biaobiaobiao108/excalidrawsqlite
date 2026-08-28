@@ -41,7 +41,7 @@ const compressBytes = async (data: string | Uint8Array) => {
     const stream = new CompressionStream("deflate");
     const writer = stream.writable.getWriter();
     const bytes = (
-      typeof data === "string" ? new TextEncoder().encode(data) : data,
+      typeof data === "string" ? new TextEncoder().encode(data) : data
     ) as Uint8Array<ArrayBuffer>;
     await writer.write(bytes);
     await writer.close();
