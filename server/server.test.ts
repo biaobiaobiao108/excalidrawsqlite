@@ -103,6 +103,31 @@ describe("cloud persistence server", () => {
     expect(limited.headers.get("retry-after")).toBeTruthy();
   });
 
+  it("isolates authentication rate limits by client address", async () => {
+    const { runtime } = createTestRuntime();
+    const addressResolver = (req: Request) =>
+      req.headers.get("x-test-client") || undefined;
+    const isolatedHandler = createRequestHandler(runtime, addressResolver);
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const response = await jsonRequest(
+        isolatedHandler,
+        "/api/auth/verify",
+        { password: "wrong-password" },
+        { headers: { "X-Test-Client": "client-a" } },
+      );
+      expect(response.status).toBe(401);
+    }
+
+    const otherClient = await jsonRequest(
+      isolatedHandler,
+      "/api/auth/verify",
+      { password: "test-password" },
+      { headers: { "X-Test-Client": "client-b" } },
+    );
+    expect(otherClient.status).toBe(200);
+  });
+
   it("keeps production HTTP sessions usable while securing HTTPS sessions", async () => {
     const { handler } = createTestRuntime({ NODE_ENV: "production" });
     const httpCookie = await authenticate(handler);

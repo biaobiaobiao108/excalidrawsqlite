@@ -58,6 +58,8 @@ export type ServerRuntime = {
   writeAttempts: Map<string, { startedAt: number; count: number }>;
 };
 
+type RequestAddressResolver = (req: Request) => string | undefined;
+
 class HttpError extends Error {
   constructor(
     public readonly status: number,
@@ -347,10 +349,16 @@ const getCookie = (req: Request, name: string) => {
   return "";
 };
 
-const getClientKey = (runtime: ServerRuntime, req: Request) =>
-  (runtime.config.trustProxy
-    ? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-    : null) || "unknown";
+const getClientKey = (
+  runtime: ServerRuntime,
+  req: Request,
+  requestAddressResolver?: RequestAddressResolver,
+) => {
+  if (runtime.config.trustProxy) {
+    return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  }
+  return requestAddressResolver?.(req) || "unknown";
+};
 
 const getRequestOrigin = (runtime: ServerRuntime, req: Request) => {
   const requestUrl = new URL(req.url);
@@ -1479,7 +1487,10 @@ const parseFileUploadEntries = (body: Record<string, unknown>) => {
   return entries;
 };
 
-export const createRequestHandler = (runtime: ServerRuntime) => {
+export const createRequestHandler = (
+  runtime: ServerRuntime,
+  requestAddressResolver?: RequestAddressResolver,
+) => {
   const handler = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const pathname = url.pathname;
@@ -1606,7 +1617,7 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
       if (pathname === "/api/auth/verify" && req.method === "POST") {
         const rate = consumeRateLimit(
           runtime.authAttempts,
-          getClientKey(runtime, req),
+          getClientKey(runtime, req, requestAddressResolver),
           AUTH_ATTEMPTS_PER_WINDOW,
           AUTH_RATE_WINDOW_MS,
         );
@@ -1678,7 +1689,7 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
       ) {
         const rate = consumeRateLimit(
           runtime.writeAttempts,
-          getClientKey(runtime, req),
+          getClientKey(runtime, req, requestAddressResolver),
           WRITE_REQUESTS_PER_WINDOW,
           WRITE_RATE_WINDOW_MS,
         );
@@ -2371,7 +2382,10 @@ const startServer = () => {
     ? path.resolve(process.env.STATIC_DIR)
     : path.resolve("./excalidraw-app/build");
   const runtime = createRuntime({ dbPath, filesDir, staticDir });
-  const handler = createRequestHandler(runtime);
+  let server: ReturnType<typeof Bun.serve>;
+  const handler = createRequestHandler(runtime, (req) =>
+    server?.requestIP(req)?.address,
+  );
   const port = Number(process.env.PORT) || DEFAULT_PORT;
   const hostname = process.env.HOST || "0.0.0.0";
 
@@ -2396,7 +2410,7 @@ const startServer = () => {
     });
   };
 
-  const server = Bun.serve({ hostname, port, fetch: handler });
+  server = Bun.serve({ hostname, port, fetch: handler });
   console.info("[Server] 已启动", {
     address: `http://${hostname}:${server.port}`,
     dbPath,
