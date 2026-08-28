@@ -1,8 +1,9 @@
 const fs = require("fs");
 const path = require("path");
 
-const updateChangelog = require("./updateChangelog");
 const { spawnSync } = require("bun");
+
+const updateChangelog = require("./updateChangelog");
 
 // skipping utils for now, as it has independent release process
 const PACKAGES = [
