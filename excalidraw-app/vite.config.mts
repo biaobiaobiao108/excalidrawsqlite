@@ -123,6 +123,10 @@ export default defineConfig(({ mode }) => {
               return "mermaid-to-excalidraw";
             }
 
+            if (id.includes("packages/excalidraw/fonts/Xiaolai")) {
+              return "xiaolai-fonts";
+            }
+
             if (id.includes("@codemirror/") || id.includes("@lezer/")) {
               return "codemirror.chunk";
             }
@@ -183,6 +187,7 @@ export default defineConfig(({ mode }) => {
             "service-worker.js",
             "**/*.chunk-*.js",
             "**/mermaid-to-excalidraw-*.js",
+            "**/pako.esm-*.js",
             "**/*Diagram-*.js",
             "**/diagram-*.js",
             "**/treemap-*.js",

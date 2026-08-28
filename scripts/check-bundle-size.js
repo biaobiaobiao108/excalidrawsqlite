@@ -1,4 +1,5 @@
-const { readdirSync, statSync } = require("node:fs");
+const { gzipSync } = require("node:zlib");
+const { readdirSync, readFileSync, statSync } = require("node:fs");
 const { join } = require("node:path");
 
 const assetsDir = join(
@@ -8,12 +9,14 @@ const assetsDir = join(
   "build",
   "assets",
 );
-const entryBudget = 2_150_000;
+const entryBudget = { raw: 1_700_000, gzip: 550_000 };
 const chunkBudgets = {
-  "firebase.chunk": 600_000,
-  "mermaid-to-excalidraw": 700_000,
-  "codemirror.chunk": 600_000,
-  "subset-shared.chunk": 2_000_000,
+  "firebase.chunk": { raw: 600_000, gzip: 180_000 },
+  "mermaid-to-excalidraw": { raw: 700_000, gzip: 200_000 },
+  "codemirror.chunk": { raw: 600_000, gzip: 110_000 },
+  "pako.esm": { raw: 70_000, gzip: 25_000 },
+  "subset-shared.chunk": { raw: 2_000_000, gzip: 800_000 },
+  "xiaolai-fonts": { raw: 140_000, gzip: 55_000 },
 };
 
 if (!statSync(assetsDir, { throwIfNoEntry: false })) {
@@ -23,7 +26,14 @@ if (!statSync(assetsDir, { throwIfNoEntry: false })) {
 
 const assets = readdirSync(assetsDir)
   .filter((name) => name.endsWith(".js"))
-  .map((name) => ({ name, bytes: statSync(join(assetsDir, name)).size }))
+  .map((name) => {
+    const bytes = statSync(join(assetsDir, name)).size;
+    return {
+      name,
+      bytes,
+      gzipBytes: gzipSync(readFileSync(join(assetsDir, name))).length,
+    };
+  })
   .sort((a, b) => b.bytes - a.bytes);
 
 const formatBytes = (bytes) => `${(bytes / 1024).toFixed(1)} KiB`;
@@ -37,15 +47,28 @@ for (const asset of assets) {
   const effectiveBudget = isEntry ? entryBudget : budget;
 
   process.stdout.write(
-    `${asset.name}: ${formatBytes(asset.bytes)}${
-      effectiveBudget ? ` / ${formatBytes(effectiveBudget)}` : ""
+    `${asset.name}: ${formatBytes(asset.bytes)} raw, ${formatBytes(
+      asset.gzipBytes,
+    )} gzip${
+      effectiveBudget
+        ? ` / ${formatBytes(effectiveBudget.raw)} raw, ${formatBytes(
+            effectiveBudget.gzip,
+          )} gzip`
+        : ""
     }\n`,
   );
 
-  if (effectiveBudget && asset.bytes > effectiveBudget) {
-    violations.push(
-      `${asset.name} exceeds ${formatBytes(effectiveBudget)} budget`,
-    );
+  if (effectiveBudget) {
+    if (asset.bytes > effectiveBudget.raw) {
+      violations.push(
+        `${asset.name} exceeds ${formatBytes(effectiveBudget.raw)} raw budget`,
+      );
+    }
+    if (asset.gzipBytes > effectiveBudget.gzip) {
+      violations.push(
+        `${asset.name} exceeds ${formatBytes(effectiveBudget.gzip)} gzip budget`,
+      );
+    }
   }
 }
 
