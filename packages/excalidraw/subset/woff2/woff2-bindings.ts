@@ -1342,13 +1342,11 @@ const Module = (function () {
     }
     function createNamedFunction(name, body) {
       name = makeLegalFunctionName(name);
-      return new Function(
-        "body",
-        `return function ${name}() {\n` +
-          `    "use strict";` +
-          `    return body.apply(this, arguments);\n` +
-          `};\n`,
-      )(body);
+      const fn = function (...args) {
+        return body.apply(this, args);
+      };
+      Object.defineProperty(fn, "name", { value: name });
+      return fn;
     }
     function extendError(baseErrorType, errorName) {
       const errorClass = createNamedFunction(errorName, function (message) {
@@ -2062,10 +2060,11 @@ const Module = (function () {
           args.length ? ", " : ""
         }${args.join(", ")});\n`;
         body += "};\n";
-        return new Function("dynCall", "rawFunction", body)(
-          dynCall,
-          rawFunction,
-        );
+        const fn = function (...args) {
+          return dynCall(rawFunction, ...args);
+        };
+        Object.defineProperty(fn, "name", { value: name });
+        return fn;
       }
       let fp;
       if (Module[`FUNCTION_TABLE_${signature}`] !== undefined) {
@@ -4047,5 +4046,4 @@ const Module = (function () {
 })();
 
 export default Module;
-
 
