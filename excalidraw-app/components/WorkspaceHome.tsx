@@ -1123,8 +1123,6 @@ export const WorkspaceHome = ({
           <ExcalidrawMark />
           <span>Excalidraw</span>
         </a>
-        <div className="workspace-header-divider" />
-        <div className="workspace-context">个人工作区</div>
         <div className="workspace-header-actions">
           <label className="workspace-search">
             <SearchIcon />
@@ -1141,7 +1139,7 @@ export const WorkspaceHome = ({
                 }
               }}
             />
-            <kbd>⌘K</kbd>
+            <kbd>Ctrl+K</kbd>
           </label>
           <button
             className="primary-button header-create-button"
