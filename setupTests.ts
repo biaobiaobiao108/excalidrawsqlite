@@ -6,7 +6,6 @@ import "@testing-library/jest-dom";
 import { configure } from "@testing-library/react";
 import { vi } from "vitest";
 
-import polyfill from "./packages/excalidraw/polyfill";
 import { mockThrottleRAF } from "./packages/excalidraw/tests/helpers/mocks";
 import { yellow } from "./packages/excalidraw/tests/helpers/colorize";
 import {
@@ -45,8 +44,6 @@ vi.mock("@excalidraw/common", async (importOriginal) => {
 HTMLElement.prototype.setPointerCapture = vi.fn();
 
 require("fake-indexeddb/auto");
-
-polyfill();
 
 Object.defineProperty(window, "matchMedia", {
   writable: true,
