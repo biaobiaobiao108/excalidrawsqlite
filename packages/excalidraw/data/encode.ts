@@ -54,7 +54,7 @@ const compressBytes = async (
   const { deflate } = await import("pako");
   return deflate(
     typeof data === "string" ? data : (data as Uint8Array<ArrayBuffer>),
-  );
+  ) as Uint8Array<ArrayBuffer>;
 };
 
 const decompressBytes = async (
@@ -70,7 +70,7 @@ const decompressBytes = async (
 
   // Legacy fallback for runtimes without DecompressionStream support.
   const { inflate } = await import("pako");
-  return inflate(data as Uint8Array<ArrayBuffer>);
+  return inflate(data as Uint8Array<ArrayBuffer>) as Uint8Array<ArrayBuffer>;
 };
 
 // -----------------------------------------------------------------------------
