@@ -41,12 +41,17 @@
    cd excalidraw
    ```
 
-2. **配置与启动** 生产环境必须先设置访问密码：
+2. **配置与启动** 生产环境与容器部署必须先配置环境变量：
 
-   ```yaml
+   ```env
    # .env（不要提交到 Git）
    AUTH_PASSWORD=your-strong-password
+   TRUST_PROXY=true
    ```
+
+   > **环境变量说明（必填项）**：
+   > - `AUTH_PASSWORD`（必填）：访问密码保护（若明确在局域网免密使用需设置 `ALLOW_ANONYMOUS=true`）。
+   > - `TRUST_PROXY=true`（必填）：信任反向代理。容器部署在反代环境下时必须添加此项，以保证反代和 HTTPS 环境下能够正常识别请求与维持会话状态。
 
    镜像默认保留基础镜像的 root 运行身份，以兼容 rootless Podman/Docker 的用户命名空间和绑定挂载。先创建数据目录：
 
@@ -57,8 +62,6 @@
    如需强制使用非 root 身份，请在 Compose 中显式添加 `user: "UID:GID"`，并先确保该 UID/GID 对 `data/` 有读写权限；rootless Podman 可优先使用 `--userns=keep-id`。
 
    Compose 文件中的 `:Z` 用于 SELinux 主机的目录重新标记。若 Docker Desktop 的 Compose 实现不接受该后缀，可删除 `:Z`，但不要删除数据卷。启动失败时先检查 `data/` 是否可写，并查看 `podman logs excalidraw`。
-
-   如果明确只在可信局域网免密使用，可额外设置 `ALLOW_ANONYMOUS=true`。
 
 3. **运行容器**
 
