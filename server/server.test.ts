@@ -815,9 +815,7 @@ describe("cloud persistence server", () => {
     expect(csp).toBeTruthy();
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval' blob:");
-    expect(csp).not.toMatch(
-      /script-src[^;]*(?:'unsafe-inline'|'unsafe-eval')/,
-    );
+    expect(csp).not.toMatch(/script-src[^;]*(?:'unsafe-inline'|'unsafe-eval')/);
     expect(csp).toContain("worker-src 'self' blob:");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   });
