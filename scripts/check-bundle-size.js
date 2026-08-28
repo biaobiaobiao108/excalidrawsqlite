@@ -66,7 +66,9 @@ for (const asset of assets) {
     }
     if (asset.gzipBytes > effectiveBudget.gzip) {
       violations.push(
-        `${asset.name} exceeds ${formatBytes(effectiveBudget.gzip)} gzip budget`,
+        `${asset.name} exceeds ${formatBytes(
+          effectiveBudget.gzip,
+        )} gzip budget`,
       );
     }
   }

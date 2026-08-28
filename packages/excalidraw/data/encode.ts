@@ -172,9 +172,7 @@ export const decode = async (data: EncodedData): Promise<string> => {
   if (data.compressed) {
     return byteStringToString(
       toByteString(
-        await decompressBytes(
-          new Uint8Array(byteStringToArrayBuffer(decoded)),
-        ),
+        await decompressBytes(new Uint8Array(byteStringToArrayBuffer(decoded))),
       ),
     );
   }

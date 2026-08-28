@@ -1954,9 +1954,7 @@ class App extends React.Component<AppProps, AppState> {
           }
 
           const srcDoc =
-            src?.type === "document"
-              ? src.srcdoc(this.state.theme)
-              : undefined;
+            src?.type === "document" ? src.srcdoc(this.state.theme) : undefined;
           const srcUrl =
             srcDoc !== undefined
               ? this.getEmbeddableBlobUrl(el.id, srcDoc)
