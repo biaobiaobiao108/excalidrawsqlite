@@ -28,6 +28,12 @@ import {
 } from "../fixtures/elementFixture";
 import { API } from "../helpers/api";
 
+const normalizeEmbeddedPayload = (svg: string) =>
+  svg.replace(
+    /<!-- payload-start -->.*?<!-- payload-end -->/s,
+    "<!-- payload-start -->[compressed-payload]<!-- payload-end -->",
+  );
+
 describe("exportToSvg", () => {
   const ELEMENT_HEIGHT = 100;
   const ELEMENT_WIDTH = 100;
@@ -187,7 +193,7 @@ describe("exportToSvg", () => {
       },
       null,
     );
-    expect(svgElement.innerHTML).toMatchSnapshot();
+    expect(normalizeEmbeddedPayload(svgElement.innerHTML)).toMatchSnapshot();
   });
 
   it("with elements that have a link", async () => {

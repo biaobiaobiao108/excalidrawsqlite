@@ -34,6 +34,12 @@ const testElements = [
   },
 ];
 
+const normalizeEmbeddedPayload = (svg: string) =>
+  svg.replace(
+    /<!-- payload-start -->.*?<!-- payload-end -->/s,
+    "<!-- payload-start -->[compressed-payload]<!-- payload-end -->",
+  );
+
 // tiny polyfill for TextDecoder.decode on which we depend
 Object.defineProperty(window, "TextDecoder", {
   value: class TextDecoder {
@@ -90,7 +96,9 @@ describe("export", () => {
     );
     const svgText = svg.outerHTML;
 
-    expect(svgText).toMatchSnapshot(`svg-embdedded scene export output`);
+    expect(normalizeEmbeddedPayload(svgText)).toMatchSnapshot(
+      `svg-embdedded scene export output`,
+    );
   });
 
   it("import embedded png (legacy v1)", async () => {
