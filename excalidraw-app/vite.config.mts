@@ -97,6 +97,7 @@ export default defineConfig(({ mode }) => {
       target: "esnext",
       rollupOptions: {
         output: {
+          onlyExplicitManualChunks: true,
           assetFileNames(chunkInfo) {
             if (chunkInfo?.name?.endsWith(".woff2")) {
               const family = chunkInfo.name.split("-")[0];
@@ -117,6 +118,10 @@ export default defineConfig(({ mode }) => {
               const index = id.indexOf("locales/");
               // Taking the substring after "locales/"
               return `locales/${id.substring(index + 8)}`;
+            }
+
+            if (id.includes("@excalidraw/mermaid-to-excalidraw")) {
+              return "mermaid-to-excalidraw";
             }
 
             if (id.includes("packages/excalidraw/fonts/Xiaolai")) {
