@@ -1,4 +1,5 @@
 # Guidelines for AI Agents
+本仓库是一个基于 **Bun 1.4+** 与 **原生 SQLite** 驱动的纯净、自托管虚拟手绘风格白板。支持多画板管理、云端自动持久化、图片附件存储、密码保护与极速 Docker 容器化部署。
 
 ## 1. 提交规范 (Mandatory Git Commit Rule)
 

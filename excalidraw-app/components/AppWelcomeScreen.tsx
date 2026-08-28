@@ -2,10 +2,7 @@ import { useI18n } from "@excalidraw/excalidraw/i18n";
 import { WelcomeScreen } from "@excalidraw/excalidraw/index";
 import React from "react";
 
-export const AppWelcomeScreen: React.FC<{
-  onCollabDialogOpen: () => any;
-  isCollabEnabled: boolean;
-}> = React.memo((props) => {
+export const AppWelcomeScreen: React.FC = React.memo(() => {
   const { t } = useI18n();
 
   const headingContent = (
@@ -33,11 +30,6 @@ export const AppWelcomeScreen: React.FC<{
         <WelcomeScreen.Center.Menu>
           <WelcomeScreen.Center.MenuItemLoadScene />
           <WelcomeScreen.Center.MenuItemHelp />
-          {props.isCollabEnabled && (
-            <WelcomeScreen.Center.MenuItemLiveCollaborationTrigger
-              onSelect={() => props.onCollabDialogOpen()}
-            />
-          )}
         </WelcomeScreen.Center.Menu>
       </WelcomeScreen.Center>
     </WelcomeScreen>
