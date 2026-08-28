@@ -1,8 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 
-const { execSync } = require("child_process");
-
 const updateChangelog = require("./updateChangelog");
 
 // skipping utils for now, as it has independent release process
@@ -19,12 +17,12 @@ const PACKAGES_DIR = path.resolve(__dirname, "../packages");
  * Returns the arguments for the release script.
  *
  * Usage examples:
- * - yarn release --help                          -> prints this help message
- * - yarn release                                 -> publishes `@excalidraw` packages with "test" tag and "-[hash]" version suffix
- * - yarn release --tag=test                      -> same as above
- * - yarn release --tag=next                      -> publishes `@excalidraw` packages with "next" tag and version "-[hash]" suffix
- * - yarn release --tag=next --non-interactive    -> skips interactive prompts (runs on CI/CD), otherwise same as above
- * - yarn release --tag=latest --version=0.19.0   -> publishes `@excalidraw` packages with "latest" tag and version "0.19.0" & prepares changelog for the release
+ * - bun release --help                          -> prints this help message
+ * - bun release                                 -> publishes `@excalidraw` packages with "test" tag and "-[hash]" version suffix
+ * - bun release --tag=test                      -> same as above
+ * - bun release --tag=next                      -> publishes `@excalidraw` packages with "next" tag and version "-[hash]" suffix
+ * - bun release --tag=next --non-interactive    -> skips interactive prompts (runs on CI/CD), otherwise same as above
+ * - bun release --tag=latest --version=0.19.0   -> publishes `@excalidraw` packages with "latest" tag and version "0.19.0" & prepares changelog for the release
  *
  * @returns [tag, version, nonInteractive]
  */
@@ -41,11 +39,11 @@ const getArguments = () => {
   --non-interactive                              -> (optional) disables interactive prompts`);
 
       console.info(`\nUsage examples:
-  - yarn release                                 -> publishes \`@excalidraw\` packages with "test" tag and "-[hash]" version suffix
-  - yarn release --tag=test                      -> same as above
-  - yarn release --tag=next                      -> publishes \`@excalidraw\` packages with "next" tag and version "-[hash]" suffix
-  - yarn release --tag=next --non-interactive    -> skips interactive prompts (runs on CI/CD), otherwise same as above
-  - yarn release --tag=latest --version=0.19.0   -> publishes \`@excalidraw\` packages with "latest" tag and version "0.19.0" & prepares changelog for the release`);
+  - bun release                                 -> publishes \`@excalidraw\` packages with "test" tag and "-[hash]" version suffix
+  - bun release --tag=test                      -> same as above
+  - bun release --tag=next                      -> publishes \`@excalidraw\` packages with "next" tag and version "-[hash]" suffix
+  - bun release --tag=next --non-interactive    -> skips interactive prompts (runs on CI/CD), otherwise same as above
+  - bun release --tag=latest --version=0.19.0   -> publishes \`@excalidraw\` packages with "latest" tag and version "0.19.0" & prepares changelog for the release`);
 
       process.exit(0);
     }
@@ -106,6 +104,20 @@ const getPackageJsonPath = (packageName) => {
   return path.resolve(PACKAGES_DIR, packageName, "package.json");
 };
 
+const runCommand = (args, { cwd, inherit = false } = {}) => {
+  const result = Bun.spawnSync(args, {
+    cwd,
+    stdout: inherit ? "inherit" : "pipe",
+    stderr: inherit ? "inherit" : "pipe",
+  });
+
+  if (result.exitCode !== 0) {
+    throw new Error(`Command failed: ${args.join(" ")}`);
+  }
+
+  return result;
+};
+
 const updatePackageJsons = (nextVersion) => {
   const packageJsons = new Map();
 
@@ -135,7 +147,9 @@ const updatePackageJsons = (nextVersion) => {
 };
 
 const getShortCommitHash = () => {
-  return execSync("git rev-parse --short HEAD").toString().trim();
+  return new TextDecoder()
+    .decode(runCommand(["git", "rev-parse", "--short", "HEAD"]).stdout)
+    .trim();
 };
 
 const askToCommit = (tag, nextVersion) => {
@@ -155,9 +169,15 @@ const askToCommit = (tag, nextVersion) => {
         rl.close();
 
         if (answer.toLowerCase() === "y") {
-          execSync(`git add -u`);
-          execSync(
-            `git commit -m "chore: release @excalidraw/excalidraw@${nextVersion} 🎉"`,
+          runCommand(["git", "add", "-u"], { inherit: true });
+          runCommand(
+            [
+              "git",
+              "commit",
+              "-m",
+              `chore: release @excalidraw/excalidraw@${nextVersion} 🎉`,
+            ],
+            { inherit: true },
           );
         } else {
           console.warn(
@@ -172,17 +192,17 @@ const askToCommit = (tag, nextVersion) => {
 };
 
 const buildPackages = () => {
-  console.info("Running yarn install...");
-  execSync(`yarn --frozen-lockfile`, { stdio: "inherit" });
+  console.info("Running bun install...");
+  runCommand(["bun", "install", "--frozen-lockfile"], { inherit: true });
 
   console.info("Removing existing build artifacts...");
-  execSync(`yarn rm:build`, { stdio: "inherit" });
+  runCommand(["bun", "run", "rm:build"], { inherit: true });
 
   for (const packageName of PACKAGES) {
     console.info(`Building "@excalidraw/${packageName}"...`);
-    execSync(`yarn run build:esm`, {
+    runCommand(["bun", "run", "build:esm"], {
       cwd: path.resolve(PACKAGES_DIR, packageName),
-      stdio: "inherit",
+      inherit: true,
     });
   }
 };
@@ -213,9 +233,9 @@ const askToPublish = (tag, version) => {
 
 const publishPackages = (tag, version) => {
   for (const packageName of PACKAGES) {
-    execSync(`yarn publish --tag ${tag}`, {
+    runCommand(["bun", "publish", "--tag", tag], {
       cwd: path.resolve(PACKAGES_DIR, packageName),
-      stdio: "inherit",
+      inherit: true,
     });
 
     console.info(

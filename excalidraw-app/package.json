@@ -43,7 +43,7 @@
     "build": "bun run build:app && bun run build:version",
     "start": "vite",
     "start:production": "bun run build && bun run serve",
-    "serve": "http-server build -a localhost -p 5001 -o",
+    "serve": "bun ../scripts/serve-static.ts --dir build --host localhost --port 5001",
     "build:preview": "bun run build && vite preview --port 5000"
   },
   "devDependencies": {

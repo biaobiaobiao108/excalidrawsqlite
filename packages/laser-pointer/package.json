@@ -28,7 +28,7 @@
     "access": "public"
   },
   "scripts": {
-    "gen:types": "rimraf types && tsc",
-    "build:esm": "rimraf dist && bun ../../scripts/buildBase.js && bun run gen:types"
+    "gen:types": "rm -rf types && tsc",
+    "build:esm": "rm -rf dist && bun ../../scripts/buildBase.js && bun run gen:types"
   }
 }
