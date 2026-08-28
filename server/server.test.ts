@@ -811,11 +811,14 @@ describe("cloud persistence server", () => {
   it("includes Content-Security-Policy and security headers", async () => {
     const { handler } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
     const res = await request(handler, "/api/health");
-    expect(res.headers.get("content-security-policy")).toBeTruthy();
-    expect(res.headers.get("content-security-policy")).toContain(
+    const csp = res.headers.get("content-security-policy");
+    expect(csp).toBeTruthy();
+    expect(csp).toContain(
       "default-src 'self'",
     );
-    expect(res.headers.get("content-security-policy")).toContain(
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval' blob:");
+    expect(csp).not.toMatch(/script-src[^;]*unsafe-(?:inline|eval)/);
+    expect(csp).toContain(
       "worker-src 'self' blob:",
     );
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
