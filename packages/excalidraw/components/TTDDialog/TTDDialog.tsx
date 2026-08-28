@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import { useUIAppState } from "../../context/ui-appState";
 import { t } from "../../i18n";
@@ -7,7 +7,6 @@ import { Dialog } from "../Dialog";
 import { withInternalFallback } from "../hoc/withInternalFallback";
 
 import MermaidToExcalidraw from "./MermaidToExcalidraw";
-import TextToDiagram from "./TextToDiagram";
 import TTDDialogTabs from "./TTDDialogTabs";
 import { TTDDialogTabTriggers } from "./TTDDialogTabTriggers";
 import { TTDDialogTabTrigger } from "./TTDDialogTabTrigger";
@@ -22,6 +21,8 @@ import type {
   TTDPersistenceAdapter,
   TTTDDialog,
 } from "./types";
+
+const LazyTextToDiagram = lazy(() => import("./TextToDiagram"));
 
 export const TTDDialog = (
   props:
@@ -113,13 +114,15 @@ const TTDDialogBase = withInternalFallback(
 
           {!("__fallback" in rest) && (
             <TTDDialogTab className="ttd-dialog-content" tab="text-to-diagram">
-              <TextToDiagram
-                mermaidToExcalidrawLib={mermaidToExcalidrawLib}
-                onTextSubmit={rest.onTextSubmit}
-                renderWelcomeScreen={rest.renderWelcomeScreen}
-                renderWarning={rest.renderWarning}
-                persistenceAdapter={rest.persistenceAdapter}
-              />
+              <Suspense fallback={null}>
+                <LazyTextToDiagram
+                  mermaidToExcalidrawLib={mermaidToExcalidrawLib}
+                  onTextSubmit={rest.onTextSubmit}
+                  renderWelcomeScreen={rest.renderWelcomeScreen}
+                  renderWarning={rest.renderWarning}
+                  persistenceAdapter={rest.persistenceAdapter}
+                />
+              </Suspense>
             </TTDDialogTab>
           )}
           <TTDDialogTab className="ttd-dialog-content" tab="mermaid">
