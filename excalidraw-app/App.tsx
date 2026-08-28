@@ -27,7 +27,15 @@ import {
   isDevEnv,
 } from "@excalidraw/common";
 import polyfill from "@excalidraw/excalidraw/polyfill";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { loadFromBlob } from "@excalidraw/excalidraw/data/blob";
 import { t } from "@excalidraw/excalidraw/i18n";
 
@@ -109,7 +117,6 @@ import DebugCanvas, {
   isVisualDebuggerEnabled,
   loadSavedDebugState,
 } from "./components/DebugCanvas";
-import { AIComponents } from "./components/AI";
 import { createSceneThumbnail } from "./data/sceneThumbnail";
 import {
   LatestThumbnailSaveQueue,
@@ -124,6 +131,12 @@ import {
 } from "./data/cloudSync";
 
 import type { CloudSaveSnapshot } from "./data/cloudSync";
+
+const LazyAIComponents = lazy(() =>
+  import("./components/AI").then(({ AIComponents }) => ({
+    default: AIComponents,
+  })),
+);
 
 polyfill();
 
@@ -1611,7 +1624,11 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
           onOverwrite={() => resolveCloudConflict(true)}
         />
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
-        {excalidrawAPI && <AIComponents excalidrawAPI={excalidrawAPI} />}
+        {excalidrawAPI && (
+          <Suspense fallback={null}>
+            <LazyAIComponents excalidrawAPI={excalidrawAPI} />
+          </Suspense>
+        )}
 
         <TTDDialogTrigger />
         {localStorageQuotaExceeded && (

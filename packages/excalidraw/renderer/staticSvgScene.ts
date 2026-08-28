@@ -692,7 +692,7 @@ const renderElementToSvg = (
             ),
           );
           text.setAttribute("text-anchor", textAnchor);
-          text.setAttribute("style", "white-space: pre;");
+          text.style.setProperty("white-space", "pre");
           text.setAttribute("direction", direction);
           text.setAttribute("dominant-baseline", "alphabetic");
           node.appendChild(text);

@@ -5,9 +5,8 @@ import {
   getTextFromElements,
   MIME_TYPES,
   parseSSEStream,
-  TTDDialog,
-  TTDStreamFetch,
 } from "@excalidraw/excalidraw";
+import { lazy, Suspense } from "react";
 import { getDataURL } from "@excalidraw/excalidraw/data/blob";
 import { safelyParseJSON } from "@excalidraw/common";
 
@@ -15,6 +14,12 @@ import type { StreamChunk } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import { TTDIndexedDBAdapter } from "../data/TTDStorage";
+
+const LazyTTDDialog = lazy(() =>
+  import("@excalidraw/excalidraw/components/TTDDialog/TTDDialog").then(
+    ({ TTDDialog }) => ({ default: TTDDialog }),
+  ),
+);
 
 export const AIComponents = ({
   excalidrawAPI,
@@ -145,25 +150,30 @@ export const AIComponents = ({
         }}
       />
 
-      <TTDDialog
-        onTextSubmit={async (props) => {
-          const { onChunk, onStreamCreated, signal, messages } = props;
+      <Suspense fallback={null}>
+        <LazyTTDDialog
+          onTextSubmit={async (props) => {
+            const { onChunk, onStreamCreated, signal, messages } = props;
 
-          const result = await TTDStreamFetch({
-            url: `${
-              import.meta.env.VITE_APP_AI_BACKEND
-            }/v1/ai/text-to-diagram/chat-streaming`,
-            messages,
-            onChunk,
-            onStreamCreated,
-            extractRateLimits: true,
-            signal,
-          });
+            const { TTDStreamFetch } = await import(
+              "@excalidraw/excalidraw/components/TTDDialog/utils/TTDStreamFetch"
+            );
+            const result = await TTDStreamFetch({
+              url: `${
+                import.meta.env.VITE_APP_AI_BACKEND
+              }/v1/ai/text-to-diagram/chat-streaming`,
+              messages,
+              onChunk,
+              onStreamCreated,
+              extractRateLimits: true,
+              signal,
+            });
 
-          return result;
-        }}
-        persistenceAdapter={TTDIndexedDBAdapter}
-      />
+            return result;
+          }}
+          persistenceAdapter={TTDIndexedDBAdapter}
+        />
+      </Suspense>
     </>
   );
 };
