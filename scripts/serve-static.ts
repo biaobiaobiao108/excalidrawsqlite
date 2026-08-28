@@ -73,9 +73,7 @@ const createHandler = (directory: string) => async (request: Request) => {
   const requestedFile = await serveFile(filePath);
   const acceptsHtml = request.headers.get("accept")?.includes("text/html");
   const fallbackPath = path.join(directory, "index.html");
-  const file =
-    requestedFile ||
-    (acceptsHtml ? await serveFile(fallbackPath) : null);
+  const file = requestedFile || (acceptsHtml ? await serveFile(fallbackPath) : null);
 
   if (!file) {
     return new Response("Not Found", { status: 404 });
@@ -83,7 +81,9 @@ const createHandler = (directory: string) => async (request: Request) => {
 
   return new Response(file, {
     headers: {
-      "Cache-Control": (requestedFile ? filePath : fallbackPath).endsWith("index.html")
+      "Cache-Control": (
+        requestedFile ? filePath : fallbackPath
+      ).endsWith("index.html")
         ? "no-cache"
         : "public, max-age=31536000, immutable",
     },

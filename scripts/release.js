@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const updateChangelog = require("./updateChangelog");
-const bunRuntime = globalThis.Bun;
+const { spawnSync } = require("bun");
 
 // skipping utils for now, as it has independent release process
 const PACKAGES = [
@@ -106,7 +106,7 @@ const getPackageJsonPath = (packageName) => {
 };
 
 const runCommand = (args, { cwd, inherit = false } = {}) => {
-  const result = bunRuntime.spawnSync(args, {
+  const result = spawnSync(args, {
     cwd,
     stdout: inherit ? "inherit" : "pipe",
     stderr: inherit ? "inherit" : "pipe",
