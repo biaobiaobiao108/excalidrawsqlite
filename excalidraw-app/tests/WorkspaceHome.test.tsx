@@ -107,8 +107,7 @@ describe("WorkspaceHome component", () => {
                 ...body,
                 updated_at: Date.now(),
                 revision: (scene?.revision || 1) + 1,
-                folder_name:
-                  body.folder_id === "folder-1" ? "工作目录" : null,
+                folder_name: body.folder_id === "folder-1" ? "工作目录" : null,
               }),
               { status: 200 },
             ),
