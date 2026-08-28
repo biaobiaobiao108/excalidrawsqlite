@@ -136,14 +136,14 @@
 
 大型能力会延迟到真正使用时加载：首次打开 Mermaid、AI、代码编辑器或输入 CJK 文本时会产生一次按需请求，后续由浏览器缓存复用。当前构建预算如下，原始体积和 gzip 体积均检查：
 
-| 产物 | Raw 上限 | Gzip 上限 |
-| :-- | --: | --: |
-| 主入口 `index-*.js` | 1,700 KiB | 550 KiB |
-| `mermaid-to-excalidraw` | 700 KiB | 200 KiB |
-| `codemirror.chunk` | 600 KiB | 110 KiB |
-| `xiaolai-fonts` | 140 KiB | 55 KiB |
-| `pako.esm` | 70 KiB | 25 KiB |
-| `subset-shared.chunk` | 2,000 KiB | 800 KiB |
+| 产物                    |  Raw 上限 | Gzip 上限 |
+| :---------------------- | --------: | --------: |
+| 主入口 `index-*.js`     | 1,700 KiB |   550 KiB |
+| `mermaid-to-excalidraw` |   700 KiB |   200 KiB |
+| `codemirror.chunk`      |   600 KiB |   110 KiB |
+| `xiaolai-fonts`         |   140 KiB |    55 KiB |
+| `pako.esm`              |    70 KiB |    25 KiB |
+| `subset-shared.chunk`   | 2,000 KiB |   800 KiB |
 
 查看或校验产物大小：
 
