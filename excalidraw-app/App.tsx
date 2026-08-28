@@ -18,7 +18,6 @@ import {
   resolvablePromise,
   isDevEnv,
 } from "@excalidraw/common";
-import polyfill from "@excalidraw/excalidraw/polyfill";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { t } from "@excalidraw/excalidraw/i18n";
 
@@ -103,8 +102,6 @@ import {
 } from "./data/cloudSync";
 
 import type { CloudSaveSnapshot } from "./data/cloudSync";
-
-polyfill();
 
 window.EXCALIDRAW_THROTTLE_RENDER = true;
 

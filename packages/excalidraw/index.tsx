@@ -29,7 +29,6 @@ import {
   useOnAppStateChange as _useOnAppStateChange,
 } from "./hooks/useAppStateValue";
 import { EditorJotaiProvider, editorJotaiStore } from "./editor-jotai";
-import polyfill from "./polyfill";
 
 import "./css/app.scss";
 import "./css/styles.scss";
@@ -41,8 +40,6 @@ import type {
   ExcalidrawImperativeAPI,
   ExcalidrawProps,
 } from "./types";
-
-polyfill();
 
 /**
  * Stateless provider that allows `useExcalidrawAPI()` (and hooks built
@@ -176,13 +173,6 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     interaction.enabled?.navigation !== true;
 
   useEffect(() => {
-    const importPolyfill = async () => {
-      //@ts-ignore
-      await import("canvas-roundrect-polyfill");
-    };
-
-    importPolyfill();
-
     if (browserZoomAllowed) {
       return;
     }
