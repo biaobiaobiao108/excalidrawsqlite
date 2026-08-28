@@ -850,6 +850,8 @@ const getFilePath = (runtime: ServerRuntime, id: string) => {
   return filePath;
 };
 
+const fileExists = (filePath: string) => Bun.file(filePath).exists();
+
 type AtomicFileWrite = {
   restore: () => Promise<void>;
   cleanup: () => Promise<void>;
@@ -861,7 +863,7 @@ const writeFileAtomically = async (
 ): Promise<AtomicFileWrite> => {
   const tempPath = `${filePath}.${randomBytes(8).toString("hex")}.tmp`;
   const backupPath = `${filePath}.${randomBytes(8).toString("hex")}.bak`;
-  const hadExistingFile = fs.existsSync(filePath);
+  const hadExistingFile = await fileExists(filePath);
 
   try {
     if (hadExistingFile) {
@@ -1164,7 +1166,7 @@ const assertReferencedFilesExist = async (
       .get(fileId) as { storage_path: string | null } | null;
     if (
       !row?.storage_path ||
-      !(await fs.promises.stat(getFilePath(runtime, fileId)).catch(() => null))
+      !(await fileExists(getFilePath(runtime, fileId)))
     ) {
       throw new HttpError(422, "MISSING_FILE", "画板引用的图片尚未上传完成");
     }
@@ -1356,7 +1358,7 @@ export const inspectStorageConsistency = async (runtime: ServerRuntime) => {
     knownFileIds.add(row.id);
     if (
       row.storage_path &&
-      !(await fs.promises.stat(getFilePath(runtime, row.id)).catch(() => null))
+      !(await fileExists(getFilePath(runtime, row.id)))
     ) {
       missingFiles.push(row.id);
     }
@@ -1447,7 +1449,7 @@ const createFullBackup = async (runtime: ServerRuntime, timestamp: string) => {
         continue;
       }
       const filePath = getFilePath(runtime, row.id);
-      if (!(await fs.promises.stat(filePath).catch(() => null))) {
+      if (!(await fileExists(filePath))) {
         throw new Error(`附件文件缺失：${row.id}`);
       }
       entries[`files/${row.id}`] = new Blob([
@@ -2303,7 +2305,7 @@ export const createRequestHandler = (
           throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
         }
         const filePath = getFilePath(runtime, id);
-        if (!(await fs.promises.stat(filePath).catch(() => null))) {
+        if (!(await fileExists(filePath))) {
           throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
         }
         const accept = req.headers.get("accept") || "";
