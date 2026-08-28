@@ -1,56 +1,35 @@
 import {
   Excalidraw,
-  TTDDialogTrigger,
   CaptureUpdateAction,
   ExcalidrawAPIProvider,
   useExcalidrawAPI,
 } from "@excalidraw/excalidraw";
-import { trackEvent } from "@excalidraw/excalidraw/analytics";
 import {
   CommandPalette,
   DEFAULT_CATEGORIES,
 } from "@excalidraw/excalidraw/components/CommandPalette/CommandPalette";
 import { ErrorDialog } from "@excalidraw/excalidraw/components/ErrorDialog";
 import { OverwriteConfirmDialog } from "@excalidraw/excalidraw/components/OverwriteConfirm/OverwriteConfirm";
-import { openConfirmModal } from "@excalidraw/excalidraw/components/OverwriteConfirm/OverwriteConfirmState";
-import Trans from "@excalidraw/excalidraw/components/Trans";
 import {
-  APP_NAME,
   EVENT,
-  VERSION_TIMEOUT,
   debounce,
-  getVersion,
-  getFrame,
   isTestEnv,
   preventUnload,
   resolvablePromise,
   isDevEnv,
 } from "@excalidraw/common";
 import polyfill from "@excalidraw/excalidraw/polyfill";
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { loadFromBlob } from "@excalidraw/excalidraw/data/blob";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { t } from "@excalidraw/excalidraw/i18n";
 
 import { isElementLink } from "@excalidraw/element";
 import {
-  bumpElementVersions,
   restoreAppState,
   restoreElements,
 } from "@excalidraw/excalidraw/data/restore";
 import { newElementWith } from "@excalidraw/element";
 import { isInitializedImageElement } from "@excalidraw/element";
-import {
-  parseLibraryTokensFromUrl,
-  useHandleLibrary,
-} from "@excalidraw/excalidraw/data/library";
+import { useHandleLibrary } from "@excalidraw/excalidraw/data/library";
 
 import type { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type {
@@ -70,11 +49,7 @@ import type { ResolvablePromise } from "@excalidraw/common/utils";
 
 import CustomStats from "./CustomStats";
 import { Provider, useAtomValue, appJotaiStore } from "./app-jotai";
-import {
-  FIREBASE_STORAGE_PREFIXES,
-  STORAGE_KEYS,
-  SYNC_BROWSER_TABS_TIMEOUT,
-} from "./app_constants";
+import { STORAGE_KEYS, SYNC_BROWSER_TABS_TIMEOUT } from "./app_constants";
 import { AppFooter } from "./components/AppFooter";
 import { AppMainMenu } from "./components/AppMainMenu";
 import { AppWelcomeScreen } from "./components/AppWelcomeScreen";
@@ -83,8 +58,6 @@ import { CloudScenesDialog } from "./components/CloudScenesDialog";
 import { WorkspaceHome } from "./components/WorkspaceHome";
 import { AuthDialog } from "./components/AuthDialog";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
-
-import { importFromBackend } from "./data";
 
 import {
   checkAuthStatus,
@@ -101,7 +74,6 @@ import { updateStaleImageStatuses } from "./data/FileManager";
 import { FileStatusStore } from "./data/fileStatusStore";
 import { importFromLocalStorage } from "./data/localStorage";
 
-import { loadFilesFromFirebase } from "./data/firebase";
 import {
   LibraryIndexedDBAdapter,
   LibraryLocalStorageMigrationAdapter,
@@ -131,12 +103,6 @@ import {
 } from "./data/cloudSync";
 
 import type { CloudSaveSnapshot } from "./data/cloudSync";
-
-const LazyAIComponents = lazy(() =>
-  import("./components/AI").then(({ AIComponents }) => ({
-    default: AIComponents,
-  })),
-);
 
 polyfill();
 
@@ -188,35 +154,13 @@ if (window.self !== window.top) {
   }
 }
 
-const shareableLinkConfirmDialog = {
-  title: t("overwriteConfirm.modal.shareableLink.title"),
-  description: (
-    <Trans
-      i18nKey="overwriteConfirm.modal.shareableLink.description"
-      bold={(text) => <strong>{text}</strong>}
-      br={() => <br />}
-    />
-  ),
-  actionLabel: t("overwriteConfirm.modal.shareableLink.button"),
-  color: "danger",
-} as const;
-
 type InitializeSceneResult = {
   scene: ExcalidrawInitialDataState | null;
-  isExternalScene: boolean;
-  id?: string;
-  key?: string;
-  isCloudScene?: boolean;
-  cloudRevision?: number;
 };
 
 const initializeScene = async (): Promise<InitializeSceneResult> => {
   const searchParams = new URLSearchParams(window.location.search);
   const id = searchParams.get("id");
-  const jsonBackendMatch = window.location.hash.match(
-    /^#json=([a-zA-Z0-9_-]+),([a-zA-Z0-9_-]+)$/,
-  );
-  const externalUrlMatch = window.location.hash.match(/^#url=(.*)$/);
 
   const localDataState = importFromLocalStorage();
 
@@ -235,96 +179,13 @@ const initializeScene = async (): Promise<InitializeSceneResult> => {
     appState: restoreAppState(localDataState?.appState, null),
   };
 
-  const isCloudSceneLink = Boolean(id && !jsonBackendMatch);
-  const isExternalScene = !!jsonBackendMatch;
-  if (isCloudSceneLink) {
+  if (id) {
     // Cloud scenes are loaded after the editor mounts so a slow or unavailable
     // API cannot keep Excalidraw's initialData promise pending forever.
-    return { scene, isExternalScene: false };
-  }
-  if (isExternalScene) {
-    if (
-      // don't prompt if scene is empty
-      !scene.elements.length ||
-      // otherwise, prompt whether user wants to override current scene
-      (await openConfirmModal(shareableLinkConfirmDialog))
-    ) {
-      if (jsonBackendMatch) {
-        const imported = await importFromBackend(
-          jsonBackendMatch[1],
-          jsonBackendMatch[2],
-        );
-
-        scene = {
-          elements: bumpElementVersions(
-            restoreElements(imported.elements, null, {
-              repairBindings: true,
-              deleteInvisibleElements: true,
-            }),
-            localDataState?.elements,
-          ),
-          appState: restoreAppState(
-            imported.appState,
-            // local appState when importing from backend to ensure we restore
-            // localStorage user settings which we do not persist on server.
-            localDataState?.appState,
-          ),
-        };
-      }
-      scene.scrollToContent = true;
-      window.history.replaceState({}, APP_NAME, window.location.origin);
-    } else {
-      // https://github.com/excalidraw/excalidraw/issues/1919
-      if (document.hidden) {
-        return new Promise((resolve, reject) => {
-          window.addEventListener(
-            "focus",
-            () => initializeScene().then(resolve).catch(reject),
-            {
-              once: true,
-            },
-          );
-        });
-      }
-
-      window.history.replaceState({}, APP_NAME, window.location.origin);
-    }
-  } else if (externalUrlMatch) {
-    window.history.replaceState({}, APP_NAME, window.location.origin);
-
-    const url = externalUrlMatch[1];
-    try {
-      const request = await fetch(window.decodeURIComponent(url));
-      const data = await loadFromBlob(await request.blob(), null, null);
-      if (
-        !scene.elements.length ||
-        (await openConfirmModal(shareableLinkConfirmDialog))
-      ) {
-        return { scene: data, isExternalScene };
-      }
-    } catch (error: any) {
-      return {
-        scene: {
-          appState: {
-            errorMessage: t("alerts.invalidSceneUrl"),
-          },
-        },
-        isExternalScene,
-      };
-    }
+    return { scene };
   }
 
-  if (scene) {
-    return isExternalScene && jsonBackendMatch
-      ? {
-          scene,
-          isExternalScene,
-          id: jsonBackendMatch[1],
-          key: jsonBackendMatch[2],
-        }
-      : { scene, isExternalScene: false };
-  }
-  return { scene: null, isExternalScene: false };
+  return { scene };
 };
 
 const getCloudFileIds = (elements: readonly any[]) => {
@@ -418,14 +279,6 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   }
 
   const debugCanvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    trackEvent("load", "frame", getFrame());
-    // Delayed so that the app has a time to load the latest SW
-    setTimeout(() => {
-      trackEvent("load", "version", getVersion());
-    }, VERSION_TIMEOUT);
-  }, []);
 
   useHandleLibrary({
     excalidrawAPI,
@@ -1025,32 +878,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
           return acc;
         }, [] as FileId[]) || [];
 
-      if (data.isCloudScene) {
-        void loadCloudFilesIntoScene(data.scene.elements || []);
-      } else if (data.isExternalScene && data.id && data.key) {
-        if (fileIds.length) {
-          // Direct Firebase call (not through FileManager), so track manually
-          FileStatusStore.updateStatuses(fileIds.map((id) => [id, "loading"]));
-        }
-        loadFilesFromFirebase(
-          `${FIREBASE_STORAGE_PREFIXES.shareLinkFiles}/${data.id}`,
-          data.key,
-          fileIds,
-        ).then(({ loadedFiles, erroredFiles }) => {
-          excalidrawAPI.addFiles(loadedFiles);
-          updateStaleImageStatuses({
-            excalidrawAPI,
-            erroredFiles,
-            elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
-          });
-          FileStatusStore.updateStatuses([
-            ...loadedFiles.map((f) => [f.id, "loaded"] as [FileId, "loaded"]),
-            ...[...erroredFiles.keys()].map(
-              (id) => [id, "error"] as [FileId, "error"],
-            ),
-          ]);
-        });
-      } else if (isInitialLoad) {
+      if (isInitialLoad) {
         if (fileIds.length) {
           LocalData.fileStorage
             .getFiles(fileIds)
@@ -1072,7 +900,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
         });
       }
     },
-    [excalidrawAPI, loadCloudFilesIntoScene],
+    [excalidrawAPI],
   );
 
   useEffect(() => {
@@ -1108,37 +936,6 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
     if (!excalidrawAPI) {
       return;
     }
-
-    const onHashChange = async (event: HashChangeEvent) => {
-      event.preventDefault();
-      const libraryUrlTokens = parseLibraryTokensFromUrl();
-      if (!libraryUrlTokens) {
-        excalidrawAPI.updateScene({ appState: { isLoading: true } });
-
-        initializeScene()
-          .then((data) => {
-            loadImages(data);
-            if (data.scene) {
-              excalidrawAPI.updateScene({
-                elements: restoreElements(data.scene.elements, null, {
-                  repairBindings: true,
-                }),
-                appState: restoreAppState(data.scene.appState, null),
-                captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-              });
-            }
-          })
-          .catch((error: any) => {
-            console.error("Failed to initialize the linked scene:", error);
-            excalidrawAPI.updateScene({
-              appState: {
-                isLoading: false,
-                errorMessage: error?.message || "无法加载场景",
-              },
-            });
-          });
-      }
-    };
 
     const syncData = debounce(() => {
       if (isTestEnv()) {
@@ -1218,14 +1015,12 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
       }
     };
 
-    window.addEventListener(EVENT.HASHCHANGE, onHashChange, false);
     window.addEventListener(EVENT.UNLOAD, onUnload, false);
     window.addEventListener("pagehide", onUnload, false);
     window.addEventListener(EVENT.BLUR, visibilityChange, false);
     document.addEventListener(EVENT.VISIBILITY_CHANGE, visibilityChange, false);
     window.addEventListener(EVENT.FOCUS, visibilityChange, false);
     return () => {
-      window.removeEventListener(EVENT.HASHCHANGE, onHashChange, false);
       window.removeEventListener(EVENT.UNLOAD, onUnload, false);
       window.removeEventListener("pagehide", onUnload, false);
       window.removeEventListener(EVENT.BLUR, visibilityChange, false);
@@ -1236,7 +1031,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
         false,
       );
     };
-  }, [excalidrawAPI, setLangCode, loadImages, cloudSaveQueue]);
+  }, [excalidrawAPI, setLangCode, cloudSaveQueue]);
 
   useEffect(() => {
     const unloadHandler = (event: BeforeUnloadEvent) => {
@@ -1470,6 +1265,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
         detectScroll={false}
         handleKeyboardGlobally={true}
         autoFocus={true}
+        aiEnabled={false}
         theme={editorTheme}
         onThemeChange={setAppTheme}
         renderTopRightUI={(isMobile) => {
@@ -1624,13 +1420,6 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
           onOverwrite={() => resolveCloudConflict(true)}
         />
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
-        {excalidrawAPI && (
-          <Suspense fallback={null}>
-            <LazyAIComponents excalidrawAPI={excalidrawAPI} />
-          </Suspense>
-        )}
-
-        <TTDDialogTrigger />
         {localStorageQuotaExceeded && (
           <div className="alert alert--danger">
             {t("alerts.localStorageQuotaExceeded")}
@@ -1721,9 +1510,7 @@ const ExcalidrawApp = () => {
 
   const location = new URL(currentUrl);
   const sceneId = location.searchParams.get("id");
-  const hasExternalSceneHash =
-    /^#json=/.test(location.hash) || /^#url=/.test(location.hash);
-  const shouldRenderWorkspaceHome = !sceneId && !hasExternalSceneHash;
+  const shouldRenderWorkspaceHome = !sceneId;
 
   const navigateToScene = useCallback((targetSceneId: string) => {
     const url = new URL(window.location.href);

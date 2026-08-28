@@ -5,13 +5,10 @@ import svgrPlugin from "vite-plugin-svgr";
 import { ViteEjsPlugin } from "vite-plugin-ejs";
 import { VitePWA } from "vite-plugin-pwa";
 import checker from "vite-plugin-checker";
-import { createHtmlPlugin } from "vite-plugin-html";
-import Sitemap from "vite-plugin-sitemap";
 import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
 export default defineConfig(({ mode }) => {
   // To load .env variables
   const envVars = loadEnv(mode, `../`);
-  const siteUrl = envVars.VITE_APP_SITE_URL?.trim();
   // https://vitejs.dev/config/
   return {
     server: {
@@ -99,8 +96,7 @@ export default defineConfig(({ mode }) => {
         resolveDependencies(_filename, deps, context) {
           if (context.hostType === "html") {
             return deps.filter(
-              (dependency) =>
-                !dependency.includes("mermaid-to-excalidraw"),
+              (dependency) => !dependency.includes("mermaid-to-excalidraw"),
             );
           }
 
@@ -154,10 +150,6 @@ export default defineConfig(({ mode }) => {
             if (id.includes("@codemirror/") || id.includes("@lezer/")) {
               return "codemirror.chunk";
             }
-
-            if (/node_modules[\\/]firebase(?:[\\/]|$)/.test(id)) {
-              return "firebase.chunk";
-            }
           },
         },
       },
@@ -169,16 +161,6 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 2100,
     },
     plugins: [
-      ...(siteUrl
-        ? [
-            Sitemap({
-              hostname: siteUrl,
-              outDir: "build",
-              changefreq: "monthly",
-              generateRobotsTxt: false,
-            }),
-          ]
-        : []),
       woff2BrowserPlugin(),
       react(),
       mode === "development"
@@ -377,9 +359,6 @@ export default defineConfig(({ mode }) => {
             },
           ],
         },
-      }),
-      createHtmlPlugin({
-        minify: true,
       }),
     ],
     publicDir: "../public",

@@ -11,7 +11,6 @@ const assetsDir = join(
 );
 const entryBudget = { raw: 1_700_000, gzip: 550_000 };
 const chunkBudgets = {
-  "firebase.chunk": { raw: 600_000, gzip: 180_000 },
   "mermaid-to-excalidraw": { raw: 700_000, gzip: 200_000 },
   "codemirror.chunk": { raw: 600_000, gzip: 110_000 },
   "pako.esm": { raw: 70_000, gzip: 25_000 },
