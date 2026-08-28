@@ -1,6 +1,6 @@
 # Excalidraw (Bun + SQLite 持久化纯净私有化版本)
 
-一个基于 **Bun 1.4+** 与 **原生 SQLite** 驱动的纯净、自托管虚拟手绘风格白板。支持多画板管理、云端自动持久化、图片附件存储、密码保护与极速 Docker 容器化部署。
+一个基于 **Bun 1.4+** 与 **原生 SQLite** 驱动的纯净、自托管虚拟手绘风格白板。支持多画板管理、云端自动持久化、图片附件存储、密码保护与极速 Docker 容器化部署。本发行版面向最新现代浏览器优化，不再兼容旧版浏览器。
 
 ---
 
@@ -16,6 +16,11 @@
 - 🧼 **私有化体验**：
   - 默认不加载分析脚本、Google Fonts 或官方站点跳转；
   - 界面简洁高效，专为私有化与局域网部署打造。上游协作、图表和字体能力仍可能按功能加载第三方依赖，请按部署策略审查网络出口。
+- ⚡ **现代浏览器性能**：
+  - 生产构建使用 `esnext` 与最新 Chrome、Edge、Firefox、Safari/iOS Safari 目标，避免旧浏览器转译和兼容层开销；
+  - AI、Mermaid、CJK 字体、CodeMirror 与压缩回退实现按需加载，不进入首屏关键路径；
+  - 使用原生 `CompressionStream`/`DecompressionStream`，不支持时才动态加载 pako 回退；
+  - Service Worker 对带 hash 的功能 chunk、字体和语言包分别缓存，应用更新使用新版本资源。
 - 🔐 **轻量鉴权保护**：
   - 通过 `AUTH_PASSWORD` 开启密码保护，使用 HttpOnly 会话 Cookie，不在浏览器保存明文密码；
   - 生产环境必须配置密码，免密模式只能通过 `ALLOW_ANONYMOUS=true` 显式开启。
@@ -125,6 +130,40 @@
 
 ---
 
+## ⚡ 浏览器支持与构建基线
+
+生产构建只面向最新版本的 Chrome、Edge、Firefox、Safari 和 iOS Safari。项目不再提供 IE、旧版 Chromium、旧版 Firefox 或旧版 Safari 的兼容保证，也不应重新引入面向这些浏览器的 polyfill、转译目标或兼容分支。
+
+大型能力会延迟到真正使用时加载：首次打开 Mermaid、AI、代码编辑器或输入 CJK 文本时会产生一次按需请求，后续由浏览器缓存复用。当前构建预算如下，原始体积和 gzip 体积均检查：
+
+| 产物 | Raw 上限 | Gzip 上限 |
+| :-- | --: | --: |
+| 主入口 `index-*.js` | 1,700 KiB | 550 KiB |
+| `mermaid-to-excalidraw` | 700 KiB | 200 KiB |
+| `codemirror.chunk` | 600 KiB | 110 KiB |
+| `xiaolai-fonts` | 140 KiB | 55 KiB |
+| `pako.esm` | 70 KiB | 25 KiB |
+| `subset-shared.chunk` | 2,000 KiB | 800 KiB |
+
+查看或校验产物大小：
+
+```bash
+bun run build
+bun run build:check-size
+```
+
+---
+
+## 🔐 安全头与 CSP
+
+服务端默认返回安全响应头和 Content Security Policy。脚本执行策略不允许 `unsafe-inline` 或 `unsafe-eval`，仅保留 `wasm-unsafe-eval` 以支持 WOFF2 字体子集化所需的 WebAssembly；不要在入口 HTML 中重新加入内联脚本。
+
+CSS 目前单独保留 `style-src-elem/style-src-attr 'unsafe-inline'`：React 现有内联样式，以及 Mermaid、CodeMirror 的运行时样式注入仍依赖它。这不是脚本执行许可；若部署基线要求 CSS 也完全禁止 inline，需要另行完成全量样式迁移或隔离第三方编辑器，不能只删除响应头中的两条指令。
+
+公网部署必须在 HTTPS 反向代理后运行，并在代理层保留服务端安全头。只有显式设置 `TRUST_PROXY=true` 且代理清理并重写 `X-Forwarded-*` 头时，服务才会信任转发协议并发放 Secure 会话 Cookie。
+
+---
+
 ## 📂 项目结构
 
 ```text
@@ -186,9 +225,12 @@
 
 ```bash
 bun run test:all
+bun run build
 bun run build:app:docker
 bun run build:check-size
 ```
+
+`bun run build` 会生成 `excalidraw-app/build`、更新版本信息并执行 bundle 预算检查；生产服务启动前必须先完成该构建。修改入口脚本、CSP、动态 import、Service Worker 缓存规则或压缩编码逻辑后，至少运行一次全量测试和生产构建。
 
 ---
 
