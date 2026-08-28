@@ -544,9 +544,7 @@ const BoardCard = ({
               {scene.tags.slice(0, 2).map((tag) => (
                 <span key={tag}>{tag}</span>
               ))}
-              {scene.tags.length > 2 && (
-                <span>+{scene.tags.length - 2}</span>
-              )}
+              {scene.tags.length > 2 && <span>+{scene.tags.length - 2}</span>}
             </div>
           )}
         </div>
