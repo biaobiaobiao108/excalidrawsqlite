@@ -28,7 +28,10 @@ const parseOptions = (): Options => {
 
 const isInsideDirectory = (directory: string, candidate: string) => {
   const relative = path.relative(directory, candidate);
-  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`));
+  return (
+    relative === "" ||
+    (relative !== ".." && !relative.startsWith(`..${path.sep}`))
+  );
 };
 
 const getFilePath = (directory: string, pathname: string) => {
@@ -63,11 +66,16 @@ const createHandler = (directory: string) => async (request: Request) => {
 
   const url = new URL(request.url);
   const filePath = getFilePath(directory, url.pathname);
-  const requestedFile = filePath ? await serveFile(filePath) : null;
+  if (!filePath) {
+    return new Response("Bad Request", { status: 400 });
+  }
+
+  const requestedFile = await serveFile(filePath);
   const acceptsHtml = request.headers.get("accept")?.includes("text/html");
+  const fallbackPath = path.join(directory, "index.html");
   const file =
     requestedFile ||
-    (acceptsHtml ? await serveFile(path.join(directory, "index.html")) : null);
+    (acceptsHtml ? await serveFile(fallbackPath) : null);
 
   if (!file) {
     return new Response("Not Found", { status: 404 });
@@ -75,7 +83,9 @@ const createHandler = (directory: string) => async (request: Request) => {
 
   return new Response(file, {
     headers: {
-      "Cache-Control": filePath?.endsWith("index.html")
+      "Cache-Control": (requestedFile ? filePath : fallbackPath).endsWith(
+        "index.html",
+      )
         ? "no-cache"
         : "public, max-age=31536000, immutable",
     },
