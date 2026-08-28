@@ -163,6 +163,7 @@ describe("export", () => {
     const elements = [
       API.createElement({
         type: "image",
+        id: "id12",
         fileId: "file_A",
         x: 0,
         y: 0,
@@ -173,6 +174,7 @@ describe("export", () => {
       }),
       API.createElement({
         type: "image",
+        id: "id13",
         fileId: "file_A",
         x: 100,
         y: 0,
@@ -183,6 +185,7 @@ describe("export", () => {
       }),
       API.createElement({
         type: "image",
+        id: "id14",
         fileId: "file_A",
         x: 0,
         y: 100,
@@ -193,6 +196,7 @@ describe("export", () => {
       }),
       API.createElement({
         type: "image",
+        id: "id15",
         fileId: "file_A",
         x: 100,
         y: 100,
