@@ -404,8 +404,9 @@ const isAllowedOrigin = (runtime: ServerRuntime, req: Request) => {
 
 const CSP_DIRECTIVES = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "script-src 'self' 'wasm-unsafe-eval' blob:",
+  "style-src 'self'",
+  "style-src-attr 'none'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
   "connect-src 'self' data: blob: https: wss:",
