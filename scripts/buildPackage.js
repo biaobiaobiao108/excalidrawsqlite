@@ -7,17 +7,6 @@ const { sassPlugin } = require("esbuild-sass-plugin");
 
 const { parseEnvVariables } = require("../packages/excalidraw/env.cjs");
 
-const ENV_VARS = {
-  development: {
-    ...parseEnvVariables(`${__dirname}/../.env.development`),
-    DEV: true,
-  },
-  production: {
-    ...parseEnvVariables(`${__dirname}/../.env.production`),
-    PROD: true,
-  },
-};
-
 // Resolve a relative path from the source file's directory
 const resolveRelativePath = (importPath, sourceFile) => {
   const sourceDir = path.dirname(sourceFile);
@@ -85,43 +74,60 @@ const getConfig = (outdir) => ({
   },
 });
 
-function buildDev(config) {
+function buildDev(config, envVars) {
   return build({
     ...config,
     sourcemap: true,
     define: {
-      "import.meta.env": JSON.stringify(ENV_VARS.development),
+      "import.meta.env": JSON.stringify(envVars),
     },
   });
 }
 
-function buildProd(config) {
+function buildProd(config, envVars) {
   return build({
     ...config,
     minify: true,
     define: {
-      "import.meta.env": JSON.stringify(ENV_VARS.production),
+      "import.meta.env": JSON.stringify(envVars),
     },
   });
 }
 
 const createESMRawBuild = async () => {
+  const envVars = {
+    development: {
+      ...(await parseEnvVariables(`${__dirname}/../.env.development`)),
+      DEV: true,
+    },
+    production: {
+      ...(await parseEnvVariables(`${__dirname}/../.env.production`)),
+      PROD: true,
+    },
+  };
+
   const chunksConfig = {
     entryPoints: ["index.tsx", "**/*.chunk.ts"],
     entryNames: "[name]",
   };
 
   // development unminified build with source maps
-  await buildDev({
-    ...getConfig("dist/dev"),
-    ...chunksConfig,
-  });
+  await buildDev(
+    {
+      ...getConfig("dist/dev"),
+      ...chunksConfig,
+    },
+    envVars.development,
+  );
 
   // production minified buld without sourcemaps
-  await buildProd({
-    ...getConfig("dist/prod"),
-    ...chunksConfig,
-  });
+  await buildProd(
+    {
+      ...getConfig("dist/prod"),
+      ...chunksConfig,
+    },
+    envVars.production,
+  );
 };
 
 (async () => {
