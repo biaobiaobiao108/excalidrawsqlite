@@ -545,9 +545,7 @@ const BoardCard = ({
                 <span key={tag}>{tag}</span>
               ))}
               {scene.tags.length > 2 && (
-                <span title={scene.tags.slice(2).join("、")}>
-                  +{scene.tags.length - 2}
-                </span>
+                <span>+{scene.tags.length - 2}</span>
               )}
             </div>
           )}
