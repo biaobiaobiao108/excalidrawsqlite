@@ -164,7 +164,7 @@ const initializeScene = async (): Promise<InitializeSceneResult> => {
 
   const localDataState = importFromLocalStorage();
 
-  let scene: Omit<
+  const scene: Omit<
     RestoredDataState,
     // we're not storing files in the scene database/localStorage, and instead
     // fetch them async from a different store
