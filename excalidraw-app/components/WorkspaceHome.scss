@@ -319,28 +319,45 @@
   display: flex;
   align-items: center;
   min-inline-size: 0;
+  position: relative;
+  border-radius: 9px;
 }
 
 .folder-row > button:first-child {
+  flex: 1 1 auto;
   min-inline-size: 0;
-  padding-inline-end: 0.35rem;
+  padding-inline-end: 0.5rem;
 }
 
 .folder-row > button:first-child span {
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.folder-more {
+.folder-row small {
   flex: 0 0 auto;
-  margin-inline-start: -2.2rem;
+  margin-inline-start: auto;
+  color: #a1a0ae;
+  font-size: 0.75rem;
+}
+
+.folder-more {
+  flex: 0 0 28px;
+  inline-size: 28px;
+  block-size: 28px;
+  margin-inline-start: 0.25rem;
+  margin-inline-end: 0.25rem;
   opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, background-color 140ms ease, color 140ms ease;
 }
 
 .folder-row:hover .folder-more,
 .folder-more:focus-visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .folder-more svg {
@@ -488,7 +505,7 @@
 
 .board-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
   gap: 1.25rem;
 }
 
