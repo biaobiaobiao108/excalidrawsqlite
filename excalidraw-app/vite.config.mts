@@ -114,6 +114,10 @@ export default defineConfig(({ mode }) => {
               return "vite-preload";
             }
 
+            if (id.includes("commonjsHelpers")) {
+              return "commonjs-helpers";
+            }
+
             if (
               id.includes("packages/excalidraw/locales") &&
               id.match(/en.json|percentages.json/) === null
