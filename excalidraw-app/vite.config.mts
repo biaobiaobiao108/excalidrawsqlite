@@ -97,7 +97,6 @@ export default defineConfig(({ mode }) => {
       target: "esnext",
       rollupOptions: {
         output: {
-          onlyExplicitManualChunks: true,
           assetFileNames(chunkInfo) {
             if (chunkInfo?.name?.endsWith(".woff2")) {
               const family = chunkInfo.name.split("-")[0];
@@ -111,6 +110,10 @@ export default defineConfig(({ mode }) => {
           // app precache. en.json and percentages.json are needed for first load
           // or fallback hence not clubbing with locales so first load followed by offline mode works fine. This is how CRA used to work too.
           manualChunks(id) {
+            if (id === "\0vite/preload-helper.js") {
+              return "vite-preload";
+            }
+
             if (
               id.includes("packages/excalidraw/locales") &&
               id.match(/en.json|percentages.json/) === null
