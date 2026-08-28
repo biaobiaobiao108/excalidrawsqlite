@@ -2,12 +2,10 @@ import {
   Excalidraw,
   TTDDialogTrigger,
   CaptureUpdateAction,
-  useEditorInterface,
   ExcalidrawAPIProvider,
   useExcalidrawAPI,
 } from "@excalidraw/excalidraw";
 import { trackEvent } from "@excalidraw/excalidraw/analytics";
-import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 import {
   CommandPalette,
   DEFAULT_CATEGORIES,
@@ -15,7 +13,6 @@ import {
 import { ErrorDialog } from "@excalidraw/excalidraw/components/ErrorDialog";
 import { OverwriteConfirmDialog } from "@excalidraw/excalidraw/components/OverwriteConfirm/OverwriteConfirm";
 import { openConfirmModal } from "@excalidraw/excalidraw/components/OverwriteConfirm/OverwriteConfirmState";
-import { ShareableLinkDialog } from "@excalidraw/excalidraw/components/ShareableLinkDialog";
 import Trans from "@excalidraw/excalidraw/components/Trans";
 import {
   APP_NAME,
@@ -42,7 +39,6 @@ import {
 } from "@excalidraw/excalidraw/data/restore";
 import { newElementWith } from "@excalidraw/element";
 import { isInitializedImageElement } from "@excalidraw/element";
-import clsx from "clsx";
 import {
   parseLibraryTokensFromUrl,
   useHandleLibrary,
@@ -56,7 +52,6 @@ import type {
 } from "@excalidraw/element/types";
 import type {
   AppState,
-  ExcalidrawImperativeAPI,
   BinaryFiles,
   ExcalidrawInitialDataState,
   UIAppState,
@@ -68,9 +63,7 @@ import type { ResolvablePromise } from "@excalidraw/common/utils";
 import CustomStats from "./CustomStats";
 import {
   Provider,
-  useAtom,
   useAtomValue,
-  useAtomWithInitialValue,
   appJotaiStore,
 } from "./app-jotai";
 import {
@@ -407,8 +400,6 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   const { editorTheme, appTheme, setAppTheme } = useHandleAppTheme();
 
   const [langCode, setLangCode] = useAppLangCode();
-
-  const editorInterface = useEditorInterface();
 
   // initial state
   // ---------------------------------------------------------------------------
