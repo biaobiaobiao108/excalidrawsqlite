@@ -40,30 +40,33 @@ const compressBytes = async (data: string | Uint8Array) => {
   if (typeof CompressionStream !== "undefined") {
     const stream = new CompressionStream("deflate");
     const writer = stream.writable.getWriter();
-    await writer.write(
+    const bytes = (
       typeof data === "string" ? new TextEncoder().encode(data) : data,
-    );
+    ) as Uint8Array<ArrayBuffer>;
+    await writer.write(bytes);
     await writer.close();
     return new Uint8Array(await new Response(stream.readable).arrayBuffer());
   }
 
   // Legacy fallback for runtimes without CompressionStream support.
   const { deflate } = await import("pako");
-  return deflate(data);
+  return deflate(
+    typeof data === "string" ? data : (data as Uint8Array<ArrayBuffer>),
+  );
 };
 
 const decompressBytes = async (data: Uint8Array) => {
   if (typeof DecompressionStream !== "undefined") {
     const stream = new DecompressionStream("deflate");
     const writer = stream.writable.getWriter();
-    await writer.write(data);
+    await writer.write(data as Uint8Array<ArrayBuffer>);
     await writer.close();
     return new Uint8Array(await new Response(stream.readable).arrayBuffer());
   }
 
   // Legacy fallback for runtimes without DecompressionStream support.
   const { inflate } = await import("pako");
-  return inflate(data);
+  return inflate(data as Uint8Array<ArrayBuffer>);
 };
 
 // -----------------------------------------------------------------------------
@@ -131,7 +134,7 @@ export const encode = async ({
   text: string;
   /** defaults to `true`. If compression fails, falls back to bstring alone. */
   compress?: boolean;
-}): EncodedData => {
+}): Promise<EncodedData> => {
   let deflated!: string;
   if (compress !== false) {
     try {
@@ -164,7 +167,11 @@ export const decode = async (data: EncodedData): Promise<string> => {
 
   if (data.compressed) {
     return byteStringToString(
-      await decompressBytes(new Uint8Array(byteStringToArrayBuffer(decoded))),
+      toByteString(
+        await decompressBytes(
+          new Uint8Array(byteStringToArrayBuffer(decoded)),
+        ),
+      ),
     );
   }
 
