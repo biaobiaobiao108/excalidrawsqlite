@@ -119,10 +119,6 @@ export default defineConfig(({ mode }) => {
               return `locales/${id.substring(index + 8)}`;
             }
 
-            if (id.includes("@excalidraw/mermaid-to-excalidraw")) {
-              return "mermaid-to-excalidraw";
-            }
-
             if (id.includes("packages/excalidraw/fonts/Xiaolai")) {
               return "xiaolai-fonts";
             }
