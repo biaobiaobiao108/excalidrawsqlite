@@ -411,7 +411,7 @@ const CSP_DIRECTIVES = [
   "font-src 'self' data: https://fonts.gstatic.com",
   "connect-src 'self' data: blob: https: wss:",
   "worker-src 'self' blob:",
-  "frame-src 'self'",
+  "frame-src 'self' https: blob:",
   "object-src 'none'",
   "base-uri 'self'",
   "frame-ancestors 'self'",

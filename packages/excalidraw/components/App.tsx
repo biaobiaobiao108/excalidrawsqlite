@@ -664,6 +664,10 @@ class App extends React.Component<AppProps, AppState> {
   public files: BinaryFiles = {};
   public imageCache: AppClassProperties["imageCache"] = new Map();
   private iFrameRefs = new Map<ExcalidrawElement["id"], HTMLIFrameElement>();
+  private embeddableBlobUrls = new Map<
+    ExcalidrawElement["id"],
+    { content: string; url: string }
+  >();
   /**
    * Indicates whether the embeddable's url has been validated for rendering.
    * If value not set, indicates that the validation is pending.
@@ -1459,6 +1463,30 @@ class App extends React.Component<AppProps, AppState> {
     }
   }
 
+  private getEmbeddableBlobUrl = (
+    elementId: ExcalidrawElement["id"],
+    content: string,
+  ) => {
+    const cached = this.embeddableBlobUrls.get(elementId);
+    if (cached?.content === content) {
+      return cached.url;
+    }
+
+    if (cached) {
+      this.ownerWindow.URL.revokeObjectURL(cached.url);
+    }
+
+    if (typeof this.ownerWindow.URL.createObjectURL !== "function") {
+      return null;
+    }
+
+    const url = this.ownerWindow.URL.createObjectURL(
+      new this.ownerWindow.Blob([content], { type: "text/html" }),
+    );
+    this.embeddableBlobUrls.set(elementId, { content, url });
+    return url;
+  };
+
   /**
    * Returns gridSize taking into account `gridModeEnabled`.
    * If disabled, returns null.
@@ -1925,6 +1953,15 @@ class App extends React.Component<AppProps, AppState> {
             src = getEmbedLink(toValidURL(el.link || ""));
           }
 
+          const srcDoc =
+            src?.type === "document"
+              ? src.srcdoc(this.state.theme)
+              : undefined;
+          const srcUrl =
+            srcDoc !== undefined
+              ? this.getEmbeddableBlobUrl(el.id, srcDoc)
+              : null;
+
           const isActive =
             this.state.activeEmbeddable?.element === el &&
             this.state.activeEmbeddable?.state === "active";
@@ -2024,13 +2061,11 @@ class App extends React.Component<AppProps, AppState> {
                       <iframe
                         ref={(ref) => this.cacheEmbeddableRef(el, ref)}
                         className="excalidraw__embeddable"
-                        srcDoc={
-                          src?.type === "document"
-                            ? src.srcdoc(this.state.theme)
-                            : undefined
-                        }
+                        srcDoc={srcUrl ? undefined : srcDoc}
                         src={
-                          src?.type !== "document" ? src?.link ?? "" : undefined
+                          src?.type === "document"
+                            ? srcUrl ?? undefined
+                            : src?.link ?? ""
                         }
                         // https://stackoverflow.com/q/18470015
                         scrolling="no"
@@ -3845,6 +3880,10 @@ class App extends React.Component<AppProps, AppState> {
     this.viewport.destroy();
     this.removeEventListeners();
     this.library.destroy();
+    for (const { url } of this.embeddableBlobUrls.values()) {
+      this.ownerWindow.URL.revokeObjectURL(url);
+    }
+    this.embeddableBlobUrls.clear();
     this.laserTrails.stop();
     this.drawShape.stop();
     this.eraserTrail.stop();
