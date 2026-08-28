@@ -21,7 +21,10 @@
 
 .workspace-home button,
 .workspace-home input,
-.workspace-home select {
+.workspace-home select,
+.workspace-dialog button,
+.workspace-dialog input,
+.workspace-dialog select {
   font: inherit;
 }
 
@@ -1024,23 +1027,35 @@
 }
 
 .workspace-dialog {
+  --workspace-bg: #ffffff;
+  --workspace-surface: #fbfbfd;
+  --workspace-surface-hover: #f6f5ff;
+  --workspace-border: #e8e8f0;
+  --workspace-text: #22212c;
+  --workspace-muted: #747487;
+  --workspace-primary: #6965db;
+  --workspace-primary-soft: #f0efff;
+  box-sizing: border-box;
   position: fixed;
-  z-index: 20;
+  z-index: 1000;
   inset: 0;
   display: grid;
   place-items: center;
   padding: 1.25rem;
-  animation: workspace-dialog-backdrop-enter 180ms ease-out both;
-}
-
-.workspace-dialog-backdrop {
-  position: absolute;
-  inset: 0;
   inline-size: 100%;
   block-size: 100%;
+  max-inline-size: none;
+  max-block-size: none;
+  margin: 0;
   border: 0;
+  background: transparent;
+  color: var(--workspace-text);
+  overflow: hidden;
+}
+
+.workspace-dialog::backdrop {
   background: rgba(25, 24, 47, 0.22);
-  cursor: default;
+  animation: workspace-dialog-backdrop-enter 180ms ease-out both;
 }
 
 .workspace-dialog-content-shell {
@@ -1066,6 +1081,10 @@
   font-family: var(--font-family, system-ui, sans-serif);
   font-size: 1.2rem;
   font-weight: 650;
+}
+
+.workspace-dialog-form-content {
+  min-inline-size: 0;
 }
 
 .workspace-dialog .metadata-form {
@@ -1362,8 +1381,9 @@
   .workspace-home .all-boards-section,
   .workspace-home .board-card,
   .workspace-home .board-card-menu,
-  .workspace-home .workspace-dialog,
-  .workspace-home .workspace-dialog-content-shell,
+  .workspace-dialog,
+  .workspace-dialog-content-shell,
+  .workspace-dialog::backdrop,
   .excalidraw-app {
     animation: none !important;
   }

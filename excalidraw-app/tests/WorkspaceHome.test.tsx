@@ -251,6 +251,58 @@ describe("WorkspaceHome component", () => {
     expect(screen.getByDisplayValue("架构设计图")).toBeTruthy();
   });
 
+  it("renders the metadata dialog in the document body after scrolling", async () => {
+    render(<WorkspaceHome />);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", {
+          name: "编辑画板名称“架构设计图”",
+        }).length,
+      ).toBeGreaterThan(0);
+    });
+
+    const trigger = screen.getAllByRole("button", {
+      name: "编辑画板名称“架构设计图”",
+    })[0];
+    const workspaceHome = document.querySelector(".workspace-home");
+    if (workspaceHome) {
+      workspaceHome.scrollTop = 480;
+    }
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.parentElement).toBe(document.body);
+    expect(dialog).toHaveAttribute("open");
+    expect(screen.getByDisplayValue("架构设计图")).toBeVisible();
+  });
+
+  it("closes the metadata dialog from the backdrop and restores focus", async () => {
+    render(<WorkspaceHome />);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", {
+          name: "编辑画板名称“架构设计图”",
+        }).length,
+      ).toBeGreaterThan(0);
+    });
+
+    const trigger = screen.getAllByRole("button", {
+      name: "编辑画板名称“架构设计图”",
+    })[0];
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(dialog);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    });
+  });
+
   it("updates visible tags after saving board metadata", async () => {
     render(<WorkspaceHome />);
 
