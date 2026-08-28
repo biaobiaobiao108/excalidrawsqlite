@@ -34,7 +34,7 @@ export const encodePngMetadata = async ({
   const metadataChunk = tEXt.encode(
     MIME_TYPES.excalidraw,
     JSON.stringify(
-      encode({
+      await encode({
         text: metadata,
         compress: true,
       }),
@@ -61,7 +61,7 @@ export const decodePngMetadata = async (blob: Blob) => {
         }
         throw new Error("FAILED");
       }
-      return decode(encodedData);
+      return await decode(encodedData);
     } catch (error: any) {
       console.error(error);
       throw new Error("FAILED");

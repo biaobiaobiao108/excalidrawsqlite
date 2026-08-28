@@ -1,5 +1,3 @@
-import { deflate, inflate } from "pako";
-
 import { encryptData, decryptData } from "./encryption";
 
 // -----------------------------------------------------------------------------
@@ -36,6 +34,36 @@ const byteStringToArrayBuffer = (byteString: string) => {
 
 const byteStringToString = (byteString: string) => {
   return new TextDecoder("utf-8").decode(byteStringToArrayBuffer(byteString));
+};
+
+const compressBytes = async (data: string | Uint8Array) => {
+  if (typeof CompressionStream !== "undefined") {
+    const stream = new CompressionStream("deflate");
+    const writer = stream.writable.getWriter();
+    await writer.write(
+      typeof data === "string" ? new TextEncoder().encode(data) : data,
+    );
+    await writer.close();
+    return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+  }
+
+  // Legacy fallback for runtimes without CompressionStream support.
+  const { deflate } = await import("pako");
+  return deflate(data);
+};
+
+const decompressBytes = async (data: Uint8Array) => {
+  if (typeof DecompressionStream !== "undefined") {
+    const stream = new DecompressionStream("deflate");
+    const writer = stream.writable.getWriter();
+    await writer.write(data);
+    await writer.close();
+    return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+  }
+
+  // Legacy fallback for runtimes without DecompressionStream support.
+  const { inflate } = await import("pako");
+  return inflate(data);
 };
 
 // -----------------------------------------------------------------------------
@@ -96,7 +124,7 @@ type EncodedData = {
 /**
  * Encodes (and potentially compresses via zlib) text to byte string
  */
-export const encode = ({
+export const encode = async ({
   text,
   compress,
 }: {
@@ -107,7 +135,7 @@ export const encode = ({
   let deflated!: string;
   if (compress !== false) {
     try {
-      deflated = toByteString(deflate(text));
+      deflated = toByteString(await compressBytes(text));
     } catch (error: any) {
       console.error("encode: cannot deflate", error);
     }
@@ -120,7 +148,7 @@ export const encode = ({
   };
 };
 
-export const decode = (data: EncodedData): string => {
+export const decode = async (data: EncodedData): Promise<string> => {
   let decoded: string;
 
   switch (data.encoding) {
@@ -135,9 +163,9 @@ export const decode = (data: EncodedData): string => {
   }
 
   if (data.compressed) {
-    return inflate(new Uint8Array(byteStringToArrayBuffer(decoded)), {
-      to: "string",
-    });
+    return byteStringToString(
+      await decompressBytes(new Uint8Array(byteStringToArrayBuffer(decoded))),
+    );
   }
 
   return decoded;
@@ -300,7 +328,7 @@ const _encryptAndCompress = async (
 ) => {
   const { encryptedBuffer, iv } = await encryptData(
     encryptionKey,
-    deflate(data) as Uint8Array<ArrayBuffer>,
+    await compressBytes(data),
   );
 
   return { iv, buffer: new Uint8Array(encryptedBuffer) };
@@ -365,7 +393,7 @@ const _decryptAndDecompress = async (
   );
 
   if (isCompressed) {
-    return inflate(decryptedBuffer);
+    return decompressBytes(decryptedBuffer);
   }
 
   return decryptedBuffer;

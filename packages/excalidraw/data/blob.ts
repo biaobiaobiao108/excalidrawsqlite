@@ -61,7 +61,7 @@ const parseFileContents = async (blob: Blob | File): Promise<string> => {
     }
     if (blob.type === MIME_TYPES.svg) {
       try {
-        return decodeSvgBase64Payload({
+        return await decodeSvgBase64Payload({
           svg: contents,
         });
       } catch (error: any) {

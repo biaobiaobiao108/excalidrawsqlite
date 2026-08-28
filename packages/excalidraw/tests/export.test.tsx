@@ -69,13 +69,13 @@ describe("export", () => {
   it("test encoding/decoding scene for SVG export", async () => {
     const metadataElement = document.createElementNS(SVG_NS, "metadata");
 
-    encodeSvgBase64Payload({
+    await encodeSvgBase64Payload({
       metadataElement,
       payload: serializeAsJSON(testElements, h.state, {}, "local"),
     });
 
     const decoded = JSON.parse(
-      decodeSvgBase64Payload({ svg: metadataElement.innerHTML }),
+      await decodeSvgBase64Payload({ svg: metadataElement.innerHTML }),
     );
     expect(decoded.elements).toEqual([
       expect.objectContaining({ type: "text", text: "😀" }),

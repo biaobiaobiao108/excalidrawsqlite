@@ -377,7 +377,7 @@ export const exportToSvg = async (
   // the tempScene hack which duplicates and regenerates ids
   if (exportEmbedScene) {
     try {
-      encodeSvgBase64Payload({
+      await encodeSvgBase64Payload({
         metadataElement,
         // when embedding scene, we want to embed the origionally supplied
         // elements which don't contain the temp frame labels.
@@ -507,7 +507,7 @@ export const exportToSvg = async (
   return svgRoot;
 };
 
-export const encodeSvgBase64Payload = ({
+export const encodeSvgBase64Payload = async ({
   payload,
   metadataElement,
 }: {
@@ -515,7 +515,7 @@ export const encodeSvgBase64Payload = ({
   metadataElement: SVGMetadataElement;
 }) => {
   const base64 = stringToBase64(
-    JSON.stringify(encode({ text: payload })),
+    JSON.stringify(await encode({ text: payload })),
     true /* is already byte string */,
   );
 
@@ -528,7 +528,7 @@ export const encodeSvgBase64Payload = ({
   metadataElement.appendChild(createHTMLComment("payload-end"));
 };
 
-export const decodeSvgBase64Payload = ({ svg }: { svg: string }) => {
+export const decodeSvgBase64Payload = async ({ svg }: { svg: string }) => {
   if (svg.includes(`payload-type:${MIME_TYPES.excalidraw}`)) {
     const match = svg.match(
       /<!-- payload-start -->\s*(.+?)\s*<!-- payload-end -->/,
@@ -553,7 +553,7 @@ export const decodeSvgBase64Payload = ({ svg }: { svg: string }) => {
         }
         throw new Error("FAILED");
       }
-      return decode(encodedData);
+      return await decode(encodedData);
     } catch (error: any) {
       console.error(error);
       throw new Error("FAILED");
