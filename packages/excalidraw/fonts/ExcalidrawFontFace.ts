@@ -163,6 +163,13 @@ export class ExcalidrawFontFace {
       });
     }
 
+    // An explicit asset path means the host is self-hosting the bundled font.
+    // Do not silently fall back to the public CDN in that mode: it breaks
+    // offline/private deployments and can trigger CSP violations.
+    if (urls.length) {
+      return urls;
+    }
+
     // fallback url for bundled fonts
     urls.push(new URL(assetUrl, ExcalidrawFontFace.ASSETS_FALLBACK_URL));
 
