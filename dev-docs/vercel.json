@@ -6,5 +6,5 @@
     }
   },
   "outputDirectory": "build",
-  "installCommand": "yarn install"
+  "installCommand": "bun install"
 }
