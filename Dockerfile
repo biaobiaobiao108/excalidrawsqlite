@@ -20,6 +20,12 @@ RUN bun install --frozen-lockfile
 # Copy source files
 COPY . .
 
+# The Docker build context does not include .git. Pass the source revision from
+# CI so the generated frontend version still identifies the published image.
+ARG BUILD_SHA=local
+ENV BUILD_SHA=$BUILD_SHA
+ENV VITE_APP_GIT_SHA=$BUILD_SHA
+
 # Build all packages and the frontend app
 RUN bun run build:packages && bun run build
 
@@ -40,9 +46,8 @@ ENV STATIC_DIR=/app/excalidraw-app/build
 # invoking host user without requiring a fixed container UID.
 RUN mkdir -p /app/data/files
 
-# Copy backend server code and built frontend static assets
-COPY server ./server
-COPY package.json ./
+# Copy only the production backend entrypoint and built frontend static assets
+COPY server/server.ts ./server/server.ts
 COPY --from=builder /app/excalidraw-app/build ./excalidraw-app/build
 
 EXPOSE 8080
@@ -52,4 +57,4 @@ VOLUME ["/app/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD bun -e "fetch('http://127.0.0.1:8080/api/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
 
-CMD ["bun", "run", "server/server.ts"]
+CMD ["bun", "server/server.ts"]

@@ -7,14 +7,22 @@ const indexFile = path.join("build", "index.html");
 
 const versionDate = (date) => date.toISOString().replace(".000", "");
 
+const buildHash = (process.env.BUILD_SHA || process.env.VITE_APP_GIT_SHA || "")
+  .trim()
+  .slice(0, 7);
+
 const commitHash = () => {
+  if (buildHash) {
+    return buildHash;
+  }
+
   try {
     return require("child_process")
       .execSync("git rev-parse --short HEAD")
       .toString()
       .trim();
   } catch {
-    return "none";
+    return "local";
   }
 };
 

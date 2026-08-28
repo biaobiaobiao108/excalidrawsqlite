@@ -1,6 +1,7 @@
 name: Release & Publish Docker Image
 
 on:
+  pull_request:
   push:
     tags:
       - "v*"
@@ -118,6 +119,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
