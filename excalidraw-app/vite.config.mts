@@ -197,6 +197,7 @@ export default defineConfig(({ mode }) => {
             "**/*Diagram-*.js",
             "**/diagram-*.js",
             "**/treemap-*.js",
+            "**/TextToDiagram-*.js",
             // CodeMirrorEditor can't be assigned a `.chunk` name via
             // manualChunks because Rollup would hoist shared deps (React)
             // via a static import from the main bundle, defeating lazy
