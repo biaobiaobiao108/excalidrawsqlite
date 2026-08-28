@@ -820,9 +820,6 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
     }
 
     const run = (async () => {
-      if (isCollaborationLink(window.location.href)) {
-        return;
-      }
       if (!excalidrawAPI) {
         return;
       }
@@ -1286,10 +1283,6 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
     appState: AppState,
     files: BinaryFiles,
   ) => {
-    if (collabAPI?.isCollaborating()) {
-      collabAPI.syncElements(elements);
-    }
-
     // this check is redundant, but since this is a hot path, it's best
     // not to evaludate the nested expression every time
     if (!LocalData.isSavePaused()) {
