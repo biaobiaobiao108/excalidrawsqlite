@@ -14,6 +14,7 @@ import type { FileId } from "@excalidraw/element/types";
 
 import {
   checkAuthStatus,
+  clearCloudTrash,
   createCloudFolder,
   createCloudScene,
   deleteCloudFolder,
@@ -53,6 +54,14 @@ type SceneMetadataDialogState = {
 type FolderDialogState = {
   id: string | null;
   name: string;
+};
+
+type ConfirmDialogState = {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  confirmVariant?: "danger" | "primary";
+  onConfirm: () => Promise<void> | void;
 };
 
 const getOwnerWindow = (node: HTMLDivElement | null) =>
@@ -715,6 +724,49 @@ const FolderDialog = ({
   </WorkspaceModal>
 );
 
+const ConfirmDialog = ({
+  state,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  state: ConfirmDialogState;
+  pending: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) => (
+  <WorkspaceModal
+    title={state.title}
+    onClose={onClose}
+    className="confirm-dialog"
+  >
+    <div className="confirm-dialog-content">
+      <p className="confirm-dialog-message">{state.message}</p>
+      <div className="dialog-actions">
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={onClose}
+          disabled={pending}
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          className={`primary-button ${
+            state.confirmVariant === "danger" ? "danger" : ""
+          }`}
+          autoFocus
+          onClick={onConfirm}
+          disabled={pending}
+        >
+          {pending ? "处理中..." : state.confirmLabel || "确认"}
+        </button>
+      </div>
+    </div>
+  </WorkspaceModal>
+);
+
 export const WorkspaceHome = ({
   onSelectScene,
 }: {
@@ -740,6 +792,8 @@ export const WorkspaceHome = ({
   const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(
     null,
   );
+  const [confirmDialog, setConfirmDialog] =
+    useState<ConfirmDialogState | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const loadRequestRef = useRef(0);
 
@@ -968,27 +1022,27 @@ export const WorkspaceHome = ({
   };
 
   const handleDeleteScene = async (scene: CloudSceneSummary) => {
-    const ownerWindow = getOwnerWindow(rootRef.current);
     if (view === "trash") {
-      if (
-        !ownerWindow.confirm(
-          `确定要彻底删除画板“${scene.name}”吗？该操作无法恢复。`,
-        )
-      ) {
-        return;
-      }
-      setPendingAction(`delete:${scene.id}`);
-      try {
-        await deleteCloudScene(scene.id, true);
-        setTrashScenes((current) =>
-          current.filter((item) => item.id !== scene.id),
-        );
-        setMenuSceneId(null);
-      } catch (requestError: any) {
-        setError(requestError?.message || "彻底删除画板失败");
-      } finally {
-        setPendingAction(null);
-      }
+      setConfirmDialog({
+        title: "彻底删除画板",
+        message: `确定要彻底删除画板“${scene.name}”吗？该操作无法恢复。`,
+        confirmLabel: "彻底删除",
+        confirmVariant: "danger",
+        onConfirm: async () => {
+          setPendingAction(`delete:${scene.id}`);
+          try {
+            await deleteCloudScene(scene.id, true);
+            setTrashScenes((current) =>
+              current.filter((item) => item.id !== scene.id),
+            );
+            setMenuSceneId(null);
+          } catch (requestError: any) {
+            setError(requestError?.message || "彻底删除画板失败");
+          } finally {
+            setPendingAction(null);
+          }
+        },
+      });
       return;
     }
 
@@ -1006,6 +1060,29 @@ export const WorkspaceHome = ({
     } finally {
       setPendingAction(null);
     }
+  };
+
+  const handleEmptyTrash = () => {
+    if (!trashScenes.length || pendingAction) {
+      return;
+    }
+    setConfirmDialog({
+      title: "清空回收站",
+      message: `确定要清空回收站中的所有画板（共 ${trashScenes.length} 个）吗？此操作将永久删除这些画板且无法恢复。`,
+      confirmLabel: "清空回收站",
+      confirmVariant: "danger",
+      onConfirm: async () => {
+        setPendingAction("clear-trash");
+        try {
+          await clearCloudTrash();
+          setTrashScenes([]);
+        } catch (requestError: any) {
+          setError(requestError?.message || "清空回收站失败");
+        } finally {
+          setPendingAction(null);
+        }
+      },
+    });
   };
 
   const handleRestoreScene = async (scene: CloudSceneSummary) => {
@@ -1059,34 +1136,36 @@ export const WorkspaceHome = ({
     }
   };
 
-  const handleDeleteFolder = async (folder: CloudFolder) => {
-    const ownerWindow = getOwnerWindow(rootRef.current);
-    if (
-      !ownerWindow.confirm(
-        `删除文件夹“${folder.name}”？其中的画板会移动到根目录。`,
-      )
-    ) {
-      return;
-    }
-    setPendingAction(`delete-folder:${folder.id}`);
-    try {
-      await deleteCloudFolder(folder.id);
-      setFolders((current) => current.filter((item) => item.id !== folder.id));
-      setScenes((current) =>
-        current.map((scene) =>
-          scene.folder_id === folder.id
-            ? { ...scene, folder_id: null, folder_name: null }
-            : scene,
-        ),
-      );
-      if (selectedFolderId === folder.id) {
-        setSelectedFolderId(null);
-      }
-    } catch (requestError: any) {
-      setError(requestError?.message || "删除文件夹失败");
-    } finally {
-      setPendingAction(null);
-    }
+  const handleDeleteFolder = (folder: CloudFolder) => {
+    setConfirmDialog({
+      title: "删除文件夹",
+      message: `确定要删除文件夹“${folder.name}”吗？其中的画板会被移动到根目录。`,
+      confirmLabel: "删除文件夹",
+      confirmVariant: "danger",
+      onConfirm: async () => {
+        setPendingAction(`delete-folder:${folder.id}`);
+        try {
+          await deleteCloudFolder(folder.id);
+          setFolders((current) =>
+            current.filter((item) => item.id !== folder.id),
+          );
+          setScenes((current) =>
+            current.map((scene) =>
+              scene.folder_id === folder.id
+                ? { ...scene, folder_id: null, folder_name: null }
+                : scene,
+            ),
+          );
+          if (selectedFolderId === folder.id) {
+            setSelectedFolderId(null);
+          }
+        } catch (requestError: any) {
+          setError(requestError?.message || "删除文件夹失败");
+        } finally {
+          setPendingAction(null);
+        }
+      },
+    });
   };
 
   const openMetadataDialog = (scene: CloudSceneSummary) => {
@@ -1274,7 +1353,17 @@ export const WorkspaceHome = ({
                   : "把想法留在画布上，随时继续。"}
               </p>
             </div>
-            {view !== "trash" && (
+            {view === "trash" ? (
+              <button
+                type="button"
+                className="danger-button empty-trash-button"
+                disabled={trashScenes.length === 0 || !!pendingAction}
+                onClick={handleEmptyTrash}
+              >
+                <TrashIcon />
+                清空回收站
+              </button>
+            ) : (
               <div
                 className="view-toggle"
                 role="tablist"
@@ -1530,9 +1619,22 @@ export const WorkspaceHome = ({
           onSave={() => void handleSaveFolder()}
           onDelete={() => {
             const folder = folders.find((item) => item.id === folderDialog.id);
+            setFolderDialog(null);
             if (folder) {
-              void handleDeleteFolder(folder);
+              handleDeleteFolder(folder);
             }
+          }}
+        />
+      )}
+      {confirmDialog && (
+        <ConfirmDialog
+          state={confirmDialog}
+          pending={!!pendingAction}
+          onClose={() => setConfirmDialog(null)}
+          onConfirm={() => {
+            const action = confirmDialog.onConfirm;
+            setConfirmDialog(null);
+            void action();
           }}
         />
       )}

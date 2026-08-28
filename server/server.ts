@@ -2168,6 +2168,26 @@ export const createRequestHandler = (runtime: ServerRuntime) => {
         });
       }
 
+      if (pathname === "/api/scenes/trash" && req.method === "DELETE") {
+        const trashRows = runtime.db
+          .query("SELECT id FROM scenes WHERE deleted_at IS NOT NULL")
+          .all() as Array<{ id: string }>;
+        const ids = trashRows.map((r) => r.id);
+        if (ids.length > 0) {
+          const transaction = runtime.db.transaction(() => {
+            for (const id of ids) {
+              runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [id]);
+              runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
+            }
+          });
+          transaction();
+        }
+        return jsonResponse(runtime, req, {
+          success: true,
+          deletedCount: ids.length,
+        });
+      }
+
       if (pathname.startsWith("/api/scenes/") && req.method === "DELETE") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
         const existing = runtime.db

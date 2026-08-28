@@ -446,6 +446,20 @@ export async function deleteCloudScene(
   return result.success;
 }
 
+export async function clearCloudTrash(): Promise<{
+  success: boolean;
+  deletedCount: number;
+}> {
+  return fetchJson<{ success: boolean; deletedCount: number }>(
+    "/api/scenes/trash",
+    {
+      method: "DELETE",
+      headers: getHeaders(),
+    },
+    "清空回收站失败",
+  );
+}
+
 export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
   const entries = Object.values(files || {});
   await runWithConcurrency(entries, async (file) => {

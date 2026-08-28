@@ -491,6 +491,45 @@ describe("cloud persistence server", () => {
       headers: { Cookie: cookie },
     });
     expect(await responseJson<Array<unknown>>(trashAfterPerm)).toEqual([]);
+
+    // 8. Test emptying trash via DELETE /api/scenes/trash
+    await jsonRequest(
+      handler,
+      "/api/scenes",
+      { id: "scene_trash_clear1", name: "清空画板1" },
+      { headers: { Cookie: cookie } },
+    );
+    await jsonRequest(
+      handler,
+      "/api/scenes",
+      { id: "scene_trash_clear2", name: "清空画板2" },
+      { headers: { Cookie: cookie } },
+    );
+    await request(handler, "/api/scenes/scene_trash_clear1", {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    await request(handler, "/api/scenes/scene_trash_clear2", {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    const clearTrashRes = await request(handler, "/api/scenes/trash", {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(clearTrashRes.status).toBe(200);
+    expect(
+      await responseJson<{ success: boolean; deletedCount: number }>(
+        clearTrashRes,
+      ),
+    ).toEqual({
+      success: true,
+      deletedCount: 2,
+    });
+    const trashAfterClear = await request(handler, "/api/scenes/trash", {
+      headers: { Cookie: cookie },
+    });
+    expect(await responseJson<Array<unknown>>(trashAfterClear)).toEqual([]);
   });
 
   it("persists board metadata, folders, recent opens and thumbnails", async () => {

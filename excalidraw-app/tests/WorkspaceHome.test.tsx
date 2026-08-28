@@ -210,4 +210,39 @@ describe("WorkspaceHome component", () => {
       expect(screen.queryByText("架构设计图")).toBeNull();
     });
   });
+
+  it("supports emptying trash and confirming through custom dialog", async () => {
+    render(<WorkspaceHome />);
+
+    // Switch to Trash view
+    const trashNavButton = screen.getByText("回收站");
+    fireEvent.click(trashNavButton);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("废弃草稿").length).toBeGreaterThan(0);
+    });
+
+    const emptyTrashButton = screen.getByRole("button", { name: /清空回收站/ });
+    expect(emptyTrashButton).not.toBeDisabled();
+    fireEvent.click(emptyTrashButton);
+
+    // Confirm dialog is rendered
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "确定要清空回收站中的所有画板（共 1 个）吗？此操作将永久删除这些画板且无法恢复。",
+        ),
+      ).toBeTruthy();
+    });
+
+    // Click confirm in the dialog
+    const confirmButtons = screen.getAllByRole("button", {
+      name: "清空回收站",
+    });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(screen.queryByText("废弃草稿")).toBeNull();
+    });
+  });
 });

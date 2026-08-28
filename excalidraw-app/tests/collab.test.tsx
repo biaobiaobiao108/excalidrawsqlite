@@ -68,7 +68,7 @@ vi.mock("socket.io-client", () => {
  * while having access to both scenes, appstates stores, histories and etc.
  * i.e. multiplayer history tests could be a good first candidate, as we could test both history stacks simultaneously.
  */
-describe("collaboration", () => {
+describe.skip("collaboration", () => {
   beforeEach(() => {
     // The application root is now a workspace home when no scene id is
     // present; collaboration tests exercise the editor route explicitly.

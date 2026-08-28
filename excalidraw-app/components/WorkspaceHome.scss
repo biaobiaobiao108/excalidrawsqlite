@@ -162,6 +162,16 @@
   background: #5d59cf;
 }
 
+.primary-button.danger {
+  background: #e03131;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(224, 49, 49, 0.2);
+
+  &:hover {
+    background: #c92a2a;
+  }
+}
+
 .primary-button:active {
   transform: translateY(1px);
 }
@@ -201,6 +211,20 @@
 .danger-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.empty-trash-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 550;
+  font-size: 0.88rem;
+  transition: all 140ms ease;
+
+  svg {
+    inline-size: 16px;
+    block-size: 16px;
+  }
 }
 
 .header-create-button {
@@ -1035,6 +1059,23 @@
   justify-content: end;
   gap: 0.55rem;
   margin-block-start: 0.4rem;
+}
+
+.confirm-dialog .workspace-dialog-content-shell {
+  inline-size: min(440px, 100%);
+}
+
+.confirm-dialog-content {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.confirm-dialog-message {
+  margin: 0;
+  color: #555465;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  word-break: break-word;
 }
 
 @container (max-width: 300px) {
