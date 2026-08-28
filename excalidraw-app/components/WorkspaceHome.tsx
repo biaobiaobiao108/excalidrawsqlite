@@ -540,7 +540,7 @@ const BoardCard = ({
             </span>
           )}
           {scene.tags.length > 0 && !isTrash && (
-            <div className="board-card-tags" aria-label="画板标签">
+            <div className="board-card-tags">
               {scene.tags.slice(0, 2).map((tag) => (
                 <span key={tag}>{tag}</span>
               ))}
