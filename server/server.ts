@@ -406,7 +406,10 @@ const CSP_DIRECTIVES = [
   "default-src 'self'",
   "script-src 'self' 'wasm-unsafe-eval' blob:",
   "style-src 'self'",
-  "style-src-attr 'none'",
+  // Mermaid and CodeMirror generate runtime styles. Scope the compatibility
+  // allowance to CSS only; script-src remains nonce/source controlled.
+  "style-src-elem 'self' 'unsafe-inline'",
+  "style-src-attr 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
   "connect-src 'self' data: blob: https: wss:",
