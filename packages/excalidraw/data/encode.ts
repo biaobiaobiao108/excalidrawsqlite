@@ -1,5 +1,7 @@
 import { encryptData, decryptData } from "./encryption";
 
+const UTF8Decoder = TextDecoder;
+
 // -----------------------------------------------------------------------------
 // byte (binary) strings
 // -----------------------------------------------------------------------------
@@ -33,7 +35,7 @@ const byteStringToArrayBuffer = (byteString: string) => {
 };
 
 const byteStringToString = (byteString: string) => {
-  return new TextDecoder("utf-8").decode(byteStringToArrayBuffer(byteString));
+  return new UTF8Decoder("utf-8").decode(byteStringToArrayBuffer(byteString));
 };
 
 const compressBytes = async (
