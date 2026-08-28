@@ -58,7 +58,7 @@
     "build:check-size": "bun scripts/check-bundle-size.js",
     "build:preview": "bun --cwd ./excalidraw-app build:preview",
     "start": "bun --cwd ./excalidraw-app start",
-    "start:server": "bun run server/server.ts",
+    "start:server": "AUTH_PASSWORD=${AUTH_PASSWORD:-admin} bun run server/server.ts",
     "start:production": "bun --cwd ./excalidraw-app start:production",
     "start:example": "bun run build:packages && bun --cwd ./examples/with-script-in-browser start",
     "test:all": "bun run test:typecheck && bun run test:code && bun run test:other && bun run test:server && bun run test:app --watch=false",

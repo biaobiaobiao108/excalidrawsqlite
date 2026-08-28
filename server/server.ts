@@ -2468,5 +2468,8 @@ const startServer = () => {
 };
 
 if (import.meta.main) {
+  if (typeof process !== "undefined") {
+    process.title = "excalidrawsqlite";
+  }
   startServer();
 }
