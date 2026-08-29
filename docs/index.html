@@ -1,1168 +1,1738 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Excalidraw SQLite - 纯净、自托管的 Bun+SQLite 手绘白板</title>
-  <meta name="description" content="基于 Bun 1.4+ 与原生 SQLite 驱动的纯净、自托管虚拟手绘风格白板。支持多画板管理、云端自动持久化、图片附件存储、密码保护与极速 Docker 部署。" />
-  <meta name="keywords" content="Excalidraw, SQLite, Bun, 白板, 自托管, 私有化部署, Docker, GHCR" />
-  
-  <!-- Open Graph -->
-  <meta property="og:title" content="Excalidraw SQLite - 纯净、自托管的 Bun+SQLite 手绘白板" />
-  <meta property="og:description" content="全栈 Bun 驱动、原生 SQLite WAL 存储、多画板管理、零遥测、极速容器化部署。" />
-  <meta property="og:type" content="website" />
-  
-  <!-- Favicon (Embedded Authentic Excalidraw SVG) -->
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 496 512'%3E%3Cpath fill='%236965db' d='M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z'/%3E%3C/svg%3E" />
-  <link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 496 512'%3E%3Cpath fill='%236965db' d='M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z'/%3E%3C/svg%3E" />
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Excalidraw SQLite - 纯净、自托管的 Bun+SQLite 手绘白板</title>
+    <meta
+      name="description"
+      content="基于 Bun 1.4+ 与原生 SQLite 驱动的纯净、自托管虚拟手绘风格白板。支持多画板管理、云端自动持久化、图片附件存储、密码保护与极速 Docker 部署。"
+    />
+    <meta
+      name="keywords"
+      content="Excalidraw, SQLite, Bun, 白板, 自托管, 私有化部署, Docker, GHCR"
+    />
 
-  <!-- Fonts: Excalidraw Fonts (Virgil, Assistant, Segoe UI, Noto Sans SC) -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&family=Caveat:wght@600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Open Graph -->
+    <meta
+      property="og:title"
+      content="Excalidraw SQLite - 纯净、自托管的 Bun+SQLite 手绘白板"
+    />
+    <meta
+      property="og:description"
+      content="全栈 Bun 驱动、原生 SQLite WAL 存储、多画板管理、零遥测、极速容器化部署。"
+    />
+    <meta property="og:type" content="website" />
 
-  <style>
-    :root {
-      /* Excalidraw Official Theme Tokens */
-      --color-primary: #6965db;
-      --color-primary-hover: #5854c7;
-      --color-primary-active: #4a47b1;
-      --color-primary-light: #ececf4;
-      --color-primary-container: #e0dfff;
-      --color-on-primary-container: #34327e;
-      
-      --color-surface-lowest: #ffffff;
-      --color-surface-low: #f8f9fa;
-      --color-surface-mid: #f1f3f5;
-      --color-surface-high: #e9ecef;
-      --color-surface-border: #ced4da;
-      
-      --text-color-primary: #1b1b1f;
-      --text-color-secondary: #5c5f66;
-      --text-color-muted: #868e96;
-      
-      --bg-color: #ffffff;
-      --bg-grid-color: #e5e5ea;
-      
-      --code-bg: #1e1e24;
-      --code-color: #e4e4e7;
-      
-      --shadow-island: 0px 0px 1px 0px rgba(0, 0, 0, 0.17),
-                       0px 0px 3px 0px rgba(0, 0, 0, 0.08),
-                       0px 7px 14px 0px rgba(0, 0, 0, 0.05);
-      --shadow-island-hover: 0px 0px 2px 0px rgba(0, 0, 0, 0.2),
-                             0px 4px 8px 0px rgba(0, 0, 0, 0.1),
-                             0px 12px 24px 0px rgba(0, 0, 0, 0.08);
-      --shadow-modal: 0px 20px 40px rgba(0, 0, 0, 0.12);
-      
-      --radius-sm: 6px;
-      --radius-md: 10px;
-      --radius-lg: 14px;
-      --radius-pill: 9999px;
-      
-      --font-ui: 'Assistant', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --font-sketch: 'Caveat', 'Virgil', cursive, 'Noto Sans SC', sans-serif;
-    }
+    <!-- Favicon (Embedded Authentic Excalidraw SVG) -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 496 512'%3E%3Cpath fill='%236965db' d='M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z'/%3E%3C/svg%3E"
+    />
+    <link
+      rel="alternate icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 496 512'%3E%3Cpath fill='%236965db' d='M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z'/%3E%3C/svg%3E"
+    />
 
-    [data-theme="dark"] {
-      --color-primary: #8581f5;
-      --color-primary-hover: #9c99ff;
-      --color-primary-active: #b3b0ff;
-      --color-primary-light: #232329;
-      --color-primary-container: #2e2b58;
-      --color-on-primary-container: #d7d5ff;
-      
-      --color-surface-lowest: #121212;
-      --color-surface-low: #1e1e1e;
-      --color-surface-mid: #232329;
-      --color-surface-high: #2c2c35;
-      --color-surface-border: #3b3b47;
-      
-      --text-color-primary: #f1f3f5;
-      --text-color-secondary: #adb5bd;
-      --text-color-muted: #6c757d;
-      
-      --bg-color: #121212;
-      --bg-grid-color: #242428;
-      
-      --code-bg: #18181b;
-      --code-color: #f4f4f5;
-      
-      --shadow-island: 0px 0px 1px 0px rgba(0, 0, 0, 0.6),
-                       0px 4px 12px 0px rgba(0, 0, 0, 0.35);
-      --shadow-island-hover: 0px 0px 2px 0px rgba(0, 0, 0, 0.8),
-                             0px 8px 24px 0px rgba(0, 0, 0, 0.45);
-      --shadow-modal: 0px 20px 40px rgba(0, 0, 0, 0.6);
-    }
+    <!-- Fonts: Excalidraw Fonts (Virgil, Assistant, Segoe UI, Noto Sans SC) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&family=Caveat:wght@600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
-                  border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
-                  color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    }
+    <style>
+      :root {
+        /* Excalidraw Official Theme Tokens */
+        --color-primary: #6965db;
+        --color-primary-hover: #5854c7;
+        --color-primary-active: #4a47b1;
+        --color-primary-light: #ececf4;
+        --color-primary-container: #e0dfff;
+        --color-on-primary-container: #34327e;
 
-    /* Modern Web Guidance: Scroll Progress Indicator */
-    #scroll-progress {
-      position: fixed;
-      top: 0;
-      left: 0;
-      height: 3px;
-      background: linear-gradient(90deg, var(--color-primary), #a5d8ff);
-      z-index: 9999;
-      width: 0%;
-      transition: width 0.08s ease-out;
-    }
+        --color-surface-lowest: #ffffff;
+        --color-surface-low: #f8f9fa;
+        --color-surface-mid: #f1f3f5;
+        --color-surface-high: #e9ecef;
+        --color-surface-border: #ced4da;
 
-    @supports (animation-timeline: scroll()) {
+        --text-color-primary: #1b1b1f;
+        --text-color-secondary: #5c5f66;
+        --text-color-muted: #868e96;
+
+        --bg-color: #ffffff;
+        --bg-grid-color: #e5e5ea;
+
+        --code-bg: #1e1e24;
+        --code-color: #e4e4e7;
+
+        --shadow-island: 0px 0px 1px 0px rgba(0, 0, 0, 0.17),
+          0px 0px 3px 0px rgba(0, 0, 0, 0.08),
+          0px 7px 14px 0px rgba(0, 0, 0, 0.05);
+        --shadow-island-hover: 0px 0px 2px 0px rgba(0, 0, 0, 0.2),
+          0px 4px 8px 0px rgba(0, 0, 0, 0.1),
+          0px 12px 24px 0px rgba(0, 0, 0, 0.08);
+        --shadow-modal: 0px 20px 40px rgba(0, 0, 0, 0.12);
+
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+        --radius-pill: 9999px;
+
+        --font-ui: "Assistant", "Noto Sans SC", -apple-system,
+          BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        --font-sketch: "Caveat", "Virgil", cursive, "Noto Sans SC", sans-serif;
+      }
+
+      [data-theme="dark"] {
+        --color-primary: #8581f5;
+        --color-primary-hover: #9c99ff;
+        --color-primary-active: #b3b0ff;
+        --color-primary-light: #232329;
+        --color-primary-container: #2e2b58;
+        --color-on-primary-container: #d7d5ff;
+
+        --color-surface-lowest: #121212;
+        --color-surface-low: #1e1e1e;
+        --color-surface-mid: #232329;
+        --color-surface-high: #2c2c35;
+        --color-surface-border: #3b3b47;
+
+        --text-color-primary: #f1f3f5;
+        --text-color-secondary: #adb5bd;
+        --text-color-muted: #6c757d;
+
+        --bg-color: #121212;
+        --bg-grid-color: #242428;
+
+        --code-bg: #18181b;
+        --code-color: #f4f4f5;
+
+        --shadow-island: 0px 0px 1px 0px rgba(0, 0, 0, 0.6),
+          0px 4px 12px 0px rgba(0, 0, 0, 0.35);
+        --shadow-island-hover: 0px 0px 2px 0px rgba(0, 0, 0, 0.8),
+          0px 8px 24px 0px rgba(0, 0, 0, 0.45);
+        --shadow-modal: 0px 20px 40px rgba(0, 0, 0, 0.6);
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+          border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+          color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      /* Modern Web Guidance: Scroll Progress Indicator */
       #scroll-progress {
-        width: auto;
-        right: 0;
-        transform-origin: 0 50%;
-        animation: growProgress auto linear;
-        animation-timeline: scroll(root block);
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--color-primary), #a5d8ff);
+        z-index: 9999;
+        width: 0%;
+        transition: width 0.08s ease-out;
       }
-      @keyframes growProgress {
-        from { transform: scaleX(0); }
-        to { transform: scaleX(1); }
+
+      @supports (animation-timeline: scroll()) {
+        #scroll-progress {
+          width: auto;
+          right: 0;
+          transform-origin: 0 50%;
+          animation: growProgress auto linear;
+          animation-timeline: scroll(root block);
+        }
+        @keyframes growProgress {
+          from {
+            transform: scaleX(0);
+          }
+          to {
+            transform: scaleX(1);
+          }
+        }
       }
-    }
 
-    body {
-      font-family: var(--font-ui);
-      background-color: var(--bg-color);
-      color: var(--text-color-primary);
-      line-height: 1.5;
-      min-height: 100vh;
-      background-image: radial-gradient(var(--bg-grid-color) 1.5px, transparent 1.5px);
-      background-size: 20px 20px;
-      overflow-x: hidden;
-    }
-
-    a {
-      color: inherit;
-      text-decoration: none;
-    }
-
-    .container {
-      max-width: 1140px;
-      margin: 0 auto;
-      padding: 0 20px;
-    }
-
-    /* Navigation Bar (Floating Top Island) */
-    .header-wrapper {
-      position: sticky;
-      top: 16px;
-      z-index: 1000;
-      padding: 0 20px;
-      margin-bottom: 36px;
-    }
-
-    .header-island {
-      max-width: 1140px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 58px;
-      padding: 0 16px;
-      background: var(--color-surface-lowest);
-      border: 1px solid var(--color-surface-high);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-island);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 700;
-      font-size: 1.15rem;
-      color: var(--text-color-primary);
-    }
-
-    .brand-logo-svg {
-      width: 28px;
-      height: 28px;
-      fill: var(--color-primary);
-      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    .brand:hover .brand-logo-svg {
-      transform: rotate(-10deg) scale(1.1);
-    }
-
-    .badge-sync {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      background: var(--color-primary-light);
-      color: var(--color-primary);
-      padding: 2px 8px;
-      border-radius: var(--radius-pill);
-      font-size: 0.75rem;
-      font-weight: 600;
-      letter-spacing: 0.2px;
-    }
-
-    .badge-sync .sync-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #10b981;
-      box-shadow: 0 0 6px #10b981;
-      animation: pulseDot 2s infinite ease-in-out;
-    }
-
-    @keyframes pulseDot {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(0.85); }
-    }
-
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-    }
-
-    .nav-link {
-      font-size: 0.92rem;
-      font-weight: 600;
-      color: var(--text-color-secondary);
-      transition: color 0.15s ease, transform 0.15s ease;
-      position: relative;
-    }
-    .nav-link:hover {
-      color: var(--color-primary);
-      transform: translateY(-1px);
-    }
-
-    .nav-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      height: 36px;
-      padding: 0 12px;
-      border-radius: var(--radius-md);
-      font-size: 0.88rem;
-      font-weight: 600;
-      cursor: pointer;
-      border: 1px solid var(--color-surface-high);
-      background: var(--color-surface-low);
-      color: var(--text-color-primary);
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .nav-btn:hover {
-      background: var(--color-surface-high);
-      border-color: var(--color-surface-border);
-      transform: translateY(-1px);
-    }
-
-    .nav-btn:active {
-      transform: translateY(1px) scale(0.98);
-    }
-
-    .nav-btn-primary {
-      background: var(--color-primary);
-      border-color: var(--color-primary);
-      color: #ffffff;
-      box-shadow: 0 2px 6px rgba(105, 101, 219, 0.28);
-    }
-    .nav-btn-primary:hover {
-      background: var(--color-primary-hover);
-      border-color: var(--color-primary-hover);
-      color: #ffffff;
-      box-shadow: 0 4px 12px rgba(105, 101, 219, 0.38);
-    }
-
-    /* Hero Section */
-    .hero {
-      text-align: center;
-      padding: 20px 0 30px;
-    }
-
-    .hero-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 14px;
-      background: var(--color-primary-light);
-      color: var(--color-primary);
-      border-radius: var(--radius-pill);
-      font-size: 0.88rem;
-      font-weight: 700;
-      margin-bottom: 20px;
-      animation: fadeInDown 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .hero h1 {
-      font-size: 3.2rem;
-      font-weight: 800;
-      line-height: 1.15;
-      letter-spacing: -0.02em;
-      margin-bottom: 18px;
-      animation: fadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .hero h1 .brand-highlight {
-      color: var(--color-primary);
-      display: inline-block;
-      position: relative;
-    }
-
-    .hero-subtitle {
-      font-size: 1.22rem;
-      color: var(--text-color-secondary);
-      max-width: 680px;
-      margin: 0 auto 30px;
-      line-height: 1.6;
-      animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .hero-actions {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 14px;
-      margin-bottom: 44px;
-      animation: fadeInUp 0.9s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .btn-hero {
-      height: 46px;
-      padding: 0 24px;
-      font-size: 1.05rem;
-      border-radius: var(--radius-md);
-      font-weight: 700;
-    }
-
-    /* Excalidraw Sketch SVG Architecture Showcase Island */
-    .arch-island-wrapper {
-      max-width: 1060px;
-      margin: 0 auto 70px;
-      border-radius: var(--radius-lg);
-      border: 1px solid var(--color-surface-high);
-      background: var(--color-surface-lowest);
-      box-shadow: var(--shadow-island-hover);
-      padding: 24px 20px 20px;
-      position: relative;
-      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .arch-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid var(--color-surface-high);
-    }
-
-    .arch-header-left {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .arch-header-title {
-      font-weight: 700;
-      font-size: 1rem;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .arch-svg-container {
-      width: 100%;
-      position: relative;
-      background-color: var(--bg-color);
-      border-radius: var(--radius-md);
-      border: 1px dashed var(--color-surface-border);
-      padding: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .arch-svg {
-      width: 100%;
-      height: auto;
-      max-height: 420px;
-      display: block;
-    }
-
-    /* Animated connector pulses */
-    @keyframes flowDash {
-      to {
-        stroke-dashoffset: -24;
+      body {
+        font-family: var(--font-ui);
+        background-color: var(--bg-color);
+        color: var(--text-color-primary);
+        line-height: 1.5;
+        min-height: 100vh;
+        background-image: radial-gradient(
+          var(--bg-grid-color) 1.5px,
+          transparent 1.5px
+        );
+        background-size: 20px 20px;
+        overflow-x: hidden;
       }
-    }
 
-    .flow-line {
-      stroke-dasharray: 6 6;
-      animation: flowDash 1.2s linear infinite;
-    }
-
-    .arch-node {
-      cursor: pointer;
-      transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    .arch-node:hover {
-      transform: translateY(-2px);
-      filter: drop-shadow(0 6px 14px rgba(105, 101, 219, 0.22));
-    }
-
-    /* Modern Web Guidance: Scroll-driven Reveal Animation */
-    .reveal-on-scroll {
-      opacity: 0;
-      transform: translateY(24px);
-      transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
-      will-change: opacity, transform;
-    }
-    .reveal-on-scroll.is-visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    /* Scene Manager Preview Component (Mockup Island) */
-    .scene-manager-section {
-      margin-bottom: 70px;
-    }
-
-    .scene-dialog-card {
-      background: var(--color-surface-lowest);
-      border: 1px solid var(--color-surface-high);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-island);
-      padding: 24px;
-      max-width: 920px;
-      margin: 0 auto;
-    }
-
-    .scene-dialog-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 20px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--color-surface-high);
-    }
-
-    .scene-title-group {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .scene-title-group h3 {
-      font-size: 1.25rem;
-      font-weight: 700;
-    }
-
-    .scene-list-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-      gap: 16px;
-    }
-
-    .scene-card-item {
-      background: var(--color-surface-low);
-      border: 1.5px solid var(--color-surface-high);
-      border-radius: var(--radius-md);
-      padding: 14px;
-      cursor: pointer;
-      position: relative;
-      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .scene-card-item:hover {
-      border-color: var(--color-primary);
-      box-shadow: var(--shadow-island-hover);
-      transform: translateY(-3px);
-    }
-
-    .scene-card-item.active {
-      border-color: var(--color-primary);
-      background: var(--color-primary-light);
-    }
-
-    .scene-card-thumb {
-      height: 85px;
-      background: var(--bg-color);
-      border: 1px dashed var(--color-surface-border);
-      border-radius: var(--radius-sm);
-      margin-bottom: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--text-color-muted);
-      font-family: var(--font-sketch);
-      font-size: 1.1rem;
-    }
-
-    .scene-card-name {
-      font-weight: 700;
-      font-size: 0.95rem;
-      margin-bottom: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .scene-card-meta {
-      font-size: 0.8rem;
-      color: var(--text-color-muted);
-    }
-
-    /* Features Grid */
-    .section-title-wrap {
-      text-align: center;
-      margin-bottom: 40px;
-    }
-
-    .section-tag {
-      display: inline-block;
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: var(--color-primary);
-      background: var(--color-primary-light);
-      padding: 4px 12px;
-      border-radius: var(--radius-pill);
-      margin-bottom: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .section-title {
-      font-size: 2.2rem;
-      font-weight: 800;
-      letter-spacing: -0.01em;
-    }
-
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 20px;
-      margin-bottom: 70px;
-    }
-
-    .feature-card {
-      background: var(--color-surface-lowest);
-      border: 1px solid var(--color-surface-high);
-      border-radius: var(--radius-lg);
-      padding: 26px;
-      box-shadow: var(--shadow-island);
-      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .feature-card:hover {
-      border-color: var(--color-primary);
-      box-shadow: var(--shadow-island-hover);
-      transform: translateY(-4px);
-    }
-
-    .feature-icon-box {
-      width: 44px;
-      height: 44px;
-      border-radius: var(--radius-md);
-      background: var(--color-primary-light);
-      color: var(--color-primary);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.4rem;
-      margin-bottom: 16px;
-      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    .feature-card:hover .feature-icon-box {
-      transform: scale(1.15) rotate(5deg);
-    }
-
-    .feature-card h3 {
-      font-size: 1.18rem;
-      font-weight: 700;
-      margin-bottom: 8px;
-      color: var(--text-color-primary);
-    }
-
-    .feature-card p {
-      font-size: 0.95rem;
-      color: var(--text-color-secondary);
-      line-height: 1.55;
-    }
-
-    /* Comparison Table Section */
-    .comparison-card {
-      background: var(--color-surface-lowest);
-      border: 1px solid var(--color-surface-high);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-island);
-      overflow-x: auto;
-      margin-bottom: 70px;
-    }
-
-    .excalidraw-table {
-      width: 100%;
-      border-collapse: collapse;
-      text-align: left;
-      min-width: 620px;
-      font-size: 0.95rem;
-    }
-
-    .excalidraw-table th, .excalidraw-table td {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--color-surface-high);
-    }
-
-    .excalidraw-table th {
-      background: var(--color-surface-low);
-      color: var(--text-color-primary);
-      font-weight: 700;
-    }
-
-    .excalidraw-table tr:last-child td {
-      border-bottom: none;
-    }
-
-    .excalidraw-table tr:hover td {
-      background: var(--color-surface-low);
-    }
-
-    .badge-true {
-      color: #10b981;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    /* Quickstart Section with Tabs */
-    .quickstart-card {
-      background: var(--color-surface-lowest);
-      border: 1px solid var(--color-surface-high);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-island);
-      overflow: hidden;
-      margin-bottom: 70px;
-    }
-
-    .quickstart-tab-header {
-      display: flex;
-      background: var(--color-surface-low);
-      border-bottom: 1px solid var(--color-surface-high);
-      overflow-x: auto;
-    }
-
-    .tab-btn {
-      padding: 14px 20px;
-      border: none;
-      background: transparent;
-      font-size: 0.95rem;
-      font-weight: 600;
-      color: var(--text-color-secondary);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      border-bottom: 2px solid transparent;
-      transition: all 0.15s;
-    }
-
-    .tab-btn:hover {
-      color: var(--text-color-primary);
-    }
-
-    .tab-btn.active {
-      color: var(--color-primary);
-      background: var(--color-surface-lowest);
-      border-bottom-color: var(--color-primary);
-    }
-
-    .tab-content-pane {
-      display: none;
-      padding: 24px;
-      animation: fadeIn 0.3s ease;
-    }
-    .tab-content-pane.active {
-      display: block;
-    }
-
-    .code-block {
-      background: var(--code-bg);
-      color: var(--code-color);
-      border-radius: var(--radius-md);
-      padding: 16px 20px;
-      position: relative;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 0.9rem;
-      overflow-x: auto;
-      margin: 12px 0 16px;
-      border: 1px solid rgba(255,255,255,0.08);
-    }
-
-    .code-block pre {
-      margin: 0;
-      white-space: pre;
-    }
-
-    .copy-code-btn {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(255, 255, 255, 0.12);
-      color: #f1f3f5;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: var(--radius-sm);
-      padding: 4px 10px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-
-    .copy-code-btn:hover {
-      background: rgba(255, 255, 255, 0.24);
-      transform: translateY(-1px);
-    }
-    .copy-code-btn:active {
-      transform: translateY(1px);
-    }
-
-    /* Keyframes */
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    @keyframes fadeInUp {
-      from { opacity: 0; transform: translateY(18px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes fadeInDown {
-      from { opacity: 0; transform: translateY(-14px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* Footer */
-    footer {
-      border-top: 1px solid var(--color-surface-high);
-      background: var(--color-surface-lowest);
-      padding: 36px 0 28px;
-      margin-top: 60px;
-    }
-
-    .footer-content {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 16px;
-    }
-
-    .footer-brand {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 700;
-    }
-
-    .footer-links {
-      display: flex;
-      gap: 20px;
-      font-size: 0.9rem;
-      color: var(--text-color-secondary);
-    }
-    .footer-links a:hover {
-      color: var(--color-primary);
-    }
-
-    /* Toast */
-    .toast {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      background: var(--text-color-primary);
-      color: var(--color-surface-lowest);
-      padding: 10px 18px;
-      border-radius: var(--radius-md);
-      font-size: 0.9rem;
-      font-weight: 600;
-      box-shadow: var(--shadow-island-hover);
-      opacity: 0;
-      transform: translateY(20px);
-      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-      z-index: 9999;
-      pointer-events: none;
-    }
-    .toast.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    @media (max-width: 768px) {
-      .hero h1 {
-        font-size: 2.2rem;
+      a {
+        color: inherit;
+        text-decoration: none;
       }
+
+      .container {
+        max-width: 1140px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+
+      /* Navigation Bar (Floating Top Island) */
+      .header-wrapper {
+        position: sticky;
+        top: 16px;
+        z-index: 1000;
+        padding: 0 20px;
+        margin-bottom: 36px;
+      }
+
+      .header-island {
+        max-width: 1140px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 58px;
+        padding: 0 16px;
+        background: var(--color-surface-lowest);
+        border: 1px solid var(--color-surface-high);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-island);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 700;
+        font-size: 1.15rem;
+        color: var(--text-color-primary);
+      }
+
+      .brand-logo-svg {
+        width: 28px;
+        height: 28px;
+        fill: var(--color-primary);
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      .brand:hover .brand-logo-svg {
+        transform: rotate(-10deg) scale(1.1);
+      }
+
+      .badge-sync {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: var(--color-primary-light);
+        color: var(--color-primary);
+        padding: 2px 8px;
+        border-radius: var(--radius-pill);
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+
+      .badge-sync .sync-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #10b981;
+        box-shadow: 0 0 6px #10b981;
+        animation: pulseDot 2s infinite ease-in-out;
+      }
+
+      @keyframes pulseDot {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.5;
+          transform: scale(0.85);
+        }
+      }
+
       .nav-links {
-        display: none;
+        display: flex;
+        align-items: center;
+        gap: 20px;
       }
-      .footer-content {
-        flex-direction: column;
+
+      .nav-link {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: var(--text-color-secondary);
+        transition: color 0.15s ease, transform 0.15s ease;
+        position: relative;
+      }
+      .nav-link:hover {
+        color: var(--color-primary);
+        transform: translateY(-1px);
+      }
+
+      .nav-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 36px;
+        padding: 0 12px;
+        border-radius: var(--radius-md);
+        font-size: 0.88rem;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid var(--color-surface-high);
+        background: var(--color-surface-low);
+        color: var(--text-color-primary);
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .nav-btn:hover {
+        background: var(--color-surface-high);
+        border-color: var(--color-surface-border);
+        transform: translateY(-1px);
+      }
+
+      .nav-btn:active {
+        transform: translateY(1px) scale(0.98);
+      }
+
+      .nav-btn-primary {
+        background: var(--color-primary);
+        border-color: var(--color-primary);
+        color: #ffffff;
+        box-shadow: 0 2px 6px rgba(105, 101, 219, 0.28);
+      }
+      .nav-btn-primary:hover {
+        background: var(--color-primary-hover);
+        border-color: var(--color-primary-hover);
+        color: #ffffff;
+        box-shadow: 0 4px 12px rgba(105, 101, 219, 0.38);
+      }
+
+      /* Hero Section */
+      .hero {
         text-align: center;
+        padding: 20px 0 30px;
       }
-    }
-  </style>
-</head>
-<body>
 
-  <!-- Scroll Progress Indicator -->
-  <div id="scroll-progress"></div>
+      .hero-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        background: var(--color-primary-light);
+        color: var(--color-primary);
+        border-radius: var(--radius-pill);
+        font-size: 0.88rem;
+        font-weight: 700;
+        margin-bottom: 20px;
+        animation: fadeInDown 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+      }
 
-  <!-- Floating Island Header -->
-  <div class="header-wrapper">
-    <header class="header-island">
-      <a href="#" class="brand">
-        <!-- Official Excalidraw Logo Path -->
-        <svg class="brand-logo-svg" viewBox="0 0 496 512">
-          <path d="M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z"/>
-        </svg>
-        <span>Excalidraw <span class="badge-sync"><span class="sync-dot"></span> SQLite</span></span>
-      </a>
+      .hero h1 {
+        font-size: 3.2rem;
+        font-weight: 800;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        margin-bottom: 18px;
+        animation: fadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+      }
 
-      <nav class="nav-links">
-        <a href="#architecture" class="nav-link">全景架构</a>
-        <a href="#scenes" class="nav-link">多画板</a>
-        <a href="#features" class="nav-link">特性亮点</a>
-        <a href="#compare" class="nav-link">方案对比</a>
-        <a href="#quickstart" class="nav-link">一键部署</a>
-      </nav>
+      .hero h1 .brand-highlight {
+        color: var(--color-primary);
+        display: inline-block;
+        position: relative;
+      }
 
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <button id="themeToggle" class="nav-btn" title="切换深浅主题">
-          <span id="themeIcon">🌙</span> <span id="themeText">深色</span>
-        </button>
-        <a href="https://github.com/biaobiaobiao108/excalidrawsqlite" target="_blank" class="nav-btn nav-btn-primary">
-          <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
-          Star
-        </a>
-      </div>
-    </header>
-  </div>
+      .hero-subtitle {
+        font-size: 1.22rem;
+        color: var(--text-color-secondary);
+        max-width: 680px;
+        margin: 0 auto 30px;
+        line-height: 1.6;
+        animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+      }
 
-  <main class="container">
-    <!-- Hero Section -->
-    <section class="hero">
-      <div class="hero-pill">
-        <span>⚡ 100% Bun 驱动</span>
-        <span>•</span>
-        <span>💾 原生 SQLite WAL 持久化</span>
-        <span>•</span>
-        <span>🧼 纯净无遥测</span>
-      </div>
+      .hero-actions {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        margin-bottom: 44px;
+        animation: fadeInUp 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+      }
 
-      <h1>
-        纯净、自托管的<br />
-        <span class="brand-highlight">Excalidraw</span> 手绘虚拟白板
-      </h1>
+      .btn-hero {
+        height: 46px;
+        padding: 0 24px;
+        font-size: 1.05rem;
+        border-radius: var(--radius-md);
+        font-weight: 700;
+      }
 
-      <p class="hero-subtitle">
-        基于 Bun 1.4+ 与原生 SQLite 深度定制。支持多画板管理、约 30s 防抖自动云端持久化、图片附件归档与 HttpOnly 密码鉴权。零第三方遥测，单容器一键拉起。
-      </p>
+      /* Excalidraw Sketch SVG Architecture Showcase Island */
+      .arch-island-wrapper {
+        max-width: 1060px;
+        margin: 0 auto 70px;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--color-surface-high);
+        background: var(--color-surface-lowest);
+        box-shadow: var(--shadow-island-hover);
+        padding: 24px 20px 20px;
+        position: relative;
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+          box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
 
-      <div class="hero-actions">
-        <a href="#quickstart" class="nav-btn nav-btn-primary btn-hero">
-          🚀 极速部署
-        </a>
-        <a href="#architecture" class="nav-btn btn-hero">
-          📐 了解系统全景
-        </a>
-      </div>
+      .arch-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--color-surface-high);
+      }
 
-      <!-- Excalidraw Hand-drawn SVG Architecture Showcase Island -->
-      <div id="architecture" class="arch-island-wrapper reveal-on-scroll">
-        <div class="arch-header">
-          <div class="arch-header-left">
-            <span class="arch-header-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2.2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
-              系统架构与数据流全景图 (System Architecture)
-            </span>
-          </div>
-          <span class="badge-sync">单容器 • 单卷挂载</span>
-        </div>
+      .arch-header-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
 
-        <div class="arch-svg-container">
-          <svg class="arch-svg" viewBox="0 0 960 380" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <filter id="sketch-shadow" x="-5%" y="-5%" width="110%" height="110%" filterUnits="userSpaceOnUse">
-                <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="rgba(0,0,0,0.1)"/>
-              </filter>
-            </defs>
+      .arch-header-title {
+        font-weight: 700;
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
 
-            <!-- Container 1: Client WebUI -->
-            <g class="arch-node">
-              <rect x="30" y="50" width="260" height="280" rx="14" fill="var(--color-surface-low)" stroke="var(--color-surface-border)" stroke-width="2" filter="url(#sketch-shadow)"/>
-              <rect x="46" y="68" width="228" height="34" rx="8" fill="var(--color-primary-light)"/>
-              <text x="160" y="90" text-anchor="middle" font-family="var(--font-ui)" font-size="14" font-weight="700" fill="var(--color-primary)">🖥️ 现代浏览器客户端</text>
-              
-              <rect x="46" y="118" width="228" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
-              <text x="58" y="138" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">Vite + React (esnext 目标)</text>
-              <text x="58" y="152" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">零过时 polyfill • 毫秒级首屏</text>
+      .arch-svg-container {
+        width: 100%;
+        position: relative;
+        background-color: var(--bg-color);
+        border-radius: var(--radius-md);
+        border: 1px dashed var(--color-surface-border);
+        padding: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
 
-              <rect x="46" y="172" width="228" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
-              <text x="58" y="192" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">30s 防抖自动云端保存</text>
-              <text x="58" y="206" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">Revision 保护 • 离开前等待写入</text>
+      .arch-svg {
+        width: 100%;
+        height: auto;
+        max-height: 420px;
+        display: block;
+      }
 
-              <rect x="46" y="226" width="228" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
-              <text x="58" y="246" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">按需动态加载模块</text>
-              <text x="58" y="260" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">霞鹜文楷 CJK • Mermaid • 代码块</text>
+      /* Animated connector pulses */
+      @keyframes flowDash {
+        to {
+          stroke-dashoffset: -24;
+        }
+      }
 
-              <rect x="46" y="280" width="228" height="34" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
-              <text x="58" y="301" font-family="var(--font-ui)" font-size="11" font-weight="600" fill="var(--color-primary)">多画板切换 (?id=xxx 参数识别)</text>
-            </g>
+      .flow-line {
+        stroke-dasharray: 6 6;
+        animation: flowDash 1.2s linear infinite;
+      }
 
-            <!-- Flow Arrow 1: Client to Server -->
-            <g>
-              <path d="M290 190 L360 190" stroke="var(--color-primary)" stroke-width="2.5" stroke-linecap="round" class="flow-line"/>
-              <polygon points="364,190 354,185 354,195" fill="var(--color-primary)"/>
-              <text x="325" y="176" text-anchor="middle" font-family="var(--font-sketch)" font-size="14" fill="var(--color-primary)">REST / API</text>
-            </g>
+      .arch-node {
+        cursor: pointer;
+        transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      .arch-node:hover {
+        transform: translateY(-2px);
+        filter: drop-shadow(0 6px 14px rgba(105, 101, 219, 0.22));
+      }
 
-            <!-- Container 2: Bun Fullstack Server -->
-            <g class="arch-node">
-              <rect x="370" y="50" width="250" height="280" rx="14" fill="var(--color-surface-low)" stroke="var(--color-surface-border)" stroke-width="2" filter="url(#sketch-shadow)"/>
-              <rect x="386" y="68" width="218" height="34" rx="8" fill="var(--color-primary-light)"/>
-              <text x="495" y="90" text-anchor="middle" font-family="var(--font-ui)" font-size="14" font-weight="700" fill="var(--color-primary)">⚡ Bun.serve 全栈服务</text>
+      /* Modern Web Guidance: Scroll-driven Reveal Animation */
+      .reveal-on-scroll {
+        opacity: 0;
+        transform: translateY(24px);
+        transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+          transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+        will-change: opacity, transform;
+      }
+      .reveal-on-scroll.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
 
-              <rect x="386" y="118" width="218" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
-              <text x="398" y="138" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">单进程极速静态托管</text>
-              <text x="398" y="152" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">100% Bun 原生 • 零 Node/Yarn</text>
+      /* Scene Manager Preview Component (Mockup Island) */
+      .scene-manager-section {
+        margin-bottom: 70px;
+      }
 
-              <rect x="386" y="172" width="218" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
-              <text x="398" y="192" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">HttpOnly 密码鉴权</text>
-              <text x="398" y="206" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">服务端 Session • 绝无明文泄露</text>
+      .scene-dialog-card {
+        background: var(--color-surface-lowest);
+        border: 1px solid var(--color-surface-high);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-island);
+        padding: 24px;
+        max-width: 920px;
+        margin: 0 auto;
+      }
 
-              <rect x="386" y="226" width="218" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
-              <text x="398" y="246" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">严格 CSP 安全响应头</text>
-              <text x="398" y="260" font-family="var(--text-color-muted)" font-size="10" fill="var(--text-color-muted)">禁 unsafe-eval • 仅放行 wasm</text>
+      .scene-dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--color-surface-high);
+      }
 
-              <rect x="386" y="280" width="218" height="34" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
-              <text x="398" y="301" font-family="var(--font-ui)" font-size="11" font-weight="600" fill="#10b981">✓ O(1) 轻量健康检查 /api/health</text>
-            </g>
+      .scene-title-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
 
-            <!-- Flow Arrow 2: Server to Data Storage -->
-            <g>
-              <path d="M620 190 L690 190" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" class="flow-line"/>
-              <polygon points="694,190 684,185 684,195" fill="#10b981"/>
-              <text x="655" y="176" text-anchor="middle" font-family="var(--font-sketch)" font-size="14" fill="#10b981">WAL 写入</text>
-            </g>
+      .scene-title-group h3 {
+        font-size: 1.25rem;
+        font-weight: 700;
+      }
 
-            <!-- Container 3: SQLite & Files Volume -->
-            <g class="arch-node">
-              <rect x="700" y="50" width="230" height="280" rx="14" fill="var(--color-surface-low)" stroke="var(--color-surface-border)" stroke-width="2" filter="url(#sketch-shadow)"/>
-              <rect x="716" y="68" width="198" height="34" rx="8" fill="#d1fae5"/>
-              <text x="815" y="90" text-anchor="middle" font-family="var(--font-ui)" font-size="14" font-weight="700" fill="#065f46">💾 ./data 数据持久化</text>
+      .scene-list-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 16px;
+      }
 
-              <rect x="716" y="118" width="198" height="54" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
-              <text x="728" y="138" font-family="var(--font-ui)" font-size="12" font-weight="700" fill="var(--text-color-primary)">excalidraw.db (SQLite)</text>
-              <text x="728" y="152" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">• 画板元数据 & 压缩快照</text>
-              <text x="728" y="164" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">• 服务端 Session 会话记录</text>
+      .scene-card-item {
+        background: var(--color-surface-low);
+        border: 1.5px solid var(--color-surface-high);
+        border-radius: var(--radius-md);
+        padding: 14px;
+        cursor: pointer;
+        position: relative;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      }
 
-              <rect x="716" y="184" width="198" height="54" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
-              <text x="728" y="204" font-family="var(--font-ui)" font-size="12" font-weight="700" fill="var(--text-color-primary)">data/files/ (附件归档)</text>
-              <text x="728" y="218" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">• 独立存储图片与媒体文件</text>
-              <text x="728" y="230" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">• 避免大二进制阻塞数据库</text>
+      .scene-card-item:hover {
+        border-color: var(--color-primary);
+        box-shadow: var(--shadow-island-hover);
+        transform: translateY(-3px);
+      }
 
-              <rect x="716" y="250" width="198" height="64" rx="8" fill="var(--color-primary-light)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
-              <text x="728" y="270" font-family="var(--font-ui)" font-size="11" font-weight="700" fill="var(--color-primary)">🐳 极简容器卷挂载</text>
-              <text x="728" y="286" font-family="var(--font-sketch)" font-size="13" fill="var(--text-color-primary)">-v ./data:/app/data</text>
-              <text x="728" y="302" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">开箱兼容 rootless Podman/Docker</text>
-            </g>
+      .scene-card-item.active {
+        border-color: var(--color-primary);
+        background: var(--color-primary-light);
+      }
+
+      .scene-card-thumb {
+        height: 85px;
+        background: var(--bg-color);
+        border: 1px dashed var(--color-surface-border);
+        border-radius: var(--radius-sm);
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-color-muted);
+        font-family: var(--font-sketch);
+        font-size: 1.1rem;
+      }
+
+      .scene-card-name {
+        font-weight: 700;
+        font-size: 0.95rem;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .scene-card-meta {
+        font-size: 0.8rem;
+        color: var(--text-color-muted);
+      }
+
+      /* Features Grid */
+      .section-title-wrap {
+        text-align: center;
+        margin-bottom: 40px;
+      }
+
+      .section-tag {
+        display: inline-block;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--color-primary);
+        background: var(--color-primary-light);
+        padding: 4px 12px;
+        border-radius: var(--radius-pill);
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .section-title {
+        font-size: 2.2rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 20px;
+        margin-bottom: 70px;
+      }
+
+      .feature-card {
+        background: var(--color-surface-lowest);
+        border: 1px solid var(--color-surface-high);
+        border-radius: var(--radius-lg);
+        padding: 26px;
+        box-shadow: var(--shadow-island);
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .feature-card:hover {
+        border-color: var(--color-primary);
+        box-shadow: var(--shadow-island-hover);
+        transform: translateY(-4px);
+      }
+
+      .feature-icon-box {
+        width: 44px;
+        height: 44px;
+        border-radius: var(--radius-md);
+        background: var(--color-primary-light);
+        color: var(--color-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4rem;
+        margin-bottom: 16px;
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      .feature-card:hover .feature-icon-box {
+        transform: scale(1.15) rotate(5deg);
+      }
+
+      .feature-card h3 {
+        font-size: 1.18rem;
+        font-weight: 700;
+        margin-bottom: 8px;
+        color: var(--text-color-primary);
+      }
+
+      .feature-card p {
+        font-size: 0.95rem;
+        color: var(--text-color-secondary);
+        line-height: 1.55;
+      }
+
+      /* Comparison Table Section */
+      .comparison-card {
+        background: var(--color-surface-lowest);
+        border: 1px solid var(--color-surface-high);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-island);
+        overflow-x: auto;
+        margin-bottom: 70px;
+      }
+
+      .excalidraw-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        min-width: 620px;
+        font-size: 0.95rem;
+      }
+
+      .excalidraw-table th,
+      .excalidraw-table td {
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--color-surface-high);
+      }
+
+      .excalidraw-table th {
+        background: var(--color-surface-low);
+        color: var(--text-color-primary);
+        font-weight: 700;
+      }
+
+      .excalidraw-table tr:last-child td {
+        border-bottom: none;
+      }
+
+      .excalidraw-table tr:hover td {
+        background: var(--color-surface-low);
+      }
+
+      .badge-true {
+        color: #10b981;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      /* Quickstart Section with Tabs */
+      .quickstart-card {
+        background: var(--color-surface-lowest);
+        border: 1px solid var(--color-surface-high);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-island);
+        overflow: hidden;
+        margin-bottom: 70px;
+      }
+
+      .quickstart-tab-header {
+        display: flex;
+        background: var(--color-surface-low);
+        border-bottom: 1px solid var(--color-surface-high);
+        overflow-x: auto;
+      }
+
+      .tab-btn {
+        padding: 14px 20px;
+        border: none;
+        background: transparent;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-color-secondary);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-bottom: 2px solid transparent;
+        transition: all 0.15s;
+      }
+
+      .tab-btn:hover {
+        color: var(--text-color-primary);
+      }
+
+      .tab-btn.active {
+        color: var(--color-primary);
+        background: var(--color-surface-lowest);
+        border-bottom-color: var(--color-primary);
+      }
+
+      .tab-content-pane {
+        display: none;
+        padding: 24px;
+        animation: fadeIn 0.3s ease;
+      }
+      .tab-content-pane.active {
+        display: block;
+      }
+
+      .code-block {
+        background: var(--code-bg);
+        color: var(--code-color);
+        border-radius: var(--radius-md);
+        padding: 16px 20px;
+        position: relative;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          monospace;
+        font-size: 0.9rem;
+        overflow-x: auto;
+        margin: 12px 0 16px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .code-block pre {
+        margin: 0;
+        white-space: pre;
+      }
+
+      .copy-code-btn {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(255, 255, 255, 0.12);
+        color: #f1f3f5;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: var(--radius-sm);
+        padding: 4px 10px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .copy-code-btn:hover {
+        background: rgba(255, 255, 255, 0.24);
+        transform: translateY(-1px);
+      }
+      .copy-code-btn:active {
+        transform: translateY(1px);
+      }
+
+      /* Keyframes */
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(18px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes fadeInDown {
+        from {
+          opacity: 0;
+          transform: translateY(-14px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* Footer */
+      footer {
+        border-top: 1px solid var(--color-surface-high);
+        background: var(--color-surface-lowest);
+        padding: 36px 0 28px;
+        margin-top: 60px;
+      }
+
+      .footer-content {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+
+      .footer-brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 700;
+      }
+
+      .footer-links {
+        display: flex;
+        gap: 20px;
+        font-size: 0.9rem;
+        color: var(--text-color-secondary);
+      }
+      .footer-links a:hover {
+        color: var(--color-primary);
+      }
+
+      /* Toast */
+      .toast {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: var(--text-color-primary);
+        color: var(--color-surface-lowest);
+        padding: 10px 18px;
+        border-radius: var(--radius-md);
+        font-size: 0.9rem;
+        font-weight: 600;
+        box-shadow: var(--shadow-island-hover);
+        opacity: 0;
+        transform: translateY(20px);
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        z-index: 9999;
+        pointer-events: none;
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @media (max-width: 768px) {
+        .hero h1 {
+          font-size: 2.2rem;
+        }
+        .nav-links {
+          display: none;
+        }
+        .footer-content {
+          flex-direction: column;
+          text-align: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Scroll Progress Indicator -->
+    <div id="scroll-progress"></div>
+
+    <!-- Floating Island Header -->
+    <div class="header-wrapper">
+      <header class="header-island">
+        <a href="#" class="brand">
+          <!-- Official Excalidraw Logo Path -->
+          <svg class="brand-logo-svg" viewBox="0 0 496 512">
+            <path
+              d="M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z"
+            />
           </svg>
+          <span
+            >Excalidraw
+            <span class="badge-sync"
+              ><span class="sync-dot"></span> SQLite</span
+            ></span
+          >
+        </a>
+
+        <nav class="nav-links">
+          <a href="#architecture" class="nav-link">全景架构</a>
+          <a href="#scenes" class="nav-link">多画板</a>
+          <a href="#features" class="nav-link">特性亮点</a>
+          <a href="#compare" class="nav-link">方案对比</a>
+          <a href="#quickstart" class="nav-link">一键部署</a>
+        </nav>
+
+        <div style="display: flex; align-items: center; gap: 10px">
+          <button id="themeToggle" class="nav-btn" title="切换深浅主题">
+            <span id="themeIcon">🌙</span> <span id="themeText">深色</span>
+          </button>
+          <a
+            href="https://github.com/biaobiaobiao108/excalidrawsqlite"
+            target="_blank"
+            class="nav-btn nav-btn-primary"
+          >
+            <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor">
+              <path
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+              ></path>
+            </svg>
+            Star
+          </a>
         </div>
-      </div>
-    </section>
+      </header>
+    </div>
 
-    <!-- Multi-Scene Management Preview Section -->
-    <section id="scenes" class="scene-manager-section reveal-on-scroll">
-      <div class="section-title-wrap">
-        <span class="section-tag">Multi-Scene</span>
-        <h2 class="section-title">内置多画板云端管理</h2>
-      </div>
+    <main class="container">
+      <!-- Hero Section -->
+      <section class="hero">
+        <div class="hero-pill">
+          <span>⚡ 100% Bun 驱动</span>
+          <span>•</span>
+          <span>💾 原生 SQLite WAL 持久化</span>
+          <span>•</span>
+          <span>🧼 纯净无遥测</span>
+        </div>
 
-      <div class="scene-dialog-card">
-        <div class="scene-dialog-header">
-          <div class="scene-title-group">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            <h3>云端画板库 (Cloud Scenes)</h3>
-            <span class="badge-sync">已同步到 SQLite</span>
+        <h1>
+          纯净、自托管的<br />
+          <span class="brand-highlight">Excalidraw</span> 手绘虚拟白板
+        </h1>
+
+        <p class="hero-subtitle">
+          基于 Bun 1.4+ 与原生 SQLite 深度定制。支持多画板管理、约 30s
+          防抖自动云端持久化、图片附件归档与 HttpOnly
+          密码鉴权。零第三方遥测，单容器一键拉起。
+        </p>
+
+        <div class="hero-actions">
+          <a href="#quickstart" class="nav-btn nav-btn-primary btn-hero">
+            🚀 极速部署
+          </a>
+          <a href="#architecture" class="nav-btn btn-hero"> 📐 了解系统全景 </a>
+        </div>
+
+        <!-- Excalidraw Hand-drawn SVG Architecture Showcase Island -->
+        <div id="architecture" class="arch-island-wrapper reveal-on-scroll">
+          <div class="arch-header">
+            <div class="arch-header-left">
+              <span class="arch-header-title">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--color-primary)"
+                  stroke-width="2.2"
+                >
+                  <rect x="3" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="14" width="7" height="7" rx="1" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" />
+                </svg>
+                系统架构与数据流全景图 (System Architecture)
+              </span>
+            </div>
+            <span class="badge-sync">单容器 • 单卷挂载</span>
           </div>
-          <button class="nav-btn nav-btn-primary" style="height: 32px; font-size: 0.82rem;">+ 新建画板</button>
+
+          <div class="arch-svg-container">
+            <svg
+              class="arch-svg"
+              viewBox="0 0 960 380"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <defs>
+                <filter
+                  id="sketch-shadow"
+                  x="-5%"
+                  y="-5%"
+                  width="110%"
+                  height="110%"
+                  filterUnits="userSpaceOnUse"
+                >
+                  <feDropShadow
+                    dx="2"
+                    dy="4"
+                    stdDeviation="3"
+                    flood-color="rgba(0,0,0,0.1)"
+                  />
+                </filter>
+              </defs>
+
+              <!-- Container 1: Client WebUI -->
+              <g class="arch-node">
+                <rect
+                  x="30"
+                  y="50"
+                  width="260"
+                  height="280"
+                  rx="14"
+                  fill="var(--color-surface-low)"
+                  stroke="var(--color-surface-border)"
+                  stroke-width="2"
+                  filter="url(#sketch-shadow)"
+                />
+                <rect
+                  x="46"
+                  y="68"
+                  width="228"
+                  height="34"
+                  rx="8"
+                  fill="var(--color-primary-light)"
+                />
+                <text
+                  x="160"
+                  y="90"
+                  text-anchor="middle"
+                  font-family="var(--font-ui)"
+                  font-size="14"
+                  font-weight="700"
+                  fill="var(--color-primary)"
+                >
+                  🖥️ 现代浏览器客户端
+                </text>
+
+                <rect
+                  x="46"
+                  y="118"
+                  width="228"
+                  height="42"
+                  rx="8"
+                  fill="var(--color-surface-lowest)"
+                  stroke="var(--color-surface-high)"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="58"
+                  y="138"
+                  font-family="var(--font-ui)"
+                  font-size="12"
+                  font-weight="600"
+                  fill="var(--text-color-primary)"
+                >
+                  Vite + React (esnext 目标)
+                </text>
+                <text
+                  x="58"
+                  y="152"
+                  font-family="var(--font-ui)"
+                  font-size="10"
+                  fill="var(--text-color-muted)"
+                >
+                  零过时 polyfill • 毫秒级首屏
+                </text>
+
+                <rect
+                  x="46"
+                  y="172"
+                  width="228"
+                  height="42"
+                  rx="8"
+                  fill="var(--color-surface-lowest)"
+                  stroke="var(--color-surface-high)"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="58"
+                  y="192"
+                  font-family="var(--font-ui)"
+                  font-size="12"
+                  font-weight="600"
+                  fill="var(--text-color-primary)"
+                >
+                  30s 防抖自动云端保存
+                </text>
+                <text
+                  x="58"
+                  y="206"
+                  font-family="var(--font-ui)"
+                  font-size="10"
+                  fill="var(--text-color-muted)"
+                >
+                  Revision 保护 • 离开前等待写入
+                </text>
+
+                <rect
+                  x="46"
+                  y="226"
+                  width="228"
+                  height="42"
+                  rx="8"
+                  fill="var(--color-surface-lowest)"
+                  stroke="var(--color-surface-high)"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="58"
+                  y="246"
+                  font-family="var(--font-ui)"
+                  font-size="12"
+                  font-weight="600"
+                  fill="var(--text-color-primary)"
+                >
+                  按需动态加载模块
+                </text>
+                <text
+                  x="58"
+                  y="260"
+                  font-family="var(--font-ui)"
+                  font-size="10"
+                  fill="var(--text-color-muted)"
+                >
+                  霞鹜文楷 CJK • Mermaid • 代码块
+                </text>
+
+                <rect
+                  x="46"
+                  y="280"
+                  width="228"
+                  height="34"
+                  rx="8"
+                  fill="var(--color-surface-lowest)"
+                  stroke="var(--color-surface-high)"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="58"
+                  y="301"
+                  font-family="var(--font-ui)"
+                  font-size="11"
+                  font-weight="600"
+                  fill="var(--color-primary)"
+                >
+                  多画板切换 (?id=xxx 参数识别)
+                </text>
+              </g>
+
+              <!-- Flow Arrow 1: Client to Server -->
+              <g>
+                <path
+                  d="M290 190 L360 190"
+                  stroke="var(--color-primary)"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  class="flow-line"
+                />
+                <polygon
+                  points="364,190 354,185 354,195"
+                  fill="var(--color-primary)"
+                />
+                <text
+                  x="325"
+                  y="176"
+                  text-anchor="middle"
+                  font-family="var(--font-sketch)"
+                  font-size="14"
+                  fill="var(--color-primary)"
+                >
+                  REST / API
+                </text>
+              </g>
+
+              <!-- Container 2: Bun Fullstack Server -->
+              <g class="arch-node">
+                <rect
+                  x="370"
+                  y="50"
+                  width="250"
+                  height="280"
+                  rx="14"
+                  fill="var(--color-surface-low)"
+                  stroke="var(--color-surface-border)"
+                  stroke-width="2"
+                  filter="url(#sketch-shadow)"
+                />
+                <rect
+                  x="386"
+                  y="68"
+                  width="218"
+                  height="34"
+                  rx="8"
+                  fill="var(--color-primary-light)"
+                />
+                <text
+                  x="495"
+                  y="90"
+                  text-anchor="middle"
+                  font-family="var(--font-ui)"
+                  font-size="14"
+                  font-weight="700"
+                  fill="var(--color-primary)"
+                >
+                  ⚡ Bun.serve 全栈服务
+                </text>
+
+                <rect
+                  x="386"
+                  y="118"
+                  width="218"
+                  height="42"
+                  rx="8"
+                  fill="var(--color-surface-lowest)"
+                  stroke="var(--color-surface-high)"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="398"
+                  y="138"
+                  font-family="var(--font-ui)"
+                  font-size="12"
+                  font-weight="600"
+                  fill="var(--text-color-primary)"
+                >
+                  单进程极速静态托管
+                </text>
+                <text
+                  x="398"
+                  y="152"
+                  font-family="var(--font-ui)"
+                  font-size="10"
+                  fill="var(--text-color-muted)"
+                >
+                  100% Bun 原生 • 零 Node/Yarn
+                </text>
+
+                <rect
+                  x="386"
+                  y="172"
+                  width="218"
+                  height="42"
+                  rx="8"
+                  fill="var(--color-surface-lowest)"
+                  stroke="var(--color-surface-high)"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="398"
+                  y="192"
+                  font-family="var(--font-ui)"
+                  font-size="12"
+                  font-weight="600"
+                  fill="var(--text-color-primary)"
+                >
+                  HttpOnly 密码鉴权
+                </text>
+                <text
+                  x="398"
+                  y="206"
+                  font-family="var(--font-ui)"
+                  font-size="10"
+                  fill="var(--text-color-muted)"
+                >
+                  服务端 Session • 绝无明文泄露
+                </text>
+
+                <rect
+                  x="386"
+                  y="226"
+                  width="218"
+                  height="42"
+                  rx="8"
+                  fill="var(--color-surface-lowest)"
+                  stroke="var(--color-surface-high)"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="398"
+                  y="246"
+                  font-family="var(--font-ui)"
+                  font-size="12"
+                  font-weight="600"
+                  fill="var(--text-color-primary)"
+                >
+                  严格 CSP 安全响应头
+                </text>
+                <text
+                  x="398"
+                  y="260"
+                  font-family="var(--text-color-muted)"
+                  font-size="10"
+                  fill="var(--text-color-muted)"
+                >
+                  禁 unsafe-eval • 仅放行 wasm
+                </text>
+
+                <rect
+                  x="386"
+                  y="280"
+                  width="218"
+                  height="34"
+                  rx="8"
+                  fill="var(--color-surface-lowest)"
+                  stroke="var(--color-surface-high)"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="398"
+                  y="301"
+                  font-family="var(--font-ui)"
+                  font-size="11"
+                  font-weight="600"
+                  fill="#10b981"
+                >
+                  ✓ O(1) 轻量健康检查 /api/health
+                </text>
+              </g>
+
+              <!-- Flow Arrow 2: Server to Data Storage -->
+              <g>
+                <path
+                  d="M620 190 L690 190"
+                  stroke="#10b981"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  class="flow-line"
+                />
+                <polygon points="694,190 684,185 684,195" fill="#10b981" />
+                <text
+                  x="655"
+                  y="176"
+                  text-anchor="middle"
+                  font-family="var(--font-sketch)"
+                  font-size="14"
+                  fill="#10b981"
+                >
+                  WAL 写入
+                </text>
+              </g>
+
+              <!-- Container 3: SQLite & Files Volume -->
+              <g class="arch-node">
+                <rect
+                  x="700"
+                  y="50"
+                  width="230"
+                  height="280"
+                  rx="14"
+                  fill="var(--color-surface-low)"
+                  stroke="var(--color-surface-border)"
+                  stroke-width="2"
+                  filter="url(#sketch-shadow)"
+                />
+                <rect
+                  x="716"
+                  y="68"
+                  width="198"
+                  height="34"
+                  rx="8"
+                  fill="#d1fae5"
+                />
+                <text
+                  x="815"
+                  y="90"
+                  text-anchor="middle"
+                  font-family="var(--font-ui)"
+                  font-size="14"
+                  font-weight="700"
+                  fill="#065f46"
+                >
+                  💾 ./data 数据持久化
+                </text>
+
+                <rect
+                  x="716"
+                  y="118"
+                  width="198"
+                  height="54"
+                  rx="8"
+                  fill="var(--color-surface-lowest)"
+                  stroke="var(--color-surface-high)"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="728"
+                  y="138"
+                  font-family="var(--font-ui)"
+                  font-size="12"
+                  font-weight="700"
+                  fill="var(--text-color-primary)"
+                >
+                  excalidraw.db (SQLite)
+                </text>
+                <text
+                  x="728"
+                  y="152"
+                  font-family="var(--font-ui)"
+                  font-size="10"
+                  fill="var(--text-color-muted)"
+                >
+                  • 画板元数据 & 压缩快照
+                </text>
+                <text
+                  x="728"
+                  y="164"
+                  font-family="var(--font-ui)"
+                  font-size="10"
+                  fill="var(--text-color-muted)"
+                >
+                  • 服务端 Session 会话记录
+                </text>
+
+                <rect
+                  x="716"
+                  y="184"
+                  width="198"
+                  height="54"
+                  rx="8"
+                  fill="var(--color-surface-lowest)"
+                  stroke="var(--color-surface-high)"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="728"
+                  y="204"
+                  font-family="var(--font-ui)"
+                  font-size="12"
+                  font-weight="700"
+                  fill="var(--text-color-primary)"
+                >
+                  data/files/ (附件归档)
+                </text>
+                <text
+                  x="728"
+                  y="218"
+                  font-family="var(--font-ui)"
+                  font-size="10"
+                  fill="var(--text-color-muted)"
+                >
+                  • 独立存储图片与媒体文件
+                </text>
+                <text
+                  x="728"
+                  y="230"
+                  font-family="var(--font-ui)"
+                  font-size="10"
+                  fill="var(--text-color-muted)"
+                >
+                  • 避免大二进制阻塞数据库
+                </text>
+
+                <rect
+                  x="716"
+                  y="250"
+                  width="198"
+                  height="64"
+                  rx="8"
+                  fill="var(--color-primary-light)"
+                  stroke="var(--color-surface-high)"
+                  stroke-width="1.5"
+                />
+                <text
+                  x="728"
+                  y="270"
+                  font-family="var(--font-ui)"
+                  font-size="11"
+                  font-weight="700"
+                  fill="var(--color-primary)"
+                >
+                  🐳 极简容器卷挂载
+                </text>
+                <text
+                  x="728"
+                  y="286"
+                  font-family="var(--font-sketch)"
+                  font-size="13"
+                  fill="var(--text-color-primary)"
+                >
+                  -v ./data:/app/data
+                </text>
+                <text
+                  x="728"
+                  y="302"
+                  font-family="var(--font-ui)"
+                  font-size="10"
+                  fill="var(--text-color-muted)"
+                >
+                  开箱兼容 rootless Podman/Docker
+                </text>
+              </g>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- Multi-Scene Management Preview Section -->
+      <section id="scenes" class="scene-manager-section reveal-on-scroll">
+        <div class="section-title-wrap">
+          <span class="section-tag">Multi-Scene</span>
+          <h2 class="section-title">内置多画板云端管理</h2>
         </div>
 
-        <div class="scene-list-grid">
-          <div class="scene-card-item active">
-            <div class="scene-card-thumb">
-              ⚡ Bun + SQLite Architecture
+        <div class="scene-dialog-card">
+          <div class="scene-dialog-header">
+            <div class="scene-title-group">
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <rect x="3" y="3" width="7" height="7" />
+                <rect x="14" y="3" width="7" height="7" />
+                <rect x="14" y="14" width="7" height="7" />
+                <rect x="3" y="14" width="7" height="7" />
+              </svg>
+              <h3>云端画板库 (Cloud Scenes)</h3>
+              <span class="badge-sync">已同步到 SQLite</span>
             </div>
-            <div class="scene-card-name">
-              <span>架构全景设计图</span>
-              <span style="color: var(--color-primary); font-size: 0.75rem;">当前画板</span>
-            </div>
-            <div class="scene-card-meta">10 个图元 • 3 分钟前自动保存</div>
+            <button
+              class="nav-btn nav-btn-primary"
+              style="height: 32px; font-size: 0.82rem"
+            >
+              + 新建画板
+            </button>
           </div>
 
-          <div class="scene-card-item">
-            <div class="scene-card-thumb">
-              📊 Database Schema (WAL)
+          <div class="scene-list-grid">
+            <div class="scene-card-item active">
+              <div class="scene-card-thumb">⚡ Bun + SQLite Architecture</div>
+              <div class="scene-card-name">
+                <span>架构全景设计图</span>
+                <span style="color: var(--color-primary); font-size: 0.75rem"
+                  >当前画板</span
+                >
+              </div>
+              <div class="scene-card-meta">10 个图元 • 3 分钟前自动保存</div>
             </div>
-            <div class="scene-card-name">
-              <span>SQLite 表结构设计</span>
+
+            <div class="scene-card-item">
+              <div class="scene-card-thumb">📊 Database Schema (WAL)</div>
+              <div class="scene-card-name">
+                <span>SQLite 表结构设计</span>
+              </div>
+              <div class="scene-card-meta">24 个图元 • 昨天 18:20 保存</div>
             </div>
-            <div class="scene-card-meta">24 个图元 • 昨天 18:20 保存</div>
+
+            <div class="scene-card-item">
+              <div class="scene-card-thumb">💡 Product Brainstorming</div>
+              <div class="scene-card-name">
+                <span>项目特性与规划脑图</span>
+              </div>
+              <div class="scene-card-meta">48 个图元 • 2 天前保存</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Core Features Grid -->
+      <section id="features" class="section reveal-on-scroll">
+        <div class="section-title-wrap">
+          <span class="section-tag">Features</span>
+          <h2 class="section-title">核心设计亮点</h2>
+        </div>
+
+        <div class="features-grid">
+          <!-- Card 1 -->
+          <div class="feature-card">
+            <div class="feature-icon-box">🚀</div>
+            <h3>全栈 Bun 1.4+ 驱动</h3>
+            <p>
+              从 Monorepo 依赖管理、TypeScript 编译构建到生产后端托管，全链路
+              100% 运行于 Bun 原生环境，零 Node.js / Yarn 依赖包袱。
+            </p>
           </div>
 
-          <div class="scene-card-item">
-            <div class="scene-card-thumb">
-              💡 Product Brainstorming
-            </div>
-            <div class="scene-card-name">
-              <span>项目特性与规划脑图</span>
-            </div>
-            <div class="scene-card-meta">48 个图元 • 2 天前保存</div>
+          <!-- Card 2 -->
+          <div class="feature-card">
+            <div class="feature-icon-box">💾</div>
+            <h3>原生 SQLite WAL 高性能持久化</h3>
+            <p>
+              基于 <code>bun:sqlite</code> 并开启 WAL 模式。支持多画板管理、约
+              30 秒防抖自动同步、Revision 版本防护与画板切出等待确认。
+            </p>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="feature-card">
+            <div class="feature-icon-box">🧼</div>
+            <h3>纯净私有化与零遥测</h3>
+            <p>
+              默认剥离任何第三方跟踪脚本、Google Fonts、Sentry
+              及官方云端跳转。默认路径仅访问本机或局域网服务，守护数据主权。
+            </p>
+          </div>
+
+          <!-- Card 4 -->
+          <div class="feature-card">
+            <div class="feature-icon-box">⚡</div>
+            <h3>现代浏览器极致性能</h3>
+            <p>
+              面向最新现代浏览器（esnext），去除过时兼容层。Mermaid
+              图表、CJK「霞鹜文楷」手绘字体、代码编辑器按需动态加载。
+            </p>
+          </div>
+
+          <!-- Card 5 -->
+          <div class="feature-card">
+            <div class="feature-icon-box">🔐</div>
+            <h3>轻量服务端会话鉴权</h3>
+            <p>
+              支持 <code>AUTH_PASSWORD</code> 密码保护，会话直接记录于
+              SQLite，凭证通过 HttpOnly Cookie 下发，浏览器端绝不暴露明文凭据。
+            </p>
+          </div>
+
+          <!-- Card 6 -->
+          <div class="feature-card">
+            <div class="feature-icon-box">🐳</div>
+            <h3>极简容器化与 rootless 兼容</h3>
+            <p>
+              基于 Alpine 的极小镜像。单挂载卷
+              <code>./data:/app/data</code> 即可持久化数据库与附件，开箱支持
+              Docker、Podman 与反向代理。
+            </p>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- Core Features Grid -->
-    <section id="features" class="section reveal-on-scroll">
-      <div class="section-title-wrap">
-        <span class="section-tag">Features</span>
-        <h2 class="section-title">核心设计亮点</h2>
-      </div>
-
-      <div class="features-grid">
-        <!-- Card 1 -->
-        <div class="feature-card">
-          <div class="feature-icon-box">🚀</div>
-          <h3>全栈 Bun 1.4+ 驱动</h3>
-          <p>从 Monorepo 依赖管理、TypeScript 编译构建到生产后端托管，全链路 100% 运行于 Bun 原生环境，零 Node.js / Yarn 依赖包袱。</p>
+      <!-- Architecture & Comparison Section -->
+      <section id="compare" class="section reveal-on-scroll">
+        <div class="section-title-wrap">
+          <span class="section-tag">Comparison</span>
+          <h2 class="section-title">方案对比：为什么选择 SQLite 纯净版？</h2>
         </div>
 
-        <!-- Card 2 -->
-        <div class="feature-card">
-          <div class="feature-icon-box">💾</div>
-          <h3>原生 SQLite WAL 高性能持久化</h3>
-          <p>基于 <code>bun:sqlite</code> 并开启 WAL 模式。支持多画板管理、约 30 秒防抖自动同步、Revision 版本防护与画板切出等待确认。</p>
+        <div class="comparison-card">
+          <table class="excalidraw-table">
+            <thead>
+              <tr>
+                <th>对比维度</th>
+                <th>传统官方 / 社区第三方方案</th>
+                <th>本仓库 (Bun + SQLite 私有化版)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>运行环境</strong></td>
+                <td>Node.js + Yarn / 多容器微服务组合</td>
+                <td>
+                  <span class="badge-true"
+                    >✓ 全栈 Bun 1.4+ (极速单服务进程)</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><strong>持久化存储</strong></td>
+                <td>Redis / Postgres / 仅浏览器本地存储</td>
+                <td>
+                  <span class="badge-true"
+                    >✓ 原生 SQLite WAL + 本地附件归档 (单卷挂载)</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><strong>多画板管理</strong></td>
+                <td>需依赖官方云端 Plus 付费或手动保存文件</td>
+                <td>
+                  <span class="badge-true"
+                    >✓ 内置多画板管理弹窗、重命名、快速切换与 URL 直达</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><strong>隐私与安全</strong></td>
+                <td>包含外部打点遥测、Sentry 上报与 Google Fonts</td>
+                <td>
+                  <span class="badge-true"
+                    >✓ 100% 纯净私有、零外链打点、本地霞鹜文楷字体包</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><strong>身份认证</strong></td>
+                <td>明文 Token 保存在 localStorage</td>
+                <td>
+                  <span class="badge-true"
+                    >✓ 严格 CSP、HttpOnly Session Cookie、密码保护</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><strong>资源消耗</strong></td>
+                <td>内存占用 500MB+，冷启动较慢</td>
+                <td>
+                  <span class="badge-true"
+                    >✓ 极速毫秒级冷启动、内存占用低至约 50~80MB</span
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Quickstart & Deployment Guide -->
+      <section id="quickstart" class="section reveal-on-scroll">
+        <div class="section-title-wrap">
+          <span class="section-tag">Quick Start</span>
+          <h2 class="section-title">一键部署指南</h2>
         </div>
 
-        <!-- Card 3 -->
-        <div class="feature-card">
-          <div class="feature-icon-box">🧼</div>
-          <h3>纯净私有化与零遥测</h3>
-          <p>默认剥离任何第三方跟踪脚本、Google Fonts、Sentry 及官方云端跳转。默认路径仅访问本机或局域网服务，守护数据主权。</p>
-        </div>
+        <div class="quickstart-card">
+          <div class="quickstart-tab-header">
+            <button class="tab-btn active" data-tab="docker">
+              🐳 Docker Compose 编排 (推荐)
+            </button>
+            <button class="tab-btn" data-tab="run">
+              ⚡ Docker / Podman CLI 直接运行
+            </button>
+            <button class="tab-btn" data-tab="bun">🛠️ 本地 Bun 源码运行</button>
+            <button class="tab-btn" data-tab="env">⚙️ 环境变量速查</button>
+          </div>
 
-        <!-- Card 4 -->
-        <div class="feature-card">
-          <div class="feature-icon-box">⚡</div>
-          <h3>现代浏览器极致性能</h3>
-          <p>面向最新现代浏览器（esnext），去除过时兼容层。Mermaid 图表、CJK「霞鹜文楷」手绘字体、代码编辑器按需动态加载。</p>
-        </div>
-
-        <!-- Card 5 -->
-        <div class="feature-card">
-          <div class="feature-icon-box">🔐</div>
-          <h3>轻量服务端会话鉴权</h3>
-          <p>支持 <code>AUTH_PASSWORD</code> 密码保护，会话直接记录于 SQLite，凭证通过 HttpOnly Cookie 下发，浏览器端绝不暴露明文凭据。</p>
-        </div>
-
-        <!-- Card 6 -->
-        <div class="feature-card">
-          <div class="feature-icon-box">🐳</div>
-          <h3>极简容器化与 rootless 兼容</h3>
-          <p>基于 Alpine 的极小镜像。单挂载卷 <code>./data:/app/data</code> 即可持久化数据库与附件，开箱支持 Docker、Podman 与反向代理。</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Architecture & Comparison Section -->
-    <section id="compare" class="section reveal-on-scroll">
-      <div class="section-title-wrap">
-        <span class="section-tag">Comparison</span>
-        <h2 class="section-title">方案对比：为什么选择 SQLite 纯净版？</h2>
-      </div>
-
-      <div class="comparison-card">
-        <table class="excalidraw-table">
-          <thead>
-            <tr>
-              <th>对比维度</th>
-              <th>传统官方 / 社区第三方方案</th>
-              <th>本仓库 (Bun + SQLite 私有化版)</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><strong>运行环境</strong></td>
-              <td>Node.js + Yarn / 多容器微服务组合</td>
-              <td><span class="badge-true">✓ 全栈 Bun 1.4+ (极速单服务进程)</span></td>
-            </tr>
-            <tr>
-              <td><strong>持久化存储</strong></td>
-              <td>Redis / Postgres / 仅浏览器本地存储</td>
-              <td><span class="badge-true">✓ 原生 SQLite WAL + 本地附件归档 (单卷挂载)</span></td>
-            </tr>
-            <tr>
-              <td><strong>多画板管理</strong></td>
-              <td>需依赖官方云端 Plus 付费或手动保存文件</td>
-              <td><span class="badge-true">✓ 内置多画板管理弹窗、重命名、快速切换与 URL 直达</span></td>
-            </tr>
-            <tr>
-              <td><strong>隐私与安全</strong></td>
-              <td>包含外部打点遥测、Sentry 上报与 Google Fonts</td>
-              <td><span class="badge-true">✓ 100% 纯净私有、零外链打点、本地霞鹜文楷字体包</span></td>
-            </tr>
-            <tr>
-              <td><strong>身份认证</strong></td>
-              <td>明文 Token 保存在 localStorage</td>
-              <td><span class="badge-true">✓ 严格 CSP、HttpOnly Session Cookie、密码保护</span></td>
-            </tr>
-            <tr>
-              <td><strong>资源消耗</strong></td>
-              <td>内存占用 500MB+，冷启动较慢</td>
-              <td><span class="badge-true">✓ 极速毫秒级冷启动、内存占用低至约 50~80MB</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Quickstart & Deployment Guide -->
-    <section id="quickstart" class="section reveal-on-scroll">
-      <div class="section-title-wrap">
-        <span class="section-tag">Quick Start</span>
-        <h2 class="section-title">一键部署指南</h2>
-      </div>
-
-      <div class="quickstart-card">
-        <div class="quickstart-tab-header">
-          <button class="tab-btn active" data-tab="docker">🐳 Docker Compose 编排 (推荐)</button>
-          <button class="tab-btn" data-tab="run">⚡ Docker / Podman CLI 直接运行</button>
-          <button class="tab-btn" data-tab="bun">🛠️ 本地 Bun 源码运行</button>
-          <button class="tab-btn" data-tab="env">⚙️ 环境变量速查</button>
-        </div>
-
-        <!-- Tab 1: Docker Compose -->
-        <div class="tab-content-pane active" id="pane-docker">
-          <p><strong>推荐使用 GHCR 预构建镜像一键启动：</strong></p>
-          <div class="code-block">
-            <button class="copy-code-btn" data-clipboard="mkdir -p ./data
+          <!-- Tab 1: Docker Compose -->
+          <div class="tab-content-pane active" id="pane-docker">
+            <p><strong>推荐使用 GHCR 预构建镜像一键启动：</strong></p>
+            <div class="code-block">
+              <button
+                class="copy-code-btn"
+                data-clipboard="mkdir -p ./data
 cat << 'EOF' > docker-compose.yml
 services:
   excalidraw:
@@ -1176,8 +1746,11 @@ services:
     volumes:
       - ./data:/app/data
 EOF
-docker compose up -d">复制配置与启动命令</button>
-            <pre><code>mkdir -p ./data
+docker compose up -d"
+              >
+                复制配置与启动命令
+              </button>
+              <pre><code>mkdir -p ./data
 
 # 创建 docker-compose.yml
 services:
@@ -1194,15 +1767,22 @@ services:
 
 # 启动服务
 docker compose up -d</code></pre>
+            </div>
+            <p>
+              服务启动后访问：<code>http://localhost:8080</code>
+              即可畅享私有手绘白板！
+            </p>
           </div>
-          <p>服务启动后访问：<code>http://localhost:8080</code> 即可畅享私有手绘白板！</p>
-        </div>
 
-        <!-- Tab 2: Docker / Podman CLI Run -->
-        <div class="tab-content-pane" id="pane-run">
-          <p><strong>单行命令行极速拉起容器（使用官方 GHCR 镜像）：</strong></p>
-          <div class="code-block">
-            <button class="copy-code-btn" data-clipboard="mkdir -p ./data
+          <!-- Tab 2: Docker / Podman CLI Run -->
+          <div class="tab-content-pane" id="pane-run">
+            <p>
+              <strong>单行命令行极速拉起容器（使用官方 GHCR 镜像）：</strong>
+            </p>
+            <div class="code-block">
+              <button
+                class="copy-code-btn"
+                data-clipboard="mkdir -p ./data
 docker run -d \
   --name excalidraw \
   -p 8080:8080 \
@@ -1210,8 +1790,11 @@ docker run -d \
   -e TRUST_PROXY=true \
   -v ./data:/app/data \
   --restart unless-stopped \
-  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest">复制 Docker Run 命令</button>
-            <pre><code>mkdir -p ./data
+  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest"
+              >
+                复制 Docker Run 命令
+              </button>
+              <pre><code>mkdir -p ./data
 
 docker run -d \
   --name excalidraw \
@@ -1221,11 +1804,15 @@ docker run -d \
   -v ./data:/app/data \
   --restart unless-stopped \
   ghcr.io/biaobiaobiao108/excalidrawsqlite:latest</code></pre>
-          </div>
+            </div>
 
-          <p style="margin-top: 14px;"><strong>Podman 用户（支持 rootless）：</strong></p>
-          <div class="code-block">
-            <button class="copy-code-btn" data-clipboard="mkdir -p ./data
+            <p style="margin-top: 14px">
+              <strong>Podman 用户（支持 rootless）：</strong>
+            </p>
+            <div class="code-block">
+              <button
+                class="copy-code-btn"
+                data-clipboard="mkdir -p ./data
 podman run -d \
   --name excalidraw \
   -p 8080:8080 \
@@ -1234,8 +1821,11 @@ podman run -d \
   -v ./data:/app/data:Z \
   --userns=keep-id \
   --restart unless-stopped \
-  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest">复制 Podman 命令</button>
-            <pre><code>podman run -d \
+  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest"
+              >
+                复制 Podman 命令
+              </button>
+              <pre><code>podman run -d \
   --name excalidraw \
   -p 8080:8080 \
   -e AUTH_PASSWORD=your-strong-password \
@@ -1244,15 +1834,25 @@ podman run -d \
   --userns=keep-id \
   --restart unless-stopped \
   ghcr.io/biaobiaobiao108/excalidrawsqlite:latest</code></pre>
+            </div>
           </div>
-        </div>
 
-        <!-- Tab 3: Bun Direct Run -->
-        <div class="tab-content-pane" id="pane-bun">
-          <p><strong>前置要求：</strong> 安装 <a href="https://bun.sh" target="_blank" style="color: var(--color-primary); font-weight: 600;">Bun (v1.4.0+)</a></p>
-          
-          <div class="code-block">
-            <button class="copy-code-btn" data-clipboard="git clone https://github.com/biaobiaobiao108/excalidrawsqlite.git
+          <!-- Tab 3: Bun Direct Run -->
+          <div class="tab-content-pane" id="pane-bun">
+            <p>
+              <strong>前置要求：</strong> 安装
+              <a
+                href="https://bun.sh"
+                target="_blank"
+                style="color: var(--color-primary); font-weight: 600"
+                >Bun (v1.4.0+)</a
+              >
+            </p>
+
+            <div class="code-block">
+              <button
+                class="copy-code-btn"
+                data-clipboard="git clone https://github.com/biaobiaobiao108/excalidrawsqlite.git
 cd excalidrawsqlite
 
 # 1. 安装依赖
@@ -1263,8 +1863,11 @@ bun run build:packages
 
 # 3. 构建前端静态产物并启动全栈服务 (默认端口 8080)
 bun run build
-bun run start:server">复制源码运行命令</button>
-            <pre><code># 1. 安装依赖
+bun run start:server"
+              >
+                复制源码运行命令
+              </button>
+              <pre><code># 1. 安装依赖
 bun install
 
 # 2. 编译核心 Packages
@@ -1273,184 +1876,210 @@ bun run build:packages
 # 3. 构建前端产物并启动服务 (默认端口 8080)
 bun run build
 bun run start:server</code></pre>
+            </div>
+          </div>
+
+          <!-- Tab 4: Environment Variables -->
+          <div class="tab-content-pane" id="pane-env">
+            <div
+              class="comparison-card"
+              style="box-shadow: none; border-radius: 8px"
+            >
+              <table class="excalidraw-table">
+                <thead>
+                  <tr>
+                    <th>环境变量</th>
+                    <th>默认值</th>
+                    <th>说明</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>AUTH_PASSWORD</code></td>
+                    <td><em>无 (必填)</em></td>
+                    <td>访问密码。开启密码保护，生成安全 HttpOnly 会话。</td>
+                  </tr>
+                  <tr>
+                    <td><code>ALLOW_ANONYMOUS</code></td>
+                    <td><code>false</code></td>
+                    <td>
+                      设为 <code>true</code> 时允许局域网免密匿名直接访问。
+                    </td>
+                  </tr>
+                  <tr>
+                    <td><code>TRUST_PROXY</code></td>
+                    <td><code>false</code></td>
+                    <td>反向代理或 HTTPS 环境下必须设为 <code>true</code>。</td>
+                  </tr>
+                  <tr>
+                    <td><code>PORT</code></td>
+                    <td><code>8080</code></td>
+                    <td>服务监听端口。</td>
+                  </tr>
+                  <tr>
+                    <td><code>DATA_DIR</code></td>
+                    <td><code>./data</code></td>
+                    <td>SQLite 数据库与图片附件存储目录。</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
+      </section>
+    </main>
 
-        <!-- Tab 4: Environment Variables -->
-        <div class="tab-content-pane" id="pane-env">
-          <div class="comparison-card" style="box-shadow: none; border-radius: 8px;">
-            <table class="excalidraw-table">
-              <thead>
-                <tr>
-                  <th>环境变量</th>
-                  <th>默认值</th>
-                  <th>说明</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><code>AUTH_PASSWORD</code></td>
-                  <td><em>无 (必填)</em></td>
-                  <td>访问密码。开启密码保护，生成安全 HttpOnly 会话。</td>
-                </tr>
-                <tr>
-                  <td><code>ALLOW_ANONYMOUS</code></td>
-                  <td><code>false</code></td>
-                  <td>设为 <code>true</code> 时允许局域网免密匿名直接访问。</td>
-                </tr>
-                <tr>
-                  <td><code>TRUST_PROXY</code></td>
-                  <td><code>false</code></td>
-                  <td>反向代理或 HTTPS 环境下必须设为 <code>true</code>。</td>
-                </tr>
-                <tr>
-                  <td><code>PORT</code></td>
-                  <td><code>8080</code></td>
-                  <td>服务监听端口。</td>
-                </tr>
-                <tr>
-                  <td><code>DATA_DIR</code></td>
-                  <td><code>./data</code></td>
-                  <td>SQLite 数据库与图片附件存储目录。</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+    <!-- Footer -->
+    <footer>
+      <div class="container footer-content">
+        <div class="footer-brand">
+          <svg
+            class="brand-logo-svg"
+            viewBox="0 0 496 512"
+            style="width: 22px; height: 22px"
+          >
+            <path
+              d="M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z"
+            />
+          </svg>
+          <span>Excalidraw SQLite</span>
         </div>
 
-      </div>
-    </section>
-  </main>
+        <div class="footer-links">
+          <a href="#architecture">全景架构</a>
+          <a href="#scenes">多画板</a>
+          <a href="#features">特性亮点</a>
+          <a href="#compare">方案对比</a>
+          <a href="#quickstart">快速部署</a>
+        </div>
 
-  <!-- Footer -->
-  <footer>
-    <div class="container footer-content">
-      <div class="footer-brand">
-        <svg class="brand-logo-svg" viewBox="0 0 496 512" style="width: 22px; height: 22px;">
-          <path d="M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z"/>
-        </svg>
-        <span>Excalidraw SQLite</span>
+        <div style="font-size: 0.85rem; color: var(--text-color-muted)">
+          Released under MIT License • 100% Bun & SQLite
+        </div>
       </div>
-      
-      <div class="footer-links">
-        <a href="#architecture">全景架构</a>
-        <a href="#scenes">多画板</a>
-        <a href="#features">特性亮点</a>
-        <a href="#compare">方案对比</a>
-        <a href="#quickstart">快速部署</a>
-      </div>
+    </footer>
 
-      <div style="font-size: 0.85rem; color: var(--text-color-muted);">
-        Released under MIT License • 100% Bun & SQLite
-      </div>
-    </div>
-  </footer>
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">✨ 已复制到剪贴板！</div>
 
-  <!-- Toast Notification -->
-  <div id="toast" class="toast">✨ 已复制到剪贴板！</div>
+    <!-- Interactive Scripts -->
+    <script>
+      // 1. Scroll Progress Bar (Fallback if CSS scroll() is not fully supported)
+      const progressBar = document.getElementById("scroll-progress");
+      window.addEventListener(
+        "scroll",
+        () => {
+          const scrollTop =
+            window.scrollY || document.documentElement.scrollTop;
+          const scrollHeight =
+            document.documentElement.scrollHeight -
+            document.documentElement.clientHeight;
+          if (scrollHeight > 0 && progressBar) {
+            const progress = (scrollTop / scrollHeight) * 100;
+            progressBar.style.width = progress + "%";
+          }
+        },
+        { passive: true },
+      );
 
-  <!-- Interactive Scripts -->
-  <script>
-    // 1. Scroll Progress Bar (Fallback if CSS scroll() is not fully supported)
-    const progressBar = document.getElementById('scroll-progress');
-    window.addEventListener('scroll', () => {
-      const scrollTop = window.scrollY || document.documentElement.scrollTop;
-      const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-      if (scrollHeight > 0 && progressBar) {
-        const progress = (scrollTop / scrollHeight) * 100;
-        progressBar.style.width = progress + '%';
+      // 2. Modern Web Guidance: Scroll-driven Reveal (Intersection Observer)
+      const revealElements = document.querySelectorAll(".reveal-on-scroll");
+      if ("IntersectionObserver" in window) {
+        const revealObserver = new IntersectionObserver(
+          (entries, observer) => {
+            entries.forEach((entry) => {
+              if (entry.isIntersecting) {
+                entry.target.classList.add("is-visible");
+                observer.unobserve(entry.target);
+              }
+            });
+          },
+          {
+            threshold: 0.12,
+            rootMargin: "0px 0px -40px 0px",
+          },
+        );
+
+        revealElements.forEach((el) => revealObserver.observe(el));
+      } else {
+        revealElements.forEach((el) => el.classList.add("is-visible"));
       }
-    }, { passive: true });
 
-    // 2. Modern Web Guidance: Scroll-driven Reveal (Intersection Observer)
-    const revealElements = document.querySelectorAll('.reveal-on-scroll');
-    if ('IntersectionObserver' in window) {
-      const revealObserver = new IntersectionObserver((entries, observer) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('is-visible');
-            observer.unobserve(entry.target);
+      // 3. Theme Toggle
+      const themeToggle = document.getElementById("themeToggle");
+      const themeIcon = document.getElementById("themeIcon");
+      const themeText = document.getElementById("themeText");
+      const htmlEl = document.documentElement;
+
+      function setTheme(theme) {
+        if (theme === "dark") {
+          htmlEl.setAttribute("data-theme", "dark");
+          themeIcon.textContent = "☀️";
+          themeText.textContent = "浅色";
+          localStorage.setItem("excalidraw_theme", "dark");
+        } else {
+          htmlEl.removeAttribute("data-theme");
+          themeIcon.textContent = "🌙";
+          themeText.textContent = "深色";
+          localStorage.setItem("excalidraw_theme", "light");
+        }
+      }
+
+      const savedTheme =
+        localStorage.getItem("excalidraw_theme") ||
+        (window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light");
+      setTheme(savedTheme);
+
+      themeToggle.addEventListener("click", () => {
+        const current = htmlEl.getAttribute("data-theme");
+        setTheme(current === "dark" ? "light" : "dark");
+      });
+
+      // 4. Tab Switching
+      const tabBtns = document.querySelectorAll(".tab-btn");
+      const tabPanes = document.querySelectorAll(".tab-content-pane");
+
+      tabBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const targetTab = btn.getAttribute("data-tab");
+          tabBtns.forEach((b) => b.classList.remove("active"));
+          tabPanes.forEach((p) => p.classList.remove("active"));
+
+          btn.classList.add("active");
+          const targetPane = document.getElementById(`pane-${targetTab}`);
+          if (targetPane) targetPane.classList.add("active");
+        });
+      });
+
+      // 5. Clipboard Copy & Toast
+      const toast = document.getElementById("toast");
+      let toastTimer = null;
+      function showToast(msg) {
+        toast.textContent = msg || "✨ 已复制到剪贴板！";
+        toast.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+          toast.classList.remove("show");
+        }, 2200);
+      }
+
+      document.querySelectorAll(".copy-code-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const text = btn.getAttribute("data-clipboard");
+          if (navigator.clipboard && text) {
+            navigator.clipboard
+              .writeText(text)
+              .then(() => {
+                showToast("📋 命令已成功复制！");
+              })
+              .catch(() => {
+                showToast("⚠️ 复制失败，请手动选择");
+              });
           }
         });
-      }, {
-        threshold: 0.12,
-        rootMargin: '0px 0px -40px 0px'
       });
-
-      revealElements.forEach(el => revealObserver.observe(el));
-    } else {
-      revealElements.forEach(el => el.classList.add('is-visible'));
-    }
-
-    // 3. Theme Toggle
-    const themeToggle = document.getElementById('themeToggle');
-    const themeIcon = document.getElementById('themeIcon');
-    const themeText = document.getElementById('themeText');
-    const htmlEl = document.documentElement;
-
-    function setTheme(theme) {
-      if (theme === 'dark') {
-        htmlEl.setAttribute('data-theme', 'dark');
-        themeIcon.textContent = '☀️';
-        themeText.textContent = '浅色';
-        localStorage.setItem('excalidraw_theme', 'dark');
-      } else {
-        htmlEl.removeAttribute('data-theme');
-        themeIcon.textContent = '🌙';
-        themeText.textContent = '深色';
-        localStorage.setItem('excalidraw_theme', 'light');
-      }
-    }
-
-    const savedTheme = localStorage.getItem('excalidraw_theme') || 
-      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    setTheme(savedTheme);
-
-    themeToggle.addEventListener('click', () => {
-      const current = htmlEl.getAttribute('data-theme');
-      setTheme(current === 'dark' ? 'light' : 'dark');
-    });
-
-    // 4. Tab Switching
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabPanes = document.querySelectorAll('.tab-content-pane');
-
-    tabBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const targetTab = btn.getAttribute('data-tab');
-        tabBtns.forEach(b => b.classList.remove('active'));
-        tabPanes.forEach(p => p.classList.remove('active'));
-
-        btn.classList.add('active');
-        const targetPane = document.getElementById(`pane-${targetTab}`);
-        if (targetPane) targetPane.classList.add('active');
-      });
-    });
-
-    // 5. Clipboard Copy & Toast
-    const toast = document.getElementById('toast');
-    let toastTimer = null;
-    function showToast(msg) {
-      toast.textContent = msg || '✨ 已复制到剪贴板！';
-      toast.classList.add('show');
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => {
-        toast.classList.remove('show');
-      }, 2200);
-    }
-
-    document.querySelectorAll('.copy-code-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const text = btn.getAttribute('data-clipboard');
-        if (navigator.clipboard && text) {
-          navigator.clipboard.writeText(text).then(() => {
-            showToast('📋 命令已成功复制！');
-          }).catch(() => {
-            showToast('⚠️ 复制失败，请手动选择');
-          });
-        }
-      });
-    });
-  </script>
-</body>
+    </script>
+  </body>
 </html>
