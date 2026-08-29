@@ -94,14 +94,6 @@ const formatDate = (timestamp: number | null) => {
   )}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
-const formatCreatedDate = (timestamp: number) => {
-  const date = new Date(timestamp);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-    2,
-    "0",
-  )}-${String(date.getDate()).padStart(2, "0")}`;
-};
-
 const sortScenes = (scenes: CloudSceneSummary[], sort: SortMode) =>
   [...scenes].sort((left, right) => {
     const leftValue =
