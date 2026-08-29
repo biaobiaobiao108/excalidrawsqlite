@@ -5,13 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Excalidraw SQLite - 纯净、自托管的 Bun+SQLite 手绘白板</title>
   <meta name="description" content="基于 Bun 1.4+ 与原生 SQLite 驱动的纯净、自托管虚拟手绘风格白板。支持多画板管理、云端自动持久化、图片附件存储、密码保护与极速 Docker 部署。" />
-  <meta name="keywords" content="Excalidraw, SQLite, Bun, 白板, 自托管, 私有化部署, Docker" />
+  <meta name="keywords" content="Excalidraw, SQLite, Bun, 白板, 自托管, 私有化部署, Docker, GHCR" />
   
   <!-- Open Graph -->
   <meta property="og:title" content="Excalidraw SQLite - 纯净、自托管的 Bun+SQLite 手绘白板" />
   <meta property="og:description" content="全栈 Bun 驱动、原生 SQLite WAL 存储、多画板管理、零遥测、极速容器化部署。" />
   <meta property="og:type" content="website" />
   
+  <!-- Favicon (Embedded Authentic Excalidraw SVG) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 496 512'%3E%3Cpath fill='%236965db' d='M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z'/%3E%3C/svg%3E" />
+  <link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 496 512'%3E%3Cpath fill='%236965db' d='M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z'/%3E%3C/svg%3E" />
+
   <!-- Fonts: Excalidraw Fonts (Virgil, Assistant, Segoe UI, Noto Sans SC) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -95,7 +99,35 @@
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
+                  border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
+                  color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Modern Web Guidance: Scroll Progress Indicator */
+    #scroll-progress {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--color-primary), #a5d8ff);
+      z-index: 9999;
+      width: 0%;
+      transition: width 0.08s ease-out;
+    }
+
+    @supports (animation-timeline: scroll()) {
+      #scroll-progress {
+        width: auto;
+        right: 0;
+        transform-origin: 0 50%;
+        animation: growProgress auto linear;
+        animation-timeline: scroll(root block);
+      }
+      @keyframes growProgress {
+        from { transform: scaleX(0); }
+        to { transform: scaleX(1); }
+      }
     }
 
     body {
@@ -142,6 +174,7 @@
       border-radius: var(--radius-lg);
       box-shadow: var(--shadow-island);
       backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
     }
 
     .brand {
@@ -157,6 +190,10 @@
       width: 28px;
       height: 28px;
       fill: var(--color-primary);
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .brand:hover .brand-logo-svg {
+      transform: rotate(-10deg) scale(1.1);
     }
 
     .badge-sync {
@@ -178,6 +215,12 @@
       border-radius: 50%;
       background: #10b981;
       box-shadow: 0 0 6px #10b981;
+      animation: pulseDot 2s infinite ease-in-out;
+    }
+
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
     }
 
     .nav-links {
@@ -190,10 +233,12 @@
       font-size: 0.92rem;
       font-weight: 600;
       color: var(--text-color-secondary);
-      transition: color 0.15s;
+      transition: color 0.15s ease, transform 0.15s ease;
+      position: relative;
     }
     .nav-link:hover {
       color: var(--color-primary);
+      transform: translateY(-1px);
     }
 
     .nav-btn {
@@ -210,23 +255,30 @@
       border: 1px solid var(--color-surface-high);
       background: var(--color-surface-low);
       color: var(--text-color-primary);
-      transition: all 0.15s;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .nav-btn:hover {
       background: var(--color-surface-high);
       border-color: var(--color-surface-border);
+      transform: translateY(-1px);
+    }
+
+    .nav-btn:active {
+      transform: translateY(1px) scale(0.98);
     }
 
     .nav-btn-primary {
       background: var(--color-primary);
       border-color: var(--color-primary);
       color: #ffffff;
+      box-shadow: 0 2px 6px rgba(105, 101, 219, 0.28);
     }
     .nav-btn-primary:hover {
       background: var(--color-primary-hover);
       border-color: var(--color-primary-hover);
       color: #ffffff;
+      box-shadow: 0 4px 12px rgba(105, 101, 219, 0.38);
     }
 
     /* Hero Section */
@@ -246,6 +298,7 @@
       font-size: 0.88rem;
       font-weight: 700;
       margin-bottom: 20px;
+      animation: fadeInDown 0.6s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .hero h1 {
@@ -254,6 +307,7 @@
       line-height: 1.15;
       letter-spacing: -0.02em;
       margin-bottom: 18px;
+      animation: fadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .hero h1 .brand-highlight {
@@ -268,6 +322,7 @@
       max-width: 680px;
       margin: 0 auto 30px;
       line-height: 1.6;
+      animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .hero-actions {
@@ -276,6 +331,7 @@
       justify-content: center;
       gap: 14px;
       margin-bottom: 44px;
+      animation: fadeInUp 0.9s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .btn-hero {
@@ -296,6 +352,7 @@
       box-shadow: var(--shadow-island-hover);
       padding: 24px 20px 20px;
       position: relative;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .arch-header {
@@ -354,10 +411,23 @@
 
     .arch-node {
       cursor: pointer;
-      transition: transform 0.2s ease;
+      transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
     .arch-node:hover {
-      filter: drop-shadow(0 4px 10px rgba(105, 101, 219, 0.25));
+      transform: translateY(-2px);
+      filter: drop-shadow(0 6px 14px rgba(105, 101, 219, 0.22));
+    }
+
+    /* Modern Web Guidance: Scroll-driven Reveal Animation */
+    .reveal-on-scroll {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: opacity, transform;
+    }
+    .reveal-on-scroll.is-visible {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     /* Scene Manager Preview Component (Mockup Island) */
@@ -408,13 +478,13 @@
       padding: 14px;
       cursor: pointer;
       position: relative;
-      transition: all 0.15s ease;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .scene-card-item:hover {
       border-color: var(--color-primary);
-      box-shadow: var(--shadow-island);
-      transform: translateY(-2px);
+      box-shadow: var(--shadow-island-hover);
+      transform: translateY(-3px);
     }
 
     .scene-card-item.active {
@@ -488,13 +558,13 @@
       border-radius: var(--radius-lg);
       padding: 26px;
       box-shadow: var(--shadow-island);
-      transition: all 0.2s ease;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .feature-card:hover {
       border-color: var(--color-primary);
       box-shadow: var(--shadow-island-hover);
-      transform: translateY(-2px);
+      transform: translateY(-4px);
     }
 
     .feature-icon-box {
@@ -508,6 +578,10 @@
       justify-content: center;
       font-size: 1.4rem;
       margin-bottom: 16px;
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .feature-card:hover .feature-icon-box {
+      transform: scale(1.15) rotate(5deg);
     }
 
     .feature-card h3 {
@@ -613,6 +687,7 @@
     .tab-content-pane {
       display: none;
       padding: 24px;
+      animation: fadeIn 0.3s ease;
     }
     .tab-content-pane.active {
       display: block;
@@ -652,7 +727,25 @@
     }
 
     .copy-code-btn:hover {
-      background: rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.24);
+      transform: translateY(-1px);
+    }
+    .copy-code-btn:active {
+      transform: translateY(1px);
+    }
+
+    /* Keyframes */
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(18px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-14px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     /* Footer */
@@ -702,7 +795,7 @@
       box-shadow: var(--shadow-island-hover);
       opacity: 0;
       transform: translateY(20px);
-      transition: all 0.25s ease;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
       z-index: 9999;
       pointer-events: none;
     }
@@ -726,6 +819,9 @@
   </style>
 </head>
 <body>
+
+  <!-- Scroll Progress Indicator -->
+  <div id="scroll-progress"></div>
 
   <!-- Floating Island Header -->
   <div class="header-wrapper">
@@ -788,7 +884,7 @@
       </div>
 
       <!-- Excalidraw Hand-drawn SVG Architecture Showcase Island -->
-      <div id="architecture" class="arch-island-wrapper">
+      <div id="architecture" class="arch-island-wrapper reveal-on-scroll">
         <div class="arch-header">
           <div class="arch-header-left">
             <span class="arch-header-title">
@@ -892,7 +988,7 @@
     </section>
 
     <!-- Multi-Scene Management Preview Section -->
-    <section id="scenes" class="scene-manager-section">
+    <section id="scenes" class="scene-manager-section reveal-on-scroll">
       <div class="section-title-wrap">
         <span class="section-tag">Multi-Scene</span>
         <h2 class="section-title">内置多画板云端管理</h2>
@@ -944,7 +1040,7 @@
     </section>
 
     <!-- Core Features Grid -->
-    <section id="features" class="section">
+    <section id="features" class="section reveal-on-scroll">
       <div class="section-title-wrap">
         <span class="section-tag">Features</span>
         <h2 class="section-title">核心设计亮点</h2>
@@ -996,7 +1092,7 @@
     </section>
 
     <!-- Architecture & Comparison Section -->
-    <section id="compare" class="section">
+    <section id="compare" class="section reveal-on-scroll">
       <div class="section-title-wrap">
         <span class="section-tag">Comparison</span>
         <h2 class="section-title">方案对比：为什么选择 SQLite 纯净版？</h2>
@@ -1048,7 +1144,7 @@
     </section>
 
     <!-- Quickstart & Deployment Guide -->
-    <section id="quickstart" class="section">
+    <section id="quickstart" class="section reveal-on-scroll">
       <div class="section-title-wrap">
         <span class="section-tag">Quick Start</span>
         <h2 class="section-title">一键部署指南</h2>
@@ -1056,20 +1152,21 @@
 
       <div class="quickstart-card">
         <div class="quickstart-tab-header">
-          <button class="tab-btn active" data-tab="docker">🐳 Docker / Podman Compose (推荐)</button>
-          <button class="tab-btn" data-tab="bun">⚡ 本地 Bun 运行</button>
+          <button class="tab-btn active" data-tab="docker">🐳 Docker Compose 编排 (推荐)</button>
+          <button class="tab-btn" data-tab="run">⚡ Docker / Podman CLI 直接运行</button>
+          <button class="tab-btn" data-tab="bun">🛠️ 本地 Bun 源码运行</button>
           <button class="tab-btn" data-tab="env">⚙️ 环境变量速查</button>
         </div>
 
         <!-- Tab 1: Docker Compose -->
         <div class="tab-content-pane active" id="pane-docker">
-          <p><strong>1. 创建数据目录与配置文件：</strong></p>
+          <p><strong>推荐使用 GHCR 预构建镜像一键启动：</strong></p>
           <div class="code-block">
             <button class="copy-code-btn" data-clipboard="mkdir -p ./data
 cat << 'EOF' > docker-compose.yml
 services:
   excalidraw:
-    build: .
+    image: ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
     restart: unless-stopped
     ports:
       - '8080:8080'
@@ -1078,13 +1175,14 @@ services:
       - TRUST_PROXY=true
     volumes:
       - ./data:/app/data
-EOF">复制</button>
+EOF
+docker compose up -d">复制配置与启动命令</button>
             <pre><code>mkdir -p ./data
 
 # 创建 docker-compose.yml
 services:
   excalidraw:
-    build: .
+    image: ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
     restart: unless-stopped
     ports:
       - '8080:8080'
@@ -1092,24 +1190,70 @@ services:
       - AUTH_PASSWORD=your-strong-password
       - TRUST_PROXY=true
     volumes:
-      - ./data:/app/data</code></pre>
-          </div>
+      - ./data:/app/data
 
-          <p><strong>2. 启动容器服务：</strong></p>
-          <div class="code-block">
-            <button class="copy-code-btn" data-clipboard="docker compose up -d --build">复制</button>
-            <pre><code>docker compose up -d --build</code></pre>
+# 启动服务
+docker compose up -d</code></pre>
           </div>
-          <p>访问：<code>http://localhost:8080</code> 即可畅享私有白板！</p>
+          <p>服务启动后访问：<code>http://localhost:8080</code> 即可畅享私有手绘白板！</p>
         </div>
 
-        <!-- Tab 2: Bun Direct Run -->
+        <!-- Tab 2: Docker / Podman CLI Run -->
+        <div class="tab-content-pane" id="pane-run">
+          <p><strong>单行命令行极速拉起容器（使用官方 GHCR 镜像）：</strong></p>
+          <div class="code-block">
+            <button class="copy-code-btn" data-clipboard="mkdir -p ./data
+docker run -d \
+  --name excalidraw \
+  -p 8080:8080 \
+  -e AUTH_PASSWORD=your-strong-password \
+  -e TRUST_PROXY=true \
+  -v ./data:/app/data \
+  --restart unless-stopped \
+  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest">复制 Docker Run 命令</button>
+            <pre><code>mkdir -p ./data
+
+docker run -d \
+  --name excalidraw \
+  -p 8080:8080 \
+  -e AUTH_PASSWORD=your-strong-password \
+  -e TRUST_PROXY=true \
+  -v ./data:/app/data \
+  --restart unless-stopped \
+  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest</code></pre>
+          </div>
+
+          <p style="margin-top: 14px;"><strong>Podman 用户（支持 rootless）：</strong></p>
+          <div class="code-block">
+            <button class="copy-code-btn" data-clipboard="mkdir -p ./data
+podman run -d \
+  --name excalidraw \
+  -p 8080:8080 \
+  -e AUTH_PASSWORD=your-strong-password \
+  -e TRUST_PROXY=true \
+  -v ./data:/app/data:Z \
+  --userns=keep-id \
+  --restart unless-stopped \
+  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest">复制 Podman 命令</button>
+            <pre><code>podman run -d \
+  --name excalidraw \
+  -p 8080:8080 \
+  -e AUTH_PASSWORD=your-strong-password \
+  -e TRUST_PROXY=true \
+  -v ./data:/app/data:Z \
+  --userns=keep-id \
+  --restart unless-stopped \
+  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest</code></pre>
+          </div>
+        </div>
+
+        <!-- Tab 3: Bun Direct Run -->
         <div class="tab-content-pane" id="pane-bun">
           <p><strong>前置要求：</strong> 安装 <a href="https://bun.sh" target="_blank" style="color: var(--color-primary); font-weight: 600;">Bun (v1.4.0+)</a></p>
           
           <div class="code-block">
-            <button class="copy-code-btn" data-clipboard="git clone <your-repo-url> excalidraw-sqlite
-cd excalidraw-sqlite
+            <button class="copy-code-btn" data-clipboard="git clone https://github.com/biaobiaobiao108/excalidrawsqlite.git
+cd excalidrawsqlite
 
 # 1. 安装依赖
 bun install
@@ -1119,7 +1263,7 @@ bun run build:packages
 
 # 3. 构建前端静态产物并启动全栈服务 (默认端口 8080)
 bun run build
-bun run start:server">复制</button>
+bun run start:server">复制源码运行命令</button>
             <pre><code># 1. 安装依赖
 bun install
 
@@ -1132,7 +1276,7 @@ bun run start:server</code></pre>
           </div>
         </div>
 
-        <!-- Tab 3: Environment Variables -->
+        <!-- Tab 4: Environment Variables -->
         <div class="tab-content-pane" id="pane-env">
           <div class="comparison-card" style="box-shadow: none; border-radius: 8px;">
             <table class="excalidraw-table">
@@ -1207,7 +1351,38 @@ bun run start:server</code></pre>
 
   <!-- Interactive Scripts -->
   <script>
-    // 1. Theme Toggle
+    // 1. Scroll Progress Bar (Fallback if CSS scroll() is not fully supported)
+    const progressBar = document.getElementById('scroll-progress');
+    window.addEventListener('scroll', () => {
+      const scrollTop = window.scrollY || document.documentElement.scrollTop;
+      const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      if (scrollHeight > 0 && progressBar) {
+        const progress = (scrollTop / scrollHeight) * 100;
+        progressBar.style.width = progress + '%';
+      }
+    }, { passive: true });
+
+    // 2. Modern Web Guidance: Scroll-driven Reveal (Intersection Observer)
+    const revealElements = document.querySelectorAll('.reveal-on-scroll');
+    if ('IntersectionObserver' in window) {
+      const revealObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, {
+        threshold: 0.12,
+        rootMargin: '0px 0px -40px 0px'
+      });
+
+      revealElements.forEach(el => revealObserver.observe(el));
+    } else {
+      revealElements.forEach(el => el.classList.add('is-visible'));
+    }
+
+    // 3. Theme Toggle
     const themeToggle = document.getElementById('themeToggle');
     const themeIcon = document.getElementById('themeIcon');
     const themeText = document.getElementById('themeText');
@@ -1236,7 +1411,7 @@ bun run start:server</code></pre>
       setTheme(current === 'dark' ? 'light' : 'dark');
     });
 
-    // 2. Tab Switching
+    // 4. Tab Switching
     const tabBtns = document.querySelectorAll('.tab-btn');
     const tabPanes = document.querySelectorAll('.tab-content-pane');
 
@@ -1252,7 +1427,7 @@ bun run start:server</code></pre>
       });
     });
 
-    // 3. Clipboard Copy & Toast
+    // 5. Clipboard Copy & Toast
     const toast = document.getElementById('toast');
     let toastTimer = null;
     function showToast(msg) {
@@ -1261,7 +1436,7 @@ bun run start:server</code></pre>
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => {
         toast.classList.remove('show');
-      }, 2000);
+      }, 2200);
     }
 
     document.querySelectorAll('.copy-code-btn').forEach(btn => {
