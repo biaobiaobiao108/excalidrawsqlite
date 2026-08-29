@@ -12,605 +12,776 @@
   <meta property="og:description" content="全栈 Bun 驱动、原生 SQLite WAL 存储、多画板管理、零遥测、极速容器化部署。" />
   <meta property="og:type" content="website" />
   
-  <!-- Fonts -->
+  <!-- Fonts: Excalidraw Fonts (Virgil, Assistant, Segoe UI, Noto Sans SC) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&family=Caveat:wght@600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <style>
     :root {
-      --bg-color: #fbfbf9;
-      --bg-grid: #e5e5df;
-      --text-color: #2b2b2b;
-      --text-muted: #6b6b6b;
-      --card-bg: #ffffff;
-      --card-border: #2b2b2b;
-      --primary: #6965db;
-      --primary-hover: #5854c7;
-      --primary-light: #e0dfff;
-      --accent-yellow: #ffdf70;
-      --accent-green: #a3e635;
-      --accent-pink: #ffc9c9;
-      --accent-blue: #a5d8ff;
-      --accent-orange: #ffd8a8;
-      --code-bg: #212529;
-      --code-color: #f8f9fa;
-      --badge-bg: #f1f3f5;
-      --badge-border: #ced4da;
-      --sketch-shadow: 4px 4px 0px #2b2b2b;
-      --sketch-shadow-hover: 6px 6px 0px #2b2b2b;
-      --sketch-shadow-active: 2px 2px 0px #2b2b2b;
-      --font-hand: 'Patrick Hand', 'Caveat', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, cursive;
-      --font-sans: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --radius-wobbly: 255px 15px 225px 15px/15px 225px 15px 255px;
-      --radius-wobbly-alt: 20px 255px 20px 225px/225px 20px 255px 20px;
+      /* Excalidraw Official Theme Tokens */
+      --color-primary: #6965db;
+      --color-primary-hover: #5854c7;
+      --color-primary-active: #4a47b1;
+      --color-primary-light: #ececf4;
+      --color-primary-container: #e0dfff;
+      --color-on-primary-container: #34327e;
+      
+      --color-surface-lowest: #ffffff;
+      --color-surface-low: #f8f9fa;
+      --color-surface-mid: #f1f3f5;
+      --color-surface-high: #e9ecef;
+      --color-surface-border: #ced4da;
+      
+      --text-color-primary: #1b1b1f;
+      --text-color-secondary: #5c5f66;
+      --text-color-muted: #868e96;
+      
+      --bg-color: #ffffff;
+      --bg-grid-color: #e5e5ea;
+      
+      --code-bg: #1e1e24;
+      --code-color: #e4e4e7;
+      
+      --shadow-island: 0px 0px 1px 0px rgba(0, 0, 0, 0.17),
+                       0px 0px 3px 0px rgba(0, 0, 0, 0.08),
+                       0px 7px 14px 0px rgba(0, 0, 0, 0.05);
+      --shadow-island-hover: 0px 0px 2px 0px rgba(0, 0, 0, 0.2),
+                             0px 4px 8px 0px rgba(0, 0, 0, 0.1),
+                             0px 12px 24px 0px rgba(0, 0, 0, 0.08);
+      --shadow-modal: 0px 20px 40px rgba(0, 0, 0, 0.12);
+      
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-pill: 9999px;
+      
+      --font-ui: 'Assistant', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-sketch: 'Caveat', 'Virgil', cursive, 'Noto Sans SC', sans-serif;
     }
 
     [data-theme="dark"] {
+      --color-primary: #8581f5;
+      --color-primary-hover: #9c99ff;
+      --color-primary-active: #b3b0ff;
+      --color-primary-light: #232329;
+      --color-primary-container: #2e2b58;
+      --color-on-primary-container: #d7d5ff;
+      
+      --color-surface-lowest: #121212;
+      --color-surface-low: #1e1e1e;
+      --color-surface-mid: #232329;
+      --color-surface-high: #2c2c35;
+      --color-surface-border: #3b3b47;
+      
+      --text-color-primary: #f1f3f5;
+      --text-color-secondary: #adb5bd;
+      --text-color-muted: #6c757d;
+      
       --bg-color: #121212;
-      --bg-grid: #262626;
-      --text-color: #e6e6e6;
-      --text-muted: #a0a0a0;
-      --card-bg: #1e1e1e;
-      --card-border: #e6e6e6;
-      --primary: #8581f5;
-      --primary-hover: #9c99ff;
-      --primary-light: #2d2b55;
-      --accent-yellow: #665200;
-      --accent-green: #2b5200;
-      --accent-pink: #5a1a24;
-      --accent-blue: #183b56;
-      --accent-orange: #542b00;
+      --bg-grid-color: #242428;
+      
       --code-bg: #18181b;
-      --code-color: #e4e4e7;
-      --badge-bg: #27272a;
-      --badge-border: #52525b;
-      --sketch-shadow: 4px 4px 0px #e6e6e6;
-      --sketch-shadow-hover: 6px 6px 0px #e6e6e6;
-      --sketch-shadow-active: 2px 2px 0px #e6e6e6;
+      --code-color: #f4f4f5;
+      
+      --shadow-island: 0px 0px 1px 0px rgba(0, 0, 0, 0.6),
+                       0px 4px 12px 0px rgba(0, 0, 0, 0.35);
+      --shadow-island-hover: 0px 0px 2px 0px rgba(0, 0, 0, 0.8),
+                             0px 8px 24px 0px rgba(0, 0, 0, 0.45);
+      --shadow-modal: 0px 20px 40px rgba(0, 0, 0, 0.6);
     }
 
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
     }
 
     body {
-      font-family: var(--font-sans);
+      font-family: var(--font-ui);
       background-color: var(--bg-color);
-      color: var(--text-color);
-      line-height: 1.6;
-      background-image: radial-gradient(var(--bg-grid) 1.5px, transparent 1.5px);
-      background-size: 24px 24px;
+      color: var(--text-color-primary);
+      line-height: 1.5;
       min-height: 100vh;
+      background-image: radial-gradient(var(--bg-grid-color) 1.5px, transparent 1.5px);
+      background-size: 20px 20px;
       overflow-x: hidden;
     }
 
-    .hand-font {
-      font-family: var(--font-hand);
-      letter-spacing: 0.5px;
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    /* Excalidraw Island Component */
+    .Island {
+      background-color: var(--color-surface-lowest);
+      border: 1px solid var(--color-surface-high);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-island);
     }
 
     .container {
-      max-width: 1120px;
+      max-width: 1140px;
       margin: 0 auto;
-      padding: 0 24px;
+      padding: 0 20px;
     }
 
-    /* Navigation Bar */
-    header {
+    /* Navigation Bar (Floating Top Island) */
+    .header-wrapper {
       position: sticky;
-      top: 0;
-      z-index: 100;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      background: rgba(251, 251, 249, 0.85);
-      border-bottom: 2px solid var(--card-border);
-    }
-    [data-theme="dark"] header {
-      background: rgba(18, 18, 18, 0.85);
+      top: 16px;
+      z-index: 1000;
+      padding: 0 20px;
+      margin-bottom: 36px;
     }
 
-    .navbar {
+    .header-island {
+      max-width: 1140px;
+      margin: 0 auto;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      height: 72px;
+      height: 58px;
+      padding: 0 16px;
+      background: var(--color-surface-lowest);
+      border: 1px solid var(--color-surface-high);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-island);
+      backdrop-filter: blur(12px);
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 12px;
-      text-decoration: none;
-      color: var(--text-color);
+      gap: 10px;
       font-weight: 700;
-      font-size: 1.35rem;
+      font-size: 1.15rem;
+      color: var(--text-color-primary);
     }
 
-    .brand-logo {
-      width: 38px;
-      height: 38px;
-      border: 2px solid var(--card-border);
-      border-radius: var(--radius-wobbly);
+    .brand-logo-svg {
+      width: 28px;
+      height: 28px;
+      fill: var(--color-primary);
+    }
+
+    .badge-sync {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--color-primary-light);
+      color: var(--color-primary);
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+
+    .badge-sync .sync-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 6px #10b981;
+    }
+
+    .nav-links {
       display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .nav-link {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--text-color-secondary);
+      transition: color 0.15s;
+    }
+    .nav-link:hover {
+      color: var(--color-primary);
+    }
+
+    .nav-btn {
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      background-color: var(--primary-light);
-      transform: rotate(-3deg);
-      box-shadow: 2px 2px 0 var(--card-border);
-    }
-
-    .brand-tag {
-      font-size: 0.75rem;
-      background: var(--accent-yellow);
-      color: #121212;
-      padding: 2px 8px;
-      border: 1.5px solid var(--card-border);
-      border-radius: 12px;
-      font-family: var(--font-hand);
-      font-weight: bold;
-      transform: rotate(2deg);
-    }
-
-    .nav-actions {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .theme-toggle, .icon-btn {
-      background: var(--card-bg);
-      border: 2px solid var(--card-border);
-      border-radius: var(--radius-wobbly);
-      padding: 8px 14px;
-      cursor: pointer;
-      font-size: 1rem;
-      font-weight: bold;
-      display: flex;
-      align-items: center;
       gap: 6px;
-      color: var(--text-color);
-      box-shadow: 2px 2px 0 var(--card-border);
-      transition: transform 0.1s, box-shadow 0.1s;
-      text-decoration: none;
+      height: 36px;
+      padding: 0 12px;
+      border-radius: var(--radius-md);
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--color-surface-high);
+      background: var(--color-surface-low);
+      color: var(--text-color-primary);
+      transition: all 0.15s;
     }
 
-    .theme-toggle:hover, .icon-btn:hover {
-      transform: translate(-1px, -1px);
-      box-shadow: 4px 4px 0 var(--card-border);
+    .nav-btn:hover {
+      background: var(--color-surface-high);
+      border-color: var(--color-surface-border);
     }
 
-    .theme-toggle:active, .icon-btn:active {
-      transform: translate(1px, 1px);
-      box-shadow: 1px 1px 0 var(--card-border);
+    .nav-btn-primary {
+      background: var(--color-primary);
+      border-color: var(--color-primary);
+      color: #ffffff;
+    }
+    .nav-btn-primary:hover {
+      background: var(--color-primary-hover);
+      border-color: var(--color-primary-hover);
+      color: #ffffff;
     }
 
     /* Hero Section */
     .hero {
-      padding: 60px 0 40px;
       text-align: center;
-      position: relative;
+      padding: 20px 0 40px;
     }
 
-    .hero-badge-wrap {
+    .hero-pill {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      background: var(--card-bg);
-      border: 2px solid var(--card-border);
-      border-radius: var(--radius-wobbly);
-      padding: 6px 16px;
-      font-family: var(--font-hand);
-      font-size: 1.2rem;
-      box-shadow: 3px 3px 0 var(--card-border);
-      margin-bottom: 24px;
-      transform: rotate(-1deg);
+      padding: 6px 14px;
+      background: var(--color-primary-light);
+      color: var(--color-primary);
+      border-radius: var(--radius-pill);
+      font-size: 0.88rem;
+      font-weight: 700;
+      margin-bottom: 20px;
     }
 
     .hero h1 {
-      font-size: 3rem;
+      font-size: 3.2rem;
       font-weight: 800;
-      line-height: 1.2;
-      margin-bottom: 20px;
-      letter-spacing: -0.5px;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 18px;
     }
 
-    .hero h1 .highlight {
-      position: relative;
+    .hero h1 .brand-highlight {
+      color: var(--color-primary);
       display: inline-block;
-      color: var(--primary);
-    }
-
-    .hero h1 .highlight::after {
-      content: '';
-      position: absolute;
-      left: -4px;
-      right: -4px;
-      bottom: 2px;
-      height: 12px;
-      background: var(--accent-yellow);
-      opacity: 0.6;
-      z-index: -1;
-      border-radius: 4px;
-      transform: rotate(-1deg);
+      position: relative;
     }
 
     .hero-subtitle {
-      font-size: 1.25rem;
-      color: var(--text-muted);
+      font-size: 1.22rem;
+      color: var(--text-color-secondary);
       max-width: 680px;
-      margin: 0 auto 32px;
+      margin: 0 auto 30px;
+      line-height: 1.6;
     }
 
-    .hero-cta {
+    .hero-actions {
       display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 16px;
-      margin-bottom: 48px;
-    }
-
-    .btn {
-      display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      padding: 14px 28px;
-      font-size: 1.35rem;
+      gap: 14px;
+      margin-bottom: 44px;
+    }
+
+    .btn-hero {
+      height: 46px;
+      padding: 0 24px;
+      font-size: 1.05rem;
+      border-radius: var(--radius-md);
       font-weight: 700;
-      text-decoration: none;
-      border: 2.5px solid var(--card-border);
-      border-radius: var(--radius-wobbly);
-      cursor: pointer;
-      box-shadow: var(--sketch-shadow);
-      transition: all 0.15s ease;
-      font-family: var(--font-hand);
     }
 
-    .btn:hover {
-      transform: translate(-2px, -2px);
-      box-shadow: var(--sketch-shadow-hover);
-    }
-
-    .btn:active {
-      transform: translate(2px, 2px);
-      box-shadow: var(--sketch-shadow-active);
-    }
-
-    .btn-primary {
-      background-color: var(--primary);
-      color: #ffffff;
-    }
-    .btn-primary:hover {
-      background-color: var(--primary-hover);
-    }
-
-    .btn-outline {
-      background-color: var(--card-bg);
-      color: var(--text-color);
-    }
-
-    /* Doodle Mini-Board Preview Box */
-    .whiteboard-preview-card {
-      background: var(--card-bg);
-      border: 3px solid var(--card-border);
-      border-radius: 16px;
-      box-shadow: 8px 8px 0 var(--card-border);
-      padding: 16px;
+    /* Excalidraw Whiteboard Canvas Simulator Container */
+    .canvas-island-wrapper {
+      max-width: 1060px;
+      margin: 0 auto 70px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--color-surface-high);
+      background: var(--color-surface-lowest);
+      box-shadow: var(--shadow-island-hover);
+      overflow: hidden;
       position: relative;
-      margin: 0 auto 60px;
-      max-width: 960px;
     }
 
-    .preview-header {
+    /* Floating Excalidraw Toolbar */
+    .excalidraw-toolbar-container {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding-bottom: 12px;
-      border-bottom: 2px dashed var(--card-border);
-      margin-bottom: 12px;
-    }
-
-    .preview-window-dots {
-      display: flex;
       gap: 8px;
     }
 
-    .dot {
-      width: 14px;
-      height: 14px;
-      border: 2px solid var(--card-border);
-      border-radius: 50%;
-      display: inline-block;
-    }
-    .dot-red { background: #ff6b6b; }
-    .dot-yellow { background: #ffd43b; }
-    .dot-green { background: #69db7c; }
-
-    .preview-title {
-      font-family: var(--font-hand);
-      font-size: 1.25rem;
-      font-weight: bold;
+    .toolbar-island {
+      display: flex;
+      align-items: center;
+      background: var(--color-surface-lowest);
+      border: 1px solid var(--color-surface-high);
+      border-radius: var(--radius-md);
+      padding: 4px;
+      box-shadow: var(--shadow-island);
+      gap: 2px;
     }
 
-    .canvas-container {
+    .tool-btn {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      color: var(--text-color-secondary);
       position: relative;
-      width: 100%;
-      height: 380px;
-      background: var(--bg-color);
-      border: 2px solid var(--card-border);
-      border-radius: 8px;
-      cursor: crosshair;
-      overflow: hidden;
-      touch-action: none;
+      transition: background 0.15s, color 0.15s;
     }
 
-    #doodle-canvas {
+    .tool-btn svg {
+      width: 20px;
+      height: 20px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.75;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .tool-btn:hover {
+      background: var(--color-surface-high);
+      color: var(--text-color-primary);
+    }
+
+    .tool-btn.active {
+      background: var(--color-primary-container);
+      color: var(--color-on-primary-container);
+    }
+
+    .tool-btn .keybind {
+      position: absolute;
+      bottom: 2px;
+      right: 3px;
+      font-size: 9px;
+      color: var(--text-color-muted);
+      font-weight: 700;
+    }
+
+    /* Color Palette Island */
+    .color-island {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--color-surface-lowest);
+      border: 1px solid var(--color-surface-high);
+      border-radius: var(--radius-md);
+      padding: 5px 8px;
+      box-shadow: var(--shadow-island);
+    }
+
+    .color-swatch {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: transform 0.15s;
+    }
+
+    .color-swatch:hover {
+      transform: scale(1.15);
+    }
+
+    .color-swatch.active {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 1px var(--color-surface-lowest);
+    }
+
+    .clear-btn {
+      padding: 0 10px;
+      height: 28px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--color-surface-high);
+      background: var(--color-surface-low);
+      color: var(--text-color-secondary);
+      cursor: pointer;
+    }
+    .clear-btn:hover {
+      background: var(--color-surface-high);
+      color: var(--text-color-primary);
+    }
+
+    .canvas-viewport {
+      width: 100%;
+      height: 440px;
+      position: relative;
+      background-color: var(--bg-color);
+      background-image: radial-gradient(var(--bg-grid-color) 1.2px, transparent 1.2px);
+      background-size: 20px 20px;
+      cursor: crosshair;
+    }
+
+    #excalidraw-canvas {
       width: 100%;
       height: 100%;
       display: block;
     }
 
-    .canvas-toolbar {
+    .canvas-watermark {
       position: absolute;
-      top: 12px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--card-bg);
-      border: 2px solid var(--card-border);
-      border-radius: var(--radius-wobbly);
-      padding: 6px 14px;
+      bottom: 14px;
+      left: 18px;
+      font-family: var(--font-sketch);
+      font-size: 1.15rem;
+      color: var(--text-color-muted);
+      pointer-events: none;
       display: flex;
       align-items: center;
-      gap: 12px;
-      box-shadow: 3px 3px 0 var(--card-border);
-      z-index: 10;
+      gap: 6px;
     }
 
-    .tool-color-btn {
-      width: 22px;
-      height: 22px;
-      border: 2px solid var(--card-border);
-      border-radius: 50%;
+    /* Scene Manager Preview Component (Mockup Island) */
+    .scene-manager-section {
+      margin-bottom: 70px;
+    }
+
+    .scene-dialog-card {
+      background: var(--color-surface-lowest);
+      border: 1px solid var(--color-surface-high);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-island);
+      padding: 24px;
+      max-width: 920px;
+      margin: 0 auto;
+    }
+
+    .scene-dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--color-surface-high);
+    }
+
+    .scene-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .scene-title-group h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+
+    .scene-list-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 16px;
+    }
+
+    .scene-card-item {
+      background: var(--color-surface-low);
+      border: 1.5px solid var(--color-surface-high);
+      border-radius: var(--radius-md);
+      padding: 14px;
       cursor: pointer;
-      padding: 0;
-    }
-    .tool-color-btn.active {
-      outline: 2px solid var(--primary);
-      outline-offset: 2px;
-      transform: scale(1.15);
+      position: relative;
+      transition: all 0.15s ease;
     }
 
-    .tool-clear-btn {
-      background: transparent;
-      border: 1.5px solid var(--card-border);
-      border-radius: 6px;
-      padding: 2px 8px;
-      font-family: var(--font-hand);
-      font-size: 0.95rem;
-      cursor: pointer;
-      color: var(--text-color);
+    .scene-card-item:hover {
+      border-color: var(--color-primary);
+      box-shadow: var(--shadow-island);
+      transform: translateY(-2px);
     }
 
-    .canvas-hint {
-      position: absolute;
-      bottom: 12px;
-      right: 16px;
-      font-family: var(--font-hand);
+    .scene-card-item.active {
+      border-color: var(--color-primary);
+      background: var(--color-primary-light);
+    }
+
+    .scene-card-thumb {
+      height: 85px;
+      background: var(--bg-color);
+      border: 1px dashed var(--color-surface-border);
+      border-radius: var(--radius-sm);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-color-muted);
+      font-family: var(--font-sketch);
       font-size: 1.1rem;
-      color: var(--text-muted);
-      pointer-events: none;
-      background: var(--card-bg);
-      border: 1.5px dashed var(--card-border);
-      padding: 2px 10px;
-      border-radius: 12px;
     }
 
-    /* Section Styles */
-    .section {
-      padding: 60px 0;
+    .scene-card-name {
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
 
+    .scene-card-meta {
+      font-size: 0.8rem;
+      color: var(--text-color-muted);
+    }
+
+    /* Features Grid */
     .section-title-wrap {
       text-align: center;
-      margin-bottom: 48px;
+      margin-bottom: 40px;
     }
 
     .section-tag {
       display: inline-block;
-      font-family: var(--font-hand);
-      font-size: 1.25rem;
-      background: var(--accent-blue);
-      color: #121212;
-      border: 2px solid var(--card-border);
-      border-radius: var(--radius-wobbly);
-      padding: 4px 14px;
-      margin-bottom: 12px;
-      transform: rotate(1deg);
-      box-shadow: 2px 2px 0 var(--card-border);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--color-primary);
+      background: var(--color-primary-light);
+      padding: 4px 12px;
+      border-radius: var(--radius-pill);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
     .section-title {
-      font-size: 2.25rem;
+      font-size: 2.2rem;
       font-weight: 800;
+      letter-spacing: -0.01em;
     }
 
-    /* Features Grid */
     .features-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 28px;
+      gap: 20px;
+      margin-bottom: 70px;
     }
 
     .feature-card {
-      background: var(--card-bg);
-      border: 2.5px solid var(--card-border);
-      border-radius: 16px;
-      padding: 28px;
-      box-shadow: var(--sketch-shadow);
-      position: relative;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-
-    .feature-card:nth-child(even) {
-      border-radius: var(--radius-wobbly-alt);
-    }
-    .feature-card:nth-child(odd) {
-      border-radius: var(--radius-wobbly);
+      background: var(--color-surface-lowest);
+      border: 1px solid var(--color-surface-high);
+      border-radius: var(--radius-lg);
+      padding: 26px;
+      box-shadow: var(--shadow-island);
+      transition: all 0.2s ease;
     }
 
     .feature-card:hover {
-      transform: translate(-3px, -3px);
-      box-shadow: var(--sketch-shadow-hover);
+      border-color: var(--color-primary);
+      box-shadow: var(--shadow-island-hover);
+      transform: translateY(-2px);
     }
 
     .feature-icon-box {
-      width: 52px;
-      height: 52px;
-      border: 2px solid var(--card-border);
-      border-radius: 12px;
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-md);
+      background: var(--color-primary-light);
+      color: var(--color-primary);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.75rem;
-      margin-bottom: 18px;
-      box-shadow: 2px 2px 0 var(--card-border);
+      font-size: 1.4rem;
+      margin-bottom: 16px;
     }
 
     .feature-card h3 {
-      font-size: 1.35rem;
+      font-size: 1.18rem;
       font-weight: 700;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
+      color: var(--text-color-primary);
     }
 
     .feature-card p {
-      color: var(--text-muted);
-      font-size: 0.98rem;
+      font-size: 0.95rem;
+      color: var(--text-color-secondary);
+      line-height: 1.55;
     }
 
-    /* Comparison Table / Architecture */
-    .comparison-wrapper {
-      background: var(--card-bg);
-      border: 3px solid var(--card-border);
-      border-radius: 16px;
-      box-shadow: 6px 6px 0 var(--card-border);
+    /* Comparison Table Section */
+    .comparison-card {
+      background: var(--color-surface-lowest);
+      border: 1px solid var(--color-surface-high);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-island);
       overflow-x: auto;
-      margin-bottom: 40px;
+      margin-bottom: 70px;
     }
 
-    .sketch-table {
+    .excalidraw-table {
       width: 100%;
       border-collapse: collapse;
       text-align: left;
-      min-width: 600px;
+      min-width: 620px;
+      font-size: 0.95rem;
     }
 
-    .sketch-table th, .sketch-table td {
+    .excalidraw-table th, .excalidraw-table td {
       padding: 16px 20px;
-      border-bottom: 2px solid var(--card-border);
+      border-bottom: 1px solid var(--color-surface-high);
     }
 
-    .sketch-table th {
-      background: var(--primary-light);
-      color: var(--text-color);
-      font-size: 1.3rem;
+    .excalidraw-table th {
+      background: var(--color-surface-low);
+      color: var(--text-color-primary);
       font-weight: 700;
-      font-family: var(--font-hand);
-    }
-    [data-theme="dark"] .sketch-table th {
-      background: #252440;
     }
 
-    .sketch-table tr:last-child td {
+    .excalidraw-table tr:last-child td {
       border-bottom: none;
     }
 
-    .sketch-table tr:hover td {
-      background: rgba(105, 101, 219, 0.05);
+    .excalidraw-table tr:hover td {
+      background: var(--color-surface-low);
     }
 
-    /* Quickstart Interactive Tabs */
-    .quickstart-card {
-      background: var(--card-bg);
-      border: 3px solid var(--card-border);
-      border-radius: 16px;
-      box-shadow: 6px 6px 0 var(--card-border);
-      overflow: hidden;
-    }
-
-    .tab-header {
+    .badge-true {
+      color: #10b981;
+      font-weight: 700;
       display: flex;
-      border-bottom: 3px solid var(--card-border);
-      background: var(--bg-color);
+      align-items: center;
+      gap: 4px;
+    }
+
+    .badge-false {
+      color: #ef4444;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Quickstart Section with Tabs */
+    .quickstart-card {
+      background: var(--color-surface-lowest);
+      border: 1px solid var(--color-surface-high);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-island);
+      overflow: hidden;
+      margin-bottom: 70px;
+    }
+
+    .quickstart-tab-header {
+      display: flex;
+      background: var(--color-surface-low);
+      border-bottom: 1px solid var(--color-surface-high);
       overflow-x: auto;
     }
 
     .tab-btn {
-      padding: 14px 24px;
+      padding: 14px 20px;
       border: none;
       background: transparent;
-      border-right: 2px solid var(--card-border);
-      font-family: var(--font-hand);
-      font-size: 1.25rem;
-      font-weight: bold;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-color-secondary);
       cursor: pointer;
-      color: var(--text-color);
       display: flex;
       align-items: center;
       gap: 8px;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-color-primary);
     }
 
     .tab-btn.active {
-      background: var(--card-bg);
-      color: var(--primary);
-      box-shadow: inset 0 -3px 0 var(--primary);
+      color: var(--color-primary);
+      background: var(--color-surface-lowest);
+      border-bottom-color: var(--color-primary);
     }
 
-    .tab-pane {
+    .tab-content-pane {
       display: none;
       padding: 24px;
     }
-    .tab-pane.active {
+    .tab-content-pane.active {
       display: block;
     }
 
-    .code-box {
+    .code-block {
       background: var(--code-bg);
       color: var(--code-color);
-      border-radius: 10px;
-      border: 2px solid var(--card-border);
+      border-radius: var(--radius-md);
       padding: 16px 20px;
       position: relative;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 0.92rem;
+      font-size: 0.9rem;
       overflow-x: auto;
-      margin: 12px 0 20px;
+      margin: 12px 0 16px;
+      border: 1px solid rgba(255,255,255,0.08);
     }
 
-    .code-box pre {
+    .code-block pre {
       margin: 0;
       white-space: pre;
     }
 
-    .copy-btn {
+    .copy-code-btn {
       position: absolute;
       top: 10px;
       right: 10px;
-      background: rgba(255, 255, 255, 0.15);
-      color: #fff;
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.12);
+      color: #f1f3f5;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: var(--radius-sm);
       padding: 4px 10px;
-      font-size: 0.8rem;
-      font-family: var(--font-sans);
+      font-size: 0.78rem;
+      font-weight: 600;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.15s;
     }
-    .copy-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
+
+    .copy-code-btn:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--color-surface-high);
+      background: var(--color-surface-lowest);
+      padding: 36px 0 28px;
+      margin-top: 60px;
+    }
+
+    .footer-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 20px;
+      font-size: 0.9rem;
+      color: var(--text-color-secondary);
+    }
+    .footer-links a:hover {
+      color: var(--color-primary);
     }
 
     /* Toast */
@@ -618,17 +789,17 @@
       position: fixed;
       bottom: 24px;
       right: 24px;
-      background: var(--card-border);
-      color: var(--card-bg);
+      background: var(--text-color-primary);
+      color: var(--color-surface-lowest);
       padding: 10px 18px;
-      border-radius: 8px;
-      font-family: var(--font-hand);
-      font-size: 1.2rem;
-      font-weight: bold;
+      border-radius: var(--radius-md);
+      font-size: 0.9rem;
+      font-weight: 600;
+      box-shadow: var(--shadow-island-hover);
       opacity: 0;
       transform: translateY(20px);
-      transition: all 0.3s ease;
-      z-index: 999;
+      transition: all 0.25s ease;
+      z-index: 9999;
       pointer-events: none;
     }
     .toast.show {
@@ -636,135 +807,209 @@
       transform: translateY(0);
     }
 
-    /* Footer */
-    footer {
-      border-top: 3px solid var(--card-border);
-      background: var(--card-bg);
-      padding: 40px 0 30px;
-      margin-top: 80px;
-      text-align: center;
-    }
-
-    .footer-content {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .footer-links {
-      display: flex;
-      gap: 20px;
-      font-family: var(--font-hand);
-      font-size: 1.25rem;
-    }
-
-    .footer-links a {
-      color: var(--text-color);
-      text-decoration: none;
-    }
-    .footer-links a:hover {
-      color: var(--primary);
-      text-decoration: underline;
-    }
-
-    .copyright {
-      color: var(--text-muted);
-      font-size: 0.9rem;
-    }
-
     @media (max-width: 768px) {
       .hero h1 {
         font-size: 2.2rem;
       }
-      .hero-subtitle {
-        font-size: 1.05rem;
+      .nav-links {
+        display: none;
       }
-      .canvas-container {
-        height: 280px;
+      .canvas-viewport {
+        height: 320px;
       }
-      .features-grid {
-        grid-template-columns: 1fr;
+      .toolbar-island {
+        overflow-x: auto;
+        max-width: 92vw;
+      }
+      .footer-content {
+        flex-direction: column;
+        text-align: center;
       }
     }
   </style>
 </head>
 <body>
 
-  <!-- Navigation -->
-  <header>
-    <div class="container navbar">
+  <!-- Floating Island Header -->
+  <div class="header-wrapper">
+    <header class="header-island">
       <a href="#" class="brand">
-        <div class="brand-logo">✏️</div>
-        <span>Excalidraw <span class="brand-tag">SQLite</span></span>
+        <!-- Official Excalidraw Logo Path -->
+        <svg class="brand-logo-svg" viewBox="0 0 496 512">
+          <path d="M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z"/>
+        </svg>
+        <span>Excalidraw <span class="badge-sync"><span class="sync-dot"></span> SQLite</span></span>
       </a>
-      <div class="nav-actions">
-        <button id="themeToggle" class="theme-toggle hand-font" title="切换明暗主题">
+
+      <nav class="nav-links">
+        <a href="#features" class="nav-link">特性亮点</a>
+        <a href="#scenes" class="nav-link">多画板</a>
+        <a href="#compare" class="nav-link">方案对比</a>
+        <a href="#quickstart" class="nav-link">一键部署</a>
+      </nav>
+
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <button id="themeToggle" class="nav-btn" title="切换深浅主题">
           <span id="themeIcon">🌙</span> <span id="themeText">深色</span>
         </button>
-        <a href="https://github.com/biaobiaobiao108/excalidrawsqlite" target="_blank" class="icon-btn hand-font">
-          <svg height="18" width="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
-          GitHub
+        <a href="https://github.com/biaobiaobiao108/excalidrawsqlite" target="_blank" class="nav-btn nav-btn-primary">
+          <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+          Star
         </a>
       </div>
-    </div>
-  </header>
+    </header>
+  </div>
 
-  <!-- Hero Section -->
   <main class="container">
+    <!-- Hero Section -->
     <section class="hero">
-      <div class="hero-badge-wrap">
+      <div class="hero-pill">
         <span>⚡ 100% Bun 驱动</span>
         <span>•</span>
-        <span>💾 原生 SQLite WAL</span>
+        <span>💾 原生 SQLite WAL 持久化</span>
         <span>•</span>
-        <span>🧼 纯净私有化</span>
+        <span>🧼 纯净无遥测</span>
       </div>
 
       <h1>
         纯净、自托管的<br />
-        <span class="highlight">Bun + SQLite</span> 手绘虚拟白板
+        <span class="brand-highlight">Excalidraw</span> 手绘虚拟白板
       </h1>
 
       <p class="hero-subtitle">
-        为极致私有化与局域网打造。多画板管理、30s 防抖自动云端持久化、图片附件归档、HttpOnly 密码鉴权，无需重型数据库，单容器一键拉起。
+        基于 Bun 1.4+ 与原生 SQLite 深度定制。支持多画板管理、约 30s 防抖自动云端持久化、图片附件归档与 HttpOnly 密码鉴权。零第三方遥测，单容器一键拉起。
       </p>
 
-      <div class="hero-cta">
-        <a href="#quickstart" class="btn btn-primary">
+      <div class="hero-actions">
+        <a href="#quickstart" class="nav-btn nav-btn-primary btn-hero">
           🚀 极速部署
         </a>
-        <a href="#features" class="btn btn-outline">
-          ✨ 核心特性
-        </a>
-        <a href="#compare" class="btn btn-outline">
-          ⚖️ 架构对比
+        <a href="#features" class="nav-btn btn-hero">
+          ✨ 探索核心特性
         </a>
       </div>
 
-      <!-- Doodle Interactive Canvas Preview -->
-      <div class="whiteboard-preview-card">
-        <div class="preview-header">
-          <div class="preview-window-dots">
-            <span class="dot dot-red"></span>
-            <span class="dot dot-yellow"></span>
-            <span class="dot dot-green"></span>
+      <!-- Interactive Excalidraw Canvas Simulator -->
+      <div class="canvas-island-wrapper">
+        <!-- Floating Toolbar -->
+        <div class="excalidraw-toolbar-container">
+          <div class="toolbar-island">
+            <!-- Select -->
+            <button class="tool-btn" data-tool="select" title="选择 (1)">
+              <svg viewBox="0 0 24 24"><path d="M4 4l7 17 2.5-6.5L20 12z"/></svg>
+              <span class="keybind">1</span>
+            </button>
+            <!-- Rectangle -->
+            <button class="tool-btn" data-tool="rectangle" title="矩形 (2)">
+              <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+              <span class="keybind">2</span>
+            </button>
+            <!-- Diamond -->
+            <button class="tool-btn" data-tool="diamond" title="菱形 (3)">
+              <svg viewBox="0 0 24 24"><path d="M12 2l10 10-10 10L2 12z"/></svg>
+              <span class="keybind">3</span>
+            </button>
+            <!-- Ellipse -->
+            <button class="tool-btn" data-tool="ellipse" title="圆形 (4)">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>
+              <span class="keybind">4</span>
+            </button>
+            <!-- Arrow -->
+            <button class="tool-btn" data-tool="arrow" title="箭头 (5)">
+              <svg viewBox="0 0 24 24"><path d="M5 19L19 5M12 5h7v7"/></svg>
+              <span class="keybind">5</span>
+            </button>
+            <!-- Line -->
+            <button class="tool-btn" data-tool="line" title="直线 (6)">
+              <svg viewBox="0 0 24 24"><path d="M5 19L19 5"/></svg>
+              <span class="keybind">6</span>
+            </button>
+            <!-- Freedraw / Pencil -->
+            <button class="tool-btn active" data-tool="freedraw" title="画笔 (7)">
+              <svg viewBox="0 0 24 24"><path d="M18 2l4 4-14 14H4v-4L18 2z"/></svg>
+              <span class="keybind">7</span>
+            </button>
+            <!-- Text -->
+            <button class="tool-btn" data-tool="text" title="文字 (8)">
+              <svg viewBox="0 0 24 24"><path d="M4 7V4h16v3M12 4v16M9 20h6"/></svg>
+              <span class="keybind">8</span>
+            </button>
+            <!-- Eraser -->
+            <button class="tool-btn" data-tool="eraser" title="橡皮擦 (0)">
+              <svg viewBox="0 0 24 24"><path d="M18 13l-5-5-8 8a2 2 0 0 0 0 2.83l2.17 2.17a2 2 0 0 0 2.83 0L18 13zM14 6l3-3a2 2 0 0 1 2.83 0l2.17 2.17a2 2 0 0 1 0 2.83L19 11"/></svg>
+              <span class="keybind">0</span>
+            </button>
           </div>
-          <div class="preview-title">🎨 试玩涂鸦画板 (Interactive Canvas Demo)</div>
-          <div style="width: 50px;"></div>
+
+          <!-- Color Palette -->
+          <div class="color-island">
+            <div class="color-swatch active" style="background:#1e1e1e;" data-color="#1e1e1e" title="黑色"></div>
+            <div class="color-swatch" style="background:#6965db;" data-color="#6965db" title="紫蓝"></div>
+            <div class="color-swatch" style="background:#e03131;" data-color="#e03131" title="红色"></div>
+            <div class="color-swatch" style="background:#2f9e44;" data-color="#2f9e44" title="绿色"></div>
+            <div class="color-swatch" style="background:#f08c00;" data-color="#f08c00" title="橙色"></div>
+            <button class="clear-btn" id="clearCanvasBtn">清空</button>
+          </div>
         </div>
 
-        <div class="canvas-container" id="canvasContainer">
-          <div class="canvas-toolbar">
-            <button class="tool-color-btn active" style="background:#2b2b2b;" data-color="#2b2b2b" title="黑色"></button>
-            <button class="tool-color-btn" style="background:#6965db;" data-color="#6965db" title="紫蓝"></button>
-            <button class="tool-color-btn" style="background:#ff6b6b;" data-color="#ff6b6b" title="红色"></button>
-            <button class="tool-color-btn" style="background:#10b981;" data-color="#10b981" title="绿色"></button>
-            <button class="tool-color-btn" style="background:#f59f00;" data-color="#f59f00" title="橙黄"></button>
-            <button class="tool-clear-btn" id="clearCanvasBtn">清空画布</button>
+        <!-- Canvas Viewport -->
+        <div class="canvas-viewport" id="canvasContainer">
+          <canvas id="excalidraw-canvas"></canvas>
+          <div class="canvas-watermark">
+            <span>✍️ Excalidraw 拟真画布（支持直接绘制图形）</span>
           </div>
-          <canvas id="doodle-canvas"></canvas>
-          <div class="canvas-hint">在此区域随意涂鸦试玩 ✍️</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Multi-Scene Management Preview Section -->
+    <section id="scenes" class="scene-manager-section">
+      <div class="section-title-wrap">
+        <span class="section-tag">Multi-Scene</span>
+        <h2 class="section-title">内置多画板云端管理</h2>
+      </div>
+
+      <div class="scene-dialog-card">
+        <div class="scene-dialog-header">
+          <div class="scene-title-group">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <h3>云端画板库 (Cloud Scenes)</h3>
+            <span class="badge-sync">已同步到 SQLite</span>
+          </div>
+          <button class="nav-btn nav-btn-primary" style="height: 32px; font-size: 0.82rem;">+ 新建画板</button>
+        </div>
+
+        <div class="scene-list-grid">
+          <div class="scene-card-item active">
+            <div class="scene-card-thumb">
+              ⚡ Bun + SQLite Architecture
+            </div>
+            <div class="scene-card-name">
+              <span>架构全景设计图</span>
+              <span style="color: var(--color-primary); font-size: 0.75rem;">当前画板</span>
+            </div>
+            <div class="scene-card-meta">10 个图元 • 3 分钟前自动保存</div>
+          </div>
+
+          <div class="scene-card-item">
+            <div class="scene-card-thumb">
+              📊 Database Schema (WAL)
+            </div>
+            <div class="scene-card-name">
+              <span>SQLite 表结构设计</span>
+            </div>
+            <div class="scene-card-meta">24 个图元 • 昨天 18:20 保存</div>
+          </div>
+
+          <div class="scene-card-item">
+            <div class="scene-card-thumb">
+              💡 Product Brainstorming
+            </div>
+            <div class="scene-card-name">
+              <span>项目特性与规划脑图</span>
+            </div>
+            <div class="scene-card-meta">48 个图元 • 2 天前保存</div>
+          </div>
         </div>
       </div>
     </section>
@@ -777,103 +1022,103 @@
       </div>
 
       <div class="features-grid">
-        <!-- Feature 1 -->
+        <!-- Card 1 -->
         <div class="feature-card">
-          <div class="feature-icon-box" style="background: var(--primary-light);">🚀</div>
-          <h3>全栈 Bun (1.4+) 驱动</h3>
+          <div class="feature-icon-box">🚀</div>
+          <h3>全栈 Bun 1.4+ 驱动</h3>
           <p>从 Monorepo 依赖管理、TypeScript 编译构建到生产后端托管，全链路 100% 运行于 Bun 原生环境，零 Node.js / Yarn 依赖包袱。</p>
         </div>
 
-        <!-- Feature 2 -->
+        <!-- Card 2 -->
         <div class="feature-card">
-          <div class="feature-icon-box" style="background: var(--accent-yellow);">💾</div>
-          <h3>原生 SQLite 高性能持久化</h3>
-          <p>基于 <code>bun:sqlite</code> 并开启 WAL 模式。支持多画板管理、约 30 秒防抖自动同步、Revision 版本冲突防护与画板切出等待确认。</p>
+          <div class="feature-icon-box">💾</div>
+          <h3>原生 SQLite WAL 高性能持久化</h3>
+          <p>基于 <code>bun:sqlite</code> 并开启 WAL 模式。支持多画板管理、约 30 秒防抖自动同步、Revision 版本防护与画板切出等待确认。</p>
         </div>
 
-        <!-- Feature 3 -->
+        <!-- Card 3 -->
         <div class="feature-card">
-          <div class="feature-icon-box" style="background: var(--accent-pink);">🧼</div>
+          <div class="feature-icon-box">🧼</div>
           <h3>纯净私有化与零遥测</h3>
           <p>默认剥离任何第三方跟踪脚本、Google Fonts、Sentry 及官方云端跳转。默认路径仅访问本机或局域网服务，守护数据主权。</p>
         </div>
 
-        <!-- Feature 4 -->
+        <!-- Card 4 -->
         <div class="feature-card">
-          <div class="feature-icon-box" style="background: var(--accent-green);">⚡</div>
+          <div class="feature-icon-box">⚡</div>
           <h3>现代浏览器极致性能</h3>
-          <p>面向最新现代浏览器（esnext），去除过时 polyfill 开销。Mermaid 图表、CJK「霞鹜文楷」手绘字体、代码编辑器按需动态加载。</p>
+          <p>面向最新现代浏览器（esnext），去除过时兼容层。Mermaid 图表、CJK「霞鹜文楷」手绘字体、代码编辑器按需动态加载。</p>
         </div>
 
-        <!-- Feature 5 -->
+        <!-- Card 5 -->
         <div class="feature-card">
-          <div class="feature-icon-box" style="background: var(--accent-blue);">🔐</div>
+          <div class="feature-icon-box">🔐</div>
           <h3>轻量服务端会话鉴权</h3>
           <p>支持 <code>AUTH_PASSWORD</code> 密码保护，会话直接记录于 SQLite，凭证通过 HttpOnly Cookie 下发，浏览器端绝不暴露明文凭据。</p>
         </div>
 
-        <!-- Feature 6 -->
+        <!-- Card 6 -->
         <div class="feature-card">
-          <div class="feature-icon-box" style="background: var(--accent-orange);">🐳</div>
+          <div class="feature-icon-box">🐳</div>
           <h3>极简容器化与 rootless 兼容</h3>
           <p>基于 Alpine 的极小镜像。单挂载卷 <code>./data:/app/data</code> 即可持久化数据库与附件，开箱支持 Docker、Podman 与反向代理。</p>
         </div>
       </div>
     </section>
 
-    <!-- Architecture & Comparison -->
+    <!-- Architecture & Comparison Section -->
     <section id="compare" class="section">
       <div class="section-title-wrap">
         <span class="section-tag">Comparison</span>
         <h2 class="section-title">方案对比：为什么选择 SQLite 纯净版？</h2>
       </div>
 
-      <div class="comparison-wrapper">
-        <table class="sketch-table">
+      <div class="comparison-card">
+        <table class="excalidraw-table">
           <thead>
             <tr>
               <th>对比维度</th>
-              <th>传统官方 / 第三方方案</th>
+              <th>传统官方 / 社区第三方方案</th>
               <th>本仓库 (Bun + SQLite 私有化版)</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td><strong>运行环境</strong></td>
-              <td>Node.js + Yarn / 多容器微服务</td>
-              <td><strong>全栈 Bun 1.4+ (单服务进程)</strong></td>
+              <td>Node.js + Yarn / 多容器微服务组合</td>
+              <td><span class="badge-true">✓ 全栈 Bun 1.4+ (极速单服务进程)</span></td>
             </tr>
             <tr>
-              <td><strong>数据存储</strong></td>
-              <td>Redis / Postgres / 仅浏览器 localStorage</td>
-              <td><strong>原生 SQLite WAL + 本地文件系统 (单卷挂载)</strong></td>
+              <td><strong>持久化存储</strong></td>
+              <td>Redis / Postgres / 仅浏览器本地存储</td>
+              <td><span class="badge-true">✓ 原生 SQLite WAL + 本地附件归档 (单卷挂载)</span></td>
             </tr>
             <tr>
               <td><strong>多画板管理</strong></td>
-              <td>需依赖官方云端订阅或手动导出文件</td>
-              <td><strong>内置多画板管理弹窗、重命名、快速切换与 URL 直达</strong></td>
+              <td>需依赖官方云端 Plus 付费或手动保存文件</td>
+              <td><span class="badge-true">✓ 内置多画板管理弹窗、重命名、快速切换与 URL 直达</span></td>
             </tr>
             <tr>
-              <td><strong>私密与跟踪</strong></td>
-              <td>包含分析打点、Sentry 遥测与 Google Fonts</td>
-              <td><strong>100% 纯净、零外链遥测、霞鹜文楷字体本地分包按需加载</strong></td>
+              <td><strong>隐私与安全</strong></td>
+              <td>包含外部打点遥测、Sentry 上报与 Google Fonts</td>
+              <td><span class="badge-true">✓ 100% 纯净私有、零外链打点、本地霞鹜文楷字体包</span></td>
             </tr>
             <tr>
-              <td><strong>安全性</strong></td>
-              <td>简易 Token 存于 localStorage</td>
-              <td><strong>严格 CSP、HttpOnly Session Cookie、密码保护</strong></td>
+              <td><strong>身份认证</strong></td>
+              <td>明文 Token 保存在 localStorage</td>
+              <td><span class="badge-true">✓ 严格 CSP、HttpOnly Session Cookie、密码保护</span></td>
             </tr>
             <tr>
               <td><strong>资源消耗</strong></td>
-              <td>内存占用 500MB+，启动较慢</td>
-              <td><strong>极速冷启动、内存占用低至约 50~80MB</strong></td>
+              <td>内存占用 500MB+，冷启动较慢</td>
+              <td><span class="badge-true">✓ 极速毫秒级冷启动、内存占用低至约 50~80MB</span></td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <!-- Quick Start & Deployment Guide -->
+    <!-- Quickstart & Deployment Guide -->
     <section id="quickstart" class="section">
       <div class="section-title-wrap">
         <span class="section-tag">Quick Start</span>
@@ -881,17 +1126,17 @@
       </div>
 
       <div class="quickstart-card">
-        <div class="tab-header">
+        <div class="quickstart-tab-header">
           <button class="tab-btn active" data-tab="docker">🐳 Docker / Podman Compose (推荐)</button>
           <button class="tab-btn" data-tab="bun">⚡ 本地 Bun 运行</button>
           <button class="tab-btn" data-tab="env">⚙️ 环境变量速查</button>
         </div>
 
         <!-- Tab 1: Docker Compose -->
-        <div class="tab-pane active" id="pane-docker">
+        <div class="tab-content-pane active" id="pane-docker">
           <p><strong>1. 创建数据目录与配置文件：</strong></p>
-          <div class="code-box">
-            <button class="copy-btn" data-clipboard="mkdir -p ./data
+          <div class="code-block">
+            <button class="copy-code-btn" data-clipboard="mkdir -p ./data
 cat << 'EOF' > docker-compose.yml
 services:
   excalidraw:
@@ -921,29 +1166,29 @@ services:
       - ./data:/app/data</code></pre>
           </div>
 
-          <p><strong>2. 启动容器：</strong></p>
-          <div class="code-box">
-            <button class="copy-btn" data-clipboard="docker compose up -d --build">复制</button>
+          <p><strong>2. 启动容器服务：</strong></p>
+          <div class="code-block">
+            <button class="copy-code-btn" data-clipboard="docker compose up -d --build">复制</button>
             <pre><code>docker compose up -d --build</code></pre>
           </div>
           <p>访问：<code>http://localhost:8080</code> 即可畅享私有白板！</p>
         </div>
 
         <!-- Tab 2: Bun Direct Run -->
-        <div class="tab-pane" id="pane-bun">
-          <p><strong>前置要求：</strong> 安装 <a href="https://bun.sh" target="_blank" style="color: var(--primary);">Bun (v1.4.0+)</a></p>
+        <div class="tab-content-pane" id="pane-bun">
+          <p><strong>前置要求：</strong> 安装 <a href="https://bun.sh" target="_blank" style="color: var(--color-primary); font-weight: 600;">Bun (v1.4.0+)</a></p>
           
-          <div class="code-box">
-            <button class="copy-btn" data-clipboard="git clone <your-repo-url> excalidraw-sqlite
+          <div class="code-block">
+            <button class="copy-code-btn" data-clipboard="git clone <your-repo-url> excalidraw-sqlite
 cd excalidraw-sqlite
 
 # 1. 安装依赖
 bun install
 
-# 2. 编译 packages
+# 2. 编译核心 Packages
 bun run build:packages
 
-# 3. 构建前端产物并启动全栈服务
+# 3. 构建前端静态产物并启动全栈服务 (默认端口 8080)
 bun run build
 bun run start:server">复制</button>
             <pre><code># 1. 安装依赖
@@ -959,9 +1204,9 @@ bun run start:server</code></pre>
         </div>
 
         <!-- Tab 3: Environment Variables -->
-        <div class="tab-pane" id="pane-env">
-          <div class="comparison-wrapper" style="box-shadow: none; border-width: 2px;">
-            <table class="sketch-table">
+        <div class="tab-content-pane" id="pane-env">
+          <div class="comparison-card" style="box-shadow: none; border-radius: 8px;">
+            <table class="excalidraw-table">
               <thead>
                 <tr>
                   <th>环境变量</th>
@@ -1007,21 +1252,22 @@ bun run start:server</code></pre>
   <!-- Footer -->
   <footer>
     <div class="container footer-content">
-      <div class="brand hand-font" style="font-size: 1.5rem;">
-        ✏️ Excalidraw SQLite
+      <div class="footer-brand">
+        <svg class="brand-logo-svg" viewBox="0 0 496 512" style="width: 22px; height: 22px;">
+          <path d="M493.4 24.6l-22-22c-9.4-9.4-24.6-9.4-33.9 0L39.7 410.4c-2.4 2.4-4.2 5.3-5.3 8.6L.4 500.4c-2.5 7.6 4.7 14.8 12.3 12.3l81.4-34c3.2-1.1 6.2-2.9 8.6-5.3L493.4 58.5c9.4-9.3 9.4-24.5 0-33.9zM76.9 447.8l-40.4 16.9 16.9-40.4 286.9-286.9 23.5 23.5L76.9 447.8z"/>
+        </svg>
+        <span>Excalidraw SQLite</span>
       </div>
-      <p style="max-width: 500px; color: var(--text-muted);">
-        基于开源 Excalidraw 深度定制的轻量全栈私有化版本。
-      </p>
+      
       <div class="footer-links">
-        <a href="#features">特性介绍</a>
-        <span>•</span>
+        <a href="#features">特性亮点</a>
+        <a href="#scenes">多画板</a>
         <a href="#compare">方案对比</a>
-        <span>•</span>
-        <a href="#quickstart">快速上手</a>
+        <a href="#quickstart">快速部署</a>
       </div>
-      <div class="copyright">
-        Released under MIT License • Built with Bun & SQLite
+
+      <div style="font-size: 0.85rem; color: var(--text-color-muted);">
+        Released under MIT License • 100% Bun & SQLite
       </div>
     </div>
   </footer>
@@ -1029,7 +1275,7 @@ bun run start:server</code></pre>
   <!-- Toast Notification -->
   <div id="toast" class="toast">✨ 已复制到剪贴板！</div>
 
-  <!-- Interactive Scripts -->
+  <!-- Interactive Simulator Scripts -->
   <script>
     // 1. Theme Toggle
     const themeToggle = document.getElementById('themeToggle');
@@ -1049,7 +1295,7 @@ bun run start:server</code></pre>
         themeText.textContent = '深色';
         localStorage.setItem('excalidraw_theme', 'light');
       }
-      redrawCanvasBackground();
+      renderCanvas();
     }
 
     const savedTheme = localStorage.getItem('excalidraw_theme') || 
@@ -1063,7 +1309,7 @@ bun run start:server</code></pre>
 
     // 2. Tab Switching
     const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabPanes = document.querySelectorAll('.tab-pane');
+    const tabPanes = document.querySelectorAll('.tab-content-pane');
 
     tabBtns.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1089,7 +1335,7 @@ bun run start:server</code></pre>
       }, 2000);
     }
 
-    document.querySelectorAll('.copy-btn').forEach(btn => {
+    document.querySelectorAll('.copy-code-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const text = btn.getAttribute('data-clipboard');
         if (navigator.clipboard && text) {
@@ -1102,83 +1348,163 @@ bun run start:server</code></pre>
       });
     });
 
-    // 4. Interactive Mini-Doodle Canvas
-    const canvas = document.getElementById('doodle-canvas');
+    // 4. Excalidraw Authentic Mini-Canvas Simulator Engine
+    const canvas = document.getElementById('excalidraw-canvas');
     const container = document.getElementById('canvasContainer');
     const ctx = canvas.getContext('2d');
-    let isDrawing = false;
-    let currentColor = '#2b2b2b';
-    let strokes = [];
-    let currentStroke = [];
+
+    let currentTool = 'freedraw';
+    let currentColor = '#1e1e1e';
+    let isPointerDown = false;
+    let startPos = { x: 0, y: 0 };
+    let elements = [];
+    let currentElement = null;
 
     function resizeCanvas() {
       const rect = container.getBoundingClientRect();
       canvas.width = rect.width;
       canvas.height = rect.height;
-      redrawStrokes();
+      renderCanvas();
     }
 
     window.addEventListener('resize', resizeCanvas);
 
-    function redrawCanvasBackground() {
-      redrawStrokes();
-    }
-
-    function drawInitialSketch() {
-      const isDark = htmlEl.getAttribute('data-theme') === 'dark';
-      const drawColor = isDark ? '#8581f5' : '#6965db';
-      const textColor = isDark ? '#e6e6e6' : '#2b2b2b';
-
-      ctx.save();
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = drawColor;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
+    // Initial sketch diagram data
+    function loadDefaultElements() {
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
 
+      elements = [
+        // Left Box: Bun Fullstack
+        { type: 'rectangle', x: cx - 280, y: cy - 60, w: 160, h: 90, color: '#6965db' },
+        { type: 'text', text: '⚡ Bun 1.4+\n(Fullstack Runtime)', x: cx - 200, y: cy - 20, color: '#1e1e1e' },
+        
+        // Right Box: SQLite Storage
+        { type: 'rectangle', x: cx + 120, y: cy - 60, w: 160, h: 90, color: '#2f9e44' },
+        { type: 'text', text: '💾 SQLite WAL\n(Cloud Storage)', x: cx + 200, y: cy - 20, color: '#1e1e1e' },
+        
+        // Center Diamond: Pure Privacy
+        { type: 'diamond', x: cx - 50, y: cy - 50, w: 100, h: 80, color: '#f08c00' },
+        { type: 'text', text: '🧼 纯净私有', x: cx, y: cy - 10, color: '#1e1e1e' },
+
+        // Arrows
+        { type: 'arrow', x1: cx - 120, y1: cy - 15, x2: cx - 50, y2: cy - 15, color: '#6965db' },
+        { type: 'arrow', x1: cx + 50, y1: cy - 15, x2: cx + 120, y2: cy - 15, color: '#2f9e44' }
+      ];
+    }
+
+    // Rough style sketchy helpers
+    function drawSketchyLine(ctx, x1, y1, x2, y2, color) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.rect(cx - 140, cy - 65, 280, 130);
+      // Add slight organic curvature
+      const midX = (x1 + x2) / 2 + (Math.random() - 0.5) * 1.5;
+      const midY = (y1 + y2) / 2 + (Math.random() - 0.5) * 1.5;
+      ctx.moveTo(x1, y1);
+      ctx.quadraticCurveTo(midX, midY, x2, y2);
       ctx.stroke();
-
-      ctx.fillStyle = textColor;
-      ctx.font = 'bold 28px "Patrick Hand", "Caveat", cursive';
-      ctx.textAlign = 'center';
-      ctx.fillText("✨ Excalidraw SQLite", cx, cy - 10);
-
-      ctx.font = '20px "Patrick Hand", "Caveat", cursive';
-      ctx.fillStyle = isDark ? '#a0a0a0' : '#6b6b6b';
-      ctx.fillText("Bun + SQLite WAL • 纯净自托管", cx, cy + 28);
-
       ctx.restore();
     }
 
-    function redrawStrokes() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (strokes.length === 0) {
-        drawInitialSketch();
-        return;
-      }
-
-      strokes.forEach(stroke => {
-        if (stroke.points.length < 2) return;
-        ctx.save();
-        ctx.beginPath();
-        ctx.strokeStyle = stroke.color;
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-        for (let i = 1; i < stroke.points.length; i++) {
-          ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-        }
-        ctx.stroke();
-        ctx.restore();
-      });
+    function drawSketchyRect(ctx, x, y, w, h, color) {
+      drawSketchyLine(ctx, x, y, x + w, y, color);
+      drawSketchyLine(ctx, x + w, y, x + w, y + h, color);
+      drawSketchyLine(ctx, x + w, y + h, x, y + h, color);
+      drawSketchyLine(ctx, x, y + h, x, y, color);
     }
 
-    function getPointerPos(e) {
+    function drawSketchyDiamond(ctx, x, y, w, h, color) {
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      drawSketchyLine(ctx, cx, y, x + w, cy, color);
+      drawSketchyLine(ctx, x + w, cy, cx, y + h, color);
+      drawSketchyLine(ctx, cx, y + h, x, cy, color);
+      drawSketchyLine(ctx, x, cy, cx, y, color);
+    }
+
+    function drawSketchyEllipse(ctx, x, y, w, h, color) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w / 2), Math.abs(h / 2), 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawSketchyArrow(ctx, x1, y1, x2, y2, color) {
+      drawSketchyLine(ctx, x1, y1, x2, y2, color);
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const headLen = 14;
+      const a1 = angle - Math.PI / 6;
+      const a2 = angle + Math.PI / 6;
+      drawSketchyLine(ctx, x2, y2, x2 - headLen * Math.cos(a1), y2 - headLen * Math.sin(a1), color);
+      drawSketchyLine(ctx, x2, y2, x2 - headLen * Math.cos(a2), y2 - headLen * Math.sin(a2), color);
+    }
+
+    function renderElement(el) {
+      const isDark = htmlEl.getAttribute('data-theme') === 'dark';
+      let renderColor = el.color;
+      if (renderColor === '#1e1e1e' && isDark) renderColor = '#f1f3f5';
+
+      switch (el.type) {
+        case 'rectangle':
+          drawSketchyRect(ctx, el.x, el.y, el.w, el.h, renderColor);
+          break;
+        case 'diamond':
+          drawSketchyDiamond(ctx, el.x, el.y, el.w, el.h, renderColor);
+          break;
+        case 'ellipse':
+          drawSketchyEllipse(ctx, el.x, el.y, el.w, el.h, renderColor);
+          break;
+        case 'line':
+          drawSketchyLine(ctx, el.x1, el.y1, el.x2, el.y2, renderColor);
+          break;
+        case 'arrow':
+          drawSketchyArrow(ctx, el.x1, el.y1, el.x2, el.y2, renderColor);
+          break;
+        case 'freedraw':
+          if (el.points && el.points.length > 1) {
+            ctx.save();
+            ctx.strokeStyle = renderColor;
+            ctx.lineWidth = 2.4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(el.points[0].x, el.points[0].y);
+            for (let i = 1; i < el.points.length; i++) {
+              ctx.lineTo(el.points[i].x, el.points[i].y);
+            }
+            ctx.stroke();
+            ctx.restore();
+          }
+          break;
+        case 'text':
+          ctx.save();
+          ctx.font = '600 17px "Caveat", "Virgil", cursive, "Noto Sans SC", sans-serif';
+          ctx.fillStyle = renderColor;
+          ctx.textAlign = 'center';
+          const lines = el.text.split('\n');
+          lines.forEach((line, idx) => {
+            ctx.fillText(line, el.x, el.y + idx * 22);
+          });
+          ctx.restore();
+          break;
+      }
+    }
+
+    function renderCanvas() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      elements.forEach(renderElement);
+      if (currentElement) {
+        renderElement(currentElement);
+      }
+    }
+
+    function getPos(e) {
       const rect = canvas.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -1188,62 +1514,118 @@ bun run start:server</code></pre>
       };
     }
 
-    function startDraw(e) {
-      isDrawing = true;
-      const pos = getPointerPos(e);
-      currentStroke = { color: currentColor, points: [pos] };
-      strokes.push(currentStroke);
-    }
+    canvas.addEventListener('mousedown', e => {
+      isPointerDown = true;
+      startPos = getPos(e);
 
-    function moveDraw(e) {
-      if (!isDrawing) return;
-      e.preventDefault();
-      const pos = getPointerPos(e);
-      currentStroke.points.push(pos);
-
-      ctx.save();
-      ctx.strokeStyle = currentColor;
-      ctx.lineWidth = 3;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      const pts = currentStroke.points;
-      if (pts.length >= 2) {
-        ctx.beginPath();
-        ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
-        ctx.lineTo(pos.x, pos.y);
-        ctx.stroke();
+      if (currentTool === 'freedraw') {
+        currentElement = {
+          type: 'freedraw',
+          color: currentColor,
+          points: [startPos]
+        };
+      } else if (currentTool === 'rectangle' || currentTool === 'diamond' || currentTool === 'ellipse') {
+        currentElement = {
+          type: currentTool,
+          color: currentColor,
+          x: startPos.x,
+          y: startPos.y,
+          w: 0,
+          h: 0
+        };
+      } else if (currentTool === 'line' || currentTool === 'arrow') {
+        currentElement = {
+          type: currentTool,
+          color: currentColor,
+          x1: startPos.x,
+          y1: startPos.y,
+          x2: startPos.x,
+          y2: startPos.y
+        };
+      } else if (currentTool === 'text') {
+        const text = prompt('请输入文字内容：', 'Excalidraw SQLite');
+        if (text) {
+          elements.push({
+            type: 'text',
+            text: text,
+            x: startPos.x,
+            y: startPos.y,
+            color: currentColor
+          });
+          renderCanvas();
+        }
+        isPointerDown = false;
+      } else if (currentTool === 'eraser') {
+        // Erase nearest element
+        elements = elements.filter(el => {
+          if (el.x && Math.hypot(el.x - startPos.x, el.y - startPos.y) < 40) return false;
+          if (el.x1 && Math.hypot(el.x1 - startPos.x, el.y1 - startPos.y) < 40) return false;
+          return true;
+        });
+        renderCanvas();
       }
-      ctx.restore();
-    }
+    });
 
-    function endDraw() {
-      isDrawing = false;
-    }
+    canvas.addEventListener('mousemove', e => {
+      if (!isPointerDown) return;
+      const pos = getPos(e);
 
-    canvas.addEventListener('mousedown', startDraw);
-    canvas.addEventListener('mousemove', moveDraw);
-    window.addEventListener('mouseup', endDraw);
+      if (currentTool === 'freedraw' && currentElement) {
+        currentElement.points.push(pos);
+        renderCanvas();
+      } else if ((currentTool === 'rectangle' || currentTool === 'diamond' || currentTool === 'ellipse') && currentElement) {
+        currentElement.w = pos.x - startPos.x;
+        currentElement.h = pos.y - startPos.y;
+        renderCanvas();
+      } else if ((currentTool === 'line' || currentTool === 'arrow') && currentElement) {
+        currentElement.x2 = pos.x;
+        currentElement.y2 = pos.y;
+        renderCanvas();
+      }
+    });
 
-    canvas.addEventListener('touchstart', startDraw, { passive: false });
-    canvas.addEventListener('touchmove', moveDraw, { passive: false });
-    window.addEventListener('touchend', endDraw);
+    window.addEventListener('mouseup', () => {
+      if (isPointerDown && currentElement) {
+        elements.push(currentElement);
+        currentElement = null;
+        renderCanvas();
+      }
+      isPointerDown = false;
+    });
 
-    const colorBtns = document.querySelectorAll('.tool-color-btn');
-    colorBtns.forEach(btn => {
+    // Toolbar Tool Selection
+    const toolBtns = document.querySelectorAll('.tool-btn');
+    toolBtns.forEach(btn => {
       btn.addEventListener('click', () => {
-        colorBtns.forEach(b => b.classList.remove('active'));
+        toolBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        currentColor = btn.getAttribute('data-color');
+        currentTool = btn.getAttribute('data-tool');
       });
     });
 
-    document.getElementById('clearCanvasBtn').addEventListener('click', () => {
-      strokes = [];
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawInitialSketch();
+    // Color Swatches
+    const colorSwatches = document.querySelectorAll('.color-swatch');
+    colorSwatches.forEach(swatch => {
+      swatch.addEventListener('click', () => {
+        colorSwatches.forEach(s => s.classList.remove('active'));
+        swatch.classList.add('active');
+        currentColor = swatch.getAttribute('data-color');
+      });
     });
 
-    setTimeout(resizeCanvas, 50);
+    // Clear Canvas
+    document.getElementById('clearCanvasBtn').addEventListener('click', () => {
+      elements = [];
+      renderCanvas();
+      showToast('🧹 画布已清空');
+    });
+
+    // Initialize Canvas on load
+    setTimeout(() => {
+      resizeCanvas();
+      loadDefaultElements();
+      renderCanvas();
+    }, 60);
   </script>
 </body>
 </html>
