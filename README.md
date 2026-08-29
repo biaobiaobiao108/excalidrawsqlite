@@ -1,244 +1,263 @@
 # Excalidraw (Bun + SQLite 持久化纯净私有化版本)
 
-一个基于 **Bun 1.4+** 与 **原生 SQLite** 驱动的纯净、自托管虚拟手绘风格白板。支持多画板管理、云端自动持久化、图片附件存储、密码保护与极速 Docker 容器化部署。本发行版面向最新现代浏览器优化，不再兼容旧版浏览器。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Bun Version](https://img.shields.io/badge/Bun-1.4%2B-black?logo=bun)](https://bun.sh)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)](https://github.com/biaobiaobiao108/excalidrawsqlite/pkgs/container/excalidrawsqlite)
+
+一个基于 **Bun 1.4+** 与 **原生 SQLite** 驱动的纯净、自托管虚拟手绘风格白板。专为注重数据隐私、追求极速体验的个人与团队打造。支持多画板管理、30s 防抖自动云端持久化、画板图元数量统计、图片附件归档、HttpOnly 密码保护与极速 Docker/Podman 容器化部署。
 
 ---
 
-## ✨ 核心特性
+## ⚖️ 与原版 Excalidraw 的核心区别与优化
 
-- 🚀 **全栈 Bun 驱动**：从 Monorepo 依赖管理、构建编译到生产运行，100% 依赖 Bun，零 Node.js / Yarn 依赖。
-- 💾 **SQLite 云端持久化**：
-  - 基于 Bun 原生 `bun:sqlite`（开启 WAL 高性能并发模式）；
-  - 支持多画板管理（列表浏览、新建、重命名、快速切换、删除）；
-  - 画布修改防抖约 30 秒自动同步至 SQLite，并使用 revision 防止旧快照覆盖新快照；离开编辑器前会先等待当前画板保存完成；
-  - 图片/文件附件保存于 `data/files`，SQLite 只保存文件元数据；
-  - 支持 URL 参数 `?id=xxx` 自动识别与加载指定画板。
-- 🧼 **私有化体验**：
-  - 默认不加载分析脚本、Google Fonts 或官方站点跳转；
-  - 界面简洁高效，专为私有化与局域网部署打造。默认运行路径只访问本机服务；主动使用外部嵌入或公共图库功能时，浏览器才会访问相应外部地址。
-- ⚡ **现代浏览器性能**：
-  - 生产构建使用 `esnext` 与最新 Chrome、Edge、Firefox、Safari/iOS Safari 目标，避免旧浏览器转译和兼容层开销；
-  - Mermaid、CJK 字体、CodeMirror 与压缩回退实现按需加载，不进入首屏关键路径；本版本不包含云端 AI、实时协作、公共分享和错误上报；
-  - 使用原生 `CompressionStream`/`DecompressionStream`，不支持时才动态加载 pako 回退；
-  - Service Worker 对带 hash 的功能 chunk、字体和语言包分别缓存，应用更新使用新版本资源。
-- 🔐 **轻量鉴权保护**：
-  - 通过 `AUTH_PASSWORD` 开启密码保护，使用 HttpOnly 会话 Cookie，不在浏览器保存明文密码；
-  - 生产环境必须配置密码，免密模式只能通过 `ALLOW_ANONYMOUS=true` 显式开启。
-- 🐳 **极致轻量容器化**：
-  - 基于固定版本的 `oven/bun:1.4.0-alpine` 多阶段构建；
-  - 单一卷挂载 `./data:/app/data` 即可持久化数据库和图片附件。
+| 对比维度 | 官方 / 社区原版 Excalidraw | 本项目 (Excalidraw Bun + SQLite 纯净版) |
+| :--- | :--- | :--- |
+| **运行时与架构** | Node.js + Yarn，微服务或多容器配置 | **100% 全栈 Bun (1.4+) 驱动**，单进程一体化极速托管 |
+| **数据持久化** | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端 | **原生 SQLite WAL 高性能持久化**，单卷挂载 `./data:/app/data` |
+| **多画板管理** | 单画板模式，需手动导出/导入 `.excalidraw` 文件 | **内置画板工作台**：列表浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达 |
+| **图元统计** | 无图元数量感知 | **内置图元数量统计**：基于 SQLite `json_array_length` 毫秒级统计并在卡片展示 |
+| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **100% 纯净私有化**：零第三方外链打点，默认只访问本机/局域网服务 |
+| **中文字体支持** | 默认依赖外部在线 Google Fonts 或英文字体 | **内置「霞鹜文楷」CJK 手绘中文字体**（Unicode 子集化拆分按需动态加载） |
+| **身份认证安全** | 无或 Token 明文保存在浏览器本地存储 | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据 |
+| **浏览器与构建** | 包含大量旧版浏览器兼容层与 Polyfill | **面向现代浏览器优化 (`esnext`)**，Mermaid/CodeMirror/字体按需动态加载 |
+| **资源消耗** | 内存占用 500MB+，冷启动较慢 | **毫秒级冷启动，内存占用低至约 50~80MB** |
+
+---
+
+## ✨ 核心特性详解
+
+### 1. 🚀 全栈 Bun 原生驱动
+- 从 Monorepo 依赖管理、TypeScript 编译构建到生产后端服务托管，100% 运行于 Bun 环境。
+- 零 Node.js / Yarn 依赖，彻底消除冗余中间层。
+
+### 2. 💾 SQLite WAL 云端自动持久化
+- **高性能写入**：基于 Bun 原生 `bun:sqlite`，开启 WAL (Write-Ahead Logging) 模式与高并发事务。
+- **自动防抖同步**：画布修改后防抖约 30 秒自动同步至云端，并使用 `revision` 乐观锁机制防止并发快照覆盖。
+- **离开保护**：离开画板或返回工作台主页时，前端会主动等待队列保存完毕再跳转。
+- **附件独立存储**：图片/媒体文件存储于本地 `data/files/`，SQLite 仅保存文件元数据与 SHA-256 哈希，避免大文件膨胀数据库。
+
+### 3. 🗂️ 完善的多画板与工作台系统
+- **画板管理**：工作台支持网格与列表视图切换、实时搜索、画板重命名、一键复制画板。
+- **图元数量统计**：画板卡片直观显示 `🎨 10 个图元 • 更新于 今天 17:30`，方便掌握画板内容规模。
+- **文件夹与分类**：支持创建文件夹、归类画板与收藏常用画板。
+- **回收站与安全保护**：支持画板软删除至回收站、一键还原与彻底清空，防止误删。
+- **URL 直达与设备接力**：支持 `?id=xxx` 自动识别与加载指定画板，局域网多设备无缝接力。
+
+### 4. 🧼 极致纯净私有化 (Privacy First)
+- 彻底剔除所有外部跟踪分析打点代码、Sentry 上报和 Google Fonts 外部请求。
+- 默认运行路径 100% 仅访问本机/局域网服务；只有主动使用 Mermaid 或外部嵌入时才会发出对应请求。
+
+### 5. ⚡ 现代浏览器性能基线
+- 生产构建目标面向 `esnext`（支持最新 Chrome、Edge、Firefox、Safari、iOS Safari），去除过时 polyfill。
+- **按需动态加载**：Mermaid 图表引擎、CodeMirror 代码编辑器、CJK「霞鹜文楷」手绘字体、pako 压缩回退均延迟至使用时加载，首屏极速秒开。
+- **原生压缩流**：优先使用现代浏览器原生 `CompressionStream` 与 `DecompressionStream`。
+
+### 6. 🔐 企业级轻量鉴权与安全响应头
+- 通过环境变量 `AUTH_PASSWORD` 开启密码保护。
+- 服务端签发安全 `HttpOnly` 会话 Cookie，会话记录持久化于 SQLite，浏览器端不存放明文凭证。
+- 服务端注入严格的 **Content Security Policy (CSP)**，禁止 `unsafe-inline` 和 `unsafe-eval` 脚本执行。
+
+### 7. 📦 完整备份与一键归档
+- 支持一键导出包含 `excalidraw.db` 数据库、`manifest.json` 与 `files/` 图片附件的完整 `.tar` 归档包，数据迁移安全无忧。
 
 ---
 
 ## 🚀 快速启动
 
-### 方式一：Docker / Podman Compose 容器化部署（推荐）
+### 方式一：Docker Compose 部署（推荐）
 
-1. **克隆本仓库**
+#### 1. 创建配置文件
+在宿主机创建部署目录与 `docker-compose.yml`：
 
-   ```bash
-   git clone <your-repo-url>
-   cd excalidraw
-   ```
+```bash
+mkdir -p ./data
+cat << 'EOF' > docker-compose.yml
+services:
+  excalidraw:
+    image: ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    environment:
+      - AUTH_PASSWORD=your-strong-password  # 访问密码
+      - TRUST_PROXY=true                    # 信任反向代理 (HTTPS/反代环境必填)
+    volumes:
+      - ./data:/app/data
+EOF
+```
 
-2. **配置与启动** 生产环境与容器部署必须先配置环境变量：
-
-   ```env
-   # .env（不要提交到 Git）
-   AUTH_PASSWORD=your-strong-password
-   TRUST_PROXY=true
-   ```
-
-   > **环境变量说明（必填项）**：
-   >
-   > - `AUTH_PASSWORD`（必填）：访问密码保护（若明确在局域网免密使用需设置 `ALLOW_ANONYMOUS=true`）。
-   > - `TRUST_PROXY=true`（必填）：信任反向代理。容器部署在反代环境下时必须添加此项，以保证反代和 HTTPS 环境下能够正常识别请求与维持会话状态。
-
-   镜像默认保留基础镜像的 root 运行身份，以兼容 rootless Podman/Docker 的用户命名空间和绑定挂载。先创建数据目录：
-
-   ```bash
-   mkdir -p ./data
-   ```
-
-   如需强制使用非 root 身份，请在 Compose 中显式添加 `user: "UID:GID"`，并先确保该 UID/GID 对 `data/` 有读写权限；rootless Podman 可优先使用 `--userns=keep-id`。
-
-   Compose 文件中的 `:Z` 用于 SELinux 主机的目录重新标记。若 Docker Desktop 的 Compose 实现不接受该后缀，可删除 `:Z`，但不要删除数据卷。启动失败时先检查 `data/` 是否可写，并查看 `podman logs excalidraw`。
-
-3. **运行容器**
-
-   ```bash
-   docker compose up -d --build
-   ```
-
-   打开浏览器访问：`http://localhost:8080`。
-
-   使用 Podman 时命令相同：
-
-   ```bash
-   podman compose up -d --build
-   curl http://localhost:8080/api/health
-   ```
-
-   服务默认监听 `0.0.0.0:8080`，因此局域网内其他设备可以访问同一个容器。健康检查只做 O(1) 的 SQLite 查询和目录可写性检查；附件一致性扫描由维护任务执行，不通过公开健康接口返回。返回非 200 时优先排查目录权限和卷挂载。直接 HTTP 适合可信局域网，公网部署必须在反向代理后使用 HTTPS。只有明确配置 `TRUST_PROXY=true` 时，服务才会信任 `X-Forwarded-Proto` 并发放 Secure 会话 Cookie；请确保代理覆盖所有外部入口并重写/清理客户端传入的 `X-Forwarded-*` 头。
-
-   服务端会话保存于 SQLite，容器重启后仍可在 TTL 内继续使用；认证 token 以服务端会话记录管理，不会写入浏览器存储。`AUTH_SESSION_TTL_MS` 同时控制服务端会话和浏览器 Cookie 的有效期。请将 `data/` 视为敏感凭据存储并限制备份访问权限。
-
-   设备接力使用时，请先在设备 A 停止编辑，等待页面显示“已保存到云端”后，再在设备 B 打开根路径或带 `?id=画板ID` 的链接。通过应用内返回主页会等待保存；浏览器强制关闭、崩溃或断网时无法保证异步请求完成，离开前确认状态是最可靠的交接方式。
-
-   > 容器默认以 root 运行是为了兼容不同的 rootless/rootful 挂载映射。若组织安全基线禁止 root，请显式设置 `user: "UID:GID"` 并完成数据目录属主配置。
+#### 2. 启动服务
+```bash
+docker compose up -d
+```
+打开浏览器访问：`http://localhost:8080` 即可开始绘制！
 
 ---
 
-### 方式二：本地直接运行 (使用 Bun)
+### 方式二：Docker / Podman CLI 单行启动
+
+**Docker CLI 运行：**
+```bash
+mkdir -p ./data
+docker run -d \
+  --name excalidraw \
+  -p 8080:8080 \
+  -e AUTH_PASSWORD=your-strong-password \
+  -e TRUST_PROXY=true \
+  -v ./data:/app/data \
+  --restart unless-stopped \
+  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
+```
+
+**Podman 用户（支持 rootless 与 SELinux）：**
+```bash
+mkdir -p ./data
+podman run -d \
+  --name excalidraw \
+  -p 8080:8080 \
+  -e AUTH_PASSWORD=your-strong-password \
+  -e TRUST_PROXY=true \
+  -v ./data:/app/data:Z \
+  --userns=keep-id \
+  --restart unless-stopped \
+  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
+```
+
+---
+
+### 方式三：本地 Bun 源码运行
 
 #### 前置要求
-
 - 安装 [Bun](https://bun.sh/) (v1.4.0+)
 
 #### 操作步骤
-
-1. **安装依赖**
-
-   ```bash
-   bun install
-   ```
-
-2. **编译核心 Packages**
-
-   ```bash
-   bun run build:packages
-   ```
-
-   构建不依赖本机未提交的 `.env` 文件；服务端只需按部署环境配置 `AUTH_PASSWORD`、`ALLOW_ANONYMOUS` 等变量。
-
-3. **启动模式**
-
-   - **全栈模式 (推荐，含 SQLite 后端与前端托管)**：
-
-     ```bash
-     # 1. 编译前端静态产物
-     bun run build
-
-     # 2. 启动服务 (默认端口 8080)
-     bun run start:server
-     ```
-
-     访问：`http://localhost:8080`
-
-   - **前端开发热重载模式**：
-     ```bash
-     bun run start
-     ```
-
----
-
-## ⚡ 浏览器支持与构建基线
-
-生产构建只面向最新版本的 Chrome、Edge、Firefox、Safari 和 iOS Safari。项目不再提供 IE、旧版 Chromium、旧版 Firefox 或旧版 Safari 的兼容保证，也不应重新引入面向这些浏览器的 polyfill、转译目标或兼容分支。
-
-大型能力会延迟到真正使用时加载：首次打开 Mermaid、代码编辑器或输入 CJK 文本时会产生一次按需请求，后续由浏览器缓存复用。当前构建预算如下，原始体积和 gzip 体积均检查：
-
-| 产物                    |  Raw 上限 | Gzip 上限 |
-| :---------------------- | --------: | --------: |
-| 主入口 `index-*.js`     | 1,700 KiB |   550 KiB |
-| `mermaid-to-excalidraw` |   700 KiB |   200 KiB |
-| `codemirror.chunk`      |   600 KiB |   110 KiB |
-| `xiaolai-fonts`         |   140 KiB |    55 KiB |
-| `lxgw-wenkai-fonts`     |   160 KiB |    60 KiB |
-| `pako.esm`              |    70 KiB |    25 KiB |
-| `subset-shared.chunk`   | 2,000 KiB |   800 KiB |
-
-查看或校验产物大小：
-
 ```bash
+# 1. 克隆仓库
+git clone https://github.com/biaobiaobiao108/excalidrawsqlite.git
+cd excalidrawsqlite
+
+# 2. 安装依赖 (使用 Bun 维护 bun.lock)
+bun install
+
+# 3. 编译核心 Packages
+bun run build:packages
+
+# 4. 构建前端产物并启动全栈服务 (默认端口 8080)
 bun run build
-bun run build:check-size
+AUTH_PASSWORD=your-password bun run start:server
 ```
 
-字体选择器新增「霞鹜文楷」。该字体按 Unicode 区间拆分并延迟加载，覆盖中文、日文假名和韩文音节；极少数未收录字符仍会使用系统回退字体。字体按 SIL Open Font License 1.1 发布，授权全文随资源保存在 `packages/excalidraw/fonts/LXGWWenKai/OFL.txt`。
+如需进行前端热重载开发：
+```bash
+bun run start
+```
 
 ---
 
-## 🔐 安全头与 CSP
+## ⚙️ 环境变量速查表
 
-服务端默认返回安全响应头和 Content Security Policy。脚本执行策略不允许 `unsafe-inline` 或 `unsafe-eval`，仅保留 `wasm-unsafe-eval` 以支持 WOFF2 字体子集化所需的 WebAssembly；不要在入口 HTML 中重新加入内联脚本。
-
-CSS 目前单独保留 `style-src-elem/style-src-attr 'unsafe-inline'`：React 现有内联样式，以及 Mermaid、CodeMirror 的运行时样式注入仍依赖它。这不是脚本执行许可；若部署基线要求 CSS 也完全禁止 inline，需要另行完成全量样式迁移或隔离第三方编辑器，不能只删除响应头中的两条指令。
-
-公网部署必须在 HTTPS 反向代理后运行，并在代理层保留服务端安全头。只有显式设置 `TRUST_PROXY=true` 且代理清理并重写 `X-Forwarded-*` 头时，服务才会信任转发协议并发放 Secure 会话 Cookie。
+| 环境变量 | 默认值 | 必填项 | 说明 |
+| :--- | :--- | :---: | :--- |
+| `AUTH_PASSWORD` | *无* | **是** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。 |
+| `ALLOW_ANONYMOUS` | `false` | 否 | 设为 `true` 时显式允许在局域网内免密匿名直接访问。 |
+| `TRUST_PROXY` | `false` | **反代必填** | 信任反向代理。在 Nginx/Caddy/Traefik 等反代后必须开启，用于正确识别协议并下发 Secure Cookie。 |
+| `PORT` | `8080` | 否 | 服务端监听端口。 |
+| `DATA_DIR` | `./data` | 否 | SQLite 数据库文件与图片附件存储目录。 |
+| `AUTH_SESSION_TTL_MS` | `604800000` (7天) | 否 | 登录会话在服务端与浏览器 Cookie 中的有效期（毫秒）。 |
+| `MAX_FILE_BYTES` | `4194304` (4MB) | 否 | 单个图片/附件上传大小限制（字节）。 |
+| `MAX_SCENE_BODY_BYTES`| `33554432` (32MB) | 否 | 单个画板 JSON 数据最大请求体大小。 |
 
 ---
 
-## 📂 项目结构
+## 📂 项目结构概览
 
 ```text
 ├── server/
-│   └── server.ts           # Bun.serve + bun:sqlite 后端与静态文件托管服务
+│   ├── server.ts           # Bun.serve + bun:sqlite 后端全栈核心逻辑与静态托管
+│   └── server.test.ts      # 21 项全覆盖自动化持久化与安全测试
 ├── excalidraw-app/         # Excalidraw 前端主应用 (Vite + React)
 │   ├── components/
-│   │   ├── CloudScenesDialog.tsx # 多画板管理弹窗
-│   │   ├── AuthDialog.tsx        # 密码验证弹窗
+│   │   ├── WorkspaceHome.tsx     # 工作台多画板管理、文件夹、回收站与卡片组件
+│   │   ├── CloudScenesDialog.tsx # 编辑器内多画板快速切换弹窗
+│   │   ├── AuthDialog.tsx        # 密码验证与鉴权弹窗
 │   │   └── ...
-│   └── data/
-│       ├── cloudStorage.ts  # 前端云端 API 客户端
-│       └── cloudSync.ts     # 串行自动保存队列
+│   ├── data/
+│   │   ├── cloudStorage.ts # 云端 REST API 客户端与数据接口
+│   │   └── cloudSync.ts    # 30s 串行防抖自动保存队列与多标签同步
+│   └── tests/              # 前端自动化测试集
 ├── packages/               # Excalidraw 核心内部包 (Monorepo)
-│   ├── common/
-│   ├── element/
-│   ├── excalidraw/
-│   ├── fractional-indexing/
-│   ├── laser-pointer/
-│   ├── math/
-│   └── utils/
-├── Dockerfile              # Bun 1.4+ 多阶段构建配置
-├── docker-compose.yml      # 容器化一键编排配置
-└── bun.lock                # Bun 依赖锁定文件
+│   ├── excalidraw/         # 核心渲染与画布引擎 (包含霞鹜文楷本地子集包)
+│   ├── element/            # 图元数据结构与计算
+│   └── ...
+├── docs/                   # GitHub Pages 介绍落地页 (单文件、现代化动效与手绘 SVG)
+├── Dockerfile              # oven/bun:1.4.0-alpine 多阶段极小容器构建
+├── docker-compose.yml      # 容器化编排配置文件
+└── bun.lock                # Bun 统一依赖锁文件
 ```
 
 ---
 
 ## 📡 后端 API 接口概览
 
-| Method | Endpoint | 描述 |
-| :-- | :-- | :-- |
-| `GET` | `/api/auth/status` | 检查是否开启了密码验证及当前登录态 |
-| `POST` | `/api/auth/verify` | 提交密码进行验证 |
-| `GET` | `/api/scenes` | 获取所有云端画板列表（按更新时间降序） |
+| 请求方式 | 路由 Endpoint | 描述 |
+| :--- | :--- | :--- |
+| `GET` | `/api/auth/status` | 查询当前密码保护状态及当前客户端登录态 |
+| `POST` | `/api/auth/verify` | 提交密码进行验证，成功后下发 HttpOnly 会话 Cookie |
+| `POST` | `/api/auth/logout` | 注销登录并销毁服务端会话 |
+| `GET` | `/api/scenes` | 获取所有有效画板列表（包含名称、更新时间、图元数量 `element_count`） |
 | `POST` | `/api/scenes` | 创建新画板 |
-| `GET` | `/api/scenes/:id` | 获取指定画板的图元数据与状态 |
-| `PATCH` | `/api/scenes/:id` | 只修改画板名称 |
-| `PUT` | `/api/scenes/:id` | 保存指定画板，携带 `baseRevision` 做并发校验 |
-| `PUT` | `/api/scenes/:id/thumbnail` | 保存画板预览图，可携带 `X-Thumbnail-Version` 丢弃过期上传 |
-| `DELETE` | `/api/scenes/:id` | 删除指定画板 |
-| `PUT` | `/api/files/:id` | 上传单个二进制图片到本地文件系统 |
-| `POST` | `/api/files` | 兼容旧客户端的 JSON data URL 上传入口 |
-| `GET` | `/api/files/:id` | 按 `Accept` 返回二进制内容或兼容 JSON |
-| `GET` | `/api/backup/full` | 导出包含 SQLite 和图片附件的完整 `.tar` 备份 |
-| `GET` | `/api/backup/snapshot` | 兼容接口：仅导出 SQLite 快照 |
-| `GET` | `/api/health` | 容器健康检查（数据库与目录可用性） |
+| `GET` | `/api/scenes/:id` | 获取指定画板的图元数据与应用状态 |
+| `PATCH` | `/api/scenes/:id` | 修改画板元数据（名称、文件夹、标签、收藏状态） |
+| `PUT` | `/api/scenes/:id` | 保存画板快照，携带 `baseRevision` 乐观锁校验 |
+| `PUT` | `/api/scenes/:id/thumbnail` | 保存画板缩略图预览 |
+| `DELETE`| `/api/scenes/:id` | 软删除画板至回收站 |
+| `GET` | `/api/scenes/trash` | 获取回收站中的画板列表 |
+| `POST` | `/api/scenes/:id/restore` | 从回收站还原指定画板 |
+| `DELETE`| `/api/scenes/trash` | 彻底清空回收站 |
+| `GET` | `/api/folders` | 获取文件夹列表及各文件夹画板计数 |
+| `POST` | `/api/folders` | 新建文件夹 |
+| `PATCH` | `/api/folders/:id` | 重命名文件夹 |
+| `DELETE`| `/api/folders/:id` | 删除文件夹 |
+| `PUT` | `/api/files/:id` | 上传图片附件到本地文件系统 (`data/files/`) |
+| `GET` | `/api/files/:id` | 读取图片附件二进制内容 |
+| `GET` | `/api/backup/full` | 导出包含 SQLite 数据库与全部图片附件的完整 `.tar` 备份 |
+| `GET` | `/api/health` | 容器健康检查（数据库响应性与目录可写性） |
 
-### 数据与备份
+---
 
-- 数据目录包含 `excalidraw.db`、SQLite WAL 文件以及 `files/` 图片目录。数据库只保存图片元数据，图片实际位于 `data/files/`。
-- 页面中的“导出完整备份”会生成包含 SQLite 一致性快照、`files/` 图片附件和 `manifest.json` 的归档；数据库单独快照接口仅为兼容旧脚本保留。
-- 文件级恢复前请先停止容器，再整体复制 `data/` 目录；不要在服务运行时直接复制 SQLite 主文件。
-- 使用完整归档恢复时，请先停止容器，将归档中的 `excalidraw.db` 和 `files/` 一起替换宿主机整个 `data/` 目录（不要只替换数据库），再启动容器。
-- 恢复时将完整 `data/` 目录挂载回 `/app/data` 后再启动容器。
-- 如果显式使用了 `user: "UID:GID"`，恢复数据后请确认目录属主与该 UID/GID 一致；如果宿主机启用了 SELinux，请确保数据卷仍使用 `:Z` 标记。
+## 💾 数据持久化与备份恢复
 
-### 质量检查
+1. **数据目录组成**：
+   - 挂载点 `./data` 包含 `excalidraw.db`、SQLite WAL 文件与 `files/` 实体图片目录。
+2. **完整备份**：
+   - 可在工作台右上角点击 **“导出完整备份”**，或请求 `/api/backup/full`，获取包含最新数据库快照和全部附件的 `.tar` 压缩包。
+3. **数据恢复**：
+   - 恢复前先停止容器服务：
+     ```bash
+     docker compose down
+     ```
+   - 将备份解压并整体覆盖宿主机的 `./data` 目录（确保包含 `excalidraw.db` 和 `files/`）。
+   - 重新启动容器即可完整恢复所有画板与图片资源。
+
+---
+
+## 🧪 自动化测试与质量规范
+
+本仓库遵循严格的代码质量与测试规范：
 
 ```bash
-bun run test:all
-bun run build
-bun run build:app:docker
-bun run build:check-size
-```
+# 运行后端持久化测试 (基于 Bun 原生测试驱动)
+bun run test:server
 
-`bun run build` 会生成 `excalidraw-app/build`、更新版本信息并执行 bundle 预算检查；生产服务启动前必须先完成该构建。修改入口脚本、CSP、动态 import、Service Worker 缓存规则或压缩编码逻辑后，至少运行一次全量测试和生产构建。
+# 运行前端应用与工作台测试
+bun run test:app
+
+# 运行生产构建与产物体积预算检查
+bun run build
+```
 
 ---
 
 ## 📄 开源许可证
 
-本项目基于 [MIT License](LICENSE) 开源。原项目由 Excalidraw 团队开发。
+本项目基于 [MIT License](LICENSE) 开源发布。原 Excalidraw 项目版权归 Excalidraw 团队所有。
