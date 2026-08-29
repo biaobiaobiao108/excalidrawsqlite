@@ -114,14 +114,6 @@
       text-decoration: none;
     }
 
-    /* Excalidraw Island Component */
-    .Island {
-      background-color: var(--color-surface-lowest);
-      border: 1px solid var(--color-surface-high);
-      border-radius: var(--radius-md);
-      box-shadow: var(--shadow-island);
-    }
-
     .container {
       max-width: 1140px;
       margin: 0 auto;
@@ -240,7 +232,7 @@
     /* Hero Section */
     .hero {
       text-align: center;
-      padding: 20px 0 40px;
+      padding: 20px 0 30px;
     }
 
     .hero-pill {
@@ -294,158 +286,78 @@
       font-weight: 700;
     }
 
-    /* Excalidraw Whiteboard Canvas Simulator Container */
-    .canvas-island-wrapper {
+    /* Excalidraw Sketch SVG Architecture Showcase Island */
+    .arch-island-wrapper {
       max-width: 1060px;
       margin: 0 auto 70px;
       border-radius: var(--radius-lg);
       border: 1px solid var(--color-surface-high);
       background: var(--color-surface-lowest);
       box-shadow: var(--shadow-island-hover);
-      overflow: hidden;
+      padding: 24px 20px 20px;
       position: relative;
     }
 
-    /* Floating Excalidraw Toolbar */
-    .excalidraw-toolbar-container {
-      position: absolute;
-      top: 14px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 20;
+    .arch-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--color-surface-high);
+    }
+
+    .arch-header-left {
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
-    .toolbar-island {
-      display: flex;
-      align-items: center;
-      background: var(--color-surface-lowest);
-      border: 1px solid var(--color-surface-high);
-      border-radius: var(--radius-md);
-      padding: 4px;
-      box-shadow: var(--shadow-island);
-      gap: 2px;
-    }
-
-    .tool-btn {
-      width: 36px;
-      height: 36px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: none;
-      background: transparent;
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      color: var(--text-color-secondary);
-      position: relative;
-      transition: background 0.15s, color 0.15s;
-    }
-
-    .tool-btn svg {
-      width: 20px;
-      height: 20px;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 1.75;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-
-    .tool-btn:hover {
-      background: var(--color-surface-high);
-      color: var(--text-color-primary);
-    }
-
-    .tool-btn.active {
-      background: var(--color-primary-container);
-      color: var(--color-on-primary-container);
-    }
-
-    .tool-btn .keybind {
-      position: absolute;
-      bottom: 2px;
-      right: 3px;
-      font-size: 9px;
-      color: var(--text-color-muted);
+    .arch-header-title {
       font-weight: 700;
-    }
-
-    /* Color Palette Island */
-    .color-island {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      background: var(--color-surface-lowest);
-      border: 1px solid var(--color-surface-high);
-      border-radius: var(--radius-md);
-      padding: 5px 8px;
-      box-shadow: var(--shadow-island);
-    }
-
-    .color-swatch {
-      width: 20px;
-      height: 20px;
-      border-radius: 4px;
-      cursor: pointer;
-      border: 2px solid transparent;
-      transition: transform 0.15s;
-    }
-
-    .color-swatch:hover {
-      transform: scale(1.15);
-    }
-
-    .color-swatch.active {
-      border-color: var(--color-primary);
-      box-shadow: 0 0 0 1px var(--color-surface-lowest);
-    }
-
-    .clear-btn {
-      padding: 0 10px;
-      height: 28px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--color-surface-high);
-      background: var(--color-surface-low);
-      color: var(--text-color-secondary);
-      cursor: pointer;
-    }
-    .clear-btn:hover {
-      background: var(--color-surface-high);
-      color: var(--text-color-primary);
-    }
-
-    .canvas-viewport {
-      width: 100%;
-      height: 440px;
-      position: relative;
-      background-color: var(--bg-color);
-      background-image: radial-gradient(var(--bg-grid-color) 1.2px, transparent 1.2px);
-      background-size: 20px 20px;
-      cursor: crosshair;
-    }
-
-    #excalidraw-canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-
-    .canvas-watermark {
-      position: absolute;
-      bottom: 14px;
-      left: 18px;
-      font-family: var(--font-sketch);
-      font-size: 1.15rem;
-      color: var(--text-color-muted);
-      pointer-events: none;
+      font-size: 1rem;
       display: flex;
       align-items: center;
       gap: 6px;
+    }
+
+    .arch-svg-container {
+      width: 100%;
+      position: relative;
+      background-color: var(--bg-color);
+      border-radius: var(--radius-md);
+      border: 1px dashed var(--color-surface-border);
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .arch-svg {
+      width: 100%;
+      height: auto;
+      max-height: 420px;
+      display: block;
+    }
+
+    /* Animated connector pulses */
+    @keyframes flowDash {
+      to {
+        stroke-dashoffset: -24;
+      }
+    }
+
+    .flow-line {
+      stroke-dasharray: 6 6;
+      animation: flowDash 1.2s linear infinite;
+    }
+
+    .arch-node {
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    .arch-node:hover {
+      filter: drop-shadow(0 4px 10px rgba(105, 101, 219, 0.25));
     }
 
     /* Scene Manager Preview Component (Mockup Island) */
@@ -656,14 +568,6 @@
       gap: 4px;
     }
 
-    .badge-false {
-      color: #ef4444;
-      font-weight: 500;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
     /* Quickstart Section with Tabs */
     .quickstart-card {
       background: var(--color-surface-lowest);
@@ -814,13 +718,6 @@
       .nav-links {
         display: none;
       }
-      .canvas-viewport {
-        height: 320px;
-      }
-      .toolbar-island {
-        overflow-x: auto;
-        max-width: 92vw;
-      }
       .footer-content {
         flex-direction: column;
         text-align: center;
@@ -842,8 +739,9 @@
       </a>
 
       <nav class="nav-links">
-        <a href="#features" class="nav-link">特性亮点</a>
+        <a href="#architecture" class="nav-link">全景架构</a>
         <a href="#scenes" class="nav-link">多画板</a>
+        <a href="#features" class="nav-link">特性亮点</a>
         <a href="#compare" class="nav-link">方案对比</a>
         <a href="#quickstart" class="nav-link">一键部署</a>
       </nav>
@@ -884,80 +782,111 @@
         <a href="#quickstart" class="nav-btn nav-btn-primary btn-hero">
           🚀 极速部署
         </a>
-        <a href="#features" class="nav-btn btn-hero">
-          ✨ 探索核心特性
+        <a href="#architecture" class="nav-btn btn-hero">
+          📐 了解系统全景
         </a>
       </div>
 
-      <!-- Interactive Excalidraw Canvas Simulator -->
-      <div class="canvas-island-wrapper">
-        <!-- Floating Toolbar -->
-        <div class="excalidraw-toolbar-container">
-          <div class="toolbar-island">
-            <!-- Select -->
-            <button class="tool-btn" data-tool="select" title="选择 (1)">
-              <svg viewBox="0 0 24 24"><path d="M4 4l7 17 2.5-6.5L20 12z"/></svg>
-              <span class="keybind">1</span>
-            </button>
-            <!-- Rectangle -->
-            <button class="tool-btn" data-tool="rectangle" title="矩形 (2)">
-              <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-              <span class="keybind">2</span>
-            </button>
-            <!-- Diamond -->
-            <button class="tool-btn" data-tool="diamond" title="菱形 (3)">
-              <svg viewBox="0 0 24 24"><path d="M12 2l10 10-10 10L2 12z"/></svg>
-              <span class="keybind">3</span>
-            </button>
-            <!-- Ellipse -->
-            <button class="tool-btn" data-tool="ellipse" title="圆形 (4)">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>
-              <span class="keybind">4</span>
-            </button>
-            <!-- Arrow -->
-            <button class="tool-btn" data-tool="arrow" title="箭头 (5)">
-              <svg viewBox="0 0 24 24"><path d="M5 19L19 5M12 5h7v7"/></svg>
-              <span class="keybind">5</span>
-            </button>
-            <!-- Line -->
-            <button class="tool-btn" data-tool="line" title="直线 (6)">
-              <svg viewBox="0 0 24 24"><path d="M5 19L19 5"/></svg>
-              <span class="keybind">6</span>
-            </button>
-            <!-- Freedraw / Pencil -->
-            <button class="tool-btn active" data-tool="freedraw" title="画笔 (7)">
-              <svg viewBox="0 0 24 24"><path d="M18 2l4 4-14 14H4v-4L18 2z"/></svg>
-              <span class="keybind">7</span>
-            </button>
-            <!-- Text -->
-            <button class="tool-btn" data-tool="text" title="文字 (8)">
-              <svg viewBox="0 0 24 24"><path d="M4 7V4h16v3M12 4v16M9 20h6"/></svg>
-              <span class="keybind">8</span>
-            </button>
-            <!-- Eraser -->
-            <button class="tool-btn" data-tool="eraser" title="橡皮擦 (0)">
-              <svg viewBox="0 0 24 24"><path d="M18 13l-5-5-8 8a2 2 0 0 0 0 2.83l2.17 2.17a2 2 0 0 0 2.83 0L18 13zM14 6l3-3a2 2 0 0 1 2.83 0l2.17 2.17a2 2 0 0 1 0 2.83L19 11"/></svg>
-              <span class="keybind">0</span>
-            </button>
+      <!-- Excalidraw Hand-drawn SVG Architecture Showcase Island -->
+      <div id="architecture" class="arch-island-wrapper">
+        <div class="arch-header">
+          <div class="arch-header-left">
+            <span class="arch-header-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2.2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+              系统架构与数据流全景图 (System Architecture)
+            </span>
           </div>
-
-          <!-- Color Palette -->
-          <div class="color-island">
-            <div class="color-swatch active" style="background:#1e1e1e;" data-color="#1e1e1e" title="黑色"></div>
-            <div class="color-swatch" style="background:#6965db;" data-color="#6965db" title="紫蓝"></div>
-            <div class="color-swatch" style="background:#e03131;" data-color="#e03131" title="红色"></div>
-            <div class="color-swatch" style="background:#2f9e44;" data-color="#2f9e44" title="绿色"></div>
-            <div class="color-swatch" style="background:#f08c00;" data-color="#f08c00" title="橙色"></div>
-            <button class="clear-btn" id="clearCanvasBtn">清空</button>
-          </div>
+          <span class="badge-sync">单容器 • 单卷挂载</span>
         </div>
 
-        <!-- Canvas Viewport -->
-        <div class="canvas-viewport" id="canvasContainer">
-          <canvas id="excalidraw-canvas"></canvas>
-          <div class="canvas-watermark">
-            <span>✍️ Excalidraw 拟真画布（支持直接绘制图形）</span>
-          </div>
+        <div class="arch-svg-container">
+          <svg class="arch-svg" viewBox="0 0 960 380" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <filter id="sketch-shadow" x="-5%" y="-5%" width="110%" height="110%" filterUnits="userSpaceOnUse">
+                <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="rgba(0,0,0,0.1)"/>
+              </filter>
+            </defs>
+
+            <!-- Container 1: Client WebUI -->
+            <g class="arch-node">
+              <rect x="30" y="50" width="260" height="280" rx="14" fill="var(--color-surface-low)" stroke="var(--color-surface-border)" stroke-width="2" filter="url(#sketch-shadow)"/>
+              <rect x="46" y="68" width="228" height="34" rx="8" fill="var(--color-primary-light)"/>
+              <text x="160" y="90" text-anchor="middle" font-family="var(--font-ui)" font-size="14" font-weight="700" fill="var(--color-primary)">🖥️ 现代浏览器客户端</text>
+              
+              <rect x="46" y="118" width="228" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
+              <text x="58" y="138" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">Vite + React (esnext 目标)</text>
+              <text x="58" y="152" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">零过时 polyfill • 毫秒级首屏</text>
+
+              <rect x="46" y="172" width="228" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
+              <text x="58" y="192" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">30s 防抖自动云端保存</text>
+              <text x="58" y="206" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">Revision 保护 • 离开前等待写入</text>
+
+              <rect x="46" y="226" width="228" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
+              <text x="58" y="246" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">按需动态加载模块</text>
+              <text x="58" y="260" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">霞鹜文楷 CJK • Mermaid • 代码块</text>
+
+              <rect x="46" y="280" width="228" height="34" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
+              <text x="58" y="301" font-family="var(--font-ui)" font-size="11" font-weight="600" fill="var(--color-primary)">多画板切换 (?id=xxx 参数识别)</text>
+            </g>
+
+            <!-- Flow Arrow 1: Client to Server -->
+            <g>
+              <path d="M290 190 L360 190" stroke="var(--color-primary)" stroke-width="2.5" stroke-linecap="round" class="flow-line"/>
+              <polygon points="364,190 354,185 354,195" fill="var(--color-primary)"/>
+              <text x="325" y="176" text-anchor="middle" font-family="var(--font-sketch)" font-size="14" fill="var(--color-primary)">REST / API</text>
+            </g>
+
+            <!-- Container 2: Bun Fullstack Server -->
+            <g class="arch-node">
+              <rect x="370" y="50" width="250" height="280" rx="14" fill="var(--color-surface-low)" stroke="var(--color-surface-border)" stroke-width="2" filter="url(#sketch-shadow)"/>
+              <rect x="386" y="68" width="218" height="34" rx="8" fill="var(--color-primary-light)"/>
+              <text x="495" y="90" text-anchor="middle" font-family="var(--font-ui)" font-size="14" font-weight="700" fill="var(--color-primary)">⚡ Bun.serve 全栈服务</text>
+
+              <rect x="386" y="118" width="218" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
+              <text x="398" y="138" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">单进程极速静态托管</text>
+              <text x="398" y="152" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">100% Bun 原生 • 零 Node/Yarn</text>
+
+              <rect x="386" y="172" width="218" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
+              <text x="398" y="192" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">HttpOnly 密码鉴权</text>
+              <text x="398" y="206" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">服务端 Session • 绝无明文泄露</text>
+
+              <rect x="386" y="226" width="218" height="42" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
+              <text x="398" y="246" font-family="var(--font-ui)" font-size="12" font-weight="600" fill="var(--text-color-primary)">严格 CSP 安全响应头</text>
+              <text x="398" y="260" font-family="var(--text-color-muted)" font-size="10" fill="var(--text-color-muted)">禁 unsafe-eval • 仅放行 wasm</text>
+
+              <rect x="386" y="280" width="218" height="34" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
+              <text x="398" y="301" font-family="var(--font-ui)" font-size="11" font-weight="600" fill="#10b981">✓ O(1) 轻量健康检查 /api/health</text>
+            </g>
+
+            <!-- Flow Arrow 2: Server to Data Storage -->
+            <g>
+              <path d="M620 190 L690 190" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" class="flow-line"/>
+              <polygon points="694,190 684,185 684,195" fill="#10b981"/>
+              <text x="655" y="176" text-anchor="middle" font-family="var(--font-sketch)" font-size="14" fill="#10b981">WAL 写入</text>
+            </g>
+
+            <!-- Container 3: SQLite & Files Volume -->
+            <g class="arch-node">
+              <rect x="700" y="50" width="230" height="280" rx="14" fill="var(--color-surface-low)" stroke="var(--color-surface-border)" stroke-width="2" filter="url(#sketch-shadow)"/>
+              <rect x="716" y="68" width="198" height="34" rx="8" fill="#d1fae5"/>
+              <text x="815" y="90" text-anchor="middle" font-family="var(--font-ui)" font-size="14" font-weight="700" fill="#065f46">💾 ./data 数据持久化</text>
+
+              <rect x="716" y="118" width="198" height="54" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
+              <text x="728" y="138" font-family="var(--font-ui)" font-size="12" font-weight="700" fill="var(--text-color-primary)">excalidraw.db (SQLite)</text>
+              <text x="728" y="152" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">• 画板元数据 & 压缩快照</text>
+              <text x="728" y="164" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">• 服务端 Session 会话记录</text>
+
+              <rect x="716" y="184" width="198" height="54" rx="8" fill="var(--color-surface-lowest)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
+              <text x="728" y="204" font-family="var(--font-ui)" font-size="12" font-weight="700" fill="var(--text-color-primary)">data/files/ (附件归档)</text>
+              <text x="728" y="218" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">• 独立存储图片与媒体文件</text>
+              <text x="728" y="230" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">• 避免大二进制阻塞数据库</text>
+
+              <rect x="716" y="250" width="198" height="64" rx="8" fill="var(--color-primary-light)" stroke="var(--color-surface-high)" stroke-width="1.5"/>
+              <text x="728" y="270" font-family="var(--font-ui)" font-size="11" font-weight="700" fill="var(--color-primary)">🐳 极简容器卷挂载</text>
+              <text x="728" y="286" font-family="var(--font-sketch)" font-size="13" fill="var(--text-color-primary)">-v ./data:/app/data</text>
+              <text x="728" y="302" font-family="var(--font-ui)" font-size="10" fill="var(--text-color-muted)">开箱兼容 rootless Podman/Docker</text>
+            </g>
+          </svg>
         </div>
       </div>
     </section>
@@ -1260,8 +1189,9 @@ bun run start:server</code></pre>
       </div>
       
       <div class="footer-links">
-        <a href="#features">特性亮点</a>
+        <a href="#architecture">全景架构</a>
         <a href="#scenes">多画板</a>
+        <a href="#features">特性亮点</a>
         <a href="#compare">方案对比</a>
         <a href="#quickstart">快速部署</a>
       </div>
@@ -1275,7 +1205,7 @@ bun run start:server</code></pre>
   <!-- Toast Notification -->
   <div id="toast" class="toast">✨ 已复制到剪贴板！</div>
 
-  <!-- Interactive Simulator Scripts -->
+  <!-- Interactive Scripts -->
   <script>
     // 1. Theme Toggle
     const themeToggle = document.getElementById('themeToggle');
@@ -1295,7 +1225,6 @@ bun run start:server</code></pre>
         themeText.textContent = '深色';
         localStorage.setItem('excalidraw_theme', 'light');
       }
-      renderCanvas();
     }
 
     const savedTheme = localStorage.getItem('excalidraw_theme') || 
@@ -1347,285 +1276,6 @@ bun run start:server</code></pre>
         }
       });
     });
-
-    // 4. Excalidraw Authentic Mini-Canvas Simulator Engine
-    const canvas = document.getElementById('excalidraw-canvas');
-    const container = document.getElementById('canvasContainer');
-    const ctx = canvas.getContext('2d');
-
-    let currentTool = 'freedraw';
-    let currentColor = '#1e1e1e';
-    let isPointerDown = false;
-    let startPos = { x: 0, y: 0 };
-    let elements = [];
-    let currentElement = null;
-
-    function resizeCanvas() {
-      const rect = container.getBoundingClientRect();
-      canvas.width = rect.width;
-      canvas.height = rect.height;
-      renderCanvas();
-    }
-
-    window.addEventListener('resize', resizeCanvas);
-
-    // Initial sketch diagram data
-    function loadDefaultElements() {
-      const cx = canvas.width / 2;
-      const cy = canvas.height / 2;
-
-      elements = [
-        // Left Box: Bun Fullstack
-        { type: 'rectangle', x: cx - 280, y: cy - 60, w: 160, h: 90, color: '#6965db' },
-        { type: 'text', text: '⚡ Bun 1.4+\n(Fullstack Runtime)', x: cx - 200, y: cy - 20, color: '#1e1e1e' },
-        
-        // Right Box: SQLite Storage
-        { type: 'rectangle', x: cx + 120, y: cy - 60, w: 160, h: 90, color: '#2f9e44' },
-        { type: 'text', text: '💾 SQLite WAL\n(Cloud Storage)', x: cx + 200, y: cy - 20, color: '#1e1e1e' },
-        
-        // Center Diamond: Pure Privacy
-        { type: 'diamond', x: cx - 50, y: cy - 50, w: 100, h: 80, color: '#f08c00' },
-        { type: 'text', text: '🧼 纯净私有', x: cx, y: cy - 10, color: '#1e1e1e' },
-
-        // Arrows
-        { type: 'arrow', x1: cx - 120, y1: cy - 15, x2: cx - 50, y2: cy - 15, color: '#6965db' },
-        { type: 'arrow', x1: cx + 50, y1: cy - 15, x2: cx + 120, y2: cy - 15, color: '#2f9e44' }
-      ];
-    }
-
-    // Rough style sketchy helpers
-    function drawSketchyLine(ctx, x1, y1, x2, y2, color) {
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2.2;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      // Add slight organic curvature
-      const midX = (x1 + x2) / 2 + (Math.random() - 0.5) * 1.5;
-      const midY = (y1 + y2) / 2 + (Math.random() - 0.5) * 1.5;
-      ctx.moveTo(x1, y1);
-      ctx.quadraticCurveTo(midX, midY, x2, y2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    function drawSketchyRect(ctx, x, y, w, h, color) {
-      drawSketchyLine(ctx, x, y, x + w, y, color);
-      drawSketchyLine(ctx, x + w, y, x + w, y + h, color);
-      drawSketchyLine(ctx, x + w, y + h, x, y + h, color);
-      drawSketchyLine(ctx, x, y + h, x, y, color);
-    }
-
-    function drawSketchyDiamond(ctx, x, y, w, h, color) {
-      const cx = x + w / 2;
-      const cy = y + h / 2;
-      drawSketchyLine(ctx, cx, y, x + w, cy, color);
-      drawSketchyLine(ctx, x + w, cy, cx, y + h, color);
-      drawSketchyLine(ctx, cx, y + h, x, cy, color);
-      drawSketchyLine(ctx, x, cy, cx, y, color);
-    }
-
-    function drawSketchyEllipse(ctx, x, y, w, h, color) {
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w / 2), Math.abs(h / 2), 0, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    function drawSketchyArrow(ctx, x1, y1, x2, y2, color) {
-      drawSketchyLine(ctx, x1, y1, x2, y2, color);
-      const angle = Math.atan2(y2 - y1, x2 - x1);
-      const headLen = 14;
-      const a1 = angle - Math.PI / 6;
-      const a2 = angle + Math.PI / 6;
-      drawSketchyLine(ctx, x2, y2, x2 - headLen * Math.cos(a1), y2 - headLen * Math.sin(a1), color);
-      drawSketchyLine(ctx, x2, y2, x2 - headLen * Math.cos(a2), y2 - headLen * Math.sin(a2), color);
-    }
-
-    function renderElement(el) {
-      const isDark = htmlEl.getAttribute('data-theme') === 'dark';
-      let renderColor = el.color;
-      if (renderColor === '#1e1e1e' && isDark) renderColor = '#f1f3f5';
-
-      switch (el.type) {
-        case 'rectangle':
-          drawSketchyRect(ctx, el.x, el.y, el.w, el.h, renderColor);
-          break;
-        case 'diamond':
-          drawSketchyDiamond(ctx, el.x, el.y, el.w, el.h, renderColor);
-          break;
-        case 'ellipse':
-          drawSketchyEllipse(ctx, el.x, el.y, el.w, el.h, renderColor);
-          break;
-        case 'line':
-          drawSketchyLine(ctx, el.x1, el.y1, el.x2, el.y2, renderColor);
-          break;
-        case 'arrow':
-          drawSketchyArrow(ctx, el.x1, el.y1, el.x2, el.y2, renderColor);
-          break;
-        case 'freedraw':
-          if (el.points && el.points.length > 1) {
-            ctx.save();
-            ctx.strokeStyle = renderColor;
-            ctx.lineWidth = 2.4;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.beginPath();
-            ctx.moveTo(el.points[0].x, el.points[0].y);
-            for (let i = 1; i < el.points.length; i++) {
-              ctx.lineTo(el.points[i].x, el.points[i].y);
-            }
-            ctx.stroke();
-            ctx.restore();
-          }
-          break;
-        case 'text':
-          ctx.save();
-          ctx.font = '600 17px "Caveat", "Virgil", cursive, "Noto Sans SC", sans-serif';
-          ctx.fillStyle = renderColor;
-          ctx.textAlign = 'center';
-          const lines = el.text.split('\n');
-          lines.forEach((line, idx) => {
-            ctx.fillText(line, el.x, el.y + idx * 22);
-          });
-          ctx.restore();
-          break;
-      }
-    }
-
-    function renderCanvas() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      elements.forEach(renderElement);
-      if (currentElement) {
-        renderElement(currentElement);
-      }
-    }
-
-    function getPos(e) {
-      const rect = canvas.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      return {
-        x: clientX - rect.left,
-        y: clientY - rect.top
-      };
-    }
-
-    canvas.addEventListener('mousedown', e => {
-      isPointerDown = true;
-      startPos = getPos(e);
-
-      if (currentTool === 'freedraw') {
-        currentElement = {
-          type: 'freedraw',
-          color: currentColor,
-          points: [startPos]
-        };
-      } else if (currentTool === 'rectangle' || currentTool === 'diamond' || currentTool === 'ellipse') {
-        currentElement = {
-          type: currentTool,
-          color: currentColor,
-          x: startPos.x,
-          y: startPos.y,
-          w: 0,
-          h: 0
-        };
-      } else if (currentTool === 'line' || currentTool === 'arrow') {
-        currentElement = {
-          type: currentTool,
-          color: currentColor,
-          x1: startPos.x,
-          y1: startPos.y,
-          x2: startPos.x,
-          y2: startPos.y
-        };
-      } else if (currentTool === 'text') {
-        const text = prompt('请输入文字内容：', 'Excalidraw SQLite');
-        if (text) {
-          elements.push({
-            type: 'text',
-            text: text,
-            x: startPos.x,
-            y: startPos.y,
-            color: currentColor
-          });
-          renderCanvas();
-        }
-        isPointerDown = false;
-      } else if (currentTool === 'eraser') {
-        // Erase nearest element
-        elements = elements.filter(el => {
-          if (el.x && Math.hypot(el.x - startPos.x, el.y - startPos.y) < 40) return false;
-          if (el.x1 && Math.hypot(el.x1 - startPos.x, el.y1 - startPos.y) < 40) return false;
-          return true;
-        });
-        renderCanvas();
-      }
-    });
-
-    canvas.addEventListener('mousemove', e => {
-      if (!isPointerDown) return;
-      const pos = getPos(e);
-
-      if (currentTool === 'freedraw' && currentElement) {
-        currentElement.points.push(pos);
-        renderCanvas();
-      } else if ((currentTool === 'rectangle' || currentTool === 'diamond' || currentTool === 'ellipse') && currentElement) {
-        currentElement.w = pos.x - startPos.x;
-        currentElement.h = pos.y - startPos.y;
-        renderCanvas();
-      } else if ((currentTool === 'line' || currentTool === 'arrow') && currentElement) {
-        currentElement.x2 = pos.x;
-        currentElement.y2 = pos.y;
-        renderCanvas();
-      }
-    });
-
-    window.addEventListener('mouseup', () => {
-      if (isPointerDown && currentElement) {
-        elements.push(currentElement);
-        currentElement = null;
-        renderCanvas();
-      }
-      isPointerDown = false;
-    });
-
-    // Toolbar Tool Selection
-    const toolBtns = document.querySelectorAll('.tool-btn');
-    toolBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        toolBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentTool = btn.getAttribute('data-tool');
-      });
-    });
-
-    // Color Swatches
-    const colorSwatches = document.querySelectorAll('.color-swatch');
-    colorSwatches.forEach(swatch => {
-      swatch.addEventListener('click', () => {
-        colorSwatches.forEach(s => s.classList.remove('active'));
-        swatch.classList.add('active');
-        currentColor = swatch.getAttribute('data-color');
-      });
-    });
-
-    // Clear Canvas
-    document.getElementById('clearCanvasBtn').addEventListener('click', () => {
-      elements = [];
-      renderCanvas();
-      showToast('🧹 画布已清空');
-    });
-
-    // Initialize Canvas on load
-    setTimeout(() => {
-      resizeCanvas();
-      loadDefaultElements();
-      renderCanvas();
-    }, 60);
   </script>
 </body>
 </html>
