@@ -11,6 +11,7 @@ export interface CloudSceneSummary {
   updated_at: number;
   revision: number;
   size?: number;
+  element_count?: number;
   tags: string[];
   favorite: boolean;
   folder_id: string | null;
@@ -28,6 +29,7 @@ export interface CloudSceneData {
   created_at: number;
   updated_at: number;
   revision: number;
+  element_count?: number;
   tags: string[];
   favorite: boolean;
   folder_id: string | null;

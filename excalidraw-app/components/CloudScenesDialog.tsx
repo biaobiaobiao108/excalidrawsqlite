@@ -430,20 +430,33 @@ export const CloudScenesDialog: React.FC<CloudScenesDialogProps> = ({
                     ) : (
                       <span
                         className="scene-name"
-                        title="点击打开此画板"
+                        title={`画板：“${scene.name || "未命名白板"}”`}
                         onClick={() => {
                           void handleOpen(scene.id);
                         }}
                       >
-                        {scene.name || "未命名白板"}
+                        <span className="scene-name-text">
+                          {scene.name || "未命名白板"}
+                        </span>
                         {isCurrent && (
                           <span className="current-badge">当前使用</span>
                         )}
                       </span>
                     )}
-                    <span className="scene-time">
-                      更新于: {formatDate(scene.updated_at)}
-                    </span>
+                    <div className="scene-meta-row">
+                      <span
+                        className="scene-elements-count"
+                        title={`包含 ${scene.element_count ?? 0} 个图元`}
+                      >
+                        {scene.element_count ?? 0} 个图元
+                      </span>
+                      <span className="meta-separator" aria-hidden="true">
+                        •
+                      </span>
+                      <span className="scene-time">
+                        更新于: {formatDate(scene.updated_at)}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="scene-actions">

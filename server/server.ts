@@ -1216,6 +1216,14 @@ const getSceneSummary = (row: any) => ({
   updated_at: row.updated_at,
   revision: Number(row.revision) || 1,
   size: row.size === undefined ? undefined : Number(row.size),
+  element_count:
+    row.element_count !== undefined && row.element_count !== null
+      ? Number(row.element_count)
+      : typeof row.elements === "string"
+      ? (JSON.parse(row.elements || "[]") || []).length
+      : Array.isArray(row.elements)
+      ? row.elements.length
+      : 0,
   tags: parseStoredTags(row.tags_json),
   favorite: Boolean(row.is_favorite),
   folder_id: row.folder_id || null,
@@ -1714,6 +1722,7 @@ export const createRequestHandler = (
           .query(
             `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
                     scenes.revision, length(scenes.elements) AS size,
+                    CASE WHEN json_valid(scenes.elements) = 1 THEN json_array_length(scenes.elements) ELSE 0 END AS element_count,
                     scenes.tags_json, scenes.is_favorite, scenes.folder_id,
                     scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
                     folders.name AS folder_name
@@ -1732,6 +1741,7 @@ export const createRequestHandler = (
           .query(
             `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
                     scenes.revision, length(scenes.elements) AS size,
+                    CASE WHEN json_valid(scenes.elements) = 1 THEN json_array_length(scenes.elements) ELSE 0 END AS element_count,
                     scenes.tags_json, scenes.is_favorite, scenes.folder_id,
                     scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
                     folders.name AS folder_name
@@ -1809,6 +1819,7 @@ export const createRequestHandler = (
             updated_at: now,
             revision: 1,
             size: JSON.stringify(elements).length,
+            element_count: elements.length,
             tags_json: JSON.stringify(tags),
             is_favorite: favorite ? 1 : 0,
             folder_id: folderId,
@@ -2109,6 +2120,7 @@ export const createRequestHandler = (
           .query(
             `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
                     scenes.revision, length(scenes.elements) AS size,
+                    CASE WHEN json_valid(scenes.elements) = 1 THEN json_array_length(scenes.elements) ELSE 0 END AS element_count,
                     scenes.tags_json, scenes.is_favorite, scenes.folder_id,
                     scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
                     folders.name AS folder_name

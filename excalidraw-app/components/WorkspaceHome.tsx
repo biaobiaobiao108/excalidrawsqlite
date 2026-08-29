@@ -483,7 +483,9 @@ const BoardCard = ({
           title="已在回收站中，还原后可打开"
         >
           <BoardThumbnail scene={scene} eager={eager} />
-          <span className="board-card-title">{sceneName}</span>
+          <span className="board-card-title" title={sceneName}>
+            {sceneName}
+          </span>
         </div>
       ) : (
         <div className="board-card-open">
@@ -500,41 +502,54 @@ const BoardCard = ({
             onClick={() => onEdit(scene)}
             type="button"
             aria-label={`编辑画板名称“${sceneName}”`}
+            title={sceneName}
           >
             {sceneName}
           </button>
         </div>
       )}
       <div className="board-card-footer">
-        <div className="board-card-details">
+        <div className="board-card-details" data-title={sceneName}>
           {isTrash ? (
-            <span className="board-card-mobile-title">{sceneName}</span>
+            <span className="board-card-mobile-title" title={sceneName}>
+              {sceneName}
+            </span>
           ) : (
             <button
               type="button"
               className="board-card-mobile-title"
               onClick={() => onEdit(scene)}
               aria-label={`编辑画板名称“${sceneName}”`}
+              title={sceneName}
             >
               {sceneName}
             </button>
           )}
-          {isTrash && scene.deleted_at ? (
-            <span className="board-card-updated">
-              删除于 {formatDate(scene.deleted_at)}
+          <div className="board-card-meta-row">
+            <span
+              className="board-card-elements-count"
+              title={`包含 ${scene.element_count ?? 0} 个图元`}
+            >
+              {scene.element_count ?? 0} 个图元
             </span>
-          ) : (
-            <>
+            <span className="meta-separator" aria-hidden="true">
+              •
+            </span>
+            {isTrash && scene.deleted_at ? (
+              <span className="board-card-updated">
+                删除于 {formatDate(scene.deleted_at)}
+              </span>
+            ) : (
               <span className="board-card-updated">
                 更新于 {formatDate(scene.updated_at)}
               </span>
-              <span className="board-card-created">
-                创建于 {formatCreatedDate(scene.created_at)}
-              </span>
-            </>
-          )}
+            )}
+          </div>
           {scene.folder_name && !isTrash && (
-            <span className="board-card-folder">
+            <span
+              className="board-card-folder"
+              title={`所属文件夹：${scene.folder_name}`}
+            >
               <FolderIcon />
               {scene.folder_name}
             </span>
@@ -542,9 +557,15 @@ const BoardCard = ({
           {scene.tags.length > 0 && !isTrash && (
             <div className="board-card-tags">
               {scene.tags.slice(0, 2).map((tag) => (
-                <span key={tag}>{tag}</span>
+                <span key={tag} className="board-card-tag" title={tag}>
+                  {tag}
+                </span>
               ))}
-              {scene.tags.length > 2 && <span>+{scene.tags.length - 2}</span>}
+              {scene.tags.length > 2 && (
+                <span className="board-card-tag-more">
+                  +{scene.tags.length - 2}
+                </span>
+              )}
             </div>
           )}
         </div>

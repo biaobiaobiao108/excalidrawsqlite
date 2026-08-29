@@ -686,7 +686,10 @@
 }
 
 .board-card-title {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   inline-size: 100%;
   box-sizing: border-box;
   padding: 0.75rem 0.75rem 0.25rem;
@@ -698,9 +701,12 @@
   font-family: var(--font-family, system-ui, sans-serif);
   font-size: 0.98rem;
   font-weight: 600;
+  line-height: 1.35;
+  min-block-size: 2.7em;
   text-align: start;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .board-card-title:hover,
@@ -727,7 +733,7 @@
 
 .board-card-details {
   display: grid;
-  gap: 0.18rem;
+  gap: 0.25rem;
   min-inline-size: 0;
 }
 
@@ -743,6 +749,32 @@
   font-size: 0.98rem;
   font-weight: 600;
   text-align: start;
+}
+
+.board-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.76rem;
+  color: var(--workspace-muted);
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.board-card-elements-count {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 550;
+  color: var(--workspace-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.meta-separator {
+  color: #cbd5e1;
+  font-size: 0.7rem;
+  flex-shrink: 0;
 }
 
 .board-card-updated,
@@ -776,7 +808,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
-  margin-block-start: 0.25rem;
+  margin-block-start: 0.15rem;
 }
 
 .board-card-tags span {

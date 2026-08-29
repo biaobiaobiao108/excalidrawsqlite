@@ -124,9 +124,15 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+
+    .scene-name-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
 
     &:hover {
       color: var(--color-primary, #6965db);
@@ -149,11 +155,38 @@
     color: white;
     padding: 0.1rem 0.4rem;
     border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .scene-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--text-color-muted, #868e96);
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .scene-elements-count {
+    font-weight: 550;
+    color: var(--color-primary, #6965db);
+    flex-shrink: 0;
+  }
+
+  .meta-separator {
+    color: #cbd5e1;
+    font-size: 0.7rem;
+    flex-shrink: 0;
   }
 
   .scene-time {
     font-size: 0.8rem;
     color: #868e96;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .scene-actions {
