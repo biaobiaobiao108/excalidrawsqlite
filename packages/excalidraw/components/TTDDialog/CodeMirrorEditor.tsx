@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { markdown } from "@codemirror/lang-markdown";
 import {
   Decoration,
   EditorView,
@@ -149,9 +150,9 @@ const getThemeExtensions = (theme: Theme) => {
   return [lightTheme, syntaxHighlighting(lightHighlight)];
 };
 
-const getInitialLanguageExtension = (
+const getLanguageExtension = (
   language: CodeMirrorEditorProps["language"],
-): Extension => (language === "mermaid" ? mermaidLite() : []);
+): Extension => (language === "markdown" ? markdown() : mermaidLite());
 
 const CodeMirrorEditor = ({
   value,
@@ -207,7 +208,7 @@ const CodeMirrorEditor = ({
           EditorView.lineWrapping,
           themeCompartment.of(getThemeExtensions(theme)),
           languageCompartmentRef.current.of(
-            getInitialLanguageExtension(language),
+            getLanguageExtension(language),
           ),
           errorLineCompartmentRef.current.of([]),
           EditorView.contentAttributes.of(
@@ -250,33 +251,11 @@ const CodeMirrorEditor = ({
       return;
     }
 
-    let cancelled = false;
-    const loadLanguage = async () => {
-      try {
-        const languageExtension =
-          language === "markdown"
-            ? (await import("@codemirror/lang-markdown")).markdown()
-            : mermaidLite();
-
-        if (cancelled || viewRef.current !== view) {
-          return;
-        }
-
-        view.dispatch({
-          effects: languageCompartmentRef.current.reconfigure(
-            languageExtension,
-          ),
-        });
-      } catch {
-        // Keep the editor usable without syntax highlighting if the language
-        // extension cannot be loaded.
-      }
-    };
-
-    void loadLanguage();
-    return () => {
-      cancelled = true;
-    };
+    view.dispatch({
+      effects: languageCompartmentRef.current.reconfigure(
+        getLanguageExtension(language),
+      ),
+    });
   }, [language]);
 
   // Update error line highlight
