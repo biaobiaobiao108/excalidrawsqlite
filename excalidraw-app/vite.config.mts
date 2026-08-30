@@ -160,6 +160,13 @@ export default defineConfig(({ mode }) => {
               return "lxgw-wenkai-fonts";
             }
 
+            if (
+              id.includes("@codemirror/lang-markdown") ||
+              id.includes("@lezer/markdown")
+            ) {
+              return "markdown-language";
+            }
+
             if (id.includes("@codemirror/") || id.includes("@lezer/")) {
               return "codemirror.chunk";
             }
@@ -205,6 +212,7 @@ export default defineConfig(({ mode }) => {
             "**/locales/**",
             "service-worker.js",
             "**/*.chunk-*.js",
+            "**/markdown-language-*.js",
             "**/mermaid-to-excalidraw-*.js",
             "**/pako.esm-*.js",
             "**/*Diagram-*.js",
@@ -269,7 +277,7 @@ export default defineConfig(({ mode }) => {
             },
             {
               urlPattern: new RegExp(
-                "(.chunk-.+|CodeMirrorEditor-.+|mermaid-to-excalidraw-.+|.*Diagram-.+|diagram-.+|treemap-.+)\\.js",
+                "(.chunk-.+|CodeMirrorEditor-.+|markdown-language-.+|mermaid-to-excalidraw-.+|.*Diagram-.+|diagram-.+|treemap-.+)\\.js",
               ),
               handler: "CacheFirst",
               options: {
