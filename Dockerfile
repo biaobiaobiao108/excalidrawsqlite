@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-# Stage 1: Build packages and frontend app with Bun
+# Stage 1: Build the frontend app with Bun
 # The output is platform-independent frontend assets, so build it once on the
 # native CI builder instead of repeating it under QEMU for every target.
 FROM --platform=$BUILDPLATFORM oven/bun:1.4.0-alpine AS builder
