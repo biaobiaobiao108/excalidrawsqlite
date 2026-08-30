@@ -160,13 +160,6 @@ export default defineConfig(({ mode }) => {
               return "lxgw-wenkai-fonts";
             }
 
-            if (
-              id.includes("@codemirror/lang-markdown") ||
-              id.includes("@lezer/markdown")
-            ) {
-              return "markdown-language";
-            }
-
             if (id.includes("@codemirror/") || id.includes("@lezer/")) {
               return "codemirror.chunk";
             }
@@ -177,8 +170,6 @@ export default defineConfig(({ mode }) => {
         mode === "development" || envVars.VITE_APP_ENABLE_SOURCEMAP === "true",
       // don't auto-inline small assets (i.e. fonts hosted on CDN)
       assetsInlineLimit: 0,
-      // Deferred feature chunks are tracked by scripts/check-bundle-size.js.
-      chunkSizeWarningLimit: 2100,
     },
     plugins: [
       woff2BrowserPlugin(),
@@ -212,7 +203,6 @@ export default defineConfig(({ mode }) => {
             "**/locales/**",
             "service-worker.js",
             "**/*.chunk-*.js",
-            "**/markdown-language-*.js",
             "**/mermaid-to-excalidraw-*.js",
             "**/pako.esm-*.js",
             "**/*Diagram-*.js",
@@ -277,7 +267,7 @@ export default defineConfig(({ mode }) => {
             },
             {
               urlPattern: new RegExp(
-                "(.chunk-.+|CodeMirrorEditor-.+|markdown-language-.+|mermaid-to-excalidraw-.+|.*Diagram-.+|diagram-.+|treemap-.+)\\.js",
+                "(.chunk-.+|CodeMirrorEditor-.+|mermaid-to-excalidraw-.+|.*Diagram-.+|diagram-.+|treemap-.+)\\.js",
               ),
               handler: "CacheFirst",
               options: {

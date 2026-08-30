@@ -18,7 +18,7 @@
 - 生产环境只支持最新 Chrome、Edge、Firefox、Safari 和 iOS Safari；生产构建目标为 `esnext`。不要重新添加旧浏览器 Browserslist、polyfill、转译兼容层或无必要的降级分支。
 - AI、Mermaid、CJK 字体、CodeMirror、pako 回退和字体子集化能力应保持按需加载。新增大型依赖前先确认不会被静态 import 拉入主入口；优先使用动态 `import()`，并检查 Rollup chunk 是否符合职责。
 - 「霞鹜文楷」资源位于 `packages/excalidraw/fonts/LXGWWenKai`，必须通过 `Fonts.ts` 的动态 import 按需加载；不要将原始 TTF 或整套 WOFF2 静态引入主入口。更新字体时需重新生成 Unicode 子包，并保留随资源提供的 `OFL.txt`。
-- 每次调整依赖、动态 import、Vite `manualChunks`、PWA 缓存或压缩逻辑后，运行 `bun run build` 和 `bun run build:check-size`。不得通过放宽预算掩盖主入口膨胀；当前预算由 `scripts/check-bundle-size.js` 统一维护。
+- 每次调整依赖、动态 import、Vite `manualChunks`、PWA 缓存或压缩逻辑后，运行 `bun run build`，并检查生成的入口和延迟 chunk 是否符合预期。
 - `encode`/`decode` 及图片、SVG 元数据编码接口是异步的，调用方必须 `await`。变更原生 Compression Streams 或 pako 回退时，必须保留旧版 bstring/zlib 数据的读取能力，并补充 Unicode、PNG、SVG 回归测试。
 - 生产 Service Worker 不预缓存 Mermaid、pako、图表、CodeMirror 等延迟 chunk；新增延迟 chunk 时同步检查 `globIgnores`、`runtimeCaching` 和 hash 缓存策略，避免首屏下载或离线缓存遗漏。
 

@@ -31,7 +31,6 @@ ENV BUILD_SHA=$BUILD_SHA
 ENV VITE_APP_GIT_SHA=$BUILD_SHA
 
 # Build the frontend and version metadata needed by the runtime image.
-# Package publishing and bundle budget checks are outside the image build path.
 RUN bun --cwd ./excalidraw-app build
 
 # Stage 2: Production runtime with Bun + SQLite
