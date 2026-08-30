@@ -147,6 +147,59 @@ describe("WorkspaceHome component", () => {
     expect(screen.queryByText("产品流程图")).toBeNull();
   });
 
+  it("opens styled tag and sort listboxes and applies their values", async () => {
+    render(<WorkspaceHome />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "按标签筛选" })).toBeTruthy();
+    });
+
+    const tagTrigger = screen.getByRole("button", { name: "按标签筛选" });
+    fireEvent.click(tagTrigger);
+    fireEvent.click(screen.getByRole("option", { name: "架构" }));
+    expect(tagTrigger).toHaveTextContent("架构");
+    expect(screen.queryByText("产品流程图")).toBeNull();
+
+    const sortTrigger = screen.getByRole("button", { name: "排序方式" });
+    fireEvent.click(sortTrigger);
+    fireEvent.click(screen.getByRole("option", { name: "按创建时间" }));
+    expect(sortTrigger).toHaveTextContent("按创建时间");
+  });
+
+  it("selects a folder in metadata and keeps the folder action inside the selected row", async () => {
+    render(<WorkspaceHome />);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", {
+          name: "编辑画板信息“架构设计图”",
+        }).length,
+      ).toBeGreaterThan(0);
+    });
+
+    const folderRow = document.querySelector<HTMLElement>(".folder-row");
+    const folderButton = folderRow?.querySelector<HTMLButtonElement>(
+      ":scope > button:first-child",
+    );
+    expect(folderButton).toBeTruthy();
+    fireEvent.click(folderButton!);
+    expect(folderRow).toHaveClass("is-selected");
+    expect(folderRow?.querySelector(".folder-more")).not.toBeNull();
+
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "编辑画板信息“架构设计图”",
+      })[0],
+    );
+    const folderSelectTrigger = screen.getByRole("button", { name: "文件夹" });
+    fireEvent.click(folderSelectTrigger);
+    fireEvent.click(screen.getByRole("option", { name: "工作目录" }));
+    expect(folderSelectTrigger).toHaveTextContent("工作目录");
+    fireEvent.click(screen.getByRole("button", { name: "保存信息" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
   it("versions thumbnail URLs with the scene update timestamp", async () => {
     render(<WorkspaceHome />);
 

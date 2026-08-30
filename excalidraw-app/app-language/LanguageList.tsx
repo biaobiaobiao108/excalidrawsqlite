@@ -2,6 +2,7 @@ import { useI18n, languages } from "@excalidraw/excalidraw/i18n";
 import React from "react";
 
 import { useSetAtom } from "../app-jotai";
+import { CustomSelect } from "../components/CustomSelect";
 
 import { appLangCodeAtom } from "./language-state";
 
@@ -10,18 +11,17 @@ export const LanguageList = ({ style }: { style?: React.CSSProperties }) => {
   const setLangCode = useSetAtom(appLangCodeAtom);
 
   return (
-    <select
-      className="dropdown-select dropdown-select__language"
-      onChange={({ target }) => setLangCode(target.value)}
+    <CustomSelect
       value={langCode}
-      aria-label={t("buttons.selectLanguage")}
+      onChange={setLangCode}
+      ariaLabel={t("buttons.selectLanguage")}
+      menuPlacement="top"
+      options={languages.map((lang) => ({
+        value: lang.code,
+        label: lang.label,
+      }))}
+      size="language"
       style={style}
-    >
-      {languages.map((lang) => (
-        <option key={lang.code} value={lang.code}>
-          {lang.label}
-        </option>
-      ))}
-    </select>
+    />
   );
 };

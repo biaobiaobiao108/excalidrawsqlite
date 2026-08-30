@@ -21,10 +21,8 @@
 
 .workspace-home button,
 .workspace-home input,
-.workspace-home select,
 .workspace-dialog button,
-.workspace-dialog input,
-.workspace-dialog select {
+.workspace-dialog input {
   font: inherit;
 }
 
@@ -291,11 +289,21 @@
 }
 
 .workspace-nav button:hover,
-.folder-row > button:first-child:hover,
 .workspace-nav button.is-selected,
-.folder-row > button:first-child.is-selected {
+.folder-row:hover {
   background: var(--workspace-primary-soft);
   color: var(--workspace-primary);
+}
+
+.folder-row.is-selected {
+  background: var(--workspace-primary-soft);
+  box-shadow: inset 0 0 0 1px rgba(105, 101, 219, 0.28);
+  color: var(--workspace-primary);
+}
+
+.folder-row.is-selected > button:first-child {
+  background: transparent;
+  color: inherit;
 }
 
 .workspace-nav button span,
@@ -348,6 +356,7 @@
   min-inline-size: 0;
   position: relative;
   border-radius: 9px;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
 }
 
 .folder-row > button:first-child {
@@ -379,6 +388,12 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.folder-row.is-selected .folder-more {
+  opacity: 1;
+  pointer-events: auto;
+  color: var(--workspace-primary);
 }
 
 .folder-row:hover .folder-more,
@@ -1011,20 +1026,12 @@
   font-size: 0.7rem;
 }
 
-.section-tools select {
-  min-block-size: 35px;
-  padding: 0 0.65rem;
-  border: 1px solid var(--workspace-border);
-  border-radius: 8px;
-  outline: none;
-  background: #fff;
-  color: var(--workspace-muted);
-  cursor: pointer;
-  font-size: 0.77rem;
+.section-tools .custom-select {
+  min-inline-size: 0;
 }
 
-.section-tools select:focus {
-  border-color: var(--workspace-primary);
+.section-tools .custom-select__trigger {
+  min-block-size: 35px;
 }
 
 .list-mode-button {
@@ -1155,8 +1162,7 @@
   font-weight: 600;
 }
 
-.metadata-form input,
-.metadata-form select {
+.metadata-form input {
   inline-size: 100%;
   min-block-size: 42px;
   box-sizing: border-box;
@@ -1169,8 +1175,13 @@
   font-size: 0.88rem;
 }
 
+.metadata-form .custom-select {
+  inline-size: 100%;
+}
+
 .metadata-form input:focus,
-.metadata-form select:focus {
+.metadata-form .custom-select__trigger:focus-visible,
+.metadata-form .custom-select__trigger[aria-expanded="true"] {
   border-color: var(--workspace-primary);
   box-shadow: 0 0 0 3px rgba(105, 101, 219, 0.1);
 }
@@ -1346,12 +1357,15 @@
     gap: 0.35rem;
   }
 
-  .section-tools select:first-child {
+  .section-tools .workspace-select-tag {
     display: none;
   }
 
-  .section-tools select {
+  .section-tools .custom-select {
     max-inline-size: 112px;
+  }
+
+  .section-tools .custom-select__trigger {
     font-size: 0.7rem;
   }
 

@@ -33,6 +33,7 @@ import { importFromLocalStorage } from "../data/localStorage";
 
 import { AuthDialog } from "./AuthDialog";
 import { WorkspaceDialog } from "./WorkspaceDialog";
+import { CustomSelect } from "./CustomSelect";
 
 import "./WorkspaceHome.scss";
 
@@ -61,6 +62,12 @@ type ConfirmDialogState = {
   confirmVariant?: "danger" | "primary";
   onConfirm: () => Promise<void> | void;
 };
+
+const SORT_OPTIONS = [
+  { value: "updated", label: "按最近修改" },
+  { value: "opened", label: "按最近打开" },
+  { value: "created", label: "按创建时间" },
+] as const;
 
 const getOwnerWindow = (node: HTMLDivElement | null) =>
   node?.ownerDocument.defaultView || window;
@@ -523,17 +530,19 @@ const MetadataDialog = ({
       </label>
       <label>
         <span>文件夹</span>
-        <select
+        <CustomSelect
           value={state.folderId}
-          onChange={(event) => onChange({ folderId: event.target.value })}
-        >
-          <option value="">根目录</option>
-          {folders.map((folder) => (
-            <option key={folder.id} value={folder.id}>
-              {folder.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "根目录" },
+            ...folders.map((folder) => ({
+              value: folder.id,
+              label: folder.name,
+            })),
+          ]}
+          onChange={(folderId) => onChange({ folderId })}
+          ariaLabel="文件夹"
+          size="field"
+        />
       </label>
       <div className="dialog-actions">
         <button
@@ -1190,14 +1199,16 @@ export const WorkspaceHome = ({
           </div>
           <div className="folder-list">
             {folders.map((folder) => (
-              <div className="folder-row" key={folder.id}>
+              <div
+                className={`folder-row ${
+                  selectedFolderId === folder.id && view !== "trash"
+                    ? "is-selected"
+                    : ""
+                }`.trim()}
+                key={folder.id}
+              >
                 <button
                   type="button"
-                  className={
-                    selectedFolderId === folder.id && view !== "trash"
-                      ? "is-selected"
-                      : ""
-                  }
                   onClick={() => {
                     setSelectedFolderId(folder.id);
                     setView("all");
@@ -1360,30 +1371,24 @@ export const WorkspaceHome = ({
               </div>
               <div className="section-tools">
                 {allTags.length > 0 && view !== "trash" && (
-                  <select
+                  <CustomSelect
+                    className="workspace-select-tag"
                     value={selectedTag || ""}
-                    onChange={(event) =>
-                      setSelectedTag(event.target.value || null)
-                    }
-                    aria-label="按标签筛选"
-                  >
-                    <option value="">所有标签</option>
-                    {allTags.map((tag) => (
-                      <option key={tag} value={tag}>
-                        {tag}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(tag) => setSelectedTag(tag || null)}
+                    ariaLabel="按标签筛选"
+                    options={[
+                      { value: "", label: "所有标签" },
+                      ...allTags.map((tag) => ({ value: tag, label: tag })),
+                    ]}
+                  />
                 )}
-                <select
+                <CustomSelect
+                  className="workspace-select-sort"
                   value={sort}
-                  onChange={(event) => setSort(event.target.value as SortMode)}
-                  aria-label="排序方式"
-                >
-                  <option value="updated">按最近修改</option>
-                  <option value="opened">按最近打开</option>
-                  <option value="created">按创建时间</option>
-                </select>
+                  onChange={(nextSort) => setSort(nextSort as SortMode)}
+                  ariaLabel="排序方式"
+                  options={SORT_OPTIONS}
+                />
                 <button
                   className="list-mode-button"
                   type="button"

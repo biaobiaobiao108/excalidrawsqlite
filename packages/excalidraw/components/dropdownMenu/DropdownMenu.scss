@@ -58,10 +58,13 @@
 
     .dropdown-menu-container {
       background-color: var(--island-bg-color);
-      overflow-y: auto;
+      overflow: auto;
       display: flex;
       flex-direction: column;
       gap: 1px;
+      border: 1px solid var(--default-border-color);
+      border-radius: var(--border-radius-lg);
+      background-clip: padding-box;
 
       box-shadow: var(--box-shadow, var(--shadow-island));
 

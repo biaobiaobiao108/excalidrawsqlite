@@ -44,22 +44,36 @@ describe("Test LanguageList", () => {
     expect(screen.queryByTitle(/thin/i)).not.toBeNull();
     fireEvent.click(document.querySelector(".dropdown-menu-button")!);
 
-    fireEvent.change(document.querySelector(".dropdown-select__language")!, {
-      target: { value: TEST_LANG_CODE },
+    const languageTrigger = screen.getByRole("button", {
+      name: /select language|选择语言/i,
     });
+    fireEvent.click(languageTrigger);
+    fireEvent.click(
+      screen.getByRole("option", {
+        name: languages.find((language) => language.code === TEST_LANG_CODE)
+          ?.label,
+      }),
+    );
     // switching to French, `thin` label should no longer exist
     await waitFor(() => expect(screen.queryByTitle(/thin/i)).toBeNull());
-    fireEvent.change(document.querySelector(".dropdown-select__language")!, {
-      target: { value: "zh-CN" },
-    });
+    fireEvent.click(languageTrigger);
+    fireEvent.click(
+      screen.getByRole("option", {
+        name: languages.find((language) => language.code === "zh-CN")?.label,
+      }),
+    );
     await waitFor(() => {
       expect(document.documentElement.lang).toBe("zh-CN");
       expect(localStorage.getItem("i18nextLng")).toBe("zh-CN");
     });
     // reset language
-    fireEvent.change(document.querySelector(".dropdown-select__language")!, {
-      target: { value: defaultLang.code },
-    });
+    fireEvent.click(languageTrigger);
+    fireEvent.click(
+      screen.getByRole("option", {
+        name: languages.find((language) => language.code === defaultLang.code)
+          ?.label,
+      }),
+    );
     // switching back to English
     await waitFor(() => expect(screen.queryByTitle(/thin/i)).not.toBeNull());
   });
