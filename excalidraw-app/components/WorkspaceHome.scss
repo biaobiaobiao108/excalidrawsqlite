@@ -780,24 +780,19 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
-  max-inline-size: 110px;
+  max-inline-size: 96px;
   flex-shrink: 0;
-}
-
-.board-card-badge:last-child {
-  flex-shrink: 1;
 }
 
 .board-card-folder {
   background: #edf2f7;
   color: #475569;
-  gap: 0.25rem;
-  max-inline-size: 120px;
-  flex-shrink: 0;
+  gap: 0.22rem;
+  max-inline-size: 104px;
 
   svg {
-    inline-size: 12px;
-    block-size: 12px;
+    inline-size: 11px;
+    block-size: 11px;
     flex-shrink: 0;
   }
 }
@@ -805,6 +800,20 @@
 .board-card-tag {
   background: var(--workspace-primary-soft);
   color: var(--workspace-primary);
+}
+
+.board-card-tag-more {
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.65rem;
+  font-weight: 600;
+  cursor: help;
+  padding: 0.1rem 0.35rem;
+}
+
+.board-card-tag-more:hover {
+  background: #e2e8f0;
+  color: #334155;
 }
 
 .board-card-meta-row {

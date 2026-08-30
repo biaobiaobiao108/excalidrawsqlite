@@ -306,6 +306,11 @@ const BoardCard = ({
   eager?: boolean;
 }) => {
   const sceneName = scene.name || "未命名白板";
+  const maxVisibleTags = scene.folder_name ? 1 : 2;
+  const visibleTags = !isTrash ? scene.tags.slice(0, maxVisibleTags) : [];
+  const overflowTags = !isTrash ? scene.tags.slice(maxVisibleTags) : [];
+  const hasBadges =
+    !isTrash && (Boolean(scene.folder_name) || scene.tags.length > 0);
 
   return (
     <article className={`board-card ${isTrash ? "is-trash-card" : ""}`}>
@@ -357,10 +362,9 @@ const BoardCard = ({
               {sceneName}
             </button>
           )}
-          {((scene.folder_name && !isTrash) ||
-            (scene.tags.length > 0 && !isTrash)) && (
+          {hasBadges && (
             <div className="board-card-badges">
-              {scene.folder_name && !isTrash && (
+              {scene.folder_name && (
                 <span
                   className="board-card-badge board-card-folder"
                   title={`所属文件夹：${scene.folder_name}`}
@@ -369,17 +373,26 @@ const BoardCard = ({
                   {scene.folder_name}
                 </span>
               )}
-              {scene.tags.length > 0 &&
-                !isTrash &&
-                scene.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="board-card-badge board-card-tag"
-                    title={tag}
-                  >
-                    {tag}
-                  </span>
-                ))}
+              {visibleTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="board-card-badge board-card-tag"
+                  title={tag}
+                >
+                  {tag}
+                </span>
+              ))}
+              {overflowTags.length > 0 && (
+                <span
+                  className="board-card-badge board-card-tag-more"
+                  title={`更多标签：${overflowTags.join("、")}`}
+                  aria-label={`更多 ${
+                    overflowTags.length
+                  } 个标签：${overflowTags.join("、")}`}
+                >
+                  +{overflowTags.length}
+                </span>
+              )}
             </div>
           )}
           <div className="board-card-meta-row">

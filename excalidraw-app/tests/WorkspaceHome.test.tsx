@@ -341,9 +341,7 @@ describe("WorkspaceHome component", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(screen.getAllByText("项目").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("交付").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("复盘").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("归档").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("+3").length).toBeGreaterThan(0);
     });
   });
 
