@@ -667,7 +667,14 @@
     "label": "Markdown",
     "inputPlaceholder": "在此输入或粘贴 Markdown 大纲……\n# 主题\n## 第一章\n- 要点 1\n- 要点 2\n## 第二章\n- 要点 3",
     "tips": "支持 Markdown 标题（# ##）、列表（- * 1.）及缩进大纲",
-    "emptyOrInvalid": "请输入有效的大纲内容"
+    "emptyOrInvalid": "请输入有效的大纲内容",
+    "emptyPreview": "输入大纲后将在此处显示思维导图预览",
+    "loading": "正在加载 Markdown 编辑器…",
+    "inputAriaLabel": "Markdown 大纲",
+    "previewAriaLabel": "思维导图预览",
+    "inputTooLong": "大纲内容过长，请缩短后重试。",
+    "tooManyNodes": "大纲节点过多，请减少内容后重试。",
+    "renderError": "思维导图预览生成失败，请检查大纲后重试。"
   },
   "ttd": {
     "error": "错误！"

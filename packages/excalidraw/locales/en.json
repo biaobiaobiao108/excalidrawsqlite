@@ -667,7 +667,14 @@
     "label": "Markdown",
     "inputPlaceholder": "Type or paste Markdown outline here...\n# Topic\n## Chapter 1\n- Point 1\n- Point 2\n## Chapter 2\n- Point 3",
     "tips": "Supports Markdown headings (# ##), lists (- * 1.) and indentation",
-    "emptyOrInvalid": "Please enter valid outline content"
+    "emptyOrInvalid": "Please enter valid outline content",
+    "emptyPreview": "Enter an outline to preview a mindmap",
+    "loading": "Loading the Markdown editor…",
+    "inputAriaLabel": "Markdown outline",
+    "previewAriaLabel": "Mindmap preview",
+    "inputTooLong": "The outline is too long. Please shorten it and try again.",
+    "tooManyNodes": "The outline has too many nodes. Please reduce it and try again.",
+    "renderError": "The mindmap preview could not be generated. Check the outline and try again."
   },
   "ttd": {
     "error": "Error!"
