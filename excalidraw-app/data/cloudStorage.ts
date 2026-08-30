@@ -287,15 +287,38 @@ export async function markCloudSceneOpened(id: string): Promise<{
 
 export async function saveCloudSceneThumbnail(
   id: string,
-  blob: Blob,
+  blob: Blob | null,
   thumbnailVersion?: number,
-): Promise<{ success: boolean; id: string; thumbnail_file_id: string }> {
-  const headers: Record<string, string> = {
-    "Content-Type": blob.type || "image/jpeg",
-  };
+): Promise<{
+  success: boolean;
+  id: string;
+  thumbnail_file_id: string | null;
+  stale?: boolean;
+}> {
+  const headers: Record<string, string> = {};
   if (Number.isFinite(thumbnailVersion)) {
     headers["X-Thumbnail-Version"] = String(thumbnailVersion);
   }
+
+  if (blob === null) {
+    const res = await fetchWithTimeout(
+      `/api/scenes/${encodeURIComponent(id)}/thumbnail`,
+      {
+        method: "DELETE",
+        headers,
+      },
+      "清除画板缩略图失败",
+    );
+    await assertResponse(res, "清除画板缩略图失败");
+    return (await res.json()) as {
+      success: boolean;
+      id: string;
+      thumbnail_file_id: null;
+      stale?: boolean;
+    };
+  }
+
+  headers["Content-Type"] = blob.type || "image/jpeg";
   const res = await fetchWithTimeout(
     `/api/scenes/${encodeURIComponent(id)}/thumbnail`,
     {
@@ -310,6 +333,7 @@ export async function saveCloudSceneThumbnail(
     success: boolean;
     id: string;
     thumbnail_file_id: string;
+    stale?: boolean;
   };
 }
 

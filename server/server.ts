@@ -1722,7 +1722,9 @@ export const createRequestHandler = (
           .query(
             `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
                     scenes.revision, length(scenes.elements) AS size,
-                    CASE WHEN json_valid(scenes.elements) = 1 THEN json_array_length(scenes.elements) ELSE 0 END AS element_count,
+                    CASE WHEN json_valid(scenes.elements) = 1
+                         THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
+                         ELSE 0 END AS element_count,
                     scenes.tags_json, scenes.is_favorite, scenes.folder_id,
                     scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
                     folders.name AS folder_name
@@ -1741,7 +1743,9 @@ export const createRequestHandler = (
           .query(
             `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
                     scenes.revision, length(scenes.elements) AS size,
-                    CASE WHEN json_valid(scenes.elements) = 1 THEN json_array_length(scenes.elements) ELSE 0 END AS element_count,
+                    CASE WHEN json_valid(scenes.elements) = 1
+                         THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
+                         ELSE 0 END AS element_count,
                     scenes.tags_json, scenes.is_favorite, scenes.folder_id,
                     scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
                     folders.name AS folder_name
@@ -1819,7 +1823,7 @@ export const createRequestHandler = (
             updated_at: now,
             revision: 1,
             size: JSON.stringify(elements).length,
-            element_count: elements.length,
+            element_count: elements.filter((el: any) => !el?.isDeleted).length,
             tags_json: JSON.stringify(tags),
             is_favorite: favorite ? 1 : 0,
             folder_id: folderId,
@@ -2070,6 +2074,75 @@ export const createRequestHandler = (
         });
       }
 
+      if (
+        pathname.startsWith("/api/scenes/") &&
+        pathname.endsWith("/thumbnail") &&
+        req.method === "DELETE"
+      ) {
+        const id = getPathId(
+          pathname.slice(0, -"/thumbnail".length),
+          "/api/scenes/",
+          "scene",
+        );
+        const existing = runtime.db
+          .query(
+            "SELECT id, thumbnail_file_id FROM scenes WHERE id = ? AND deleted_at IS NULL",
+          )
+          .get(id) as { id: string; thumbnail_file_id: string | null } | null;
+        if (!existing) {
+          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
+        }
+        const thumbnailId = `thumbnail_${createHash("sha256")
+          .update(id)
+          .digest("hex")}`;
+        const thumbnailVersionHeader = req.headers.get("x-thumbnail-version");
+        const thumbnailVersion = thumbnailVersionHeader
+          ? Number(thumbnailVersionHeader)
+          : undefined;
+        if (
+          thumbnailVersion !== undefined &&
+          (!Number.isSafeInteger(thumbnailVersion) || thumbnailVersion <= 0)
+        ) {
+          throw new HttpError(
+            400,
+            "INVALID_THUMBNAIL_VERSION",
+            "画板缩略图版本无效",
+          );
+        }
+        return withThumbnailWriteLock(thumbnailId, async () => {
+          const currentThumbnail = runtime.db
+            .query("SELECT updated_at FROM files WHERE id = ?")
+            .get(thumbnailId) as { updated_at: number } | null;
+          if (
+            thumbnailVersion !== undefined &&
+            currentThumbnail &&
+            Number(currentThumbnail.updated_at) >= thumbnailVersion
+          ) {
+            return jsonResponse(runtime, req, {
+              success: true,
+              id,
+              thumbnail_file_id: existing.thumbnail_file_id,
+              stale: true,
+            });
+          }
+          runtime.db.run(
+            "UPDATE scenes SET thumbnail_file_id = NULL WHERE id = ?",
+            [id],
+          );
+          if (currentThumbnail && thumbnailVersion !== undefined) {
+            runtime.db.run("UPDATE files SET updated_at = ? WHERE id = ?", [
+              thumbnailVersion,
+              thumbnailId,
+            ]);
+          }
+          return jsonResponse(runtime, req, {
+            success: true,
+            id,
+            thumbnail_file_id: null,
+          });
+        });
+      }
+
       if (pathname.startsWith("/api/scenes/") && req.method === "PATCH") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
         const body = requireJsonObject(await readJson(req, 64 * 1024));
@@ -2120,7 +2193,9 @@ export const createRequestHandler = (
           .query(
             `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
                     scenes.revision, length(scenes.elements) AS size,
-                    CASE WHEN json_valid(scenes.elements) = 1 THEN json_array_length(scenes.elements) ELSE 0 END AS element_count,
+                    CASE WHEN json_valid(scenes.elements) = 1
+                         THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
+                         ELSE 0 END AS element_count,
                     scenes.tags_json, scenes.is_favorite, scenes.folder_id,
                     scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
                     folders.name AS folder_name

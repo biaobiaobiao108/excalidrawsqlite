@@ -690,6 +690,81 @@ describe("cloud persistence server", () => {
         .get(thumbnailResult.thumbnail_file_id),
     ).toEqual({ storage_path: thumbnailResult.thumbnail_file_id });
 
+    // Test DELETE thumbnail with version check
+    const staleDelete = await request(
+      handler,
+      "/api/scenes/scene_metadata/thumbnail",
+      {
+        method: "DELETE",
+        headers: { Cookie: cookie, "X-Thumbnail-Version": "90" },
+      },
+    );
+    expect(staleDelete.status).toBe(200);
+    expect(await responseJson<{ stale?: boolean }>(staleDelete)).toMatchObject({
+      stale: true,
+    });
+
+    const deletedThumbnail = await request(
+      handler,
+      "/api/scenes/scene_metadata/thumbnail",
+      {
+        method: "DELETE",
+        headers: { Cookie: cookie, "X-Thumbnail-Version": "105" },
+      },
+    );
+    expect(deletedThumbnail.status).toBe(200);
+    expect(
+      await responseJson<{ thumbnail_file_id: string | null }>(
+        deletedThumbnail,
+      ),
+    ).toMatchObject({ thumbnail_file_id: null });
+
+    const sceneAfterThumbnailDelete = await request(
+      handler,
+      "/api/scenes/scene_metadata",
+      {
+        headers: { Cookie: cookie },
+      },
+    );
+    expect(
+      (
+        await responseJson<{ thumbnail_file_id: string | null }>(
+          sceneAfterThumbnailDelete,
+        )
+      ).thumbnail_file_id,
+    ).toBe(null);
+
+    // Test element_count when elements are deleted
+    const updateWithDeletedElements = await jsonRequest(
+      handler,
+      "/api/scenes/scene_metadata",
+      {
+        elements: [
+          { id: "el1", type: "rectangle", isDeleted: true },
+          { id: "el2", type: "text", isDeleted: true },
+        ],
+        baseRevision: 2,
+      },
+      { method: "PUT", headers: { Cookie: cookie } },
+    );
+    expect(updateWithDeletedElements.status).toBe(200);
+
+    const listAfterDeleteAll = await request(handler, "/api/scenes", {
+      headers: { Cookie: cookie },
+    });
+    const scenesAfterDeleteAll = await responseJson<
+      Array<{
+        id: string;
+        element_count: number;
+        thumbnail_file_id: string | null;
+      }>
+    >(listAfterDeleteAll);
+    const targetScene = scenesAfterDeleteAll.find(
+      (s) => s.id === "scene_metadata",
+    );
+    expect(targetScene?.element_count).toBe(0);
+    expect(targetScene?.thumbnail_file_id).toBe(null);
+
     const deletedFolder = await request(handler, `/api/folders/${folder.id}`, {
       method: "DELETE",
       headers: { Cookie: cookie },

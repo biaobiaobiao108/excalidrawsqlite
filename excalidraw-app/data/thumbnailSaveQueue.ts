@@ -22,7 +22,7 @@ export class LatestThumbnailSaveQueue<Snapshot extends { sceneId: string }> {
   schedule<Output>(
     snapshot: Snapshot,
     create: (snapshot: Snapshot) => Promise<Output | null>,
-    save: (sceneId: string, output: Output) => Promise<unknown>,
+    save: (sceneId: string, output: Output | null) => Promise<unknown>,
     onError: (error: unknown) => void,
   ): Promise<void> {
     const generation = ++this.generation;
@@ -31,7 +31,7 @@ export class LatestThumbnailSaveQueue<Snapshot extends { sceneId: string }> {
         return;
       }
       const output = await create(snapshot);
-      if (!output || generation !== this.generation) {
+      if (generation !== this.generation) {
         return;
       }
       await save(snapshot.sceneId, output);
