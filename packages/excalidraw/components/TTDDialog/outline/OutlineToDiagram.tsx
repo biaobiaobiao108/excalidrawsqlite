@@ -115,13 +115,17 @@ export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
           files: null,
         };
 
+        const ownerWindow =
+          app.ownerWindow || canvasNode.ownerDocument.defaultView;
+        const devicePixelRatio = ownerWindow?.devicePixelRatio || 1;
+
         const canvas = await exportToCanvas({
           elements: data.current.elements,
           files: null,
           exportPadding: DEFAULT_EXPORT_PADDING,
           maxWidthOrHeight:
             Math.max(parent.offsetWidth, parent.offsetHeight) *
-            window.devicePixelRatio,
+            devicePixelRatio,
           appState: {
             exportWithDarkMode: theme === THEME.DARK,
           },
@@ -144,7 +148,7 @@ export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
       doRender();
       debouncedSaveOutline(deferredText, deferredLayout);
     }
-  }, [deferredText, deferredLayout, isActive, theme]);
+  }, [deferredText, deferredLayout, isActive, theme, app.ownerWindow]);
 
   useEffect(
     () => () => {

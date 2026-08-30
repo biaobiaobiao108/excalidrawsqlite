@@ -96,7 +96,9 @@ export default defineConfig(({ mode }) => {
         resolveDependencies(_filename, deps, context) {
           if (context.hostType === "html") {
             return deps.filter(
-              (dependency) => !dependency.includes("mermaid-to-excalidraw"),
+              (dependency) =>
+                !dependency.includes("mermaid-to-excalidraw") &&
+                !dependency.includes("OutlineToDiagram"),
             );
           }
 
