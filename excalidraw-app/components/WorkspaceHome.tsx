@@ -491,9 +491,9 @@ const BoardCard = ({
           </button>
           <button
             className="board-card-title"
-            onClick={() => onEdit(scene)}
+            onClick={() => onOpen(scene)}
             type="button"
-            aria-label={`编辑画板名称“${sceneName}”`}
+            aria-label={`打开画板“${sceneName}”`}
             title={sceneName}
           >
             {sceneName}
@@ -510,8 +510,8 @@ const BoardCard = ({
             <button
               type="button"
               className="board-card-mobile-title"
-              onClick={() => onEdit(scene)}
-              aria-label={`编辑画板名称“${sceneName}”`}
+              onClick={() => onOpen(scene)}
+              aria-label={`打开画板“${sceneName}”`}
               title={sceneName}
             >
               {sceneName}

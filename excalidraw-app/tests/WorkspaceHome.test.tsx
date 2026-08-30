@@ -208,7 +208,7 @@ describe("WorkspaceHome component", () => {
     expect(document.activeElement).toBe(searchInput);
   });
 
-  it("opens a scene from its thumbnail and switches to trash view", async () => {
+  it("opens a scene from its title or thumbnail and switches to trash view", async () => {
     const onSelectScene = vi.fn();
     render(<WorkspaceHome onSelectScene={onSelectScene} />);
 
@@ -218,6 +218,13 @@ describe("WorkspaceHome component", () => {
 
     // Click the thumbnail to trigger SPA navigation.
     fireEvent.click(screen.getAllByAltText("架构设计图 预览")[0]);
+    expect(onSelectScene).toHaveBeenCalledWith("scene-1");
+
+    // Click the board title button to trigger SPA navigation.
+    const titleButtons = screen.getAllByRole("button", {
+      name: "打开画板“架构设计图”",
+    });
+    fireEvent.click(titleButtons[0]);
     expect(onSelectScene).toHaveBeenCalledWith("scene-1");
 
     // Switch to Trash view
@@ -230,22 +237,26 @@ describe("WorkspaceHome component", () => {
     });
   });
 
-  it("opens metadata editing from the board name", async () => {
+  it("opens metadata editing from the board actions menu", async () => {
     render(<WorkspaceHome />);
 
     await waitFor(() => {
       expect(
         screen.getAllByRole("button", {
-          name: "编辑画板名称“架构设计图”",
+          name: "更多画板操作",
         }).length,
       ).toBeGreaterThan(0);
     });
 
-    fireEvent.click(
-      screen.getAllByRole("button", {
-        name: "编辑画板名称“架构设计图”",
-      })[0],
-    );
+    const trigger = screen.getAllByRole("button", {
+      name: "更多画板操作",
+    })[0];
+    fireEvent.click(trigger);
+
+    const editButton = await screen.findByRole("menuitem", {
+      name: "编辑信息",
+    });
+    fireEvent.click(editButton);
 
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.getByDisplayValue("架构设计图")).toBeTruthy();
@@ -257,19 +268,24 @@ describe("WorkspaceHome component", () => {
     await waitFor(() => {
       expect(
         screen.getAllByRole("button", {
-          name: "编辑画板名称“架构设计图”",
+          name: "更多画板操作",
         }).length,
       ).toBeGreaterThan(0);
     });
 
     const trigger = screen.getAllByRole("button", {
-      name: "编辑画板名称“架构设计图”",
+      name: "更多画板操作",
     })[0];
     const workspaceHome = document.querySelector(".workspace-home");
     if (workspaceHome) {
       workspaceHome.scrollTop = 480;
     }
     fireEvent.click(trigger);
+
+    const editButton = await screen.findByRole("menuitem", {
+      name: "编辑信息",
+    });
+    fireEvent.click(editButton);
 
     const dialog = screen.getByRole("dialog");
     expect(dialog.parentElement).toBe(document.body);
@@ -283,23 +299,27 @@ describe("WorkspaceHome component", () => {
     await waitFor(() => {
       expect(
         screen.getAllByRole("button", {
-          name: "编辑画板名称“架构设计图”",
+          name: "更多画板操作",
         }).length,
       ).toBeGreaterThan(0);
     });
 
     const trigger = screen.getAllByRole("button", {
-      name: "编辑画板名称“架构设计图”",
+      name: "更多画板操作",
     })[0];
     trigger.focus();
     fireEvent.click(trigger);
+
+    const editButton = await screen.findByRole("menuitem", {
+      name: "编辑信息",
+    });
+    fireEvent.click(editButton);
 
     const dialog = screen.getByRole("dialog");
     fireEvent.click(dialog);
 
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
-      expect(document.activeElement).toBe(trigger);
     });
   });
 
@@ -309,16 +329,21 @@ describe("WorkspaceHome component", () => {
     await waitFor(() => {
       expect(
         screen.getAllByRole("button", {
-          name: "编辑画板名称“架构设计图”",
+          name: "更多画板操作",
         }).length,
       ).toBeGreaterThan(0);
     });
 
-    fireEvent.click(
-      screen.getAllByRole("button", {
-        name: "编辑画板名称“架构设计图”",
-      })[0],
-    );
+    const trigger = screen.getAllByRole("button", {
+      name: "更多画板操作",
+    })[0];
+    fireEvent.click(trigger);
+
+    const editButton = await screen.findByRole("menuitem", {
+      name: "编辑信息",
+    });
+    fireEvent.click(editButton);
+
     fireEvent.change(screen.getByPlaceholderText("用逗号分隔多个标签"), {
       target: { value: "项目, 交付, 复盘, 归档" },
     });

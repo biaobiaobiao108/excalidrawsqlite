@@ -53,7 +53,6 @@ import { AppFooter } from "./components/AppFooter";
 import { AppMainMenu } from "./components/AppMainMenu";
 import { AppWelcomeScreen } from "./components/AppWelcomeScreen";
 import { CloudConflictDialog } from "./components/CloudConflictDialog";
-import { CloudScenesDialog } from "./components/CloudScenesDialog";
 import { WorkspaceHome } from "./components/WorkspaceHome";
 import { AuthDialog } from "./components/AuthDialog";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
@@ -302,7 +301,6 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   }, [excalidrawAPI]);
 
   // Cloud Whiteboard (SQLite) State & Handlers
-  const [isCloudScenesOpen, setIsCloudScenesOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [cloudBootstrapError, setCloudBootstrapError] = useState("");
   const [authSceneId, setAuthSceneId] = useState<string | null>(null);
@@ -345,13 +343,6 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
       setCloudSaveStatus("idle");
     }
     setCurrentSceneId(sceneId);
-  }, []);
-
-  const requestCloudAuth = useCallback(() => {
-    setIsAuthOpen(true);
-    return new Promise<boolean>((resolve) => {
-      authWaitersRef.current.push(resolve);
-    });
   }, []);
 
   const cloudSaveQueue = useMemo(
@@ -642,23 +633,6 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
     saveThumbnailDebounced,
     thumbnailSaveQueue,
   ]);
-
-  const handleSelectScene = useCallback(
-    async (sceneId: string): Promise<boolean> => {
-      try {
-        await loadSelectedCloudScene(sceneId);
-        return true;
-      } catch (error: any) {
-        if (error?.status === 401) {
-          setIsAuthOpen(true);
-        } else {
-          setErrorMessage(error?.message || "打开云端画板失败");
-        }
-        return false;
-      }
-    },
-    [loadSelectedCloudScene],
-  );
 
   const bootstrapCloud = useCallback(() => {
     if (cloudBootstrapPromiseRef.current) {
@@ -1382,14 +1356,6 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
           <OverwriteConfirmDialog.Actions.ExportToImage />
           <OverwriteConfirmDialog.Actions.SaveToDisk />
         </OverwriteConfirmDialog>
-        <CloudScenesDialog
-          isOpen={isCloudScenesOpen}
-          currentSceneId={currentSceneId}
-          onClose={() => setIsCloudScenesOpen(false)}
-          onSelectScene={handleSelectScene}
-          onAuthRequired={requestCloudAuth}
-          onSceneDeleted={handleSceneDeleted}
-        />
         <AuthDialog
           isOpen={isAuthOpen}
           onSuccess={() => {
@@ -1462,7 +1428,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
                 "云端",
               ],
               perform: () => {
-                window.location.assign(window.location.pathname);
+                void navigateHomeAfterSave();
               },
             },
             {

@@ -2197,24 +2197,12 @@ export const createRequestHandler = (
       }
 
       if (pathname === "/api/scenes/trash" && req.method === "DELETE") {
-        const trashRows = runtime.db
-          .query("SELECT id FROM scenes WHERE deleted_at IS NOT NULL")
-          .all() as Array<{ id: string }>;
-        const ids = trashRows.map((r) => r.id);
-        if (ids.length > 0) {
-          const transaction = runtime.db.transaction(() => {
-            for (const id of ids) {
-              runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [
-                id,
-              ]);
-              runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
-            }
-          });
-          transaction();
-        }
+        const result = runtime.db.run(
+          "DELETE FROM scenes WHERE deleted_at IS NOT NULL",
+        );
         return jsonResponse(runtime, req, {
           success: true,
-          deletedCount: ids.length,
+          deletedCount: result.changes,
         });
       }
 
@@ -2460,7 +2448,11 @@ const startServer = () => {
 
   const handleShutdown = () => {
     process.stdout.write("\n[Server] 正在优雅关闭...\n");
-    performDatabaseMaintenance(runtime);
+    try {
+      runtime.db.run("PRAGMA wal_checkpoint(TRUNCATE);");
+    } catch (error) {
+      console.error("[Database] Shutdown WAL checkpoint failed", error);
+    }
     try {
       runtime.db.close();
     } catch {

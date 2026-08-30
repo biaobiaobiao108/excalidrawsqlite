@@ -191,7 +191,6 @@ bun run start
 ├── excalidraw-app/         # Excalidraw 前端主应用 (Vite + React)
 │   ├── components/
 │   │   ├── WorkspaceHome.tsx     # 工作台多画板管理、文件夹、回收站与卡片组件
-│   │   ├── CloudScenesDialog.tsx # 编辑器内多画板快速切换弹窗
 │   │   ├── AuthDialog.tsx        # 密码验证与鉴权弹窗
 │   │   └── ...
 │   ├── data/
