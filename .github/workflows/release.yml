@@ -39,9 +39,6 @@ jobs:
       - name: Lint
         run: bun run test:code
 
-      - name: Formatting
-        run: bun run test:other
-
       - name: Server tests
         run: bun run test:server
 

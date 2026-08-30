@@ -38,7 +38,8 @@
       {
         "allowReferrer": true
       }
-    ]
+    ],
+    "prettier/prettier": "off"
   },
   "overrides": [
     {

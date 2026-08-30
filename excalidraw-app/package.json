@@ -27,7 +27,6 @@
     "react": "19.0.0",
     "react-dom": "19.0.0"
   },
-  "prettier": "@excalidraw/prettier-config",
   "scripts": {
     "build-node": "bun ./scripts/build-node.js",
     "build:app:docker": "vite build",
