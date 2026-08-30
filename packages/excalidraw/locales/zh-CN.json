@@ -659,6 +659,19 @@
     "inputPlaceholder": "在此处输入 Mermaid 图定义……",
     "autoFixAvailable": "自动修复可用"
   },
+  "outline": {
+    "title": "Markdown 大纲至图表",
+    "button": "插入到画布",
+    "label": "Markdown 大纲",
+    "inputPlaceholder": "在此输入或粘贴 Markdown 大纲……",
+    "tips": "支持 Markdown 标题（# ##）、列表（- * 1.）及缩进大纲",
+    "emptyOrInvalid": "请输入有效的大纲内容",
+    "layouts": {
+      "mindmap": "横向思维导图",
+      "hierarchy": "组织架构树",
+      "storyboard": "分镜卡片 (16:9)"
+    }
+  },
   "ttd": {
     "error": "错误！"
   },

@@ -23,6 +23,7 @@ import type {
 } from "./types";
 
 const LazyTextToDiagram = lazy(() => import("./TextToDiagram"));
+const LazyOutlineToDiagram = lazy(() => import("./outline/OutlineToDiagram"));
 
 export const TTDDialog = (
   props:
@@ -54,7 +55,7 @@ const TTDDialogBase = withInternalFallback(
     tab,
     ...rest
   }: {
-    tab: "text-to-diagram" | "mermaid";
+    tab: "text-to-diagram" | "mermaid" | "outline";
   } & (
     | {
         onTextSubmit(
@@ -106,6 +107,9 @@ const TTDDialogBase = withInternalFallback(
                   </div>
                 </div>
               </TTDDialogTabTrigger>
+              <TTDDialogTabTrigger tab="outline">
+                {t("outline.label")}
+              </TTDDialogTabTrigger>
               <TTDDialogTabTrigger tab="mermaid">
                 {t("mermaid.label")}
               </TTDDialogTabTrigger>
@@ -122,6 +126,13 @@ const TTDDialogBase = withInternalFallback(
                   renderWarning={rest.renderWarning}
                   persistenceAdapter={rest.persistenceAdapter}
                 />
+              </Suspense>
+            </TTDDialogTab>
+          )}
+          {!("__fallback" in rest) && (
+            <TTDDialogTab className="ttd-dialog-content" tab="outline">
+              <Suspense fallback={null}>
+                <LazyOutlineToDiagram isActive={tab === "outline"} />
               </Suspense>
             </TTDDialogTab>
           )}

@@ -570,6 +570,30 @@ function CommandPaletteInner({
           },
         },
         {
+          label: `${t("outline.title")}...`,
+          category: DEFAULT_CATEGORIES.tools,
+          keywords: [
+            "outline",
+            "mindmap",
+            "hierarchy",
+            "storyboard",
+            "markdown",
+            "大纲",
+            "思维导图",
+            "分镜",
+          ],
+          viewMode: false,
+          perform: () => {
+            setAppState((state) => ({
+              ...state,
+              openDialog: {
+                name: "ttd",
+                tab: "outline",
+              },
+            }));
+          },
+        },
+        {
           label: `${t("toolBar.mermaidToExcalidraw")}...`,
           category: DEFAULT_CATEGORIES.tools,
           icon: mermaidLogoIcon,

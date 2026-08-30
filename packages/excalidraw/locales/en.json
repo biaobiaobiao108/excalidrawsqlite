@@ -659,6 +659,19 @@
     "inputPlaceholder": "Write Mermaid diagram defintion here...",
     "autoFixAvailable": "Auto-fix is available"
   },
+  "outline": {
+    "title": "Markdown Outline to Diagram",
+    "button": "Insert to canvas",
+    "label": "Markdown Outline",
+    "inputPlaceholder": "Type or paste Markdown outline here...",
+    "tips": "Supports Markdown headings (# ##), lists (- * 1.) and indentation",
+    "emptyOrInvalid": "Please enter valid outline content",
+    "layouts": {
+      "mindmap": "Mindmap",
+      "hierarchy": "Hierarchy Tree",
+      "storyboard": "Storyboard Cards (16:9)"
+    }
+  },
   "ttd": {
     "error": "Error!"
   },
