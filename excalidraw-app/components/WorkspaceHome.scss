@@ -538,10 +538,12 @@
 
 .board-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
   container-type: inline-size;
   min-inline-size: 0;
-  overflow: visible;
+  overflow: hidden;
   border: 1px solid var(--workspace-border);
   border-radius: 12px;
   background: #fff;
@@ -602,7 +604,8 @@
 }
 
 .board-card-open {
-  display: block;
+  display: flex;
+  flex-direction: column;
   inline-size: 100%;
   border-radius: 12px 12px 0 0;
   background: transparent;
@@ -692,7 +695,7 @@
   line-clamp: 2;
   inline-size: 100%;
   box-sizing: border-box;
-  padding: 0.65rem 0.75rem 0.2rem;
+  padding: 0.65rem 0.75rem 0;
   border: 0;
   background: transparent;
   overflow: hidden;
@@ -702,6 +705,7 @@
   font-size: 0.95rem;
   font-weight: 600;
   line-height: 1.35;
+  block-size: calc(0.95rem * 1.35 * 2 + 0.65rem);
   text-align: start;
   text-overflow: ellipsis;
   word-break: break-word;
@@ -726,7 +730,8 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.2rem 0.65rem 0.65rem 0.75rem;
+  margin-block-start: auto;
+  padding: 0.45rem 0.65rem 0.65rem 0.75rem;
 }
 
 .board-card-details {
@@ -745,9 +750,12 @@
   color: var(--workspace-text);
   cursor: pointer;
   font-family: var(--font-family, system-ui, sans-serif);
-  font-size: 0.98rem;
+  font-size: 0.95rem;
   font-weight: 600;
   text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .board-card-meta-row {
@@ -1346,10 +1354,6 @@
     align-items: center;
     min-block-size: 0;
     padding: 0.8rem;
-  }
-
-  .board-grid .board-card-details::before {
-    content: attr(data-title);
   }
 
   .board-grid .board-card-details {

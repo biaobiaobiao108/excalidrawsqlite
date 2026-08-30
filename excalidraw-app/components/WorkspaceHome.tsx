@@ -341,7 +341,7 @@ const BoardCard = ({
         </div>
       )}
       <div className="board-card-footer">
-        <div className="board-card-details" data-title={sceneName}>
+        <div className="board-card-details">
           {isTrash ? (
             <span className="board-card-mobile-title" title={sceneName}>
               {sceneName}
