@@ -1,5 +1,9 @@
+# syntax=docker/dockerfile:1.7
+
 # Stage 1: Build packages and frontend app with Bun
-FROM oven/bun:1.4.0-alpine AS builder
+# The output is platform-independent frontend assets, so build it once on the
+# native CI builder instead of repeating it under QEMU for every target.
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.0-alpine AS builder
 
 WORKDIR /app
 
@@ -26,8 +30,9 @@ ARG BUILD_SHA=local
 ENV BUILD_SHA=$BUILD_SHA
 ENV VITE_APP_GIT_SHA=$BUILD_SHA
 
-# Build all packages and the frontend app
-RUN bun run build:packages && bun run build
+# Build the frontend and version metadata needed by the runtime image.
+# Package publishing and bundle budget checks are outside the image build path.
+RUN bun --cwd ./excalidraw-app build
 
 # Stage 2: Production runtime with Bun + SQLite
 FROM oven/bun:1.4.0-alpine AS runner
@@ -41,12 +46,9 @@ ENV DB_PATH=/app/data/excalidraw.db
 ENV FILES_DIR=/app/data/files
 ENV STATIC_DIR=/app/excalidraw-app/build
 
-# Create data directory for SQLite persistence. The runtime keeps the base
-# image's root default so rootless Podman/Docker bind mounts map to the
-# invoking host user without requiring a fixed container UID.
-RUN mkdir -p /app/data/files
-
 # Copy only the production backend entrypoint and built frontend static assets
+# The server creates the database and files directories on startup. Keeping the
+# runtime stage free of RUN steps avoids target-platform emulation in Buildx.
 COPY server/server.ts ./server/server.ts
 COPY --from=builder /app/excalidraw-app/build ./excalidraw-app/build
 
