@@ -70,6 +70,17 @@ export const MORANDI_PALETTE: PalettePreset = {
   ],
 };
 
+export const getBranchLineColor = (
+  branchIndex: number,
+  isDark = false,
+): string => {
+  const branch =
+    MORANDI_PALETTE.branches[
+      Math.abs(branchIndex) % MORANDI_PALETTE.branches.length
+    ];
+  return isDark ? branch.strokeDark : branch.strokeLight;
+};
+
 export const getNodeStyle = (
   level: number,
   branchIndex: number,

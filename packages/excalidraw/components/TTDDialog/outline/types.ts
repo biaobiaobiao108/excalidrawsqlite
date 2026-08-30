@@ -8,7 +8,7 @@ export type OutlineNode = {
   parent?: OutlineNode;
 };
 
-export type OutlineLayoutType = "mindmap" | "hierarchy" | "storyboard";
+export type OutlineLayoutType = "mindmap";
 
 export type LayoutedNode = {
   id: string;
@@ -21,27 +21,19 @@ export type LayoutedNode = {
   height: number;
   parentId?: string;
   children: LayoutedNode[];
-  frameId?: string;
+};
+
+export type OutlineConnection = {
+  id: string;
+  startId: string;
+  endId: string;
+  branchIndex: number;
+  level: number;
 };
 
 export type OutlineLayoutResult = {
   nodes: LayoutedNode[];
-  frames?: Array<{
-    id: string;
-    name: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    children: string[];
-  }>;
-  connections: Array<{
-    id: string;
-    startId: string;
-    endId: string;
-    style?: "curved" | "elbow" | "straight";
-    color?: string;
-  }>;
+  connections: OutlineConnection[];
   bounds: {
     minX: number;
     minY: number;

@@ -661,17 +661,13 @@
     "autoFixAvailable": "Auto-fix is available"
   },
   "outline": {
-    "title": "Markdown Outline to Diagram",
+    "title": "Markdown Outline to Mindmap",
+    "description": "Enter Markdown headings and list outline to automatically generate a hand-drawn mindmap",
     "button": "Insert to canvas",
     "label": "Markdown Outline",
-    "inputPlaceholder": "Type or paste Markdown outline here...",
+    "inputPlaceholder": "Type or paste Markdown outline here...\n# Topic\n## Chapter 1\n- Point 1\n- Point 2\n## Chapter 2\n- Point 3",
     "tips": "Supports Markdown headings (# ##), lists (- * 1.) and indentation",
-    "emptyOrInvalid": "Please enter valid outline content",
-    "layouts": {
-      "mindmap": "Mindmap",
-      "hierarchy": "Hierarchy Tree",
-      "storyboard": "Storyboard Cards (16:9)"
-    }
+    "emptyOrInvalid": "Please enter valid outline content"
   },
   "ttd": {
     "error": "Error!"

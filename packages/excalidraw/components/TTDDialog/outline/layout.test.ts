@@ -1,12 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { generateExcalidrawFromLayout } from "./generator";
-import {
-  layoutHierarchy,
-  layoutMindmap,
-  layoutOutline,
-  layoutStoryboard,
-} from "./layout";
+import { layoutMindmap, layoutOutline } from "./layout";
 import { parseOutlineToTree } from "./parser";
 
 describe("Outline Layout and Generation", () => {
@@ -20,7 +15,7 @@ describe("Outline Layout and Generation", () => {
 - REST API
 `;
 
-  it("generates mindmap layout with valid coordinates and connections", () => {
+  it("generates mindmap layout with valid coordinates and smooth connections", () => {
     const tree = parseOutlineToTree(sampleMd)!;
     const result = layoutMindmap(tree);
 
@@ -30,35 +25,17 @@ describe("Outline Layout and Generation", () => {
     expect(result.bounds.height).toBeGreaterThan(0);
 
     const elements = generateExcalidrawFromLayout(result, "light");
-    expect(elements.length).toBeGreaterThanOrEqual(7);
+    // 7 rectangles + 7 bound text elements + 6 arrows = 20 elements
+    expect(elements.length).toBe(20);
+
+    const rectangles = elements.filter((el) => el.type === "rectangle");
+    expect(rectangles.length).toBe(7);
+
+    const arrows = elements.filter((el) => el.type === "arrow");
+    expect(arrows.length).toBe(6);
+    expect(arrows.every((a) => (a as any).endArrowhead === null)).toBe(true);
 
     const helperResult = layoutOutline(tree, "mindmap");
     expect(helperResult.nodes.length).toBe(7);
-  });
-
-  it("generates hierarchy tree layout", () => {
-    const tree = parseOutlineToTree(sampleMd)!;
-    const result = layoutHierarchy(tree);
-
-    expect(result.nodes.length).toBe(7);
-    expect(result.connections.length).toBe(6);
-
-    const rootNode = result.nodes.find((n) => n.level === 0)!;
-    const level1Nodes = result.nodes.filter((n) => n.level === 1);
-    expect(level1Nodes.every((n) => n.y > rootNode.y)).toBe(true);
-  });
-
-  it("generates storyboard layout with 16:9 frames", () => {
-    const tree = parseOutlineToTree(sampleMd)!;
-    const result = layoutStoryboard(tree);
-
-    expect(result.frames).toBeDefined();
-    expect(result.frames?.length).toBe(2); // 2 level-1 chapters
-    expect(result.frames?.[0].width).toBe(640);
-    expect(result.frames?.[0].height).toBe(360);
-
-    const elements = generateExcalidrawFromLayout(result, "light");
-    const frameElements = elements.filter((e) => e.type === "frame");
-    expect(frameElements.length).toBe(2);
   });
 });

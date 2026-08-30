@@ -3,13 +3,14 @@ import {
   convertToExcalidrawElements,
   type ExcalidrawElementSkeleton,
 } from "@excalidraw/element";
+import { pointFrom, type LocalPoint } from "@excalidraw/math";
 
 import type {
   NonDeletedExcalidrawElement,
   Theme,
 } from "@excalidraw/element/types";
 
-import { getNodeStyle } from "./colorPalette";
+import { getNodeStyle, getBranchLineColor } from "./colorPalette";
 
 import type { OutlineLayoutResult } from "./types";
 
@@ -20,23 +21,9 @@ export const generateExcalidrawFromLayout = (
   const isDark = theme === "dark";
   const skeletons: ExcalidrawElementSkeleton[] = [];
 
-  // 1. Add Frames first if any
-  if (layout.frames && layout.frames.length > 0) {
-    for (const frame of layout.frames) {
-      skeletons.push({
-        id: frame.id,
-        type: "frame",
-        name: frame.name,
-        x: frame.x,
-        y: frame.y,
-        width: frame.width,
-        height: frame.height,
-        children: frame.children || [],
-      });
-    }
-  }
+  const nodeMap = new Map(layout.nodes.map((n) => [n.id, n]));
 
-  // 2. Add Nodes
+  // 1. Add Nodes
   const fontFamily = FONT_FAMILY["霞鹜文楷"] || 11;
 
   for (const node of layout.nodes) {
@@ -56,7 +43,6 @@ export const generateExcalidrawFromLayout = (
       fillStyle: style.fillStyle,
       roundness: { type: style.roundness },
       roughness: 1,
-      frameId: node.frameId || null,
       label: {
         text: node.text,
         fontSize,
@@ -67,20 +53,49 @@ export const generateExcalidrawFromLayout = (
     });
   }
 
-  // 3. Add Connectors
+  // 2. Add Connectors
   for (const conn of layout.connections) {
+    const startNode = nodeMap.get(conn.startId);
+    const endNode = nodeMap.get(conn.endId);
+
+    if (!startNode || !endNode) {
+      continue;
+    }
+
+    const startX = startNode.x + startNode.width;
+    const startY = startNode.y + startNode.height / 2;
+    const endX = endNode.x;
+    const endY = endNode.y + endNode.height / 2;
+
+    const dx = endX - startX;
+    const dy = endY - startY;
+
+    // S-curve connector points for classic smooth mindmap branch
+    const midX = dx * 0.5;
+    const points: readonly LocalPoint[] = [
+      pointFrom<LocalPoint>(0, 0),
+      pointFrom<LocalPoint>(midX, 0),
+      pointFrom<LocalPoint>(midX, dy),
+      pointFrom<LocalPoint>(dx, dy),
+    ];
+
+    const lineColor = getBranchLineColor(conn.branchIndex, isDark);
+
     skeletons.push({
       id: conn.id,
       type: "arrow",
-      x: 0,
-      y: 0,
+      x: startX,
+      y: startY,
+      width: Math.abs(dx) || 1,
+      height: Math.abs(dy) || 1,
+      points,
       start: { id: conn.startId },
       end: { id: conn.endId },
-      strokeColor: conn.color || (isDark ? "#adb5bd" : "#495057"),
-      strokeWidth: 1.5,
+      strokeColor: lineColor,
+      strokeWidth: conn.level <= 1 ? 2 : 1.5,
       roundness: { type: ROUNDNESS.PROPORTIONAL_RADIUS },
       roughness: 1,
-      endArrowhead: "arrow",
+      endArrowhead: null,
     });
   }
 
