@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { markdown } from "@codemirror/lang-markdown";
 import {
   Decoration,
   EditorView,
@@ -150,9 +149,9 @@ const getThemeExtensions = (theme: Theme) => {
   return [lightTheme, syntaxHighlighting(lightHighlight)];
 };
 
-const getLanguageExtension = (
+const getInitialLanguageExtension = (
   language: CodeMirrorEditorProps["language"],
-) => (language === "markdown" ? markdown() : mermaidLite());
+): Extension => (language === "mermaid" ? mermaidLite() : []);
 
 const CodeMirrorEditor = ({
   value,
@@ -207,7 +206,9 @@ const CodeMirrorEditor = ({
           lineNumbers(),
           EditorView.lineWrapping,
           themeCompartment.of(getThemeExtensions(theme)),
-          languageCompartmentRef.current.of(getLanguageExtension(language)),
+          languageCompartmentRef.current.of(
+            getInitialLanguageExtension(language),
+          ),
           errorLineCompartmentRef.current.of([]),
           EditorView.contentAttributes.of(
             ariaLabel ? { "aria-label": ariaLabel } : {},
@@ -248,11 +249,34 @@ const CodeMirrorEditor = ({
     if (!view) {
       return;
     }
-    view.dispatch({
-      effects: languageCompartmentRef.current.reconfigure(
-        getLanguageExtension(language),
-      ),
-    });
+
+    let cancelled = false;
+    const loadLanguage = async () => {
+      try {
+        const languageExtension =
+          language === "markdown"
+            ? (await import("@codemirror/lang-markdown")).markdown()
+            : mermaidLite();
+
+        if (cancelled || viewRef.current !== view) {
+          return;
+        }
+
+        view.dispatch({
+          effects: languageCompartmentRef.current.reconfigure(
+            languageExtension,
+          ),
+        });
+      } catch {
+        // Keep the editor usable without syntax highlighting if the language
+        // extension cannot be loaded.
+      }
+    };
+
+    void loadLanguage();
+    return () => {
+      cancelled = true;
+    };
   }, [language]);
 
   // Update error line highlight
