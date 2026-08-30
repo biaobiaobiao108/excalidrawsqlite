@@ -74,6 +74,9 @@ export const convertMermaidToExcalidraw = async ({
 
   let ret;
   try {
+    if (!mermaidToExcalidrawLib.api) {
+      return { success: false };
+    }
     const api = await mermaidToExcalidrawLib.api;
 
     try {

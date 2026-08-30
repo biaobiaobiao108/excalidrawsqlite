@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 
-import { parseOutlineToTree } from "./parser";
+import {
+  MAX_OUTLINE_CHARACTERS,
+  MAX_OUTLINE_NODES,
+  OutlineParseError,
+  parseOutlineToTree,
+} from "./parser";
 
 describe("parseOutlineToTree", () => {
   it("returns null for empty input", () => {
@@ -57,5 +62,44 @@ describe("parseOutlineToTree", () => {
     expect(tree).not.toBeNull();
     expect(tree?.text).toBe("Bold Title with code and italic");
     expect(tree?.children[0].text).toBe("Item with bold and strike");
+  });
+
+  it("preserves ordinary underscores and URLs while cleaning link text", () => {
+    const tree = parseOutlineToTree(
+      "# foo_bar_baz https://example.com/a_b\n- [docs](https://example.com/docs)",
+    );
+
+    expect(tree?.text).toBe("foo_bar_baz https://example.com/a_b");
+    expect(tree?.children[0].text).toBe("docs");
+  });
+
+  it("normalizes heading jumps and keeps later top-level headings as branches", () => {
+    const tree = parseOutlineToTree("# Root\n### Deep child\n# Another root");
+
+    expect(tree?.text).toBe("Root");
+    expect(tree?.children.map((child) => child.text)).toEqual([
+      "Deep child",
+      "Another root",
+    ]);
+    expect(tree?.children[0].level).toBe(1);
+  });
+
+  it("supports tab indentation", () => {
+    const tree = parseOutlineToTree("- Root\n\t- Child\n\t\t- Grandchild");
+
+    expect(tree?.children[0].text).toBe("Child");
+    expect(tree?.children[0].children[0].text).toBe("Grandchild");
+  });
+
+  it("rejects input that exceeds safety limits", () => {
+    expect(() =>
+      parseOutlineToTree("x".repeat(MAX_OUTLINE_CHARACTERS + 1)),
+    ).toThrow(OutlineParseError);
+
+    const tooManyNodes = Array.from(
+      { length: MAX_OUTLINE_NODES + 1 },
+      (_, index) => `- Node ${index}`,
+    ).join("\n");
+    expect(() => parseOutlineToTree(tooManyNodes)).toThrow(OutlineParseError);
   });
 });

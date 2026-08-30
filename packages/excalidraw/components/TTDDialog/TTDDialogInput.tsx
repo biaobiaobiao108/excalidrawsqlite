@@ -12,6 +12,8 @@ import type { CodeMirrorEditorProps } from "./CodeMirrorEditor";
 interface TTDDialogInputProps {
   input: string;
   placeholder: string;
+  ariaLabel?: string;
+  language?: CodeMirrorEditorProps["language"];
   onChange: (value: string) => void;
   onKeyboardSubmit?: () => void;
   errorLine?: number | null;
@@ -27,6 +29,8 @@ const SPINNER_DELAY_MS = 300;
 export const TTDDialogInput = ({
   input,
   placeholder,
+  ariaLabel,
+  language = "mermaid",
   onChange,
   onKeyboardSubmit,
   errorLine,
@@ -106,6 +110,8 @@ export const TTDDialogInput = ({
         onChange={onChange}
         onKeyboardSubmit={onKeyboardSubmit}
         placeholder={placeholder}
+        ariaLabel={ariaLabel}
+        language={language}
         theme={theme}
         errorLine={errorLine}
       />
@@ -119,6 +125,7 @@ export const TTDDialogInput = ({
         onChange={(e) => onChange(e.target.value)}
         value={input}
         placeholder={placeholder}
+        aria-label={ariaLabel}
         ref={ref}
       />
     );
@@ -127,7 +134,11 @@ export const TTDDialogInput = ({
   // Loading state
   if (showSpinner) {
     return (
-      <div className="ttd-dialog-input ttd-dialog-input--loading">
+      <div
+        className="ttd-dialog-input ttd-dialog-input--loading"
+        role="status"
+        aria-label={ariaLabel}
+      >
         <Spinner />
       </div>
     );

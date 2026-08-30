@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
 import { useUIAppState } from "../../context/ui-appState";
 import { t } from "../../i18n";
@@ -21,26 +21,40 @@ export const TTDDialog = () => {
   const appState = useUIAppState();
   const app = useApp();
 
+  const activeTab: TTDDialogTabType =
+    appState.openDialog?.name === "ttd" &&
+    appState.openDialog.tab === "mermaid"
+      ? "mermaid"
+      : "outline";
+
   const [mermaidToExcalidrawLib, setMermaidToExcalidrawLib] =
     useState<MermaidToExcalidrawLibProps>({
       loaded: false,
-      api: import("@excalidraw/mermaid-to-excalidraw"),
+      api: null,
     });
+  const mermaidApiRef = useRef<MermaidToExcalidrawLibProps["api"]>(null);
 
   useEffect(() => {
-    const fn = async () => {
-      await mermaidToExcalidrawLib.api;
-      setMermaidToExcalidrawLib((prev) => ({ ...prev, loaded: true }));
-    };
-    fn();
-  }, [mermaidToExcalidrawLib.api]);
+    if (activeTab !== "mermaid" || mermaidApiRef.current) {
+      return;
+    }
+
+    const api = import("@excalidraw/mermaid-to-excalidraw");
+    mermaidApiRef.current = api;
+    setMermaidToExcalidrawLib({ loaded: false, api });
+    void api.then(
+      () => {
+        setMermaidToExcalidrawLib({ loaded: true, api });
+      },
+      () => {
+        setMermaidToExcalidrawLib({ loaded: false, api: null });
+      },
+    );
+  }, [activeTab]);
 
   if (appState.openDialog?.name !== "ttd") {
     return null;
   }
-
-  const activeTab: TTDDialogTabType =
-    appState.openDialog.tab === "mermaid" ? "mermaid" : "outline";
 
   return (
     <Dialog
@@ -50,6 +64,9 @@ export const TTDDialog = () => {
       }}
       size={1520}
       title={false}
+      ariaLabel={
+        activeTab === "mermaid" ? t("mermaid.title") : t("outline.title")
+      }
       autofocus={false}
     >
       <TTDDialogTabs dialog="ttd" tab={activeTab}>
@@ -63,7 +80,13 @@ export const TTDDialog = () => {
         </TTDDialogTabTriggers>
 
         <TTDDialogTab className="ttd-dialog-content" tab="outline">
-          <Suspense fallback={null}>
+          <Suspense
+            fallback={
+              <div className="ttd-dialog-loading" role="status">
+                {t("outline.loading") || "正在加载 Markdown 编辑器…"}
+              </div>
+            }
+          >
             <LazyOutlineToDiagram isActive={activeTab === "outline"} />
           </Suspense>
         </TTDDialogTab>

@@ -3,25 +3,44 @@ import type { OutlineNode } from "./types";
 let idCounter = 0;
 const generateNodeId = () => `node_${Date.now()}_${++idCounter}`;
 
+export const MAX_OUTLINE_CHARACTERS = 20_000;
+export const MAX_OUTLINE_NODES = 1_000;
+
+export class OutlineParseError extends Error {
+  constructor(public readonly code: "tooLong" | "tooManyNodes") {
+    super(
+      code === "tooLong"
+        ? "Outline input is too long"
+        : "Outline has too many nodes",
+    );
+    this.name = "OutlineParseError";
+  }
+}
+
 const cleanMarkdownText = (raw: string): string => {
   return raw
-    .replace(/\*\*(.*?)\*\*/g, "$1") // Bold **
-    .replace(/__(.*?)__/g, "$1") // Bold __
-    .replace(/\*(.*?)\*/g, "$1") // Italic *
-    .replace(/_(.*?)_/g, "$1") // Italic _
-    .replace(/`([^`]+)`/g, "$1") // Inline code `
-    .replace(/~~(.*?)~~/g, "$1") // Strikethrough ~~
+    // Only remove unambiguous paired Markdown markers. In particular, do not
+    // treat underscores inside words (foo_bar_baz) as emphasis.
+    .replace(/!?\[([^\]\r\n]+)\]\([^()\r\n]+\)/g, "$1")
+    .replace(/`([^`\r\n]+)`/g, "$1")
+    .replace(/\*\*([^*\r\n]+)\*\*/g, "$1")
+    .replace(/__([^_\r\n]+)__/g, "$1")
+    .replace(/~~([^~\r\n]+)~~/g, "$1")
+    .replace(/(?<![\w*])\*([^*\r\n]+)\*(?![\w*])/g, "$1")
+    .replace(/(?<![\w_])_([^_\r\n]+)_(?![\w_])/g, "$1")
     .trim();
 };
 
 type ParsedLine = {
-  raw: string;
   text: string;
   level: number;
-  type: "heading" | "list" | "indent";
 };
 
 export const parseOutlineToTree = (inputText: string): OutlineNode | null => {
+  if (inputText.length > MAX_OUTLINE_CHARACTERS) {
+    throw new OutlineParseError("tooLong");
+  }
+
   const lines = inputText
     .split(/\r?\n/)
     .map((line) => line.replace(/\t/g, "    "))
@@ -45,12 +64,17 @@ export const parseOutlineToTree = (inputText: string): OutlineNode | null => {
     if (headingMatch) {
       const headingLevel = headingMatch[1].length;
       lastHeadingLevel = headingLevel;
+      const text = cleanMarkdownText(headingMatch[2]);
+      if (!text) {
+        continue;
+      }
       parsedLines.push({
-        raw: line,
-        text: cleanMarkdownText(headingMatch[2]),
+        text,
         level: headingLevel,
-        type: "heading",
       });
+      if (parsedLines.length > MAX_OUTLINE_NODES) {
+        throw new OutlineParseError("tooManyNodes");
+      }
       continue;
     }
 
@@ -63,12 +87,17 @@ export const parseOutlineToTree = (inputText: string): OutlineNode | null => {
         lastHeadingLevel > 0
           ? lastHeadingLevel + 1 + indentLevel
           : 1 + indentLevel;
+      const text = cleanMarkdownText(listMatch[3]);
+      if (!text) {
+        continue;
+      }
       parsedLines.push({
-        raw: line,
-        text: cleanMarkdownText(listMatch[3]),
+        text,
         level,
-        type: "list",
       });
+      if (parsedLines.length > MAX_OUTLINE_NODES) {
+        throw new OutlineParseError("tooManyNodes");
+      }
       continue;
     }
 
@@ -81,12 +110,17 @@ export const parseOutlineToTree = (inputText: string): OutlineNode | null => {
         lastHeadingLevel > 0
           ? lastHeadingLevel + 1 + indentLevel
           : 1 + indentLevel;
+      const text = cleanMarkdownText(indentMatch[2]);
+      if (!text) {
+        continue;
+      }
       parsedLines.push({
-        raw: line,
-        text: cleanMarkdownText(indentMatch[2]),
+        text,
         level,
-        type: "indent",
       });
+      if (parsedLines.length > MAX_OUTLINE_NODES) {
+        throw new OutlineParseError("tooManyNodes");
+      }
     }
   }
 
@@ -94,56 +128,23 @@ export const parseOutlineToTree = (inputText: string): OutlineNode | null => {
     return null;
   }
 
-  // Normalize levels to be sequential starting from 0 (root)
-  // Find minimum level
-  const minLevel = Math.min(...parsedLines.map((p) => p.level));
-
-  // If the first line is level 1 / minLevel, make it the root.
-  // If there are multiple minLevel lines at the top or throughout, determine if we need a virtual root or if line 0 is the root.
-  let root: OutlineNode;
-  let startIndex = 0;
-
-  if (parsedLines.length === 1) {
-    return {
-      id: generateNodeId(),
-      text: parsedLines[0].text,
-      level: 0,
-      children: [],
-    };
-  }
-
-  // Check if first line can be the root
+  // The first meaningful line is always the central node. Later top-level
+  // entries become branches of that node, which keeps the result usable even
+  // when a pasted outline contains several H1s or root-level list items.
   const firstLine = parsedLines[0];
-  const otherMinLevelLines = parsedLines
-    .slice(1)
-    .filter((p) => p.level === firstLine.level);
-
-  if (firstLine.level === minLevel && otherMinLevelLines.length === 0) {
-    // Clean single root
-    root = {
-      id: generateNodeId(),
-      text: firstLine.text,
-      level: 0,
-      children: [],
-    };
-    startIndex = 1;
-  } else {
-    // If the first item is not strictly unique top level, use the first line's text or create a root
-    root = {
-      id: generateNodeId(),
-      text: firstLine.text,
-      level: 0,
-      children: [],
-    };
-    startIndex = 1;
-  }
+  const root: OutlineNode = {
+    id: generateNodeId(),
+    text: firstLine.text,
+    level: 0,
+    children: [],
+  };
 
   // Build tree using stack
   const stack: { node: OutlineNode; rawLevel: number }[] = [
     { node: root, rawLevel: firstLine.level },
   ];
 
-  for (let i = startIndex; i < parsedLines.length; i++) {
+  for (let i = 1; i < parsedLines.length; i++) {
     const current = parsedLines[i];
     const newNode: OutlineNode = {
       id: generateNodeId(),
@@ -162,7 +163,6 @@ export const parseOutlineToTree = (inputText: string): OutlineNode | null => {
 
     const parent = stack[stack.length - 1];
     newNode.level = parent.node.level + 1;
-    newNode.parent = parent.node;
     parent.node.children.push(newNode);
     stack.push({ node: newNode, rawLevel: current.level });
   }

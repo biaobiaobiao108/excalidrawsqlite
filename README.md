@@ -162,8 +162,13 @@ AUTH_PASSWORD=your-password bun run start:server
 如需进行前端热重载开发：
 
 ```bash
+# 另开一个终端启动后端（默认 8080），前端会自动代理 /api 请求
+bun run start:server
 bun run start
 ```
+
+如后端运行在其他地址，可设置 `VITE_API_PROXY_TARGET`，例如
+`VITE_API_PROXY_TARGET=http://localhost:8081 bun run start`。
 
 ---
 

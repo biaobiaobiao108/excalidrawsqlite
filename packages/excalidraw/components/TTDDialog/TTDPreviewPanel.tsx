@@ -41,6 +41,7 @@ export const TTDPreviewPanel = ({
         error={error}
         loaded={loaded}
         hideErrorDetails={hideErrorDetails}
+        canvasAriaLabel={t("mermaid.preview")}
       />
     </TTDDialogPanel>
   );

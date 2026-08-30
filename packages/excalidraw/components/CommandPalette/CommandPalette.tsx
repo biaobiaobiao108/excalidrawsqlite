@@ -548,12 +548,9 @@ function CommandPaletteInner({
           keywords: [
             "outline",
             "mindmap",
-            "hierarchy",
-            "storyboard",
             "markdown",
             "大纲",
             "思维导图",
-            "分镜",
           ],
           viewMode: false,
           perform: () => {

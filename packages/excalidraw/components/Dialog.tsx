@@ -27,6 +27,7 @@ export interface DialogProps {
   size?: DialogSize;
   onCloseRequest(): void;
   title: React.ReactNode | false;
+  ariaLabel?: string;
   autofocus?: boolean;
   closeOnClickOutside?: boolean;
 }
@@ -52,6 +53,7 @@ export const Dialog = (props: DialogProps) => {
   const [lastActiveElement] = useState(document.activeElement);
   const { id } = useExcalidrawContainer();
   const isFullscreen = useEditorInterface().formFactor === "phone";
+  const dialogTitleId = `${id}-dialog-title`;
 
   useEffect(() => {
     if (!islandNode) {
@@ -108,14 +110,15 @@ export const Dialog = (props: DialogProps) => {
       className={clsx("Dialog", props.className, {
         "Dialog--fullscreen": isFullscreen,
       })}
-      labelledBy="dialog-title"
+      labelledBy={props.title ? dialogTitleId : undefined}
+      ariaLabel={!props.title ? props.ariaLabel : undefined}
       maxWidth={getDialogSize(props.size)}
       onCloseRequest={onClose}
       closeOnClickOutside={props.closeOnClickOutside}
     >
       <Island ref={setIslandNode}>
         {props.title && (
-          <h2 id={`${id}-dialog-title`} className="Dialog__title">
+          <h2 id={dialogTitleId} className="Dialog__title">
             <span className="Dialog__titleContent">{props.title}</span>
           </h2>
         )}

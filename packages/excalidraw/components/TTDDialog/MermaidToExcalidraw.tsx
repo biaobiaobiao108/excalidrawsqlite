@@ -124,7 +124,9 @@ const MermaidToExcalidraw = ({
     };
 
     if (isActive) {
-      doRender();
+      if (mermaidToExcalidrawLib.loaded) {
+        void doRender();
+      }
       debouncedSaveMermaidDefinition(deferredText);
     }
   }, [deferredText, mermaidToExcalidrawLib, isActive, theme]);
@@ -160,7 +162,11 @@ const MermaidToExcalidraw = ({
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const api = await mermaidToExcalidrawLib.api;
+        const apiPromise = mermaidToExcalidrawLib.api;
+        if (!apiPromise) {
+          return;
+        }
+        const api = await apiPromise;
         const seen = new Set<string>([sourceText]);
         const queue = candidates.map((candidate) => ({
           text: candidate,
@@ -283,6 +289,8 @@ const MermaidToExcalidraw = ({
           <TTDDialogInput
             input={text}
             placeholder={t("mermaid.inputPlaceholder")}
+            ariaLabel={t("mermaid.syntax")}
+            language="mermaid"
             onChange={(value) => setText(value)}
             errorLine={errorLine}
             onKeyboardSubmit={() => {
@@ -310,6 +318,7 @@ const MermaidToExcalidraw = ({
             sourceText={text}
             autoFixAvailable={!!autoFixCandidate}
             onApplyAutoFix={onApplyAutoFix}
+            canvasAriaLabel={t("mermaid.preview")}
           />
         </TTDDialogPanel>
       </TTDDialogPanels>

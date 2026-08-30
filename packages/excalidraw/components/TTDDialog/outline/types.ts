@@ -5,7 +5,6 @@ export type OutlineNode = {
   text: string;
   level: number;
   children: OutlineNode[];
-  parent?: OutlineNode;
 };
 
 export type OutlineLayoutType = "mindmap";

@@ -510,7 +510,6 @@ export const EDITOR_LS_KEYS = {
   // legacy naming (non)scheme
   MERMAID_TO_EXCALIDRAW: "mermaid-to-excalidraw",
   OUTLINE_TO_DIAGRAM: "outline-to-diagram",
-  OUTLINE_LAYOUT: "outline-layout",
   PUBLISH_LIBRARY: "publish-library-data",
 } as const;
 

@@ -26,6 +26,8 @@ export interface CodeMirrorEditorProps {
   onChange: (value: string) => void;
   onKeyboardSubmit?: () => void;
   placeholder?: string;
+  ariaLabel?: string;
+  language?: "markdown" | "mermaid";
   theme: Theme;
   errorLine?: number | null;
 }
@@ -124,6 +126,8 @@ const CodeMirrorEditor = ({
   onChange,
   onKeyboardSubmit,
   placeholder,
+  ariaLabel,
+  language = "mermaid",
   theme,
   errorLine,
 }: CodeMirrorEditorProps) => {
@@ -170,7 +174,10 @@ const CodeMirrorEditor = ({
           EditorView.lineWrapping,
           themeCompartment.of(getThemeExtensions(theme)),
           errorLineCompartmentRef.current.of([]),
-          mermaidLite(),
+          ...(language === "mermaid" ? [mermaidLite()] : []),
+          EditorView.contentAttributes.of(
+            ariaLabel ? { "aria-label": ariaLabel } : {},
+          ),
           drawSelection({ drawRangeCursor: true }),
           ...(placeholder ? [cmPlaceholder(placeholder)] : []),
         ],

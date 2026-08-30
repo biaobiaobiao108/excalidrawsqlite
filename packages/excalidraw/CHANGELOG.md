@@ -13,6 +13,10 @@ Please add the latest change on the top under the correct section.
 
 ## Unreleased
 
+### Breaking changes
+
+- Removed the legacy AI TTD exports and persistence API from `@excalidraw/excalidraw`. Integrations using `TTDDialogTrigger`, `TTDStreamFetch`, `TTDPersistenceAdapter`, `SavedChat`, `SavedChats`, or the removed AI dialog props must migrate to the self-hosted Markdown-to-MindMap and Mermaid dialog flow.
+
 ## Excalidraw API
 
 ### Host-controlled active tool (2026-07-14) [#11665](https://github.com/excalidraw/excalidraw/pull/11665)

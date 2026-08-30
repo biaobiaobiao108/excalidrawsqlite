@@ -31,6 +31,8 @@ describe("Test <OutlineToDiagram/>", () => {
   it("renders the outline tab with input editor and canvas preview", async () => {
     const dialog = document.querySelector(".ttd-dialog")!;
     expect(dialog).not.toBeNull();
+    expect(dialog.getAttribute("aria-label")).toBeTruthy();
+    expect(dialog.getAttribute("aria-labelledby")).toBeNull();
 
     await waitFor(
       () => {
@@ -62,6 +64,22 @@ describe("Test <OutlineToDiagram/>", () => {
     const dialog = document.querySelector(".ttd-dialog")!;
     await waitFor(() => {
       expect(dialog.querySelector("canvas")).not.toBeNull();
+    });
+  });
+
+  it("disables insertion for empty input", async () => {
+    const editor = await getTextEditor({
+      selector: ".ttd-dialog-input",
+      waitForEditor: true,
+    });
+
+    updateTextEditor(editor, "   \n");
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Insert to canvas|插入到画布/i }),
+      ).toBeDisabled();
+      expect(document.querySelector(".ttd-dialog-output-empty")).not.toBeNull();
     });
   });
 });

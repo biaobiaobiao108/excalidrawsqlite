@@ -15,6 +15,12 @@ interface TTDDialogOutputProps {
   error: Error | null;
   canvasRef: React.RefObject<HTMLDivElement | null>;
   loaded: boolean;
+  loading?: boolean;
+  hasPreview?: boolean;
+  emptyMessage?: string;
+  canvasAriaLabel?: string;
+  errorMessageOverride?: string;
+  showErrorGuidance?: boolean;
   hideErrorDetails?: boolean;
   sourceText?: string;
   autoFixAvailable?: boolean;
@@ -25,18 +31,25 @@ export const TTDDialogOutput = ({
   error,
   canvasRef,
   loaded,
+  loading = false,
+  hasPreview = true,
+  emptyMessage,
+  canvasAriaLabel,
+  errorMessageOverride,
+  showErrorGuidance = true,
   hideErrorDetails,
   sourceText,
   autoFixAvailable,
   onApplyAutoFix,
 }: TTDDialogOutputProps) => {
   const errorMessage = error
-    ? hideErrorDetails
-      ? t("chat.errors.mermaidParseError")
-      : formatMermaidParseErrorMessage(error.message)
+    ? errorMessageOverride ||
+      (hideErrorDetails
+        ? t("chat.errors.mermaidParseError")
+        : formatMermaidParseErrorMessage(error.message))
     : null;
   const syntaxGuidance =
-    error && !hideErrorDetails
+    error && !hideErrorDetails && showErrorGuidance
       ? getMermaidSyntaxErrorGuidance(error.message, sourceText)
       : null;
   const showAutoFixButton =
@@ -111,8 +124,31 @@ export const TTDDialogOutput = ({
           className={clsx("ttd-dialog-output-canvas-container", {
             invisible: !!error,
           })}
+          aria-busy={loading}
         >
-          <div ref={canvasRef} className="ttd-dialog-output-canvas-content" />
+          <div
+            ref={canvasRef}
+            className="ttd-dialog-output-canvas-content"
+            role={hasPreview && !loading ? "img" : undefined}
+            aria-label={
+              hasPreview && !loading ? canvasAriaLabel : undefined
+            }
+          />
+          {loading && (
+            <Spinner
+              className="ttd-dialog-output-loading"
+              size="2rem"
+            />
+          )}
+          {!loading && !hasPreview && !error && (
+            <div
+              className="ttd-dialog-output-empty"
+              role="status"
+              aria-live="polite"
+            >
+              {emptyMessage}
+            </div>
+          )}
         </div>
       ) : (
         <Spinner size="2rem" />

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useDeferredValue } from "react";
+import { useState, useRef, useEffect } from "react";
 
 import {
   DEFAULT_EXPORT_PADDING,
@@ -22,7 +22,7 @@ import { TTDDialogPanels } from "../TTDDialogPanels";
 import { TTDDialogSubmitShortcut } from "../TTDDialogSubmitShortcut";
 import { insertToEditor } from "../common";
 
-import { parseOutlineToTree } from "./parser";
+import { OutlineParseError, parseOutlineToTree } from "./parser";
 import { layoutMindmap } from "./layout";
 import { generateExcalidrawFromLayout } from "./generator";
 
@@ -40,11 +40,25 @@ const DEFAULT_OUTLINE_EXAMPLE = `# 本期视频大纲：现代白板架构解析
 ## 创作提效亮点
 - 霞鹜文楷手绘质感中文字体
 - 莫兰迪智能分支层级配色
-- S型贝塞尔曲线分支连线`;
+- 清晰的直线分支连线`;
 
 const debouncedSaveOutline = debounce((text: string) => {
   EditorLocalStorage.set(EDITOR_LS_KEYS.OUTLINE_TO_DIAGRAM, text);
 }, 300);
+
+type OutlinePreviewState = "empty" | "rendering" | "ready" | "error";
+
+const getOutlineErrorMessage = (error: unknown): string => {
+  if (error instanceof OutlineParseError) {
+    return error.code === "tooLong"
+      ? t("outline.inputTooLong") || "大纲内容过长，请缩短后重试"
+      : t("outline.tooManyNodes") || "大纲节点过多，请减少内容后重试";
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return t("outline.renderError") || "大纲预览生成失败，请检查输入后重试";
+};
 
 export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
   const [text, setText] = useState(
@@ -52,12 +66,16 @@ export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
       EditorLocalStorage.get<string>(EDITOR_LS_KEYS.OUTLINE_TO_DIAGRAM) ||
       DEFAULT_OUTLINE_EXAMPLE,
   );
-
-  const deferredText = useDeferredValue(text);
   const [error, setError] = useState<string | null>(null);
+  const [previewState, setPreviewState] =
+    useState<OutlinePreviewState>("rendering");
+  const [previewText, setPreviewText] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const renderGenerationRef = useRef(0);
+  const previewStateRef = useRef<OutlinePreviewState>("rendering");
+  const inputTextRef = useRef(text);
+  const previewTextRef = useRef<string | null>(null);
   const data = useRef<{
     elements: readonly NonDeletedExcalidrawElement[];
     files: null;
@@ -70,6 +88,24 @@ export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
     const generation = ++renderGenerationRef.current;
     const isCurrent = () => renderGenerationRef.current === generation;
 
+    const clearPreview = () => {
+      data.current = { elements: [], files: null };
+      previewTextRef.current = null;
+      setPreviewText(null);
+      const canvasNode = canvasRef.current;
+      if (canvasNode) {
+        canvasNode.replaceChildren();
+        if (canvasNode.parentElement) {
+          canvasNode.parentElement.style.background = "";
+        }
+      }
+    };
+
+    const updatePreviewState = (state: OutlinePreviewState) => {
+      previewStateRef.current = state;
+      setPreviewState(state);
+    };
+
     const doRender = async () => {
       const canvasNode = canvasRef.current;
       const parent = canvasNode?.parentElement;
@@ -77,39 +113,35 @@ export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
         return;
       }
 
-      if (!deferredText.trim()) {
-        setError(null);
-        data.current = { elements: [], files: null };
-        canvasNode.replaceChildren();
+      clearPreview();
+      setError(null);
+
+      if (!text.trim()) {
+        updatePreviewState("empty");
         return;
       }
 
+      updatePreviewState("rendering");
+
       try {
-        const tree = parseOutlineToTree(deferredText);
+        const tree = parseOutlineToTree(text);
         if (!tree) {
-          setError(t("outline.emptyOrInvalid") || "请输入有效的大纲内容");
-          canvasNode.replaceChildren();
-          return;
+          throw new Error(
+            t("outline.emptyOrInvalid") || "请输入有效的大纲内容",
+          );
         }
 
-        setError(null);
         const layoutResult = layoutMindmap(tree);
         const generatedElements = generateExcalidrawFromLayout(
           layoutResult,
           theme,
         );
 
-        data.current = {
-          elements: generatedElements,
-          files: null,
-        };
-
         const ownerWindow =
           app.ownerWindow || canvasNode.ownerDocument.defaultView;
         const devicePixelRatio = ownerWindow?.devicePixelRatio || 1;
-
         const canvas = await exportToCanvas({
-          elements: data.current.elements,
+          elements: generatedElements,
           files: null,
           exportPadding: DEFAULT_EXPORT_PADDING,
           maxWidthOrHeight:
@@ -124,23 +156,44 @@ export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
           return;
         }
 
+        data.current = {
+          elements: generatedElements,
+          files: null,
+        };
+        previewTextRef.current = text;
+        setPreviewText(text);
+        updatePreviewState("ready");
         parent.style.background = "var(--default-bg-color)";
         canvasNode.replaceChildren(canvas);
-      } catch (err: any) {
+      } catch (err) {
         if (isCurrent()) {
-          setError(err?.message || "排版解析出错");
+          clearPreview();
+          setError(getOutlineErrorMessage(err));
+          updatePreviewState("error");
         }
       }
     };
 
     if (isActive) {
-      doRender();
-      debouncedSaveOutline(deferredText);
+      void doRender();
+      debouncedSaveOutline(text);
     }
-  }, [deferredText, isActive, theme, app]);
+  }, [text, isActive, theme, app]);
+
+  useEffect(
+    () => () => {
+      renderGenerationRef.current += 1;
+      debouncedSaveOutline.flush();
+    },
+    [],
+  );
 
   const onInsertToEditor = () => {
-    if (data.current.elements.length === 0) {
+    if (
+      previewStateRef.current !== "ready" ||
+      previewTextRef.current !== inputTextRef.current ||
+      data.current.elements.length === 0
+    ) {
       return;
     }
     insertToEditor({
@@ -148,6 +201,16 @@ export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
       data,
     });
   };
+
+  const onInputChange = (value: string) => {
+    inputTextRef.current = value;
+    setText(value);
+  };
+
+  const canInsert =
+    previewState === "ready" &&
+    previewText === text &&
+    data.current.elements.length > 0;
 
   return (
     <>
@@ -164,20 +227,21 @@ export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
               t("outline.inputPlaceholder") ||
               "# 主题\n## 第一章\n- 要点 1\n- 要点 2\n## 第二章\n- 要点 3"
             }
-            onChange={(value) => setText(value)}
-            onKeyboardSubmit={() => {
-              onInsertToEditor();
-            }}
+            ariaLabel={t("outline.inputAriaLabel") || "Markdown outline"}
+            language="markdown"
+            onChange={onInputChange}
+            onKeyboardSubmit={onInsertToEditor}
           />
         </TTDDialogPanel>
 
         <TTDDialogPanel
           panelActions={[
             {
-              action: () => onInsertToEditor(),
+              action: onInsertToEditor,
               label: t("outline.button") || "插入到画布",
               icon: ArrowRightIcon,
               variant: "button",
+              disabled: !canInsert,
             },
           ]}
           renderSubmitShortcut={() => <TTDDialogSubmitShortcut />}
@@ -185,7 +249,17 @@ export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
           <TTDDialogOutput
             canvasRef={canvasRef}
             loaded={true}
+            loading={previewState === "rendering"}
+            hasPreview={previewState === "ready"}
             error={error ? new Error(error) : null}
+            errorMessageOverride={error || undefined}
+            showErrorGuidance={false}
+            emptyMessage={
+              t("outline.emptyPreview") || "输入大纲后将在此处显示思维导图预览"
+            }
+            canvasAriaLabel={
+              t("outline.previewAriaLabel") || "Mindmap preview"
+            }
             sourceText={text}
           />
         </TTDDialogPanel>

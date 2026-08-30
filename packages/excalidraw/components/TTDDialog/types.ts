@@ -16,7 +16,7 @@ export interface MermaidToExcalidrawLibProps {
       definition: string,
       config?: MermaidConfig,
     ) => Promise<MermaidToExcalidrawResult>;
-  }>;
+  }> | null;
 }
 
 export type TTDDialogTabType = "outline" | "mermaid";

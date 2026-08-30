@@ -4,7 +4,7 @@ import { convertMermaidToExcalidraw } from "./common";
 
 type ConvertMermaidArgs = Parameters<typeof convertMermaidToExcalidraw>[0];
 type ParseMermaidToExcalidraw = Awaited<
-  ConvertMermaidArgs["mermaidToExcalidrawLib"]["api"]
+  NonNullable<ConvertMermaidArgs["mermaidToExcalidrawLib"]["api"]>
 >["parseMermaidToExcalidraw"];
 
 const createConvertArgs = (
