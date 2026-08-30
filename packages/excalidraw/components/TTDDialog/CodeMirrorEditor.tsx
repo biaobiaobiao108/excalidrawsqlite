@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { markdown } from "@codemirror/lang-markdown";
 import {
   Decoration,
   EditorView,
@@ -55,6 +56,20 @@ const darkTheme = EditorView.theme(
 );
 
 const darkHighlight = HighlightStyle.define([
+  { tag: tags.heading, color: "#569cd6", fontWeight: "700" },
+  { tag: tags.link, color: "#4ec9b0", textDecoration: "underline" },
+  { tag: tags.url, color: "#4ec9b0" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strong, fontWeight: "700" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
+  { tag: tags.quote, color: "#6a9955" },
+  { tag: tags.list, color: "#d7ba7d" },
+  {
+    tag: tags.monospace,
+    color: "#ce9178",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  },
+  { tag: tags.contentSeparator, color: "#858585" },
   { tag: tags.keyword, color: "#569cd6" },
   { tag: tags.string, color: "#ce9178" },
   { tag: tags.comment, color: "#6a9955" },
@@ -85,6 +100,20 @@ const lightTheme = EditorView.theme({
 });
 
 const lightHighlight = HighlightStyle.define([
+  { tag: tags.heading, color: "#0000ff", fontWeight: "700" },
+  { tag: tags.link, color: "#0070c0", textDecoration: "underline" },
+  { tag: tags.url, color: "#0070c0" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strong, fontWeight: "700" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
+  { tag: tags.quote, color: "#008000" },
+  { tag: tags.list, color: "#795e26" },
+  {
+    tag: tags.monospace,
+    color: "#a31515",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  },
+  { tag: tags.contentSeparator, color: "#808080" },
   { tag: tags.keyword, color: "#0000ff" },
   { tag: tags.string, color: "#a31515" },
   { tag: tags.comment, color: "#008000" },
@@ -121,6 +150,10 @@ const getThemeExtensions = (theme: Theme) => {
   return [lightTheme, syntaxHighlighting(lightHighlight)];
 };
 
+const getLanguageExtension = (
+  language: CodeMirrorEditorProps["language"],
+) => (language === "markdown" ? markdown() : mermaidLite());
+
 const CodeMirrorEditor = ({
   value,
   onChange,
@@ -136,6 +169,7 @@ const CodeMirrorEditor = ({
   const onChangeRef = useRef(onChange);
   const onKeyboardSubmitRef = useRef(onKeyboardSubmit);
   const themeCompartmentRef = useRef(new Compartment());
+  const languageCompartmentRef = useRef(new Compartment());
   const errorLineCompartmentRef = useRef(new Compartment());
 
   onChangeRef.current = onChange;
@@ -173,8 +207,8 @@ const CodeMirrorEditor = ({
           lineNumbers(),
           EditorView.lineWrapping,
           themeCompartment.of(getThemeExtensions(theme)),
+          languageCompartmentRef.current.of(getLanguageExtension(language)),
           errorLineCompartmentRef.current.of([]),
-          ...(language === "mermaid" ? [mermaidLite()] : []),
           EditorView.contentAttributes.of(
             ariaLabel ? { "aria-label": ariaLabel } : {},
           ),
@@ -207,6 +241,19 @@ const CodeMirrorEditor = ({
       ),
     });
   }, [theme]);
+
+  // Swap the language mode dynamically via a compartment
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) {
+      return;
+    }
+    view.dispatch({
+      effects: languageCompartmentRef.current.reconfigure(
+        getLanguageExtension(language),
+      ),
+    });
+  }, [language]);
 
   // Update error line highlight
   useEffect(() => {

@@ -45,9 +45,14 @@ describe("Test <OutlineToDiagram/>", () => {
     );
 
     const insertButtons = screen.getAllByRole("button", {
-      name: /Insert|插入/i,
+      name: /^(Insert|插入)$/i,
     });
     expect(insertButtons.length).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("button", {
+        name: /Insert to canvas|插入到画布/i,
+      }),
+    ).toBeNull();
   });
 
   it("allows updating outline text and rendering preview", async () => {
@@ -77,7 +82,7 @@ describe("Test <OutlineToDiagram/>", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: /Insert to canvas|插入到画布/i }),
+        screen.getByRole("button", { name: /^(Insert|插入)$/i }),
       ).toBeDisabled();
       expect(document.querySelector(".ttd-dialog-output-empty")).not.toBeNull();
     });

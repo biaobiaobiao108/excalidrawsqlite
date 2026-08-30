@@ -238,7 +238,7 @@ export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
           panelActions={[
             {
               action: onInsertToEditor,
-              label: t("outline.button") || "插入到画布",
+              label: t("mermaid.button") || "插入",
               icon: ArrowRightIcon,
               variant: "button",
               disabled: !canInsert,
