@@ -1,12 +1,10 @@
 import React, {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import { restoreElements } from "@excalidraw/excalidraw/data/restore";
 
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
@@ -227,6 +225,13 @@ const TrashIcon = () => (
   </svg>
 );
 
+const EditIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+);
+
 const RestoreIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <polyline points="1 4 1 10 7 10" />
@@ -289,8 +294,6 @@ const BoardCard = ({
   onDelete,
   onRestore,
   isTrash = false,
-  menuOpen,
-  onMenuToggle,
   eager,
 }: {
   scene: CloudSceneSummary;
@@ -300,172 +303,9 @@ const BoardCard = ({
   onDelete: (scene: CloudSceneSummary) => void;
   onRestore?: (scene: CloudSceneSummary) => void;
   isTrash?: boolean;
-  menuOpen: boolean;
-  onMenuToggle: () => void;
   eager?: boolean;
 }) => {
-  const menuTriggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const sceneName = scene.name || "未命名白板";
-  const [menuPosition, setMenuPosition] = useState<{
-    top: number;
-    left: number;
-    placement: "top" | "bottom";
-  } | null>(null);
-
-  const updateMenuPosition = useCallback(() => {
-    const trigger = menuTriggerRef.current;
-    const menu = menuRef.current;
-    const ownerWindow = trigger?.ownerDocument.defaultView;
-    if (!trigger || !menu || !ownerWindow) {
-      return;
-    }
-
-    const triggerRect = trigger.getBoundingClientRect();
-    const menuRect = menu.getBoundingClientRect();
-    const viewportPadding = 8;
-    const menuWidth = menuRect.width || 160;
-    const menuHeight = menuRect.height || 132;
-    const canOpenBelow =
-      triggerRect.bottom + menuHeight + viewportPadding <=
-      ownerWindow.innerHeight;
-    const top = canOpenBelow
-      ? triggerRect.bottom + 2
-      : Math.max(viewportPadding, triggerRect.top - menuHeight - 2);
-    const left = Math.min(
-      Math.max(viewportPadding, triggerRect.right - menuWidth),
-      Math.max(
-        viewportPadding,
-        ownerWindow.innerWidth - menuWidth - viewportPadding,
-      ),
-    );
-
-    setMenuPosition({
-      top,
-      left,
-      placement: canOpenBelow ? "bottom" : "top",
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!menuOpen) {
-      return;
-    }
-    updateMenuPosition();
-    const ownerWindow = menuTriggerRef.current?.ownerDocument.defaultView;
-    if (!ownerWindow) {
-      return;
-    }
-    const handleViewportChange = () => updateMenuPosition();
-    ownerWindow.addEventListener("resize", handleViewportChange);
-    ownerWindow.addEventListener("scroll", handleViewportChange, true);
-    return () => {
-      ownerWindow.removeEventListener("resize", handleViewportChange);
-      ownerWindow.removeEventListener("scroll", handleViewportChange, true);
-    };
-  }, [menuOpen, updateMenuPosition]);
-
-  useEffect(() => {
-    if (!menuOpen) {
-      return;
-    }
-    const ownerDocument = menuTriggerRef.current?.ownerDocument;
-    if (!ownerDocument) {
-      return;
-    }
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (
-        target &&
-        (menuRef.current?.contains(target) ||
-          menuTriggerRef.current?.contains(target))
-      ) {
-        return;
-      }
-      onMenuToggle();
-    };
-    ownerDocument.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      ownerDocument.removeEventListener("pointerdown", handlePointerDown);
-    };
-  }, [menuOpen, onMenuToggle]);
-
-  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const items = Array.from(
-      event.currentTarget.querySelectorAll<HTMLButtonElement>(
-        '[role="menuitem"]',
-      ),
-    );
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onMenuToggle();
-      menuTriggerRef.current?.focus();
-      return;
-    }
-    if (!items.length) {
-      return;
-    }
-    const currentIndex = items.indexOf(
-      event.target instanceof HTMLButtonElement ? event.target : items[0],
-    );
-    const nextIndex =
-      event.key === "ArrowDown"
-        ? (currentIndex + 1) % items.length
-        : event.key === "ArrowUp"
-        ? (currentIndex - 1 + items.length) % items.length
-        : event.key === "Home"
-        ? 0
-        : event.key === "End"
-        ? items.length - 1
-        : -1;
-    if (nextIndex >= 0) {
-      event.preventDefault();
-      items[nextIndex].focus();
-    }
-  };
-
-  const ownerDocument = menuTriggerRef.current?.ownerDocument;
-  const menu =
-    menuOpen && ownerDocument
-      ? createPortal(
-          <div
-            ref={menuRef}
-            className="board-card-menu"
-            role="menu"
-            onKeyDown={handleMenuKeyDown}
-            style={{
-              top: menuPosition?.top ?? 0,
-              left: menuPosition?.left ?? 0,
-              visibility: menuPosition ? "visible" : "hidden",
-              transformOrigin:
-                menuPosition?.placement === "top"
-                  ? "bottom right"
-                  : "top right",
-            }}
-          >
-            <button
-              type="button"
-              role="menuitem"
-              autoFocus
-              onClick={() => onEdit(scene)}
-            >
-              编辑信息
-            </button>
-            <button type="button" role="menuitem" onClick={() => onOpen(scene)}>
-              打开画板
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="danger"
-              onClick={() => onDelete(scene)}
-            >
-              移至回收站
-            </button>
-          </div>,
-          ownerDocument.body,
-        )
-      : null;
 
   return (
     <article className={`board-card ${isTrash ? "is-trash-card" : ""}`}>
@@ -568,7 +408,7 @@ const BoardCard = ({
                 <button
                   type="button"
                   className="icon-button"
-                  aria-label="还原画板"
+                  aria-label={`还原画板“${sceneName}”`}
                   title="还原画板"
                   onClick={() => onRestore(scene)}
                 >
@@ -578,7 +418,7 @@ const BoardCard = ({
               <button
                 type="button"
                 className="icon-button danger"
-                aria-label="彻底删除"
+                aria-label={`彻底删除“${sceneName}”`}
                 title="彻底删除"
                 onClick={() => onDelete(scene)}
               >
@@ -594,33 +434,33 @@ const BoardCard = ({
                 }`}
                 aria-label={scene.favorite ? "取消收藏" : "收藏画板"}
                 aria-pressed={scene.favorite}
+                title={scene.favorite ? "取消收藏" : "收藏画板"}
                 onClick={() => onToggleFavorite(scene)}
               >
                 <StarIcon filled={scene.favorite} />
               </button>
-              <div className="board-card-menu-wrap">
-                <button
-                  type="button"
-                  className="icon-button"
-                  ref={menuTriggerRef}
-                  aria-label="更多画板操作"
-                  aria-expanded={menuOpen}
-                  onClick={onMenuToggle}
-                  onKeyDown={(event) => {
-                    if (event.key === "ArrowDown" && !menuOpen) {
-                      event.preventDefault();
-                      onMenuToggle();
-                    }
-                  }}
-                >
-                  <MoreIcon />
-                </button>
-              </div>
+              <button
+                type="button"
+                className="icon-button edit-button"
+                aria-label={`编辑画板信息“${sceneName}”`}
+                title="编辑画板信息"
+                onClick={() => onEdit(scene)}
+              >
+                <EditIcon />
+              </button>
+              <button
+                type="button"
+                className="icon-button danger delete-button"
+                aria-label={`移至回收站“${sceneName}”`}
+                title="移至回收站"
+                onClick={() => onDelete(scene)}
+              >
+                <TrashIcon />
+              </button>
             </>
           )}
         </div>
       </div>
-      {menu}
     </article>
   );
 };
@@ -820,7 +660,6 @@ export const WorkspaceHome = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
-  const [menuSceneId, setMenuSceneId] = useState<string | null>(null);
   const [metadataDialog, setMetadataDialog] =
     useState<SceneMetadataDialogState | null>(null);
   const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(
@@ -1070,7 +909,6 @@ export const WorkspaceHome = ({
             setTrashScenes((current) =>
               current.filter((item) => item.id !== scene.id),
             );
-            setMenuSceneId(null);
           } catch (requestError: any) {
             setError(requestError?.message || "彻底删除画板失败");
           } finally {
@@ -1089,7 +927,6 @@ export const WorkspaceHome = ({
         { ...scene, deleted_at: Date.now() },
         ...current,
       ]);
-      setMenuSceneId(null);
     } catch (requestError: any) {
       setError(requestError?.message || "删除画板失败");
     } finally {
@@ -1204,7 +1041,6 @@ export const WorkspaceHome = ({
   };
 
   const openMetadataDialog = (scene: CloudSceneSummary) => {
-    setMenuSceneId(null);
     setMetadataDialog({
       scene,
       title: scene.name,
@@ -1214,11 +1050,7 @@ export const WorkspaceHome = ({
   };
 
   return (
-    <div
-      className="workspace-home"
-      ref={rootRef}
-      onClick={() => setMenuSceneId(null)}
-    >
+    <div className="workspace-home" ref={rootRef}>
       <header className="workspace-header">
         <a
           className="workspace-brand"
@@ -1486,14 +1318,6 @@ export const WorkspaceHome = ({
                         onToggleFavorite={handleToggleFavorite}
                         onEdit={openMetadataDialog}
                         onDelete={handleDeleteScene}
-                        menuOpen={menuSceneId === `recent:${scene.id}`}
-                        onMenuToggle={() =>
-                          setMenuSceneId(
-                            menuSceneId === `recent:${scene.id}`
-                              ? null
-                              : `recent:${scene.id}`,
-                          )
-                        }
                         eager
                       />
                     ))}
@@ -1615,10 +1439,6 @@ export const WorkspaceHome = ({
                     onEdit={openMetadataDialog}
                     onDelete={handleDeleteScene}
                     onRestore={handleRestoreScene}
-                    menuOpen={menuSceneId === scene.id}
-                    onMenuToggle={() =>
-                      setMenuSceneId(menuSceneId === scene.id ? null : scene.id)
-                    }
                   />
                 ))}
               </div>

@@ -170,32 +170,41 @@ describe("WorkspaceHome component", () => {
     ).not.toBeNull();
   });
 
-  it("opens the board actions menu in a portal and restores focus on Escape", async () => {
+  it("toggles board favorite state via star button", async () => {
     render(<WorkspaceHome />);
 
     await waitFor(() => {
       expect(
-        screen.getAllByRole("button", { name: "更多画板操作" }).length,
+        screen.getAllByRole("button", { name: "取消收藏" }).length,
       ).toBeGreaterThan(0);
     });
 
-    const trigger = screen.getAllByRole("button", {
-      name: "更多画板操作",
+    const favButton = screen.getAllByRole("button", { name: "取消收藏" })[0];
+    fireEvent.click(favButton);
+
+    await waitFor(() => {
+      expect(favButton).toHaveAttribute("aria-pressed", "false");
+    });
+  });
+
+  it("moves a board to trash via direct trash icon button", async () => {
+    render(<WorkspaceHome />);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", { name: "移至回收站“架构设计图”" })
+          .length,
+      ).toBeGreaterThan(0);
+    });
+
+    const deleteBtn = screen.getAllByRole("button", {
+      name: "移至回收站“架构设计图”",
     })[0];
-    fireEvent.click(trigger);
+    fireEvent.click(deleteBtn);
 
-    const menu = await screen.findByRole("menu");
-    expect(menu.parentElement).toBe(document.body);
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
-
-    fireEvent.keyDown(menu, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(
-      menu.querySelectorAll('[role="menuitem"]')[1],
-    );
-
-    fireEvent.keyDown(menu, { key: "Escape" });
-    expect(screen.queryByRole("menu")).toBeNull();
-    expect(document.activeElement).toBe(trigger);
+    await waitFor(() => {
+      expect(screen.queryByText("架构设计图")).toBeNull();
+    });
   });
 
   it("focuses search input when pressing Ctrl+K / ⌘K shortcut", async () => {
@@ -237,25 +246,20 @@ describe("WorkspaceHome component", () => {
     });
   });
 
-  it("opens metadata editing from the board actions menu", async () => {
+  it("opens metadata editing directly from the edit icon button", async () => {
     render(<WorkspaceHome />);
 
     await waitFor(() => {
       expect(
         screen.getAllByRole("button", {
-          name: "更多画板操作",
+          name: "编辑画板信息“架构设计图”",
         }).length,
       ).toBeGreaterThan(0);
     });
 
-    const trigger = screen.getAllByRole("button", {
-      name: "更多画板操作",
+    const editButton = screen.getAllByRole("button", {
+      name: "编辑画板信息“架构设计图”",
     })[0];
-    fireEvent.click(trigger);
-
-    const editButton = await screen.findByRole("menuitem", {
-      name: "编辑信息",
-    });
     fireEvent.click(editButton);
 
     expect(screen.getByRole("dialog")).toBeTruthy();
@@ -268,23 +272,18 @@ describe("WorkspaceHome component", () => {
     await waitFor(() => {
       expect(
         screen.getAllByRole("button", {
-          name: "更多画板操作",
+          name: "编辑画板信息“架构设计图”",
         }).length,
       ).toBeGreaterThan(0);
     });
 
-    const trigger = screen.getAllByRole("button", {
-      name: "更多画板操作",
+    const editButton = screen.getAllByRole("button", {
+      name: "编辑画板信息“架构设计图”",
     })[0];
     const workspaceHome = document.querySelector(".workspace-home");
     if (workspaceHome) {
       workspaceHome.scrollTop = 480;
     }
-    fireEvent.click(trigger);
-
-    const editButton = await screen.findByRole("menuitem", {
-      name: "编辑信息",
-    });
     fireEvent.click(editButton);
 
     const dialog = screen.getByRole("dialog");
@@ -293,26 +292,21 @@ describe("WorkspaceHome component", () => {
     expect(screen.getByDisplayValue("架构设计图")).toBeVisible();
   });
 
-  it("closes the metadata dialog from the backdrop and restores focus", async () => {
+  it("closes the metadata dialog from the backdrop", async () => {
     render(<WorkspaceHome />);
 
     await waitFor(() => {
       expect(
         screen.getAllByRole("button", {
-          name: "更多画板操作",
+          name: "编辑画板信息“架构设计图”",
         }).length,
       ).toBeGreaterThan(0);
     });
 
-    const trigger = screen.getAllByRole("button", {
-      name: "更多画板操作",
+    const editButton = screen.getAllByRole("button", {
+      name: "编辑画板信息“架构设计图”",
     })[0];
-    trigger.focus();
-    fireEvent.click(trigger);
-
-    const editButton = await screen.findByRole("menuitem", {
-      name: "编辑信息",
-    });
+    editButton.focus();
     fireEvent.click(editButton);
 
     const dialog = screen.getByRole("dialog");
@@ -329,19 +323,14 @@ describe("WorkspaceHome component", () => {
     await waitFor(() => {
       expect(
         screen.getAllByRole("button", {
-          name: "更多画板操作",
+          name: "编辑画板信息“架构设计图”",
         }).length,
       ).toBeGreaterThan(0);
     });
 
-    const trigger = screen.getAllByRole("button", {
-      name: "更多画板操作",
+    const editButton = screen.getAllByRole("button", {
+      name: "编辑画板信息“架构设计图”",
     })[0];
-    fireEvent.click(trigger);
-
-    const editButton = await screen.findByRole("menuitem", {
-      name: "编辑信息",
-    });
     fireEvent.click(editButton);
 
     fireEvent.change(screen.getByPlaceholderText("用逗号分隔多个标签"), {

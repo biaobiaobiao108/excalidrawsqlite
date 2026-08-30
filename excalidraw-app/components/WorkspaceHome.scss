@@ -692,17 +692,16 @@
   line-clamp: 2;
   inline-size: 100%;
   box-sizing: border-box;
-  padding: 0.75rem 0.75rem 0.25rem;
+  padding: 0.65rem 0.75rem 0.2rem;
   border: 0;
   background: transparent;
   overflow: hidden;
   color: var(--workspace-text);
   cursor: pointer;
   font-family: var(--font-family, system-ui, sans-serif);
-  font-size: 0.98rem;
+  font-size: 0.95rem;
   font-weight: 600;
   line-height: 1.35;
-  min-block-size: 2.7em;
   text-align: start;
   text-overflow: ellipsis;
   word-break: break-word;
@@ -724,17 +723,17 @@
 
 .board-card-footer {
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 0.5rem;
-  min-block-size: 62px;
-  padding: 0.15rem 0.7rem 0.7rem 0.75rem;
+  padding: 0.2rem 0.65rem 0.65rem 0.75rem;
 }
 
 .board-card-details {
   display: grid;
   gap: 0.25rem;
   min-inline-size: 0;
+  flex: 1 1 auto;
 }
 
 .board-card-mobile-title {
@@ -823,24 +822,42 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 0.1rem;
+  gap: 0.15rem;
 }
 
 .icon-button {
   display: grid;
   place-items: center;
-  inline-size: 32px;
-  block-size: 32px;
+  inline-size: 30px;
+  block-size: 30px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
-  color: #858493;
+  color: #8c8b9d;
   cursor: pointer;
+  opacity: 0.85;
+  transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease,
+    transform 140ms ease;
+
+  svg {
+    inline-size: 16px;
+    block-size: 16px;
+  }
+}
+
+.board-card:hover .icon-button {
+  opacity: 1;
 }
 
 .icon-button:hover {
   background: var(--workspace-surface-hover);
   color: var(--workspace-primary);
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+.icon-button:active {
+  transform: scale(0.95);
 }
 
 .icon-button:focus-visible {
@@ -877,52 +894,6 @@
 .board-card-open.is-disabled {
   cursor: default;
   user-select: none;
-}
-
-.board-card-menu-wrap {
-  position: relative;
-}
-
-.board-card-menu {
-  position: fixed;
-  z-index: 100;
-  display: grid;
-  min-inline-size: 130px;
-  max-block-size: calc(100dvh - 1rem);
-  padding: 0.3rem;
-  box-sizing: border-box;
-  overflow-y: auto;
-  border: 1px solid var(--workspace-border);
-  border-radius: 9px;
-  background: #fff;
-  box-shadow: 0 10px 28px rgba(36, 33, 85, 0.14);
-  transform-origin: top right;
-  animation: workspace-menu-enter 150ms ease-out both;
-}
-
-.board-card-menu button {
-  padding: 0.55rem 0.65rem;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--workspace-text);
-  cursor: pointer;
-  font-size: 0.78rem;
-  text-align: start;
-}
-
-.board-card-menu button:hover {
-  background: var(--workspace-surface-hover);
-}
-
-.board-card-menu button:focus-visible {
-  background: var(--workspace-surface-hover);
-  outline: 2px solid var(--workspace-primary);
-  outline-offset: -2px;
-}
-
-.board-card-menu button.danger {
-  color: #b24a4a;
 }
 
 .board-grid.is-list {
@@ -1412,7 +1383,6 @@
   .workspace-home .recent-section,
   .workspace-home .all-boards-section,
   .workspace-home .board-card,
-  .workspace-home .board-card-menu,
   .workspace-dialog,
   .workspace-dialog-content-shell,
   .workspace-dialog::backdrop,
@@ -1444,13 +1414,6 @@
   from {
     opacity: 0;
     transform: translateY(12px);
-  }
-}
-
-@keyframes workspace-menu-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px) scale(0.98);
   }
 }
 
