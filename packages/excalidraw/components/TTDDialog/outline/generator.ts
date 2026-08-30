@@ -70,12 +70,9 @@ export const generateExcalidrawFromLayout = (
     const dx = endX - startX;
     const dy = endY - startY;
 
-    // S-curve connector points for classic smooth mindmap branch
-    const midX = dx * 0.5;
+    // Direct clean connection from parent right edge to child left edge
     const points: readonly LocalPoint[] = [
       pointFrom<LocalPoint>(0, 0),
-      pointFrom<LocalPoint>(midX, 0),
-      pointFrom<LocalPoint>(midX, dy),
       pointFrom<LocalPoint>(dx, dy),
     ];
 
