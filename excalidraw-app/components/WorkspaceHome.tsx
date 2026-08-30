@@ -371,7 +371,7 @@ const BoardCard = ({
               )}
               {scene.tags.length > 0 &&
                 !isTrash &&
-                scene.tags.slice(0, 2).map((tag) => (
+                scene.tags.map((tag) => (
                   <span
                     key={tag}
                     className="board-card-badge board-card-tag"
@@ -380,11 +380,6 @@ const BoardCard = ({
                     {tag}
                   </span>
                 ))}
-              {scene.tags.length > 2 && !isTrash && (
-                <span className="board-card-badge board-card-tag-more">
-                  +{scene.tags.length - 2}
-                </span>
-              )}
             </div>
           )}
           <div className="board-card-meta-row">

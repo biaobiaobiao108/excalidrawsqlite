@@ -763,32 +763,33 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.28rem;
   min-inline-size: 0;
+  margin-block-end: 0.15rem;
 }
 
 .board-card-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.12rem 0.38rem;
+  padding: 0.12rem 0.42rem;
   border-radius: 4px;
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   font-weight: 500;
-  line-height: 1.3;
+  line-height: 1.35;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
-  max-inline-size: 120px;
+  max-inline-size: 100%;
 }
 
 .board-card-folder {
   background: #edf2f7;
   color: #475569;
-  gap: 0.22rem;
+  gap: 0.25rem;
 
   svg {
-    inline-size: 11px;
-    block-size: 11px;
+    inline-size: 12px;
+    block-size: 12px;
     flex-shrink: 0;
   }
 }
@@ -796,11 +797,6 @@
 .board-card-tag {
   background: var(--workspace-primary-soft);
   color: var(--workspace-primary);
-}
-
-.board-card-tag-more {
-  background: #f1f5f9;
-  color: #64748b;
 }
 
 .board-card-meta-row {
