@@ -357,6 +357,36 @@ const BoardCard = ({
               {sceneName}
             </button>
           )}
+          {((scene.folder_name && !isTrash) ||
+            (scene.tags.length > 0 && !isTrash)) && (
+            <div className="board-card-badges">
+              {scene.folder_name && !isTrash && (
+                <span
+                  className="board-card-badge board-card-folder"
+                  title={`所属文件夹：${scene.folder_name}`}
+                >
+                  <FolderIcon />
+                  {scene.folder_name}
+                </span>
+              )}
+              {scene.tags.length > 0 &&
+                !isTrash &&
+                scene.tags.slice(0, 2).map((tag) => (
+                  <span
+                    key={tag}
+                    className="board-card-badge board-card-tag"
+                    title={tag}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              {scene.tags.length > 2 && !isTrash && (
+                <span className="board-card-badge board-card-tag-more">
+                  +{scene.tags.length - 2}
+                </span>
+              )}
+            </div>
+          )}
           <div className="board-card-meta-row">
             <span
               className="board-card-elements-count"
@@ -377,29 +407,6 @@ const BoardCard = ({
               </span>
             )}
           </div>
-          {scene.folder_name && !isTrash && (
-            <span
-              className="board-card-folder"
-              title={`所属文件夹：${scene.folder_name}`}
-            >
-              <FolderIcon />
-              {scene.folder_name}
-            </span>
-          )}
-          {scene.tags.length > 0 && !isTrash && (
-            <div className="board-card-tags">
-              {scene.tags.slice(0, 2).map((tag) => (
-                <span key={tag} className="board-card-tag" title={tag}>
-                  {tag}
-                </span>
-              ))}
-              {scene.tags.length > 2 && (
-                <span className="board-card-tag-more">
-                  +{scene.tags.length - 2}
-                </span>
-              )}
-            </div>
-          )}
         </div>
         <div className="board-card-actions">
           {isTrash ? (

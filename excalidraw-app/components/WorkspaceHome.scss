@@ -735,7 +735,8 @@
 }
 
 .board-card-details {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.25rem;
   min-inline-size: 0;
   flex: 1 1 auto;
@@ -758,9 +759,54 @@
   white-space: nowrap;
 }
 
+.board-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}
+
+.board-card-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.38rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-inline-size: 120px;
+}
+
+.board-card-folder {
+  background: #edf2f7;
+  color: #475569;
+  gap: 0.22rem;
+
+  svg {
+    inline-size: 11px;
+    block-size: 11px;
+    flex-shrink: 0;
+  }
+}
+
+.board-card-tag {
+  background: var(--workspace-primary-soft);
+  color: var(--workspace-primary);
+}
+
+.board-card-tag-more {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
 .board-card-meta-row {
   display: flex;
   align-items: center;
+  min-block-size: 30px;
   gap: 0.35rem;
   font-size: 0.76rem;
   color: var(--workspace-muted);
@@ -785,8 +831,7 @@
 }
 
 .board-card-updated,
-.board-card-created,
-.board-card-folder {
+.board-card-created {
   overflow: hidden;
   color: var(--workspace-muted);
   font-size: 0.73rem;
@@ -799,38 +844,12 @@
   font-size: 0.68rem;
 }
 
-.board-card-folder {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--workspace-primary);
-}
-
-.board-card-folder svg {
-  inline-size: 13px;
-  block-size: 13px;
-}
-
-.board-card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  margin-block-start: 0.15rem;
-}
-
-.board-card-tags span {
-  padding: 0.13rem 0.35rem;
-  border-radius: 4px;
-  background: var(--workspace-primary-soft);
-  color: var(--workspace-primary);
-  font-size: 0.65rem;
-}
-
 .board-card-actions {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 0.15rem;
+  block-size: 30px;
 }
 
 .icon-button {
