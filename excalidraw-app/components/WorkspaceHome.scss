@@ -761,31 +761,39 @@
 
 .board-card-badges {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.28rem;
   min-inline-size: 0;
-  margin-block-end: 0.15rem;
+  overflow: hidden;
+  margin-block-end: 0.1rem;
 }
 
 .board-card-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.12rem 0.42rem;
+  padding: 0.1rem 0.38rem;
   border-radius: 4px;
   font-size: 0.68rem;
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.3;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
-  max-inline-size: 100%;
+  max-inline-size: 110px;
+  flex-shrink: 0;
+}
+
+.board-card-badge:last-child {
+  flex-shrink: 1;
 }
 
 .board-card-folder {
   background: #edf2f7;
   color: #475569;
   gap: 0.25rem;
+  max-inline-size: 120px;
+  flex-shrink: 0;
 
   svg {
     inline-size: 12px;
