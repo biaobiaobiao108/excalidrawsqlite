@@ -43,8 +43,22 @@
 - `Dockerfile` 运行阶段和默认 `docker-compose.yml` 不得擅自改为固定的 `bun` 用户或 `1000:1000` UID/GID；当前默认 root 身份用于兼容 rootless Podman/Docker 的用户命名空间和绑定挂载权限。
 - 若确需非 root 运行，必须由部署方显式配置 `user: "UID:GID"`（或等价参数），同步更新部署文档，并验证 SQLite/WAL 及附件目录的读写权限；不得把固定 UID 作为镜像默认值。
 
-## 8. 验证与提交规范
+## 8. 分级验证与提交规范 (Tiered Verification & Commit)
 
-- 修改完成后至少运行与变更相关的测试；涉及构建、入口、CSP、编码或跨模块依赖时运行 `bun run test:all` 和 `bun run build`。
+根据实际修改的文件类型与影响范围，严格执行分级验证，避免无意义的全量测试开销：
+
+1. **纯文档与注释改动 (免测)**：
+   - 适用范围：`*.md`、`*.mdx`、`dev-docs/`、`docs/`、`LICENSE`、代码注释或纯文档配置。
+   - 规则：**直接执行 Git 提交，严禁运行全量测试或构建命令**。
+2. **后端与持久化改动 (极速验证)**：
+   - 适用范围：`server/`、数据库迁移逻辑、API 路由。
+   - 规则：仅运行快速后端测试 `bun run test:server`（耗时 < 1s）。
+3. **前端局部功能与模块改动 (局部验证)**：
+   - 适用范围：`packages/` 或 `excalidraw-app/` 内的局部组件、算法或样式修改。
+   - 规则：优先运行与该改动直接相关的测试文件（如 `bun test <测试文件路径>` 或 `bun run test:app <测试文件路径>`）或 `bun run test:typecheck`，不要盲目跑全量测试。
+4. **全量与发布级验证 (必要时执行)**：
+   - 适用范围：修改了 `package.json`、依赖项、Vite/Rollup 构建配置、核心跨模块接口或用户显式要求。
+   - 规则：运行 `bun run test:all` 和 `bun run build`。
+
 - 全量测试中的 React `act()`、状态更新和既有业务错误日志可能出现在 stderr；以测试最终的 pass/fail 汇总为准，不要为了隐藏预期日志而扩大改动范围。
-- 每次代码或功能调整完成后立即执行一次原子 Git 提交，提交信息使用 Conventional Commits 格式。文档修改也应单独或与同一主题的代码修改一起提交，保持提交记录可追溯。
+- **原子提交要求**：每次代码或文档修改完成后立即执行一次原子 Git 提交，提交信息使用 Conventional Commits 格式。文档修改也应单独或与同一主题的代码修改一起提交，保持提交记录可追溯。
