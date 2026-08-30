@@ -5,8 +5,6 @@ import { EDITOR_LS_KEYS } from "@excalidraw/common";
 import { Excalidraw } from "../index";
 import { EditorLocalStorage } from "../data/EditorLocalStorage";
 
-import { TTDDialog } from "../components/TTDDialog/TTDDialog";
-
 import { render, waitFor, screen, fireEvent } from "./test-utils";
 
 vi.mock("@codemirror/view", () => ({}));
@@ -26,17 +24,7 @@ describe("Test <OutlineToDiagram/>", () => {
             openDialog: { name: "ttd", tab: "outline" },
           },
         }}
-      >
-        <TTDDialog
-          onTextSubmit={vi.fn()}
-          persistenceAdapter={
-            {
-              load: vi.fn(),
-              save: vi.fn(),
-            } as any
-          }
-        />
-      </Excalidraw>,
+      />,
     );
   });
 

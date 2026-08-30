@@ -411,7 +411,7 @@ const CSP_DIRECTIVES = [
   "style-src-elem 'self' 'unsafe-inline'",
   "style-src-attr 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
-  "font-src 'self' data: https://fonts.gstatic.com",
+  "font-src 'self' data:",
   "connect-src 'self' data: blob: https: wss:",
   "worker-src 'self' blob:",
   "frame-src 'self' https: blob:",

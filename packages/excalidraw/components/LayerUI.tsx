@@ -497,7 +497,7 @@ const LayerUI = ({
       {/* Keep supporting surfaces available to host-supplied UI, including
           MainMenu.DefaultItems. */}
       <DefaultOverwriteConfirmDialog />
-      {appState.openDialog?.name === "ttd" && <TTDDialog __fallback />}
+      {appState.openDialog?.name === "ttd" && <TTDDialog />}
       {/* ------------------------------------------------------------------ */}
 
       {defaultUIEnabled && appState.isLoading && <LoadingMessage delay={250} />}

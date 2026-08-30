@@ -3,18 +3,17 @@ import { Tabs as RadixTabs } from "radix-ui";
 export const TTDDialogTabTrigger = ({
   children,
   tab,
-  onSelect,
   ...rest
 }: {
   children: React.ReactNode;
   tab: string;
-  onSelect?: React.ReactEventHandler<HTMLButtonElement> | undefined;
-} & Omit<React.HTMLAttributes<HTMLButtonElement>, "onSelect">) => {
+} & Omit<
+  React.ComponentPropsWithoutRef<typeof RadixTabs.Trigger>,
+  "value"
+>) => {
   return (
-    <RadixTabs.Trigger value={tab} asChild onSelect={onSelect}>
-      <button type="button" className="ttd-dialog-tab-trigger" {...rest}>
-        {children}
-      </button>
+    <RadixTabs.Trigger value={tab} className="ttd-dialog-tab-trigger" {...rest}>
+      {children}
     </RadixTabs.Trigger>
   );
 };

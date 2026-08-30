@@ -18,7 +18,6 @@ vi.mock("@codemirror/language", () => ({}));
 vi.mock("@lezer/highlight", () => ({}));
 
 mockMermaidToExcalidraw({
-  mockRef: true,
   parseMermaidToExcalidraw: async (definition) => {
     const firstLine = definition.split("\n")[0];
     return new Promise((resolve, reject) => {

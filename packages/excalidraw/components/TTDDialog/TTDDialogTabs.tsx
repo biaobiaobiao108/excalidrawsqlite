@@ -6,11 +6,12 @@ import { isMemberOf } from "@excalidraw/common";
 import { useExcalidrawSetAppState } from "../App";
 
 import type { ReactNode } from "react";
+import type { TTDDialogTabType } from "./types";
 
 const TTDDialogTabs = (
   props: {
     children: ReactNode;
-  } & { dialog: "ttd"; tab: "text-to-diagram" | "mermaid" | "outline" },
+  } & { dialog: "ttd"; tab: TTDDialogTabType },
 ) => {
   const setAppState = useExcalidrawSetAppState();
 
@@ -22,10 +23,7 @@ const TTDDialogTabs = (
       ref={rootRef}
       className="ttd-dialog-tabs-root"
       value={props.tab}
-      onValueChange={(
-        // at least in test enviros, `tab` can be `undefined`
-        tab: string | undefined,
-      ) => {
+      onValueChange={(tab: string | undefined) => {
         if (!tab) {
           return;
         }
@@ -40,7 +38,7 @@ const TTDDialogTabs = (
         }
         if (
           props.dialog === "ttd" &&
-          isMemberOf(["text-to-diagram", "mermaid", "outline"], tab)
+          isMemberOf<TTDDialogTabType>(["outline", "mermaid"], tab)
         ) {
           setAppState({
             openDialog: { name: props.dialog, tab },

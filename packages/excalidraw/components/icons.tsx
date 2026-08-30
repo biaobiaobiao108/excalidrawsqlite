@@ -1994,6 +1994,18 @@ export const mermaidLogoIcon = createIcon(
   />,
 );
 
+export const outlineToDiagramIcon = createIcon(
+  <g strokeWidth={1.5}>
+    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+    <path d="M4 4m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z" />
+    <path d="M14 4m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z" />
+    <path d="M14 14m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z" />
+    <path d="M10 7h4" />
+    <path d="M7 10v4a3 3 0 0 0 3 3h4" />
+  </g>,
+  tablerIconProps,
+);
+
 // tabler-icons: refresh
 export const RetryIcon = createIcon(
   <g strokeWidth="1.5">

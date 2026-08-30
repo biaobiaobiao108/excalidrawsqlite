@@ -3,7 +3,6 @@ import { useState } from "react";
 
 import { KEYS } from "@excalidraw/common";
 
-import { useTunnels } from "../context/tunnels";
 import { t } from "../i18n";
 
 import { useEditorInterface, useStylesPanelMode } from "./App";
@@ -20,8 +19,8 @@ import {
   LassoIcon,
   laserPointerToolIcon,
   bucketFillIcon,
-  MagicIcon,
   mermaidLogoIcon,
+  outlineToDiagramIcon,
   DotsIcon,
 } from "./icons";
 import {
@@ -61,7 +60,6 @@ const ExtraToolsDropdown = ({
 }) => {
   const [isExtraToolsMenuOpen, setIsExtraToolsMenuOpen] = useState(false);
   const isFullStylesPanel = useStylesPanelMode() === "full";
-  const { TTDDialogTriggerTunnel } = useTunnels();
 
   const frameToolSelected = activeTool.type === "frame";
   const drawShapeToolSelected = activeTool.type === "autoshape";
@@ -176,7 +174,13 @@ const ExtraToolsDropdown = ({
         <div style={{ margin: "6px 0", fontSize: 14, fontWeight: 600 }}>
           Generate
         </div>
-        {app.props.aiEnabled !== false && <TTDDialogTriggerTunnel.Out />}
+        <DropdownMenu.Item
+          onSelect={() => app.setOpenDialog({ name: "ttd", tab: "outline" })}
+          icon={outlineToDiagramIcon}
+          data-testid="toolbar-outline"
+        >
+          {t("toolBar.outlineToExcalidraw")}
+        </DropdownMenu.Item>
         <DropdownMenu.Item
           onSelect={() => app.setOpenDialog({ name: "ttd", tab: "mermaid" })}
           icon={mermaidLogoIcon}
@@ -184,17 +188,6 @@ const ExtraToolsDropdown = ({
         >
           {t("toolBar.mermaidToExcalidraw")}
         </DropdownMenu.Item>
-        {app.props.aiEnabled !== false && app.plugins.diagramToCode && (
-          <DropdownMenu.Item
-            onSelect={() => app.onMagicframeToolSelect()}
-            icon={MagicIcon}
-            data-testid="toolbar-magicframe"
-            badge={<DropdownMenu.Item.Badge>AI</DropdownMenu.Item.Badge>}
-            disabled={isToolButtonDisabled(app, "magicframe")}
-          >
-            {t("toolBar.magicframe")}
-          </DropdownMenu.Item>
-        )}
       </DropdownMenu.Content>
     </DropdownMenu>
   );

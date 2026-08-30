@@ -41,14 +41,12 @@ import { InlineIcon } from "../InlineIcon";
 import { TextField } from "../TextField";
 import { getSelectedElements } from "../../scene";
 import {
-  LockedIcon,
-  UnlockedIcon,
   searchIcon,
   boltIcon,
   bucketFillIcon,
   ExportImageIcon,
   mermaidLogoIcon,
-  brainIconThin,
+  outlineToDiagramIcon,
   LibraryIcon,
   historyCommandIcon,
 } from "../icons";
@@ -544,34 +542,9 @@ function CommandPaletteInner({
           [],
         ),
         {
-          label: t("toolBar.lock"),
-          category: DEFAULT_CATEGORIES.tools,
-          icon: uiAppState.activeTool.locked ? LockedIcon : UnlockedIcon,
-          shortcut: KEYS.Q.toLocaleUpperCase(),
-          viewMode: false,
-          perform: () => {
-            app.toggleLock();
-          },
-        },
-        {
-          label: `${t("labels.textToDiagram")}...`,
-          category: DEFAULT_CATEGORIES.tools,
-          icon: brainIconThin,
-          viewMode: false,
-          predicate: appProps.aiEnabled,
-          perform: () => {
-            setAppState((state) => ({
-              ...state,
-              openDialog: {
-                name: "ttd",
-                tab: "text-to-diagram",
-              },
-            }));
-          },
-        },
-        {
           label: `${t("outline.title")}...`,
           category: DEFAULT_CATEGORIES.tools,
+          icon: outlineToDiagramIcon,
           keywords: [
             "outline",
             "mindmap",
@@ -608,16 +581,6 @@ function CommandPaletteInner({
             }));
           },
         },
-        // {
-        //   label: `${t("toolBar.magicframe")}...`,
-        //   category: DEFAULT_CATEGORIES.tools,
-        //   icon: MagicIconThin,
-        //   viewMode: false,
-        //   predicate: appProps.aiEnabled,
-        //   perform: () => {
-        //     app.onMagicframeToolSelect();
-        //   },
-        // },
       ];
 
       const allCommands = [

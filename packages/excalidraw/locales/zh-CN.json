@@ -338,6 +338,7 @@
     "bucketfill": "",
     "hand": "抓手（平移工具）",
     "extraTools": "更多工具",
+    "outlineToExcalidraw": "Markdown 大纲至图表",
     "mermaidToExcalidraw": "Mermaid 至 Excalidraw",
     "convertElementType": "切换形状种类"
   },

@@ -338,6 +338,7 @@
     "bucketfill": "Bucket fill",
     "hand": "Hand (panning tool)",
     "extraTools": "More tools",
+    "outlineToExcalidraw": "Markdown outline to diagram",
     "mermaidToExcalidraw": "Mermaid to Excalidraw",
     "convertElementType": "Toggle shape type"
   },
