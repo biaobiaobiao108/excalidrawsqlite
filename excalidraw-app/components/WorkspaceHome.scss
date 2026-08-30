@@ -543,7 +543,7 @@
   box-sizing: border-box;
   container-type: inline-size;
   min-inline-size: 0;
-  overflow: hidden;
+  overflow: clip;
   border: 1px solid var(--workspace-border);
   border-radius: 12px;
   background: #fff;
@@ -710,6 +710,7 @@
   text-overflow: ellipsis;
   word-break: break-word;
   overflow-wrap: break-word;
+  text-wrap: pretty;
 }
 
 .board-card-title:hover,
@@ -765,7 +766,7 @@
   align-items: center;
   gap: 0.28rem;
   min-inline-size: 0;
-  overflow: hidden;
+  overflow: clip;
   margin-block-end: 0.1rem;
 }
 
@@ -782,6 +783,7 @@
   overflow: hidden;
   max-inline-size: 96px;
   flex-shrink: 0;
+  text-box: trim-both cap alphabetic;
 }
 
 .board-card-folder {
@@ -809,11 +811,21 @@
   font-weight: 600;
   cursor: help;
   padding: 0.1rem 0.35rem;
+  text-box: trim-both cap alphabetic;
 }
 
 .board-card-tag-more:hover {
   background: #e2e8f0;
   color: #334155;
+}
+
+@container (min-width: 290px) {
+  .board-card-badge {
+    max-inline-size: 120px;
+  }
+  .board-card-folder {
+    max-inline-size: 130px;
+  }
 }
 
 .board-card-meta-row {
