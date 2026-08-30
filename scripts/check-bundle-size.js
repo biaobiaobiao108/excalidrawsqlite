@@ -12,7 +12,9 @@ const assetsDir = join(
 const entryBudget = { raw: 1_700_000, gzip: 550_000 };
 const chunkBudgets = {
   "mermaid-to-excalidraw": { raw: 700_000, gzip: 200_000 },
-  "codemirror.chunk": { raw: 600_000, gzip: 110_000 },
+  // Markdown's LR language support shares the deferred CodeMirror runtime.
+  "codemirror.chunk": { raw: 600_000, gzip: 180_000 },
+  "markdown-language": { raw: 120_000, gzip: 50_000 },
   "pako.esm": { raw: 70_000, gzip: 25_000 },
   "subset-shared.chunk": { raw: 2_000_000, gzip: 800_000 },
   "xiaolai-fonts": { raw: 140_000, gzip: 55_000 },
