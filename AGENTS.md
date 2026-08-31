@@ -24,7 +24,7 @@
 
 ## 4. CSP 与运行时安全规范
 
-- `server/server.ts` 的 `script-src` 禁止 `unsafe-inline` 和 `unsafe-eval`，仅允许必要的 `'wasm-unsafe-eval'`。禁止引入 `eval`、`new Function` 或在 `index.html` 中添加内联脚本。
+- `server/http.ts` 生成的 `script-src` 禁止 `unsafe-inline` 和 `unsafe-eval`，仅允许必要的 `'wasm-unsafe-eval'`。禁止引入 `eval`、`new Function` 或在 `index.html` 中添加内联脚本。
 - 入口启动逻辑放在 `public/theme-init.js` 等外部资源中，入口样式通过 `excalidraw-app/index.tsx` 导入 `index.scss`。不要为了方便把它们移回 HTML 内联代码。
 - CSS 侧的 `style-src-elem/style-src-attr 'unsafe-inline'` 是当前 React 内联样式及 Mermaid/CodeMirror 运行时注入的明确兼容范围；不得把这种许可扩展到 `script-src`。若要完全移除 CSS inline，需要单独规划样式迁移或第三方编辑器隔离。
 - 调整 CSP、Blob iframe、Worker 或外部资源域名后，运行 `bun run test:server`，并用现代浏览器验证首屏、Mermaid、字体子集化、图片导出和离线缓存；不要只检查服务端响应头。
@@ -35,8 +35,12 @@
 
 ## 6. 数据持久化与后端规范 (Bun + SQLite)
 
-- 后端服务位于 `server/server.ts`，基于 Bun 原生 `bun:sqlite`，数据文件默认位于 `data/excalidraw.db`。
-- 新增 API 或白板图元数据字段时，保持向后兼容并做好输入校验。
+- 后端启动入口是 `server/server.ts`，职责模块位于 `server/` 目录，基于 Bun 原生 `bun:sqlite`，数据文件默认位于 `data/excalidraw.db`。
+- `server/server.ts` 只负责服务启动、定时维护、优雅关闭和兼容导出；新增业务逻辑应放入对应职责模块。
+- 后端模块按以下方向依赖：共享类型/错误/校验/HTTP 基础能力 → 鉴权、数据库、附件、画板和备份模块 → `routes.ts` → `server.ts`。业务模块不得反向导入 `server.ts`，不得引入不必要的循环依赖。
+- API 路径、状态码、错误码、JSON 字段、Cookie、CORS/CSP 和缓存行为属于兼容契约；新增或调整 API 必须保持向后兼容并做好输入校验。
+- SQLite WAL、数据库迁移、旧版 `data_url` 附件迁移、附件原子写入与回滚逻辑属于持久化契约，修改后必须覆盖兼容性和失败场景测试。
+- Docker 生产运行阶段必须复制完整的 `server/` 目录，而不是只复制 `server/server.ts`；保持现有 Bun 版本、启动命令和数据目录约定。
 
 ## 7. 容器运行身份与 rootless 兼容性
 

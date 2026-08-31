@@ -191,7 +191,20 @@ bun run start
 
 ```text
 ├── server/
-│   ├── server.ts           # Bun.serve + bun:sqlite 后端全栈核心逻辑与静态托管
+│   ├── server.ts           # Bun 服务启动入口与兼容导出入口
+│   ├── routes.ts           # 手工 API 路由分发
+│   ├── config.ts           # 环境变量、服务配置与限制常量
+│   ├── types.ts            # 后端共享类型
+│   ├── errors.ts           # HTTP 错误类型
+│   ├── http.ts             # 请求体、响应、安全头与 CORS/CSP
+│   ├── validation.ts       # 请求参数与资源 ID 校验
+│   ├── auth.ts             # 密码会话、Cookie 与限流
+│   ├── database.ts         # SQLite 初始化、WAL 与数据库迁移
+│   ├── runtime.ts          # 运行时与持久化目录初始化
+│   ├── scenes.ts           # 画板、文件夹与场景数据处理
+│   ├── files.ts            # 附件、缩略图与存储一致性维护
+│   ├── backup.ts           # SQLite 快照与完整备份
+│   ├── static.ts             # 静态资源与 SPA fallback
 │   └── server.test.ts      # 21 项全覆盖自动化持久化与安全测试
 ├── excalidraw-app/         # Excalidraw 前端主应用 (Vite + React)
 │   ├── components/
@@ -211,6 +224,12 @@ bun run start
 ├── docker-compose.yml      # 容器化编排配置文件
 └── bun.lock                # Bun 统一依赖锁文件
 ```
+
+### 后端模块职责
+
+后端仍由 Bun 单进程提供 API、静态资源和 SQLite 持久化。`server/server.ts` 是启动入口，同时保留现有公共导出，便于测试和外部调用继续使用原有导入路径。新增后端逻辑应放入对应职责模块，不要把业务逻辑重新集中到入口文件。
+
+模块依赖遵循“共享类型与基础能力 → 数据和业务模块 → 路由 → 启动入口”的方向。路由继续使用原生 `Request`/`Response` 和手工路径匹配，不额外引入 HTTP 框架或路由依赖。修改 API、鉴权、数据库迁移或附件存储时，必须保持现有响应格式、数据兼容性和安全边界，并运行后端测试。
 
 ---
 

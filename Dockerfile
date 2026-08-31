@@ -45,10 +45,10 @@ ENV DB_PATH=/app/data/excalidraw.db
 ENV FILES_DIR=/app/data/files
 ENV STATIC_DIR=/app/excalidraw-app/build
 
-# Copy only the production backend entrypoint and built frontend static assets
+# Copy the modular production backend and built frontend static assets
 # The server creates the database and files directories on startup. Keeping the
 # runtime stage free of RUN steps avoids target-platform emulation in Buildx.
-COPY server/server.ts ./server/server.ts
+COPY server ./server
 COPY --from=builder /app/excalidraw-app/build ./excalidraw-app/build
 
 EXPOSE 8080
