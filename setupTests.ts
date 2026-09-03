@@ -1,5 +1,5 @@
 import fs from "fs";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { JSDOM } from "jsdom";
 import {
   afterAll,
@@ -14,7 +14,6 @@ import {
   test,
 } from "bun:test";
 import { assert } from "chai";
-import * as fontFaceModule from "./packages/excalidraw/fonts/ExcalidrawFontFace";
 import { mockThrottleRAF } from "./packages/excalidraw/tests/helpers/mocks";
 import { yellow } from "./packages/excalidraw/tests/helpers/colorize";
 import {
@@ -180,24 +179,22 @@ Object.defineProperty(window, "EXCALIDRAW_ASSET_PATH", {
   value: pathToFileURL(`${__dirname}/`).toString(),
 });
 
-// mock the font fetch only, so that everything else, as font subsetting, can run inside of the (snapshot) tests
-mock.module("./packages/excalidraw/fonts/ExcalidrawFontFace", () => {
-  const ExcalidrawFontFaceImpl = fontFaceModule.ExcalidrawFontFace;
-  return {
-    ...fontFaceModule,
-    ExcalidrawFontFace: class extends ExcalidrawFontFaceImpl {
-      public async fetchFont(url: URL): Promise<ArrayBuffer> {
-        if (!url.toString().startsWith("file://")) {
-          return super.fetchFont(url);
-        }
+// Bun's fetch does not serve file URLs. Keep the production font-loading path
+// intact and intercept only local test assets at the fetch boundary.
+const nativeFetch = globalThis.fetch.bind(globalThis);
+globalThis.fetch = (async (input, init) => {
+  const url =
+    input instanceof URL
+      ? input
+      : new URL(typeof input === "string" ? input : input.url);
 
-        // read local assets directly, without running a server
-        const content = await fs.promises.readFile(url);
-        return content.buffer;
-      }
-    },
-  };
-});
+  if (url.protocol === "file:") {
+    const content = await fs.promises.readFile(fileURLToPath(url));
+    return new Response(content, { status: 200 });
+  }
+
+  return nativeFetch(input, init);
+}) as typeof fetch;
 
 // ReactDOM is located inside index.tsx file
 // as a result, we need a place for it to render into
