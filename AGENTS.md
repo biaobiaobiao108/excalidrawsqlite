@@ -21,7 +21,7 @@
   - 构建产物配置 `publicPath: "/"`，确保深层路由与静态资源路径解析一致；
   - 在 `Bun.build` 的 `define` 中完备注入 `import.meta.env`、`PKG_NAME`、`PKG_VERSION` 及 `process.env.NODE_ENV`，避免浏览器端运行时因缺少环境对象而抛错；
   - 同源 Script 与 Link 标签清理冗余的 `crossorigin` 属性，防止无意义的 CORS 检查；
-  - 生产构建目标为 `esnext`（仅支持最新 Chrome、Edge、Firefox、Safari 和 iOS Safari）。严禁引入过时浏览器兼容降级包。
+  - 生产构建使用 Bun 1.4 支持的现代浏览器目标（当前为 `target: "browser"`；Bun 1.4 不接受 `esnext` 作为构建目标），仅支持最新 Chrome、Edge、Firefox、Safari 和 iOS Safari。严禁引入过时浏览器兼容降级包。
 - **按需动态加载**：
   - AI、Mermaid、CJK 字体、CodeMirror、pako 回退和字体子集化能力必须保持按需加载。新增大型依赖前先确认不会被静态 import 拉入主入口，优先使用动态 `import()`；
   - 「霞鹜文楷」资源位于 `packages/excalidraw/fonts/LXGWWenKai`，必须通过 `Fonts.ts` 的动态 import 按需加载，UI 字体文件在构建阶段同步复制至 `build/fonts/`；

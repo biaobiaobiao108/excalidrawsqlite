@@ -17,7 +17,7 @@
 | **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **100% 纯净私有化**：零第三方外链打点，默认只访问本机/局域网服务 |
 | **中文字体支持** | 默认依赖外部在线 Google Fonts 或英文字体 | **内置「霞鹜文楷」CJK 手绘中文字体**（Unicode 子集化拆分按需动态加载） |
 | **身份认证安全** | 无或 Token 明文保存在浏览器本地存储 | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据 |
-| **浏览器与构建** | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置 | **原生 Bun HTML Bundler (`esnext`)**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
+| **浏览器与构建** | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置 | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
 | **全栈开发体验** | 需分别启动前端开发服务与后端 API，跨端口代理 | **`bun run dev` 一体化热重载**，单命令启动前后端，原生 SSE 毫秒级自动热刷新 |
 | **资源消耗** | 内存占用 500MB+，冷启动较慢 | **毫秒级冷启动，内存占用低至约 50~80MB** |
 
@@ -52,7 +52,7 @@
 
 ### 5. ⚡ 现代浏览器性能基线
 
-- 生产构建目标面向 `esnext`（支持最新 Chrome、Edge、Firefox、Safari、iOS Safari），去除过时 polyfill。
+- 生产构建面向现代浏览器（支持最新 Chrome、Edge、Firefox、Safari、iOS Safari），去除过时 polyfill。Bun 1.4 使用 `target: "browser"` 表达该目标。
 - **按需动态加载**：Mermaid 图表引擎、CodeMirror 代码编辑器、CJK「霞鹜文楷」手绘字体、pako 压缩回退均延迟至使用时加载，首屏极速秒开。
 - **原生压缩流**：优先使用现代浏览器原生 `CompressionStream` 与 `DecompressionStream`。
 
@@ -152,10 +152,7 @@ cd excalidrawsqlite
 # 2. 安装依赖 (使用 Bun 维护 bun.lock)
 bun install
 
-# 3. 编译核心 Packages
-bun run build:packages
-
-# 4. 构建前端产物并启动全栈服务 (默认端口 8080)
+# 3. 构建前端产物并启动全栈服务 (默认端口 8080)
 bun run build
 AUTH_PASSWORD=your-password bun run start:server
 ```
@@ -175,8 +172,8 @@ AUTH_PASSWORD=your-password bun run dev
 
 | 环境变量 | 默认值 | 必填项 | 说明 |
 | :-- | :-- | :-: | :-- |
-| `AUTH_PASSWORD` | _无_ | **是** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。 |
-| `ALLOW_ANONYMOUS` | `false` | 否 | 设为 `true` 时显式允许在局域网内免密匿名直接访问。 |
+| `AUTH_PASSWORD` | _无_ | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。 |
+| `ALLOW_ANONYMOUS` | `false` | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。 |
 | `TRUST_PROXY` | `false` | **反代必填** | 信任反向代理。在 Nginx/Caddy/Traefik 等反代后必须开启，用于正确识别协议并下发 Secure Cookie。 |
 | `PORT` | `8080` | 否 | 服务端监听端口。 |
 | `DATA_DIR` | `./data` | 否 | SQLite 数据库文件与图片附件存储目录。 |
@@ -206,7 +203,7 @@ AUTH_PASSWORD=your-password bun run dev
 │   ├── files.ts            # 附件、缩略图与存储一致性维护
 │   ├── backup.ts           # SQLite 快照与完整备份
 │   ├── static.ts           # 静态资源路径与 SPA fallback 辅助
-│   └── server.test.ts      # 21 项全覆盖自动化持久化与安全测试
+│   └── server.test.ts      # 持久化、备份、并发与安全自动化测试
 ├── scripts/
 │   ├── build-frontend.ts   # 纯原生 Bun HTML Bundler 打包引擎 (含 dev/watch)
 │   ├── build-version.js    # 版本号与 Git SHA 元数据生成

@@ -27,16 +27,20 @@ git clone https://github.com/excalidraw/excalidraw.git
 bun install
 ```
 
-### Start the server
+### Start the full-stack development server
 
 ```bash
-bun run start:server
-bun run start
+bun run dev
 ```
 
-Now you can open [http://localhost:3000](http://localhost:3000) and start coding in your favorite code editor.
-The Vite development server proxies `/api` requests to the backend at `http://localhost:8080`.
-Set `VITE_API_PROXY_TARGET` when the backend runs elsewhere.
+Open [http://localhost:8080](http://localhost:8080) in your browser. The Bun server builds the frontend, serves the API and static assets, and enables SSE-based live reload in one process. There is no separate Vite server or API proxy.
+
+For production-style local startup, build first and configure authentication:
+
+```bash
+bun run build
+AUTH_PASSWORD=your-strong-password bun run start:server
+```
 
 ## Collaboration
 
@@ -50,10 +54,10 @@ For collaboration, you will need to set up [collab server](https://github.com/ex
 bun install
 ```
 
-### Run the project
+### Run the development server
 
 ```bash
-bun run start
+bun run dev
 ```
 
 ### Fix code issues automatically
@@ -62,16 +66,23 @@ bun run start
 bun run fix
 ```
 
-### Run tests
+### Run all checks
 
 ```bash
-bun run test
+bun run test:all
 ```
 
-### Update test snapshots
+### Run focused tests
 
 ```bash
-bun run test:update
+bun run test:app
+bun run test:server
+```
+
+### Update Bun snapshots
+
+```bash
+bun test -u packages/excalidraw/tests
 ```
 
 ### Run lint checks
@@ -82,10 +93,10 @@ bun run test:code
 
 ### Docker Compose
 
-You can use docker-compose to work on Excalidraw locally if you don't want to setup a Node.js env.
+You can use Docker Compose to work on Excalidraw locally without installing a local Bun toolchain.
 
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
 ```
 
 ## Self-hosting
