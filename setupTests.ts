@@ -214,16 +214,10 @@ document.body.appendChild(element);
 const _consoleError = console.error.bind(console);
 console.error = (...args) => {
   // the react's act() warning usually doesn't contain any useful stack trace
-  // so we're catching the log and re-logging the message with the test name,
-  // also stripping the actual component stack trace as it's not useful
+  // so we're catching the log and re-logging a concise warning without the
+  // actual component stack trace, which is not useful here
   if (args[0]?.includes?.("act(")) {
-    _consoleError(
-      yellow(
-        `<<< WARNING: test "${
-          (expect as any).getState?.().currentTestName ?? "unknown"
-        }" does not wrap some state update in act() >>>`,
-      ),
-    );
+    _consoleError(yellow("<<< WARNING: some state update was not wrapped in act() >>>"));
   } else {
     _consoleError(...args);
   }
