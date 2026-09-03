@@ -17,7 +17,8 @@
 | **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **100% 纯净私有化**：零第三方外链打点，默认只访问本机/局域网服务 |
 | **中文字体支持** | 默认依赖外部在线 Google Fonts 或英文字体 | **内置「霞鹜文楷」CJK 手绘中文字体**（Unicode 子集化拆分按需动态加载） |
 | **身份认证安全** | 无或 Token 明文保存在浏览器本地存储 | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据 |
-| **浏览器与构建** | 包含大量旧版浏览器兼容层与 Polyfill | **面向现代浏览器优化 (`esnext`)**，Mermaid/CodeMirror/字体按需动态加载 |
+| **浏览器与构建** | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置 | **原生 Bun HTML Bundler (`esnext`)**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
+| **全栈开发体验** | 需分别启动前端开发服务与后端 API，跨端口代理 | **`bun run dev` 一体化热重载**，单命令启动前后端，原生 SSE 毫秒级自动热刷新 |
 | **资源消耗** | 内存占用 500MB+，冷启动较慢 | **毫秒级冷启动，内存占用低至约 50~80MB** |
 
 ---
@@ -162,13 +163,11 @@ AUTH_PASSWORD=your-password bun run start:server
 如需进行前端热重载开发：
 
 ```bash
-# 另开一个终端启动后端（默认 8080），前端会自动代理 /api 请求
-bun run start:server
-bun run start
+# 一键启动前后端一体化开发服务器 (内置源码变动监听 + 原生 SSE 浏览器热刷新)
+AUTH_PASSWORD=your-password bun run dev
 ```
 
-如后端运行在其他地址，可设置 `VITE_API_PROXY_TARGET`，例如
-`VITE_API_PROXY_TARGET=http://localhost:8081 bun run start`。
+打开浏览器访问 `http://localhost:8080`，修改任意 `excalidraw-app` 或 `packages` 源码即可体验毫秒级增量重新编译并自动刷新。
 
 ---
 
@@ -191,8 +190,10 @@ bun run start
 
 ```text
 ├── server/
-│   ├── server.ts           # Bun 服务启动入口与兼容导出入口
-│   ├── routes.ts           # 手工 API 路由分发
+│   ├── server.ts           # Bun 服务启动入口与优雅退出处理
+│   ├── routes.ts           # 纯原生 API 路由与静态资源/SPA 分发
+│   ├── dev-server.ts       # 开发态源码增量监听与热重载编译调度
+│   ├── dev-reload.ts       # 基于 Web Streams 的原生 SSE 广播通道
 │   ├── config.ts           # 环境变量、服务配置与限制常量
 │   ├── types.ts            # 后端共享类型
 │   ├── errors.ts           # HTTP 错误类型
@@ -204,9 +205,13 @@ bun run start
 │   ├── scenes.ts           # 画板、文件夹与场景数据处理
 │   ├── files.ts            # 附件、缩略图与存储一致性维护
 │   ├── backup.ts           # SQLite 快照与完整备份
-│   ├── static.ts             # 静态资源与 SPA fallback
+│   ├── static.ts           # 静态资源路径与 SPA fallback 辅助
 │   └── server.test.ts      # 21 项全覆盖自动化持久化与安全测试
-├── excalidraw-app/         # Excalidraw 前端主应用 (Vite + React)
+├── scripts/
+│   ├── build-frontend.ts   # 纯原生 Bun HTML Bundler 打包引擎 (含 dev/watch)
+│   ├── build-version.js    # 版本号与 Git SHA 元数据生成
+│   └── start-server.js     # 生产环境一键单进程服务启动脚本
+├── excalidraw-app/         # Excalidraw 前端主应用 (Bun HTML Bundler + React)
 │   ├── components/
 │   │   ├── WorkspaceHome.tsx     # 工作台多画板管理、文件夹、回收站与卡片组件
 │   │   ├── AuthDialog.tsx        # 密码验证与鉴权弹窗
@@ -214,13 +219,13 @@ bun run start
 │   ├── data/
 │   │   ├── cloudStorage.ts # 云端 REST API 客户端与数据接口
 │   │   └── cloudSync.ts    # 30s 串行防抖自动保存队列与多标签同步
-│   └── tests/              # 前端自动化测试集
+│   └── index.html          # 前端 HTML 入口 (直接由 Bun.build 解析打包)
 ├── packages/               # Excalidraw 核心内部包 (Monorepo)
 │   ├── excalidraw/         # 核心渲染与画布引擎 (包含霞鹜文楷本地子集包)
 │   ├── element/            # 图元数据结构与计算
 │   └── ...
 ├── docs/                   # GitHub Pages 介绍落地页 (单文件、现代化动效与手绘 SVG)
-├── Dockerfile              # oven/bun:1.4.0-alpine 多阶段极小容器构建
+├── Dockerfile              # oven/bun:1.4.0-alpine 纯 Bun 多阶段极小容器构建 (零 Node.js)
 ├── docker-compose.yml      # 容器化编排配置文件
 └── bun.lock                # Bun 统一依赖锁文件
 ```

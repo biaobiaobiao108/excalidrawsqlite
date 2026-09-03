@@ -1054,7 +1054,7 @@
                   font-weight="600"
                   fill="var(--text-color-primary)"
                 >
-                  Vite + React (esnext 目标)
+                  Bun HTML Bundler + React (esnext 目标)
                 </text>
                 <text
                   x="58"
@@ -1063,7 +1063,7 @@
                   font-size="10"
                   fill="var(--text-color-muted)"
                 >
-                  零过时 polyfill • 毫秒级首屏
+                  零 Rollup/Webpack • 极速出包 • 毫秒级首屏
                 </text>
 
                 <rect
@@ -1861,9 +1861,12 @@ bun install
 # 2. 编译核心 Packages
 bun run build:packages
 
-# 3. 构建前端静态产物并启动全栈服务 (默认端口 8080)
+# 3. 生产构建并启动服务 (默认端口 8080)
 bun run build
-bun run start:server"
+bun run start:server
+
+# 或一键启动全栈极速热重载开发:
+# bun run dev"
               >
                 复制源码运行命令
               </button>
@@ -1873,9 +1876,12 @@ bun install
 # 2. 编译核心 Packages
 bun run build:packages
 
-# 3. 构建前端产物并启动服务 (默认端口 8080)
+# 3. 生产构建并启动服务 (默认端口 8080)
 bun run build
-bun run start:server</code></pre>
+bun run start:server
+
+# 或一键启动全栈极速热重载开发 (内置源码监听与原生 SSE 浏览器热刷新):
+bun run dev</code></pre>
             </div>
           </div>
 
