@@ -143,7 +143,7 @@ describe("<Excalidraw/>", () => {
         );
         //open menu
         toggleMenu(container);
-        expect(queryByTestId(container, "dropdown-menu")).toMatchSnapshot();
+        expect(queryByTestId(container, "dropdown-menu")?.outerHTML).toMatchSnapshot();
       });
 
       it("should hide clear canvas button when clearCanvas is false", async () => {
@@ -423,7 +423,7 @@ describe("<Excalidraw/>", () => {
       );
       //open menu
       toggleMenu(container);
-      expect(queryByTestId(container, "dropdown-menu")).toMatchSnapshot();
+      expect(queryByTestId(container, "dropdown-menu")?.outerHTML).toMatchSnapshot();
     });
 
     it("should update themeToggle text even if MainMenu memoized", async () => {
