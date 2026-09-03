@@ -74,6 +74,13 @@ if (typeof window === "undefined") {
   (globalThis as any).Selection = win.Selection;
   globalThis.DOMParser = win.DOMParser;
   globalThis.XMLSerializer = win.XMLSerializer;
+  // Font subsetting is intentionally exercised on Bun's main thread. Bun's
+  // Worker implementation is available in tests but cannot load browser
+  // bundle URLs, which would make export tests hang instead of falling back.
+  Object.defineProperty(globalThis, "Worker", {
+    configurable: true,
+    value: undefined,
+  });
   class Path2DImpl {
     constructor(public readonly path?: string) {}
   }
