@@ -1,4 +1,5 @@
 import React from "react";
+import { vi } from "bun:test";
 
 import { ARROW_TYPE, KEYS } from "@excalidraw/common";
 
@@ -9,6 +10,7 @@ import { Keyboard, UI } from "./helpers/ui";
 import {
   GlobalTestState,
   fireEvent,
+  act,
   mockBoundingClientRect,
   render,
   restoreOriginalGetBoundingClientRect,
@@ -52,9 +54,16 @@ describe("cursor hint", () => {
     expect(h.state.currentItemArrowType).toBe(ARROW_TYPE.sharp);
     expect(getCursorHint()).not.toBeNull();
 
-    await waitFor(() => {
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        vi.advanceTimersByTime(800);
+        await Promise.resolve();
+      });
       expect(getCursorHint()).toBeNull();
-    });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows hint when switching to the arrow tool via shortcut", () => {
