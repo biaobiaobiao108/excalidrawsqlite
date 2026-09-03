@@ -24,10 +24,12 @@ import { getDefaultAppState } from "../../appState";
 import type { ImportedDataState } from "../../data/types";
 
 describe("restoreElements", () => {
+  const originalIsInvisiblySmallElement = sizeHelpers.isInvisiblySmallElement;
   const mockSizeHelper = vi.spyOn(sizeHelpers, "isInvisiblySmallElement");
 
   beforeEach(() => {
     mockSizeHelper.mockClear();
+    mockSizeHelper.mockImplementation(originalIsInvisiblySmallElement);
   });
 
   afterAll(() => {
