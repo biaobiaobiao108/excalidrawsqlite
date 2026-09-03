@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { vi } from "./vitest-shim";
 
 import { ROUNDNESS, KEYS, arrayToMap, cloneJSON } from "@excalidraw/common";
 

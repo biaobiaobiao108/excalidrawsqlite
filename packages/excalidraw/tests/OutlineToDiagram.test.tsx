@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "./vitest-shim";
 
 import { EDITOR_LS_KEYS } from "@excalidraw/common";
 

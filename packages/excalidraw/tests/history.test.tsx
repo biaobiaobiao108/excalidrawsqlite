@@ -5,7 +5,7 @@ import {
   queryByTestId,
   waitFor,
 } from "@testing-library/react";
-import { vi } from "vitest";
+import { vi } from "./vitest-shim";
 import { pointFrom } from "@excalidraw/math";
 
 import { newElementWith } from "@excalidraw/element";

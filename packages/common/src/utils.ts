@@ -638,11 +638,20 @@ export const toArray = <T>(
   return Array.isArray(values) ? values : Array.from(toIterable(values));
 };
 
-export const isTestEnv = () => import.meta.env.MODE === ENV.TEST;
+const getEnvironmentMode = () =>
+  import.meta.env.MODE ||
+  (typeof process !== "undefined" ? process.env?.NODE_ENV : undefined) ||
+  (import.meta.env.PROD
+    ? ENV.PRODUCTION
+    : import.meta.env.DEV
+      ? ENV.DEVELOPMENT
+      : undefined);
 
-export const isDevEnv = () => import.meta.env.MODE === ENV.DEVELOPMENT;
+export const isTestEnv = () => getEnvironmentMode() === ENV.TEST;
 
-export const isProdEnv = () => import.meta.env.MODE === ENV.PRODUCTION;
+export const isDevEnv = () => getEnvironmentMode() === ENV.DEVELOPMENT;
+
+export const isProdEnv = () => getEnvironmentMode() === ENV.PRODUCTION;
 
 export const isServerEnv = () =>
   typeof process !== "undefined" && !!process?.env?.NODE_ENV;

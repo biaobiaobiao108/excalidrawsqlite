@@ -1,5 +1,5 @@
 import React from "react";
-import { vi } from "vitest";
+import { vi } from "./vitest-shim";
 
 import { CODES, CURSOR_TYPE, POINTER_BUTTON } from "@excalidraw/common";
 
@@ -22,7 +22,7 @@ import {
   waitFor,
 } from "./test-utils";
 
-import type { MockInstance } from "vitest";
+import type { MockInstance } from "./vitest-shim";
 
 import type { ExcalidrawProps } from "../types";
 

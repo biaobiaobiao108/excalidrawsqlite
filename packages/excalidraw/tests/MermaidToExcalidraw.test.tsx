@@ -1,4 +1,4 @@
-import { expect, vi } from "vitest";
+import { expect, vi } from "./vitest-shim";
 
 import { EDITOR_LS_KEYS } from "@excalidraw/common";
 import { pointFrom, type LocalPoint } from "@excalidraw/math";

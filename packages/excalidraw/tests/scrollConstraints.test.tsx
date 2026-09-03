@@ -1,5 +1,5 @@
 import React from "react";
-import { vi } from "vitest";
+import { vi } from "./vitest-shim";
 
 import { KEYS, MAX_ZOOM } from "@excalidraw/common";
 

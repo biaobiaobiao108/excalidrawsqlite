@@ -1,5 +1,5 @@
 import React from "react";
-import { vi } from "vitest";
+import { vi } from "./vitest-shim";
 
 import { getLineHeightInPx } from "@excalidraw/element";
 
@@ -26,22 +26,6 @@ import type { NormalizedZoomValue } from "../types";
 const { h } = window;
 
 const mouse = new Pointer("mouse");
-
-vi.mock("@excalidraw/common", async (importOriginal) => {
-  const module = await importOriginal<typeof import("@excalidraw/common")>();
-  const { mockThrottleRAF } = await import("./helpers/mocks");
-
-  return {
-    __esmodule: true,
-    ...module,
-    isDarwin: false,
-    KEYS: {
-      ...module.KEYS,
-      CTRL_OR_CMD: "ctrlKey",
-    },
-    throttleRAF: mockThrottleRAF,
-  };
-});
 
 const sendPasteEvent = (text: string) => {
   const clipboardEvent = createPasteEvent({

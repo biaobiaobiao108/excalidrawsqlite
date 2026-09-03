@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { vi } from "vitest";
+import { vi } from "./vitest-shim";
 
 import { getDefaultAppState } from "../appState";
 import { ExcalidrawAPIContext } from "../components/App";

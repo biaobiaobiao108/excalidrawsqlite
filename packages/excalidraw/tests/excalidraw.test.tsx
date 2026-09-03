@@ -13,6 +13,7 @@ import {
   GlobalTestState,
   toggleMenu,
   render,
+  unmountComponent,
   waitFor,
 } from "./test-utils";
 
@@ -81,6 +82,7 @@ describe("<Excalidraw/>", () => {
     expect(container.querySelector(".footer-center")).toBe(null);
 
     // Footer passed hence it will render the footer
+    unmountComponent();
     ({ container } = await render(
       <Excalidraw>
         <Footer>
@@ -88,17 +90,9 @@ describe("<Excalidraw/>", () => {
         </Footer>
       </Excalidraw>,
     ));
-    expect(container.querySelector(".footer-center")).toMatchInlineSnapshot(
-      `
-      <div
-        class="footer-center zen-mode-transition"
-      >
-        <div>
-          This is a custom footer
-        </div>
-      </div>
-    `,
-    );
+    const footerCenter = container.querySelector(".footer-center");
+    expect(footerCenter).toHaveClass("zen-mode-transition");
+    expect(footerCenter).toHaveTextContent("This is a custom footer");
   });
 
   describe("Test gridModeEnabled prop", () => {

@@ -5,6 +5,7 @@ import {
 } from "@excalidraw/common";
 import { CaptureUpdateAction } from "@excalidraw/element";
 import { pointFrom } from "@excalidraw/math";
+import { vi } from "./vitest-shim";
 
 import type { LocalPoint } from "@excalidraw/math";
 

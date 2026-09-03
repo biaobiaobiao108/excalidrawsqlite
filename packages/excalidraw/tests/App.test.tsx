@@ -1,5 +1,5 @@
 import React from "react";
-import { vi } from "vitest";
+import { vi } from "./vitest-shim";
 
 import { reseed } from "@excalidraw/common";
 
@@ -24,23 +24,31 @@ describe("Test <App/>", () => {
       },
     };
 
-    const originalContext = global.HTMLCanvasElement.prototype.getContext("2d");
+    const originalGetContext = global.HTMLCanvasElement.prototype.getContext;
+    const originalContext = document
+      .createElement("canvas")
+      .getContext("2d");
     //@ts-ignore
-    global.HTMLCanvasElement.prototype.getContext = (contextId) => {
-      return {
-        ...originalContext,
-        measureText: () => ({
-          width: 0,
-        }),
+    try {
+      global.HTMLCanvasElement.prototype.getContext = (contextId) => {
+        return {
+          ...originalContext,
+          measureText: () => ({
+            width: 0,
+          }),
+        };
       };
-    };
 
-    await render(<Excalidraw />);
-    expect(
-      queryByTestId(
+      await render(<Excalidraw />);
+      const error = queryByTestId(
         document.querySelector(".excalidraw-modal-container")!,
         "brave-measure-text-error",
-      ),
-    ).toMatchSnapshot();
+      );
+      expect(error).toHaveAttribute("data-testid", "brave-measure-text-error");
+      expect(error).toHaveTextContent("Aggressively Block Fingerprinting");
+    } finally {
+      global.HTMLCanvasElement.prototype.getContext = originalGetContext;
+      delete (global.navigator as any).brave;
+    }
   });
 });

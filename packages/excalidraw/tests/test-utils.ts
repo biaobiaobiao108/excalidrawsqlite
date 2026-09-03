@@ -47,6 +47,7 @@ const renderApp: TestRenderFn = async (ui, options) => {
   // when tests reuse Pointer instances let's reset the last
   // pointer poisitions so there's no leak between tests
   Pointer.resetAll();
+  cleanup();
 
   if (options?.localStorageData) {
     initLocalStorage(options.localStorageData);
@@ -57,6 +58,7 @@ const renderApp: TestRenderFn = async (ui, options) => {
     queries: customQueries,
     ...options,
   });
+
 
   GlobalTestState.renderResult = renderResult;
 
@@ -99,6 +101,7 @@ const renderApp: TestRenderFn = async (ui, options) => {
     },
     { timeout: 5000 },
   );
+
 
   return renderResult;
 };

@@ -1,5 +1,5 @@
 import React from "react";
-import { vi } from "vitest";
+import { vi } from "./vitest-shim";
 import { KEYS, reseed } from "@excalidraw/common";
 import { bindBindingElement } from "@excalidraw/element";
 import "@excalidraw/utils/test-utils";

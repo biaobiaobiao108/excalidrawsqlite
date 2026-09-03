@@ -10,7 +10,7 @@ import {
   reduceToCommonValue,
   FONT_FAMILY,
 } from "@excalidraw/common";
-import { vi } from "vitest";
+import { vi } from "../../excalidraw/tests/vitest-shim";
 
 // Import directly to avoid the @excalidraw/common throttleRAF mock from setupTests.ts.
 import { throttleRAF } from "./utils";

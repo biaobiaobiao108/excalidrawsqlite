@@ -1,6 +1,6 @@
 import * as MermaidToExcalidraw from "@excalidraw/mermaid-to-excalidraw";
 import React from "react";
-import { vi } from "vitest";
+import { vi } from "../vitest-shim";
 
 import type { parseMermaidToExcalidraw } from "@excalidraw/mermaid-to-excalidraw";
 import type { throttleRAF as throttleRAFType } from "@excalidraw/common";

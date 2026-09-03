@@ -25,6 +25,8 @@ export function setupCanvasMock(targetWindow: any = typeof window !== "undefined
     stroke: () => {},
     strokeRect: () => {},
     strokeText: () => {},
+    setLineDash: () => {},
+    getLineDash: () => [],
     translate: () => {},
     scale: () => {},
     rotate: () => {},
@@ -48,12 +50,12 @@ export function setupCanvasMock(targetWindow: any = typeof window !== "undefined
     resetTransform: () => {},
     isPointInPath: () => false,
     isPointInStroke: () => false,
-    canvas: {},
+    canvas: null,
   };
 
   HTMLCanvasElement.prototype.getContext = function (contextType: string) {
     if (contextType === "2d") {
-      return dummyContext as any;
+      return { ...dummyContext, canvas: this } as any;
     }
     return null;
   };

@@ -1,5 +1,37 @@
 import fs from "fs";
 import { JSDOM } from "jsdom";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect as bunExpect,
+  it,
+  test,
+} from "bun:test";
+import { assert } from "chai";
+import { vi } from "./packages/excalidraw/tests/vitest-shim";
+import { mock, vi as bunTestVi } from "bun:test";
+import { mockThrottleRAF } from "./packages/excalidraw/tests/helpers/mocks";
+import { yellow } from "./packages/excalidraw/tests/helpers/colorize";
+import {
+  PolyfillLocalStorage,
+  testPolyfills,
+} from "./packages/excalidraw/tests/helpers/polyfills";
+
+process.env.NODE_ENV = "test";
+
+Object.assign(globalThis, {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect: bunExpect,
+  it,
+  test,
+});
 
 if (typeof window === "undefined") {
   const dom = new JSDOM("<!DOCTYPE html><html><body><div id=\"root\"></div></body></html>", {
@@ -10,36 +42,50 @@ if (typeof window === "undefined") {
   globalThis.window = win;
   globalThis.document = win.document;
   globalThis.navigator = win.navigator;
+  (globalThis as any).devicePixelRatio = win.devicePixelRatio || 1;
+  (globalThis as any).getComputedStyle = win.getComputedStyle.bind(win);
   globalThis.HTMLElement = win.HTMLElement;
+  (globalThis as any).HTMLDivElement = win.HTMLDivElement;
+  (globalThis as any).HTMLInputElement = win.HTMLInputElement;
+  (globalThis as any).HTMLTextAreaElement = win.HTMLTextAreaElement;
+  (globalThis as any).HTMLSelectElement = win.HTMLSelectElement;
+  (globalThis as any).HTMLButtonElement = win.HTMLButtonElement;
+  (globalThis as any).HTMLImageElement = win.HTMLImageElement;
+  (globalThis as any).HTMLAnchorElement = win.HTMLAnchorElement;
+  (globalThis as any).HTMLIFrameElement = win.HTMLIFrameElement;
+  (globalThis as any).SVGElement = win.SVGElement;
   globalThis.HTMLCanvasElement = win.HTMLCanvasElement;
+  globalThis.Blob = win.Blob;
+  (globalThis as any).File = win.File;
+  (globalThis as any).FileReader = win.FileReader;
   globalThis.Node = win.Node;
+  (globalThis as any).NodeFilter = win.NodeFilter;
   globalThis.Element = win.Element;
   globalThis.Event = win.Event;
   globalThis.CustomEvent = win.CustomEvent;
+  (globalThis as any).MouseEvent = win.MouseEvent;
+  (globalThis as any).KeyboardEvent = win.KeyboardEvent;
+  (globalThis as any).FocusEvent = win.FocusEvent;
+  (globalThis as any).WheelEvent = win.WheelEvent;
+  (globalThis as any).Range = win.Range;
+  (globalThis as any).Selection = win.Selection;
   globalThis.DOMParser = win.DOMParser;
   globalThis.XMLSerializer = win.XMLSerializer;
   globalThis.requestAnimationFrame = (cb: any) => setTimeout(cb, 16) as any;
   globalThis.cancelAnimationFrame = (id: any) => clearTimeout(id);
 }
 
-// setupTests.ts
-import { assert } from "chai";
 (globalThis as any).assert = assert;
-import { setupCanvasMock } from "./packages/excalidraw/tests/canvas-mock-shim";
+const { setupCanvasMock } = await import(
+  "./packages/excalidraw/tests/canvas-mock-shim"
+);
 setupCanvasMock(globalThis);
-import "@testing-library/jest-dom";
-import { configure } from "@testing-library/react";
-import { vi } from "./packages/excalidraw/tests/vitest-shim";
-
-import { mockThrottleRAF } from "./packages/excalidraw/tests/helpers/mocks";
-import { yellow } from "./packages/excalidraw/tests/helpers/colorize";
-import {
-  PolyfillLocalStorage,
-  testPolyfills,
-} from "./packages/excalidraw/tests/helpers/polyfills";
+await import("@testing-library/jest-dom");
+const { configure } = await import("@testing-library/react");
 
 Object.assign(globalThis, testPolyfills);
 PolyfillLocalStorage();
+(globalThis as any).localStorage = window.localStorage;
 
 // By default testing-library dumps the entire serialized DOM into the error
 // message whenever a `waitFor`/`getBy*` fails, which floods the test output
@@ -56,8 +102,17 @@ if (!debugDom) {
   });
 }
 
-import * as commonModule from "./packages/common/src/index";
-import { mock } from "bun:test";
+const commonModule = await import("./packages/common/src/index");
+
+Object.assign(bunTestVi, {
+  runOnlyPendingTimersAsync: vi.runOnlyPendingTimersAsync,
+  advanceTimersToNextTimerAsync: vi.advanceTimersToNextTimerAsync,
+});
+
+// Bun 1.4 exposes the Vitest-shaped method for compatibility but does not
+// implement custom snapshot serializers yet. Keep the existing serializer
+// registration harmless while the snapshots continue to use Bun's printer.
+(bunExpect as any).addSnapshotSerializer = () => {};
 
 mock.module("@excalidraw/common", () => ({
   ...commonModule,
@@ -83,28 +138,31 @@ Object.defineProperty(window, "matchMedia", {
   })),
 });
 
+const FontFaceImpl = class {
+  private family: string;
+  private source: string;
+  private descriptors: any;
+  private status: string;
+  private unicodeRange: string;
+
+  constructor(family, source, descriptors) {
+    this.family = family;
+    this.source = source;
+    this.descriptors = descriptors;
+    this.status = "unloaded";
+    this.unicodeRange = "U+0000-00FF";
+  }
+
+  load() {
+    this.status = "loaded";
+  }
+};
+
 Object.defineProperty(window, "FontFace", {
   enumerable: true,
-  value: class {
-    private family: string;
-    private source: string;
-    private descriptors: any;
-    private status: string;
-    private unicodeRange: string;
-
-    constructor(family, source, descriptors) {
-      this.family = family;
-      this.source = source;
-      this.descriptors = descriptors;
-      this.status = "unloaded";
-      this.unicodeRange = "U+0000-00FF";
-    }
-
-    load() {
-      this.status = "loaded";
-    }
-  },
+  value: FontFaceImpl,
 });
+(globalThis as any).FontFace = FontFaceImpl;
 
 Object.defineProperty(document, "fonts", {
   value: {
@@ -155,7 +213,7 @@ console.error = (...args) => {
     _consoleError(
       yellow(
         `<<< WARNING: test "${
-          expect.getState().currentTestName
+          (expect as any).getState?.().currentTestName ?? "unknown"
         }" does not wrap some state update in act() >>>`,
       ),
     );
