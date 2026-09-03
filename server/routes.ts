@@ -82,7 +82,8 @@ export const createRequestHandler = (
       const headers = new Headers({
         "Access-Control-Allow-Methods":
           "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Accept",
+        "Access-Control-Allow-Headers":
+          "Content-Type, Accept, X-Thumbnail-Version",
         "Access-Control-Max-Age": "600",
       });
       const origin = req.headers.get("origin");
@@ -100,6 +101,13 @@ export const createRequestHandler = (
         req,
         new HttpError(403, "CORS_FORBIDDEN", "不允许的跨域来源"),
       );
+    }
+
+    if (pathname === "/__dev_reload" && req.method !== "GET") {
+      return response(runtime, req, null, {
+        status: 405,
+        headers: { Allow: "GET" },
+      });
     }
 
     try {
@@ -969,7 +977,7 @@ export const createRequestHandler = (
         });
       }
 
-      if (pathname === "/__dev_reload") {
+      if (pathname === "/__dev_reload" && req.method === "GET") {
         return handleDevReloadRequest(req);
       }
 

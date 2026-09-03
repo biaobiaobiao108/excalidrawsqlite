@@ -13,6 +13,28 @@ import { isRecord, validateId } from "./validation";
 import type { ServerRuntime } from "./types";
 
 const thumbnailWriteLocks = new Map<string, Promise<void>>();
+const storageMutationLocks = new WeakMap<ServerRuntime, Promise<void>>();
+
+export const withStorageMutationLock = async <T>(
+  runtime: ServerRuntime,
+  task: () => Promise<T>,
+): Promise<T> => {
+  const previous = storageMutationLocks.get(runtime) || Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  storageMutationLocks.set(runtime, current);
+  await previous;
+  try {
+    return await task();
+  } finally {
+    release();
+    if (storageMutationLocks.get(runtime) === current) {
+      storageMutationLocks.delete(runtime);
+    }
+  }
+};
 
 export const withThumbnailWriteLock = async <T>(
   thumbnailId: string,
@@ -110,6 +132,7 @@ export const upsertFile = async (
   createdAt?: number,
   updatedAt?: number,
 ) => {
+  return withStorageMutationLock(runtime, async () => {
   if (data.byteLength > runtime.config.maxFileBytes) {
     const limit = runtime.config.maxFileBytes / (1024 * 1024);
     const formattedLimit = Number.isInteger(limit)
@@ -187,6 +210,7 @@ export const upsertFile = async (
     createdAt: previous?.created_at || createdAt || now,
     updatedAt: now,
   };
+  });
 };
 
 export const decodeDataUrl = (value: unknown, expectedMimeType: string) => {
@@ -255,28 +279,35 @@ export const syncSceneFileReferences = (
 };
 
 export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
-  const cutoff = Date.now() - ORPHAN_FILE_GRACE_MS;
-  const rows = runtime.db
-    .query(
-      `SELECT id, storage_path FROM files
-       WHERE updated_at < ?
-         AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)
-         AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)`,
-    )
-    .all(cutoff) as Array<{ id: string; storage_path: string | null }>;
+  await withStorageMutationLock(runtime, async () => {
+    const cutoff = Date.now() - ORPHAN_FILE_GRACE_MS;
+    const rows = runtime.db
+      .query(
+        `SELECT id, storage_path, updated_at FROM files
+         WHERE updated_at < ?
+           AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)
+           AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)`,
+      )
+      .all(cutoff) as Array<{
+      id: string;
+      storage_path: string | null;
+      updated_at: number;
+    }>;
 
-  for (const row of rows) {
-    if (row.storage_path) {
-      await fs.promises.rm(getFilePath(runtime, row.id), { force: true });
+    for (const row of rows) {
+      const deleted = runtime.db.run(
+        `DELETE FROM files
+         WHERE id = ?
+           AND updated_at = ?
+           AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)
+           AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)`,
+        [row.id, row.updated_at],
+      );
+      if (deleted.changes && row.storage_path) {
+        await fs.promises.rm(getFilePath(runtime, row.id), { force: true });
+      }
     }
-    runtime.db.run(
-      `DELETE FROM files
-       WHERE id = ?
-         AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)
-         AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)`,
-      [row.id],
-    );
-  }
+  });
 };
 
 export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {

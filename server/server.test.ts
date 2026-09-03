@@ -80,6 +80,35 @@ afterEach(async () => {
 });
 
 describe("cloud persistence server", () => {
+  it("allows the thumbnail version header in CORS preflight", async () => {
+    const { handler } = createTestRuntime({
+      CORS_ORIGIN: "https://whiteboard.example",
+    });
+    const response = await handler(
+      new Request("http://localhost/api/scenes/scene/thumbnail", {
+        method: "OPTIONS",
+        headers: {
+          Origin: "https://whiteboard.example",
+          "Access-Control-Request-Method": "GET",
+          "Access-Control-Request-Headers": "x-thumbnail-version",
+        },
+      }),
+    );
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-headers")).toContain(
+      "X-Thumbnail-Version",
+    );
+  });
+
+  it("only exposes the development reload stream over GET", async () => {
+    const { handler } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
+    const response = await request(handler, "/__dev_reload", {
+      method: "POST",
+    });
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("GET");
+  });
+
   it("requires explicit production authentication configuration", () => {
     expect(() => createServerConfig({ NODE_ENV: "production" })).toThrow();
     expect(
