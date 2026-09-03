@@ -137,6 +137,13 @@ export class ExcalidrawFontFace {
       return [uri];
     }
 
+    // Bun exposes imported binary assets as absolute filesystem paths while
+    // running tests on Windows. Convert those paths before URL resolution;
+    // otherwise `new URL("D:\\...", base)` treats `d:` as a URL protocol.
+    if (/^[a-z]:[\\/]/i.test(uri)) {
+      return [new URL(`file:///${uri.replace(/\\/g, "/")}`)];
+    }
+
     if (uri.startsWith(LOCAL_FONT_PROTOCOL)) {
       // no url for local fonts
       return [];
