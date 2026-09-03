@@ -58,6 +58,21 @@ interface Blob {
 
 declare module "*.scss";
 
+declare module "*.woff2" {
+  const src: string;
+  export default src;
+}
+
+declare module "*.woff" {
+  const src: string;
+  export default src;
+}
+
+declare module "*.ttf" {
+  const src: string;
+  export default src;
+}
+
 // --------------------------------------------------------------------------—
 // ensure Uint8Array isn't assignable to ArrayBuffer
 // (due to TS structural typing)
