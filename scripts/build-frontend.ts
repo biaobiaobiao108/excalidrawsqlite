@@ -29,7 +29,23 @@ export async function buildFrontend(options: BuildOptions = {}) {
   // imported font assets itself; only preserve the dynamically hosted font
   // license in the static output instead of copying the whole source tree.
   if (fs.existsSync(publicDir)) {
-    fs.cpSync(publicDir, outDir, { recursive: true });
+    for (const entry of fs.readdirSync(publicDir, { withFileTypes: true })) {
+      // The browser bundle owns all runtime font assets. These legacy public
+      // copies are only needed by the Node canvas entrypoint and otherwise
+      // duplicate files already emitted or embedded by Bun.
+      if (
+        entry.isFile() &&
+        /\.(?:woff2?|ttf|otf)$/i.test(entry.name)
+      ) {
+        continue;
+      }
+
+      fs.cpSync(
+        path.join(publicDir, entry.name),
+        path.join(outDir, entry.name),
+        { recursive: true },
+      );
+    }
   }
   const fontLicense = path.join(
     projectRoot,
