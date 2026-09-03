@@ -4,8 +4,6 @@ export function setupCanvasMock(targetWindow: any = typeof window !== "undefined
   if (!CanvasElement) return;
 
   const dummyContext = {
-    fillRect: () => {},
-    clearRect: () => {},
     getImageData: (x = 0, y = 0, w = 1, h = 1) => ({
       data: new Uint8ClampedArray(w * h * 4),
       width: w,
@@ -53,18 +51,39 @@ export function setupCanvasMock(targetWindow: any = typeof window !== "undefined
     canvas: null,
   };
 
-  HTMLCanvasElement.prototype.getContext = function (contextType: string) {
+  CanvasElement.prototype.getContext = function (contextType: string) {
     if (contextType === "2d") {
-      return { ...dummyContext, canvas: this } as any;
+      const events: Array<{ type: string; props: Record<string, unknown> }> =
+        [];
+      const record = (type: string, props: Record<string, unknown>) => {
+        events.push({ type, props });
+      };
+
+      return {
+        ...dummyContext,
+        canvas: this,
+        fillRect: (x: number, y: number, width: number, height: number) =>
+          record("fillRect", { x, y, width, height }),
+        clearRect: (x: number, y: number, width: number, height: number) =>
+          record("clearRect", { x, y, width, height }),
+        clip: (...args: unknown[]) =>
+          record("clip", {
+            fillRule: typeof args.at(-1) === "string" ? args.at(-1) : undefined,
+          }),
+        __getEvents: () => events,
+        __clearEvents: () => {
+          events.length = 0;
+        },
+      } as any;
     }
     return null;
   };
 
-  HTMLCanvasElement.prototype.toDataURL = function () {
+  CanvasElement.prototype.toDataURL = function () {
     return "data:image/png;base64,";
   };
 
-  HTMLCanvasElement.prototype.toBlob = function (callback: any) {
+  CanvasElement.prototype.toBlob = function (callback: any) {
     callback(new Blob([], { type: "image/png" }));
   };
 }
