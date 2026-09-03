@@ -958,8 +958,9 @@ export const textWysiwyg = ({
       temporarilyDisableSubmit();
     } else if (
       event.target instanceof ownerWindow.HTMLCanvasElement &&
-      // Vitest simply ignores stopPropagation, capture-mode, or rAF
-      // so without introducing crazier hacks, nothing we can do
+      // The DOM test harness cannot reproduce the browser's pointerdown and
+      // animation-frame timing here without introducing brittle test-only
+      // behavior.
       !isTestEnv()
     ) {
       // On mobile, blur event doesn't seem to always fire correctly,
