@@ -13,7 +13,6 @@ import {
 } from "./files";
 import { createRequestHandler } from "./routes";
 import { createRuntime } from "./runtime";
-import { startDevWatcher } from "./dev-server";
 import { resolveProjectPath } from "./paths";
 
 export { createServerConfig } from "./config";
@@ -60,6 +59,7 @@ export const startServer = async () => {
 
   let closeDevWatcher: (() => void) | null = null;
   if (isDev) {
+    const { startDevWatcher } = await import("./dev-server");
     closeDevWatcher = await startDevWatcher();
   }
 

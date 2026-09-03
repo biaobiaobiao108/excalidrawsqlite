@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { broadcastDevReload } from "./dev-reload";
-import { buildFrontend } from "../scripts/build-frontend";
 import { PROJECT_ROOT } from "./paths";
 
 export const startDevWatcher = async (): Promise<() => void> => {
+  const { buildFrontend } = await import("../scripts/build-frontend");
   console.log("[Dev] 📦 正在生成开发前端构建...");
   await buildFrontend({ isDev: true });
 
