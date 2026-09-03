@@ -299,6 +299,9 @@ bun run test:app
 # 运行生产构建与产物体积预算检查
 bun run build
 
+# 运行真实浏览器 Playwright E2E 冒烟测试
+bun run test:e2e
+
 # 一键运行全量质量测试 (类型、语法、后端与前端)
 bun run test:all
 ```

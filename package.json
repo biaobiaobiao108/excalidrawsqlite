@@ -9,6 +9,7 @@
   ],
   "devDependencies": {
     "@babel/preset-env": "7.26.9",
+    "@playwright/test": "1.62.1",
     "@types/bun": "1.4.0",
     "@types/chai": "4.3.0",
     "@types/lodash.throttle": "4.1.7",
@@ -48,6 +49,8 @@
     "test:all": "bun run test:typecheck && bun run test:code && bun run test:server && bun run test:app",
     "test:server": "bun test --max-concurrency=1 server/server.test.ts",
     "test:app": "bun test --max-concurrency=1 packages/excalidraw/tests",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "test:code": "eslint --max-warnings=0 --ext .js,.ts,.tsx .",
     "test:typecheck": "tsc",
     "test": "bun run test:app",
