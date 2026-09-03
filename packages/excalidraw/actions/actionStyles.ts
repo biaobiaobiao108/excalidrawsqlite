@@ -38,6 +38,10 @@ import { register } from "./register";
 // `copiedStyles` is exported only for tests.
 export let copiedStyles: string = "{}";
 
+export const resetCopiedStyles = () => {
+  copiedStyles = "{}";
+};
+
 export const actionCopyStyles = register({
   name: "copyStyles",
   label: "labels.copyStyles",

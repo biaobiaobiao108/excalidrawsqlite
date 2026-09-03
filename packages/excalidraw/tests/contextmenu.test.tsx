@@ -5,7 +5,7 @@ import { KEYS, STROKE_WIDTH, reseed } from "@excalidraw/common";
 
 import { setDateTimeForTests } from "@excalidraw/common";
 
-import { copiedStyles } from "../actions/actionStyles";
+import { copiedStyles, resetCopiedStyles } from "../actions/actionStyles";
 import { Excalidraw } from "../index";
 import * as StaticScene from "../renderer/staticScene";
 
@@ -49,6 +49,7 @@ unmountComponent();
 const renderStaticScene = vi.spyOn(StaticScene, "renderStaticScene");
 beforeEach(() => {
   localStorage.clear();
+  resetCopiedStyles();
   renderStaticScene.mockClear();
   reseed(7);
 });
