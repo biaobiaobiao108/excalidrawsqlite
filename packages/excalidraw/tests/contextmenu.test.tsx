@@ -42,6 +42,16 @@ const checkpoint = (name: string) => {
   checkpointHistory(h.history, name);
 };
 
+const testWithCheckpoint = (
+  name: string,
+  callback: () => void | Promise<void>,
+) => {
+  it(name, async () => {
+    await callback();
+    checkpoint("end of test");
+  });
+};
+
 const mouse = new Pointer("mouse");
 
 unmountComponent();
@@ -75,13 +85,11 @@ describe("contextMenu element", () => {
   });
 
   afterEach(() => {
-    checkpoint("end of test");
-
     mouse.reset();
     mouse.down(0, 0);
   });
 
-  it("shows context menu for canvas", () => {
+  testWithCheckpoint("shows context menu for canvas", () => {
     fireEvent.contextMenu(GlobalTestState.interactiveCanvas, {
       button: 2,
       clientX: 1,
@@ -106,7 +114,7 @@ describe("contextMenu element", () => {
     });
   });
 
-  it("shows context menu for element", () => {
+  testWithCheckpoint("shows context menu for element", () => {
     UI.clickTool("rectangle");
     mouse.down(0, 0);
     mouse.up(10, 10);
@@ -149,7 +157,7 @@ describe("contextMenu element", () => {
     });
   });
 
-  it("shows context menu for element", () => {
+  testWithCheckpoint("shows context menu for element", () => {
     const rect1 = API.createElement({
       type: "rectangle",
       x: 0,
@@ -189,7 +197,7 @@ describe("contextMenu element", () => {
     expect(API.getSelectedElement().id).toBe(rect2.id);
   });
 
-  it("shows 'Group selection' in context menu for multiple selected elements", () => {
+  testWithCheckpoint("shows 'Group selection' in context menu for multiple selected elements", () => {
     UI.clickTool("rectangle");
     mouse.down(10, 10);
     mouse.up(10, 10);
@@ -242,7 +250,7 @@ describe("contextMenu element", () => {
     });
   });
 
-  it("shows 'Ungroup selection' in context menu for group inside selected elements", () => {
+  testWithCheckpoint("shows 'Ungroup selection' in context menu for group inside selected elements", () => {
     UI.clickTool("rectangle");
     mouse.down(10, 10);
     mouse.up(10, 10);
@@ -300,7 +308,7 @@ describe("contextMenu element", () => {
     });
   });
 
-  it("selecting 'Copy styles' in context menu copies styles", () => {
+  testWithCheckpoint("selecting 'Copy styles' in context menu copies styles", () => {
     UI.clickTool("rectangle");
     mouse.down(0, 0);
     mouse.up(10, 10);
@@ -318,7 +326,7 @@ describe("contextMenu element", () => {
     expect(element).toEqual(API.getSelectedElement());
   });
 
-  it("selecting 'Paste styles' in context menu pastes styles", () => {
+  testWithCheckpoint("selecting 'Paste styles' in context menu pastes styles", () => {
     UI.clickTool("rectangle");
     mouse.down(10, 10);
     mouse.up(20, 20);
@@ -385,7 +393,7 @@ describe("contextMenu element", () => {
     expect(firstRect.opacity).toBe(60);
   });
 
-  it("selecting 'Delete' in context menu deletes element", () => {
+  testWithCheckpoint("selecting 'Delete' in context menu deletes element", () => {
     UI.clickTool("rectangle");
     mouse.down(0, 0);
     mouse.up(10, 10);
@@ -401,7 +409,7 @@ describe("contextMenu element", () => {
     expect(h.elements[0].isDeleted).toBe(true);
   });
 
-  it("selecting 'Add to library' in context menu adds element to library", async () => {
+  testWithCheckpoint("selecting 'Add to library' in context menu adds element to library", async () => {
     UI.clickTool("rectangle");
     mouse.down(0, 0);
     mouse.up(10, 10);
@@ -420,7 +428,7 @@ describe("contextMenu element", () => {
     });
   });
 
-  it("selecting 'Duplicate' in context menu duplicates element", () => {
+  testWithCheckpoint("selecting 'Duplicate' in context menu duplicates element", () => {
     UI.clickTool("rectangle");
     mouse.down(0, 0);
     mouse.up(10, 10);
@@ -456,7 +464,7 @@ describe("contextMenu element", () => {
     expect(rect1).toEqual(rect2);
   });
 
-  it("selecting 'Send backward' in context menu sends element backward", () => {
+  testWithCheckpoint("selecting 'Send backward' in context menu sends element backward", () => {
     UI.clickTool("rectangle");
     mouse.down(10, 10);
     mouse.up(20, 20);
@@ -478,7 +486,7 @@ describe("contextMenu element", () => {
     expect(elementsBefore[1].id).toEqual(h.elements[0].id);
   });
 
-  it("selecting 'Bring forward' in context menu brings element forward", () => {
+  testWithCheckpoint("selecting 'Bring forward' in context menu brings element forward", () => {
     UI.clickTool("rectangle");
     mouse.down(10, 10);
     mouse.up(20, 20);
@@ -500,7 +508,7 @@ describe("contextMenu element", () => {
     expect(elementsBefore[1].id).toEqual(h.elements[0].id);
   });
 
-  it("selecting 'Send to back' in context menu sends element to back", () => {
+  testWithCheckpoint("selecting 'Send to back' in context menu sends element to back", () => {
     UI.clickTool("rectangle");
     mouse.down(10, 10);
     mouse.up(20, 20);
@@ -521,7 +529,7 @@ describe("contextMenu element", () => {
     expect(elementsBefore[1].id).toEqual(h.elements[0].id);
   });
 
-  it("selecting 'Bring to front' in context menu brings element to front", () => {
+  testWithCheckpoint("selecting 'Bring to front' in context menu brings element to front", () => {
     UI.clickTool("rectangle");
     mouse.down(10, 10);
     mouse.up(20, 20);
@@ -542,7 +550,7 @@ describe("contextMenu element", () => {
     expect(elementsBefore[0].id).toEqual(h.elements[1].id);
   });
 
-  it("selecting 'Group selection' in context menu groups selected elements", () => {
+  testWithCheckpoint("selecting 'Group selection' in context menu groups selected elements", () => {
     UI.clickTool("rectangle");
     mouse.down(10, 10);
     mouse.up(20, 20);
@@ -568,7 +576,7 @@ describe("contextMenu element", () => {
     expect(h.elements[1].groupIds).toEqual(selectedGroupIds);
   });
 
-  it("selecting 'Ungroup selection' in context menu ungroups selected group", () => {
+  testWithCheckpoint("selecting 'Ungroup selection' in context menu ungroups selected group", () => {
     UI.clickTool("rectangle");
     mouse.down(10, 10);
     mouse.up(20, 20);
@@ -602,7 +610,7 @@ describe("contextMenu element", () => {
     expect(h.elements[1].groupIds).toHaveLength(0);
   });
 
-  it("right-clicking on a group should select whole group", () => {
+  testWithCheckpoint("right-clicking on a group should select whole group", () => {
     const rectangle1 = API.createElement({
       type: "rectangle",
       width: 100,
