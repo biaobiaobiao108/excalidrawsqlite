@@ -32,7 +32,7 @@ export {
 export { createRequestHandler } from "./routes";
 export type { RequestAddressResolver, ServerConfig, ServerRuntime } from "./types";
 
-const startServer = () => {
+export const startServer = () => {
   const dataDir = path.resolve(process.env.DATA_DIR || "./data");
   const dbPath = path.resolve(
     process.env.DB_PATH || path.join(dataDir, "excalidraw.db"),
@@ -111,7 +111,7 @@ const startServer = () => {
   setInterval(runMaintenance, 60 * 60 * 1000);
 
   const handleShutdown = () => {
-    process.stdout.write("\n[Server] 正在优雅关闭...\n");
+    console.log("\n[Server] 正在优雅关闭...");
     if (closeDevWatcher) {
       try {
         closeDevWatcher();
@@ -135,14 +135,12 @@ const startServer = () => {
   process.on("SIGINT", handleShutdown);
   process.on("SIGTERM", handleShutdown);
 
-  process.stdout.write(`[Database] SQLite initialized at: ${dbPath}\n`);
-  process.stdout.write(`[Files] Persistent file directory: ${filesDir}\n`);
+  console.log(`[Database] SQLite initialized at: ${dbPath}`);
+  console.log(`[Files] Persistent file directory: ${filesDir}`);
   if (isDev) {
-    process.stdout.write(`⚡ Development mode active (Live Reload enabled)\n`);
+    console.log(`⚡ Development mode active (Live Reload enabled)`);
   }
-  process.stdout.write(
-    `🚀 Excalidraw server is running at http://localhost:${port}\n`,
-  );
+  console.log(`🚀 Excalidraw server is running at http://localhost:${port}`);
 };
 
 if (import.meta.main) {
