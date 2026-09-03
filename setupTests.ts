@@ -1,4 +1,5 @@
 import fs from "fs";
+import { pathToFileURL } from "node:url";
 import { JSDOM } from "jsdom";
 import {
   afterAll,
@@ -43,6 +44,8 @@ if (typeof window === "undefined") {
   globalThis.window = win;
   globalThis.document = win.document;
   globalThis.navigator = win.navigator;
+  globalThis.location = win.location;
+  globalThis.history = win.history;
   (globalThis as any).devicePixelRatio = win.devicePixelRatio || 1;
   (globalThis as any).getComputedStyle = win.getComputedStyle.bind(win);
   globalThis.HTMLElement = win.HTMLElement;
@@ -72,6 +75,11 @@ if (typeof window === "undefined") {
   (globalThis as any).Selection = win.Selection;
   globalThis.DOMParser = win.DOMParser;
   globalThis.XMLSerializer = win.XMLSerializer;
+  class Path2DImpl {
+    constructor(public readonly path?: string) {}
+  }
+  (globalThis as any).Path2D = Path2DImpl;
+  win.Path2D = Path2DImpl;
   globalThis.requestAnimationFrame = (cb: any) => setTimeout(cb, 16) as any;
   globalThis.cancelAnimationFrame = (id: any) => clearTimeout(id);
   win.setTimeout = globalThis.setTimeout.bind(globalThis);
@@ -169,7 +177,7 @@ Object.defineProperty(document, "fonts", {
 });
 
 Object.defineProperty(window, "EXCALIDRAW_ASSET_PATH", {
-  value: `file://${__dirname}/`,
+  value: pathToFileURL(`${__dirname}/`).toString(),
 });
 
 // mock the font fetch only, so that everything else, as font subsetting, can run inside of the (snapshot) tests
