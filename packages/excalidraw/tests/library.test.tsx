@@ -213,13 +213,15 @@ describe("library", () => {
     await waitFor(() => {
       expect(h.elements).toEqual([
         expect.objectContaining({
+          id: expect.not.stringMatching(/^elem1$/),
           [ORIG_ID]: "elem1",
         }),
         expect.objectContaining({
           id: expect.not.stringMatching(/^elem1$/),
-          [ORIG_ID]: expect.not.stringMatching(/^\w+$/),
+          [ORIG_ID]: "elem1",
         }),
       ]);
+      expect(h.elements[0].id).not.toBe(h.elements[1].id);
     });
   });
 

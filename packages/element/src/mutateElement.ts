@@ -1,4 +1,5 @@
 import {
+  ORIG_ID,
   getSizeFromPoints,
   randomInteger,
   getUpdatedTimestamp,
@@ -168,13 +169,23 @@ export const newElementWith = <TElement extends ExcalidrawElement>(
     return element;
   }
 
-  return {
+  const nextElement = {
     ...element,
     ...updates,
     version: updates.version ?? element.version + 1,
     versionNonce: updates.versionNonce ?? randomInteger(),
     updated: getUpdatedTimestamp(),
   };
+
+  if (ORIG_ID in element) {
+    Object.defineProperty(nextElement, ORIG_ID, {
+      value: (element as any)[ORIG_ID],
+      writable: false,
+      enumerable: false,
+    });
+  }
+
+  return nextElement;
 };
 
 /**

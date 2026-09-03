@@ -4752,10 +4752,13 @@ class App extends React.Component<AppProps, AppState> {
     retainSeed?: boolean;
     fit?: SetViewportOptions["fit"];
     preserveFrameChildrenOrder?: boolean;
+    alreadyDuplicated?: boolean;
   }) => {
-    const elements = restoreElements(opts.elements, null, {
-      deleteInvisibleElements: true,
-    });
+    const elements = opts.alreadyDuplicated
+      ? opts.elements
+      : restoreElements(opts.elements, null, {
+          deleteInvisibleElements: true,
+        });
     const [minX, minY, maxX, maxY] = getCommonBounds(elements);
 
     const elementsCenterX = distance(minX, maxX) / 2;
@@ -4784,17 +4787,21 @@ class App extends React.Component<AppProps, AppState> {
 
     const [gridX, gridY] = getGridPoint(dx, dy, this.getEffectiveGridSize());
 
-    const { duplicatedElements } = duplicateElements({
-      type: "everything",
-      elements: elements.map((element) => {
-        return newElementWith(element, {
-          x: element.x + gridX - minX,
-          y: element.y + gridY - minY,
-        });
-      }),
-      randomizeSeed: !opts.retainSeed,
-      preserveFrameChildrenOrder: opts.preserveFrameChildrenOrder,
+    const positionedElements = elements.map((element) => {
+      return newElementWith(element, {
+        x: element.x + gridX - minX,
+        y: element.y + gridY - minY,
+      });
     });
+
+    const duplicatedElements = opts.alreadyDuplicated
+      ? positionedElements
+      : duplicateElements({
+          type: "everything",
+          elements: positionedElements,
+          randomizeSeed: !opts.retainSeed,
+          preserveFrameChildrenOrder: opts.preserveFrameChildrenOrder,
+        }).duplicatedElements;
 
     const prevElements = this.scene.getElementsIncludingDeleted();
     let nextElements: ExcalidrawElement[] = [
@@ -13126,6 +13133,7 @@ class App extends React.Component<AppProps, AppState> {
             elements: distributeLibraryItemsOnSquareGrid(libraryItems),
             position: event,
             files: null,
+            alreadyDuplicated: true,
           });
         }
       } catch (error: any) {
