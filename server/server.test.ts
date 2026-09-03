@@ -879,6 +879,8 @@ describe("cloud persistence server", () => {
       path.join(staticDir, "assets", "valid.js"),
       "export {};",
     );
+    await fs.writeFile(path.join(staticDir, "chunk-a1b2c3d4.js"), "export {};");
+    await fs.writeFile(path.join(staticDir, "service-worker.js"), "self;");
     runtime.staticDir = staticDir;
 
     const page = await request(handler, "/cloud/scene", {
@@ -897,6 +899,12 @@ describe("cloud persistence server", () => {
     });
     expect(asset.status).toBe(200);
     expect(asset.headers.get("cache-control")).toContain("immutable");
+
+    const hashedRootAsset = await request(handler, "/chunk-a1b2c3d4.js");
+    expect(hashedRootAsset.headers.get("cache-control")).toContain("immutable");
+
+    const legacyWorker = await request(handler, "/service-worker.js");
+    expect(legacyWorker.headers.get("cache-control")).toBe("no-store");
   });
 
   it("reports an unhealthy storage directory", async () => {

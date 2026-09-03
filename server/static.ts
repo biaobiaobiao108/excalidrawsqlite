@@ -46,7 +46,15 @@ export const getStaticCacheControl = (pathname: string) => {
   if (pathname === "/sw.js" || pathname === "/service-worker.js") {
     return "no-store";
   }
-  if (pathname.startsWith("/assets/") || pathname.startsWith("/fonts/")) {
+  const filename = path.posix.basename(pathname);
+  const hasContentHash = /^(?:chunk-[a-z0-9]+|.+-[a-z0-9]{8,})\.[a-z0-9]+$/i.test(
+    filename,
+  );
+  if (
+    pathname.startsWith("/assets/") ||
+    pathname.startsWith("/fonts/") ||
+    hasContentHash
+  ) {
     return "public, max-age=31536000, immutable";
   }
   return "public, max-age=3600";
