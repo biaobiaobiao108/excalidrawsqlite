@@ -44,7 +44,17 @@ const checkpoint = (name: string) => {
 
 const testWithCheckpoint = (
   name: string,
-  callback: () => void | Promise<void>,
+  callback: () => void,
+) => {
+  it(name, () => {
+    callback();
+    checkpoint("end of test");
+  });
+};
+
+const testWithAsyncCheckpoint = (
+  name: string,
+  callback: () => Promise<void>,
 ) => {
   it(name, async () => {
     await callback();
@@ -409,7 +419,7 @@ describe("contextMenu element", () => {
     expect(h.elements[0].isDeleted).toBe(true);
   });
 
-  testWithCheckpoint("selecting 'Add to library' in context menu adds element to library", async () => {
+  testWithAsyncCheckpoint("selecting 'Add to library' in context menu adds element to library", async () => {
     UI.clickTool("rectangle");
     mouse.down(0, 0);
     mouse.up(10, 10);
