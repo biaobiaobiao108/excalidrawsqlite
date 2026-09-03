@@ -33,7 +33,7 @@ export function setupCanvasMock(targetWindow: any = typeof window !== "undefined
     arc: () => {},
     fill: () => {},
     measureText: (text: string) => ({
-      width: text.length * 10,
+      width: text.length,
       actualBoundingBoxAscent: 10,
       actualBoundingBoxDescent: 2,
     }),
