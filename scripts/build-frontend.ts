@@ -17,9 +17,14 @@ if (fs.existsSync(outDir)) {
 }
 fs.mkdirSync(outDir, { recursive: true });
 
-// 2. Copy all static files from public/ directly to build/
+// 2. Copy static files from public/ directly to build/, and fonts to build/fonts/
 if (fs.existsSync(publicDir)) {
   fs.cpSync(publicDir, outDir, { recursive: true });
+}
+const fontsSrcDir = path.join(projectRoot, "packages", "excalidraw", "fonts");
+const fontsDestDir = path.join(outDir, "fonts");
+if (fs.existsSync(fontsSrcDir)) {
+  fs.cpSync(fontsSrcDir, fontsDestDir, { recursive: true });
 }
 
 // 3. Sass compiler plugin for .scss files
@@ -76,15 +81,28 @@ const gitSha = (process.env.BUILD_SHA || process.env.VITE_APP_GIT_SHA || "").tri
 const buildResult = await Bun.build({
   entrypoints: [path.join(appDir, "index.html")],
   outdir: outDir,
+  publicPath: "/",
   target: "browser",
   minify: true,
   splitting: true,
   plugins: [sassPlugin, htmlPlugin],
   define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+    "process.env.VITE_APP_GIT_SHA": JSON.stringify(gitSha),
+    "import.meta.env.NODE_ENV": JSON.stringify("production"),
     "import.meta.env.PROD": "true",
     "import.meta.env.DEV": "false",
+    "import.meta.env.PKG_NAME": JSON.stringify("@excalidraw/excalidraw"),
+    "import.meta.env.PKG_VERSION": JSON.stringify("0.18.0"),
     "import.meta.env.VITE_APP_GIT_SHA": JSON.stringify(gitSha),
-    "process.env.VITE_APP_GIT_SHA": JSON.stringify(gitSha),
+    "import.meta.env": JSON.stringify({
+      PROD: true,
+      DEV: false,
+      NODE_ENV: "production",
+      PKG_NAME: "@excalidraw/excalidraw",
+      PKG_VERSION: "0.18.0",
+      VITE_APP_GIT_SHA: gitSha,
+    }),
   },
 });
 
@@ -113,6 +131,9 @@ if (fs.existsSync(generatedHtmlPath)) {
     "<!-- PLACEHOLDER:EXCALIDRAW_APP_FONTS -->",
     preloadFontTag,
   );
+
+  // Strip crossorigin attributes from same-origin bundles to avoid unnecessary CORS mode
+  finalHtml = finalHtml.replace(/\scrossorigin(="[^"]*")?/g, "");
 
   fs.writeFileSync(generatedHtmlPath, finalHtml, "utf8");
 }

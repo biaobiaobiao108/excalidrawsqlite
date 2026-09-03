@@ -9,8 +9,9 @@ export class ExcalidrawFontFace {
   public readonly fontFace: FontFace;
 
   private static readonly ASSETS_FALLBACK_URL = `https://esm.sh/${
-    import.meta.env.PKG_NAME
-      ? `${import.meta.env.PKG_NAME}@${import.meta.env.PKG_VERSION}` // is provided during package build
+    typeof import.meta !== "undefined" &&
+    (import.meta as any).env?.PKG_NAME
+      ? `${(import.meta as any).env.PKG_NAME}@${(import.meta as any).env.PKG_VERSION}` // is provided during package build
       : "@excalidraw/excalidraw" // fallback to the latest package version (i.e. for app)
   }/dist/prod/`;
 
