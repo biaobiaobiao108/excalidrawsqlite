@@ -1,7 +1,6 @@
 import { act, queryByTestId } from "@testing-library/react";
 import React from "react";
-import { mock, vi } from "bun:test";
-import * as browserFsAccess from "browser-fs-access";
+import { vi } from "bun:test";
 
 import { MIME_TYPES, ORIG_ID } from "@excalidraw/common";
 
@@ -14,6 +13,7 @@ import type {
 
 import { parseLibraryJSON } from "../data/blob";
 import { serializeLibraryAsJSON } from "../data/json";
+import * as filesystem from "../data/filesystem";
 import { distributeLibraryItemsOnSquareGrid } from "../data/library";
 import { Excalidraw } from "../index";
 
@@ -25,7 +25,7 @@ import type { LibraryItem, LibraryItems } from "../types";
 
 const { h } = window;
 
-const mockNativeFileOpen = vi.fn();
+const mockNativeFileOpen = vi.spyOn(filesystem, "fileOpen");
 
 const libraryJSONPromise = API.readFile(
   "./fixtures/fixture_library.excalidrawlib",
@@ -42,12 +42,7 @@ const mockLibraryFilePromise = new Promise<Blob>(async (resolve, reject) => {
   }
 });
 
-mockNativeFileOpen.mockImplementation(() => mockLibraryFilePromise);
-
-mock.module("browser-fs-access", () => ({
-    ...browserFsAccess,
-    fileOpen: mockNativeFileOpen,
-}));
+mockNativeFileOpen.mockImplementation(() => mockLibraryFilePromise as never);
 
 describe("library items inserting", () => {
   beforeEach(async () => {
