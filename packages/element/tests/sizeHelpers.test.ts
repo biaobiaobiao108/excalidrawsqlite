@@ -1,19 +1,6 @@
-import { vi } from "vitest";
-
 import { getPerfectElementSize } from "../src/sizeHelpers";
 
 const EPSILON_DIGITS = 3;
-// Needed so that we can mock the value of constants which is done in
-// below tests. In Jest this wasn't needed as global override was possible
-// but vite doesn't allow that hence we need to mock
-vi.mock(
-  "@excalidraw/common",
-  //@ts-ignore
-  async (importOriginal) => {
-    const module: any = await importOriginal();
-    return { ...module };
-  },
-);
 describe("getPerfectElementSize", () => {
   it("should return height:0 if `elementType` is line and locked angle is 0", () => {
     const { height, width } = getPerfectElementSize("line", 149, 10);

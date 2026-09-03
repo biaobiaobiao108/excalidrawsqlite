@@ -1,5 +1,5 @@
 import React from "react";
-import { vi } from "vitest";
+import { vi } from "../../excalidraw/tests/vitest-shim";
 
 import { KEYS, cloneJSON } from "@excalidraw/common";
 

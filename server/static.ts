@@ -39,10 +39,12 @@ export const getStaticCacheControl = (pathname: string) => {
     pathname === "/" ||
     pathname.endsWith("/index.html") ||
     pathname === "/sw.js" ||
-    pathname === "/service-worker.js" ||
     pathname === "/manifest.webmanifest"
   ) {
     return "no-cache";
+  }
+  if (pathname === "/sw.js" || pathname === "/service-worker.js") {
+    return "no-store";
   }
   if (pathname.startsWith("/assets/") || pathname.startsWith("/fonts/")) {
     return "public, max-age=31536000, immutable";

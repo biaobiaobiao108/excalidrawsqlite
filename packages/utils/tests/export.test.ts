@@ -1,7 +1,7 @@
 import { MIME_TYPES } from "@excalidraw/common";
 import * as mockedSceneExportUtils from "@excalidraw/excalidraw/scene/export";
 import { diagramFactory } from "@excalidraw/excalidraw/tests/fixtures/diagramFixture";
-import { vi } from "vitest";
+import { vi } from "../../excalidraw/tests/vitest-shim";
 
 import * as utils from "../src";
 

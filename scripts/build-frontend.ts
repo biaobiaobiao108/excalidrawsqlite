@@ -95,11 +95,6 @@ export async function buildFrontend(options: BuildOptions = {}) {
           /href="\/favicon-16x16\.png"/g,
           'href="../public/favicon-16x16.png"',
         );
-        content = content.replace(
-          /<script src="\/dev-live-reload-guard\.js"><\/script>/g,
-          "",
-        );
-
         return {
           contents: content,
           loader: "html",
