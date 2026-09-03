@@ -26,7 +26,12 @@ function buildDev(config) {
     ...config,
     sourcemap: true,
     define: {
-      "import.meta.env": JSON.stringify({ DEV: true }),
+      "import.meta.env": JSON.stringify({
+        MODE: "development",
+        NODE_ENV: "development",
+        DEV: true,
+        PROD: false,
+      }),
     },
   });
 }
@@ -36,7 +41,12 @@ function buildProd(config) {
     ...config,
     minify: true,
     define: {
-      "import.meta.env": JSON.stringify({ PROD: true }),
+      "import.meta.env": JSON.stringify({
+        MODE: "production",
+        NODE_ENV: "production",
+        DEV: false,
+        PROD: true,
+      }),
     },
   });
 }

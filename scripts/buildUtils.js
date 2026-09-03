@@ -32,7 +32,12 @@ function buildDev(config) {
     sourcemap: true,
     plugins: [sassPlugin(), woff2ServerPlugin()],
     define: {
-      "import.meta.env": JSON.stringify({ DEV: true }),
+      "import.meta.env": JSON.stringify({
+        MODE: "development",
+        NODE_ENV: "development",
+        DEV: true,
+        PROD: false,
+      }),
     },
   });
 }
@@ -48,7 +53,12 @@ function buildProd(config) {
       }),
     ],
     define: {
-      "import.meta.env": JSON.stringify({ PROD: true }),
+      "import.meta.env": JSON.stringify({
+        MODE: "production",
+        NODE_ENV: "production",
+        DEV: false,
+        PROD: true,
+      }),
     },
   });
 }

@@ -39,7 +39,13 @@ declare module "*.css" {
 }
 
 interface ImportMetaEnv {
+  MODE?: "development" | "production" | "test";
+  NODE_ENV?: "development" | "production" | "test";
   VITE_APP_GIT_SHA?: string;
+  VITE_APP_LIBRARY_URL?: string;
+  VITE_APP_LIBRARY_BACKEND?: string;
+  VITE_APP_DISABLE_PREVENT_UNLOAD?: string;
+  VITE_APP_DEBUG_ENABLE_TEXT_CONTAINER_BOUNDING_BOX?: string;
   PROD?: boolean | string;
   DEV?: boolean | string;
   [key: string]: any;

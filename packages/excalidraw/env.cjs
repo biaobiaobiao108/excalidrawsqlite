@@ -1,4 +1,6 @@
 const pkg = require("./package.json");
+const fs = require("fs");
+const path = require("path");
 
 const parseEnvValue = (value) => {
   const trimmed = value.trim();
@@ -12,6 +14,65 @@ const parseEnvValue = (value) => {
     return trimmed.slice(1, -1);
   }
   return trimmed.replace(/\s+#.*$/, "").trim();
+};
+
+const parseEnvSource = (source) => {
+  const envVars = {};
+
+  for (const line of source.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][\w]*)\s*=\s*(.*)$/);
+    if (match) {
+      envVars[match[1]] = parseEnvValue(match[2]);
+    }
+  }
+
+  return envVars;
+};
+
+const loadEnvVariables = (projectRoot, mode) => {
+  const envVars = {};
+  const filenames = [
+    ".env",
+    ".env.local",
+    `.env.${mode}`,
+    `.env.${mode}.local`,
+  ];
+
+  for (const filename of filenames) {
+    const filepath = path.join(projectRoot, filename);
+    if (fs.existsSync(filepath)) {
+      Object.assign(envVars, parseEnvSource(fs.readFileSync(filepath, "utf8")));
+    }
+  }
+
+  return envVars;
+};
+
+const getClientEnvVariables = (projectRoot, mode, overrides = {}) => {
+  const processEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => key.startsWith("VITE_")),
+  );
+  const clientEnv = {
+    ...loadEnvVariables(projectRoot, mode),
+    ...processEnv,
+    MODE: mode,
+    NODE_ENV: mode,
+    DEV: mode === "development",
+    PROD: mode === "production",
+    PKG_NAME: pkg.name,
+    PKG_VERSION: pkg.version,
+    ...overrides,
+  };
+
+  return Object.fromEntries(
+    Object.entries(clientEnv).filter(
+      ([key]) =>
+        key.startsWith("VITE_") ||
+        ["MODE", "NODE_ENV", "DEV", "PROD", "PKG_NAME", "PKG_VERSION"].includes(
+          key,
+        ),
+    ),
+  );
 };
 
 const parseEnvVariables = async (filepath) => {
@@ -35,4 +96,4 @@ const parseEnvVariables = async (filepath) => {
   return envVars;
 };
 
-module.exports = { parseEnvVariables };
+module.exports = { getClientEnvVariables, loadEnvVariables, parseEnvVariables };

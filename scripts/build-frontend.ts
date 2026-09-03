@@ -3,6 +3,8 @@ import path from "node:path";
 import fs from "node:fs";
 import * as sass from "sass";
 
+const { getClientEnvVariables } = require("../packages/excalidraw/env.cjs");
+
 const projectRoot = path.resolve(__dirname, "..");
 const appDir = path.join(projectRoot, "excalidraw-app");
 const publicDir = path.join(projectRoot, "public");
@@ -18,19 +20,29 @@ export async function buildFrontend(options: BuildOptions = {}) {
   console.log(`🚀 Starting Bun HTML Bundler (${modeLabel})...`);
   const startTime = performance.now();
 
-  // 1. Clean and prepare build directory
-  if (!fs.existsSync(outDir)) {
-    fs.mkdirSync(outDir, { recursive: true });
-  }
+  // 1. Clean and prepare build directory. Bundler does not remove stale files
+  // from a previous build, which can otherwise leave deleted assets reachable.
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(outDir, { recursive: true });
 
-  // 2. Copy static files from public/ directly to build/, and fonts to build/fonts/
+  // 2. Copy static files from public/ directly to build/. The Bundler emits
+  // imported font assets itself; only preserve the dynamically hosted font
+  // license in the static output instead of copying the whole source tree.
   if (fs.existsSync(publicDir)) {
     fs.cpSync(publicDir, outDir, { recursive: true });
   }
-  const fontsSrcDir = path.join(projectRoot, "packages", "excalidraw", "fonts");
-  const fontsDestDir = path.join(outDir, "fonts");
-  if (fs.existsSync(fontsSrcDir)) {
-    fs.cpSync(fontsSrcDir, fontsDestDir, { recursive: true });
+  const fontLicense = path.join(
+    projectRoot,
+    "packages",
+    "excalidraw",
+    "fonts",
+    "LXGWWenKai",
+    "OFL.txt",
+  );
+  if (fs.existsSync(fontLicense)) {
+    const licenseDestination = path.join(outDir, "fonts", "LXGWWenKai");
+    fs.mkdirSync(licenseDestination, { recursive: true });
+    fs.copyFileSync(fontLicense, path.join(licenseDestination, "OFL.txt"));
   }
 
   // 3. Sass compiler plugin for .scss files
@@ -101,32 +113,32 @@ export async function buildFrontend(options: BuildOptions = {}) {
     (process.env.BUILD_SHA || process.env.VITE_APP_GIT_SHA || "")
       .trim()
       .slice(0, 7) || "local";
+  const mode = isDev ? "development" : "production";
+  const clientEnv = getClientEnvVariables(projectRoot, mode, {
+    VITE_APP_GIT_SHA: gitSha,
+  });
+  const envDefines = Object.fromEntries(
+    Object.entries(clientEnv).map(([key, value]) => [
+      `import.meta.env.${key}`,
+      JSON.stringify(value),
+    ]),
+  );
 
   const buildResult = await Bun.build({
     entrypoints: [path.join(appDir, "index.html")],
     outdir: outDir,
     publicPath: "/",
+    // Bun 1.4 accepts "browser" as its modern browser target; unlike
+    // esbuild, it does not accept an "esnext" target value here.
     target: "browser",
     minify: !isDev,
     splitting: true,
     plugins: [sassPlugin, htmlPlugin],
     define: {
-      "process.env.NODE_ENV": JSON.stringify(isDev ? "development" : "production"),
+      "process.env.NODE_ENV": JSON.stringify(mode),
       "process.env.VITE_APP_GIT_SHA": JSON.stringify(gitSha),
-      "import.meta.env.NODE_ENV": JSON.stringify(isDev ? "development" : "production"),
-      "import.meta.env.PROD": JSON.stringify(!isDev),
-      "import.meta.env.DEV": JSON.stringify(isDev),
-      "import.meta.env.PKG_NAME": JSON.stringify("@excalidraw/excalidraw"),
-      "import.meta.env.PKG_VERSION": JSON.stringify("0.18.0"),
-      "import.meta.env.VITE_APP_GIT_SHA": JSON.stringify(gitSha),
-      "import.meta.env": JSON.stringify({
-        PROD: !isDev,
-        DEV: isDev,
-        NODE_ENV: isDev ? "development" : "production",
-        PKG_NAME: "@excalidraw/excalidraw",
-        PKG_VERSION: "0.18.0",
-        VITE_APP_GIT_SHA: gitSha,
-      }),
+      ...envDefines,
+      "import.meta.env": JSON.stringify(clientEnv),
     },
   });
 
@@ -157,11 +169,9 @@ export async function buildFrontend(options: BuildOptions = {}) {
       );
     }
 
-    // Preload UI critical font if available
-    const preloadFontTag = `<link rel="preload" href="/fonts/Assistant/Assistant-SemiBold.woff2" as="font" type="font/woff2" />`;
     finalHtml = finalHtml.replace(
       "<!-- PLACEHOLDER:EXCALIDRAW_APP_FONTS -->",
-      preloadFontTag,
+      "",
     );
 
     // Strip crossorigin attributes from same-origin bundles to avoid unnecessary CORS mode

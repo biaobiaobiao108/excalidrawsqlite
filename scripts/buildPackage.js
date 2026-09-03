@@ -98,10 +98,16 @@ const createESMRawBuild = async () => {
   const envVars = {
     development: {
       ...(await parseEnvVariables(`${__dirname}/../.env.development`)),
+      MODE: "development",
+      NODE_ENV: "development",
       DEV: true,
+      PROD: false,
     },
     production: {
       ...(await parseEnvVariables(`${__dirname}/../.env.production`)),
+      MODE: "production",
+      NODE_ENV: "production",
+      DEV: false,
       PROD: true,
     },
   };

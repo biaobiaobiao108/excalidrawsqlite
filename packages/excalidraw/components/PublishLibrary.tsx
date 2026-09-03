@@ -285,6 +285,12 @@ const PublishLibrary = ({
     };
     const content = JSON.stringify(libContent, null, 2);
     const lib = new Blob([content], { type: "application/json" });
+    const libraryBackend = import.meta.env.VITE_APP_LIBRARY_BACKEND;
+    if (!libraryBackend) {
+      setIsSubmitting(false);
+      onError(new Error("Library publishing is not configured"));
+      return;
+    }
 
     const formData = new FormData();
     formData.append("excalidrawLib", lib);
@@ -298,7 +304,7 @@ const PublishLibrary = ({
     formData.append("twitterHandle", libraryData.twitterHandle);
     formData.append("website", libraryData.website);
 
-    fetch(`${import.meta.env.VITE_APP_LIBRARY_BACKEND}/submit`, {
+    fetch(`${libraryBackend}/submit`, {
       method: "post",
       body: formData,
     })
