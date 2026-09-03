@@ -110,7 +110,6 @@ import {
   isSelectionLikeTool,
   oneOf,
   getStrokeWidthByKey,
-  ORIG_ID,
 } from "@excalidraw/common";
 
 import {
@@ -4789,20 +4788,10 @@ class App extends React.Component<AppProps, AppState> {
     const [gridX, gridY] = getGridPoint(dx, dy, this.getEffectiveGridSize());
 
     const positionedElements = elements.map((element) => {
-      const positionedElement = newElementWith(element, {
+      return newElementWith(element, {
         x: element.x + gridX - minX,
         y: element.y + gridY - minY,
       });
-
-      if (ORIG_ID in element && positionedElement !== element) {
-        Object.defineProperty(positionedElement, ORIG_ID, {
-          value: (element as any)[ORIG_ID],
-          writable: false,
-          enumerable: false,
-        });
-      }
-
-      return positionedElement;
     }) as NonDeletedExcalidrawElement[];
 
     const duplicatedElements = opts.alreadyDuplicated
