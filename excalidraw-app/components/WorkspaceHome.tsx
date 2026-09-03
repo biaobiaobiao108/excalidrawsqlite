@@ -864,7 +864,10 @@ export const WorkspaceHome = ({
     ownerWindow.location.assign(`${url.pathname}${url.search}`);
   };
 
-  const handleCreateScene = async (targetFolderId?: string | null) => {
+  const handleCreateScene = async (
+    targetFolderId?: string | null,
+    sceneName?: string,
+  ) => {
     if (pendingAction) {
       return;
     }
@@ -874,7 +877,7 @@ export const WorkspaceHome = ({
     setError("");
     try {
       const scene = await createCloudScene({
-        name: "未命名白板",
+        name: sceneName?.trim() || "未命名白板",
         folder_id: folderId,
       });
       navigateToScene(scene);

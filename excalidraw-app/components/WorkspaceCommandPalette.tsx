@@ -26,7 +26,7 @@ export interface WorkspaceCommandPaletteProps {
   currentLayout: LayoutMode;
   selectedFolderId: string | null;
   onSelectScene: (scene: CloudSceneSummary, newTab?: boolean) => void;
-  onCreateScene: (folderId?: string | null) => void;
+  onCreateScene: (folderId?: string | null, name?: string) => void;
   onCreateFolder: () => void;
   onChangeView: (view: BoardView) => void;
   onSelectFolder: (folderId: string | null) => void;
@@ -109,6 +109,81 @@ const formatSceneTime = (timestamp: number | null) => {
     return `今天 ${time}`;
   }
   return `${date.getMonth() + 1}月${date.getDate()}日`;
+};
+
+interface ParsedCreateIntent {
+  folderId: string | null;
+  folderName?: string;
+  sceneName: string;
+}
+
+const parseCreateIntent = (
+  query: string,
+  folders: CloudFolder[],
+  selectedFolderId: string | null,
+): ParsedCreateIntent | null => {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const createPrefixMatch = trimmed.match(/^(新建|create|new|\+)\s*(.*)$/i);
+  if (!createPrefixMatch) {
+    return null;
+  }
+
+  const rest = createPrefixMatch[2].trim();
+  if (!rest) {
+    return null;
+  }
+
+  // 1. 显式 @文件夹名 匹配，例如："架构图 @测试" 或 "@测试 架构图"
+  const atFolderMatch = rest.match(/(?:^|\s)@([^\s]+)(?:\s|$)/);
+  if (atFolderMatch) {
+    const folderTarget = atFolderMatch[1];
+    const matchedFolder = folders.find(
+      (f) =>
+        normalizeText(f.name) === normalizeText(folderTarget) ||
+        normalizeText(f.name).includes(normalizeText(folderTarget)),
+    );
+    if (matchedFolder) {
+      const sceneName = rest.replace(atFolderMatch[0], " ").trim();
+      return {
+        folderId: matchedFolder.id,
+        folderName: matchedFolder.name,
+        sceneName: sceneName || "未命名白板",
+      };
+    }
+  }
+
+  // 2. 单词包含某个已有文件夹名，例如："测试 架构图" 或 "架构图 测试"
+  const tokens = rest.split(/\s+/).filter(Boolean);
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const matchedFolder = folders.find(
+      (f) => normalizeText(f.name) === normalizeText(token),
+    );
+    if (matchedFolder) {
+      const remainingTokens = tokens.filter((_, idx) => idx !== i);
+      const sceneName = remainingTokens.join(" ").trim();
+      if (sceneName) {
+        return {
+          folderId: matchedFolder.id,
+          folderName: matchedFolder.name,
+          sceneName,
+        };
+      }
+      return null;
+    }
+  }
+
+  // 3. 未匹配到文件夹名，默认作为当前或根目录的新画板名称，例如："新建 架构图"
+  const selectedFolder = folders.find((f) => f.id === selectedFolderId);
+  return {
+    folderId: selectedFolderId,
+    folderName: selectedFolder?.name,
+    sceneName: rest,
+  };
 };
 
 // SVG Icons matching Excalidraw's look
@@ -643,7 +718,8 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
       return groups;
     }
 
-    // 2. 当有搜索词时，模糊匹配所有指令和画板，按分类组织
+    // 2. 当有搜索词时，多关键词分词匹配所有指令和画板，按分类组织
+    const queryTokens = normalizeText(trimmed).split(/\s+/).filter(Boolean);
     const matches = (cmd: PaletteCommand) => {
       const target = normalizeText(
         [
@@ -654,11 +730,42 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
           ...(cmd.meta?.tags || []),
         ].join(" "),
       );
-      return target.includes(trimmed);
+      return queryTokens.every((token) => target.includes(token));
     };
 
     const matchedActions = allActions.filter(matches);
     const matchedScenes = sceneCommands.filter(matches);
+
+    // 智能识别新建意图并动态生成置顶指令
+    const dynamicActions: PaletteCommand[] = [];
+    const createIntent = parseCreateIntent(trimmed, folders, selectedFolderId);
+
+    if (createIntent && createIntent.sceneName) {
+      const targetFolder = folders.find((f) => f.id === createIntent.folderId);
+      const label = targetFolder
+        ? `在「${targetFolder.name}」中新建画板：“${createIntent.sceneName}”`
+        : `新建画板：“${createIntent.sceneName}” (${
+            selectedFolderId ? "当前文件夹" : "根目录"
+          })`;
+
+      dynamicActions.push({
+        id: `action-dynamic-create-scene-${createIntent.folderId || "root"}-${createIntent.sceneName}`,
+        category: "常用操作",
+        label,
+        keywords: ["xinjian", "create", "new", createIntent.sceneName],
+        icon: targetFolder ? <FolderPlusIcon /> : <PlusIcon />,
+        shortcut: "↵",
+        perform: () => {
+          recordRecent(
+            targetFolder
+              ? `action-create-scene-folder-${targetFolder.id}`
+              : "action-create-scene",
+          );
+          onClose();
+          onCreateScene(createIntent.folderId, createIntent.sceneName);
+        },
+      });
+    }
 
     const groups: CommandGroup[] = [];
     const categoryOrder: Array<PaletteCommand["category"]> = [
@@ -669,7 +776,11 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     ];
 
     for (const cat of categoryOrder) {
-      const items = [...matchedActions, ...matchedScenes].filter(
+      const actionsForCat =
+        cat === "常用操作"
+          ? [...dynamicActions, ...matchedActions]
+          : matchedActions;
+      const items = [...actionsForCat, ...matchedScenes].filter(
         (item) => item.category === cat,
       );
       if (items.length > 0) {
@@ -677,7 +788,19 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
       }
     }
     return groups;
-  }, [query, recentIds, commandMap, allActions, sceneCommands, scenes]);
+  }, [
+    query,
+    recentIds,
+    commandMap,
+    allActions,
+    sceneCommands,
+    scenes,
+    folders,
+    selectedFolderId,
+    onCreateScene,
+    onClose,
+    recordRecent,
+  ]);
 
   // 平铺命令列表以进行上下键高亮索引
   const flattenedItems = useMemo(() => {

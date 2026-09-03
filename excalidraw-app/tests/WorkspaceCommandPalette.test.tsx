@@ -125,6 +125,62 @@ describe("WorkspaceCommandPalette component", () => {
     expect(onCreateScene).toHaveBeenCalledWith("folder-1");
   });
 
+  it("matches folder creation when typing '新建 工作目录' and creates board upon pressing Enter", () => {
+    const onCreateScene = vi.fn();
+    const props = createDefaultProps({ onCreateScene });
+    render(<WorkspaceCommandPalette {...props} />);
+
+    const input = screen.getByPlaceholderText("搜索菜单、命令或画板...");
+    fireEvent.change(input, { target: { value: "新建 工作目录" } });
+
+    expect(screen.getByText("在「工作目录」中新建画板")).toBeDefined();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onCreateScene).toHaveBeenCalledWith("folder-1");
+  });
+
+  it("smartly creates custom-named board in folder when typing '新建 工作目录 架构流程图'", () => {
+    const onCreateScene = vi.fn();
+    const props = createDefaultProps({ onCreateScene });
+    render(<WorkspaceCommandPalette {...props} />);
+
+    const input = screen.getByPlaceholderText("搜索菜单、命令或画板...");
+    fireEvent.change(input, { target: { value: "新建 工作目录 架构流程图" } });
+
+    expect(screen.getByText("在「工作目录」中新建画板：“架构流程图”")).toBeDefined();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onCreateScene).toHaveBeenCalledWith("folder-1", "架构流程图");
+  });
+
+  it("smartly parses '@folder' syntax when typing '新建 架构流程图 @工作目录'", () => {
+    const onCreateScene = vi.fn();
+    const props = createDefaultProps({ onCreateScene });
+    render(<WorkspaceCommandPalette {...props} />);
+
+    const input = screen.getByPlaceholderText("搜索菜单、命令或画板...");
+    fireEvent.change(input, { target: { value: "新建 架构流程图 @工作目录" } });
+
+    expect(screen.getByText("在「工作目录」中新建画板：“架构流程图”")).toBeDefined();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onCreateScene).toHaveBeenCalledWith("folder-1", "架构流程图");
+  });
+
+  it("creates custom-named board in root when typing '新建 全局草图'", () => {
+    const onCreateScene = vi.fn();
+    const props = createDefaultProps({ onCreateScene });
+    render(<WorkspaceCommandPalette {...props} />);
+
+    const input = screen.getByPlaceholderText("搜索菜单、命令或画板...");
+    fireEvent.change(input, { target: { value: "新建 全局草图" } });
+
+    expect(screen.getByText("新建画板：“全局草图” (根目录)")).toBeDefined();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onCreateScene).toHaveBeenCalledWith(null, "全局草图");
+  });
+
   it("filters items according to search query", () => {
     const props = createDefaultProps();
     render(<WorkspaceCommandPalette {...props} />);
