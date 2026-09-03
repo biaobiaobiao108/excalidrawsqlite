@@ -22,6 +22,7 @@ import {
 } from "./packages/excalidraw/tests/helpers/polyfills";
 
 process.env.NODE_ENV = "test";
+process.env.RTL_SKIP_AUTO_CLEANUP = "true";
 
 Object.assign(globalThis, {
   afterAll,
