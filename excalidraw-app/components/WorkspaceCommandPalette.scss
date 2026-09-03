@@ -36,22 +36,25 @@
 
       .palette-input {
         inline-size: 100%;
-        block-size: 2.75rem;
+        block-size: 3rem;
         box-sizing: border-box;
         padding: 0 1rem;
-        border-radius: 8px;
-        border: 1.5px solid var(--workspace-border, #e8e8f0);
-        background: var(--workspace-surface, #fbfbfd);
+        border-radius: 0.5rem;
+        border: none;
+        outline: none;
+        box-shadow: none;
+        background: var(--color-surface-low, #ececf4);
         font-size: 1rem;
         font-family: inherit;
         color: var(--workspace-text, #22212c);
-        outline: none;
-        transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+        transition: background-color 150ms ease;
 
-        &:focus {
-          background: #ffffff;
-          border-color: var(--workspace-primary, #6965db);
-          box-shadow: 0 0 0 1px var(--workspace-primary, #6965db);
+        &:focus,
+        &:active {
+          border: none;
+          outline: none;
+          box-shadow: none;
+          background: var(--color-surface-low, #ececf4);
         }
 
         &::placeholder {
