@@ -73,7 +73,6 @@ import {
   assertSelectedElements,
   render,
   togglePopover,
-  getCloneByOrigId,
   checkpointHistory,
   unmountComponent,
 } from "./test-utils";
@@ -1446,11 +1445,11 @@ describe("history", () => {
           expect.objectContaining({ [ORIG_ID]: rect1.id, isDeleted: true }),
           expect.objectContaining({ [ORIG_ID]: rect2.id, isDeleted: true }),
           expect.objectContaining({
-            [ORIG_ID]: getCloneByOrigId(rect1.id)?.id,
+            [ORIG_ID]: rect1.id,
             isDeleted: false,
           }),
           expect.objectContaining({
-            [ORIG_ID]: getCloneByOrigId(rect2.id)?.id,
+            [ORIG_ID]: rect2.id,
             isDeleted: false,
           }),
         ]),
