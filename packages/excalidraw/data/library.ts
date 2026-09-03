@@ -7,6 +7,7 @@ import {
   EVENT,
   DEFAULT_SIDEBAR,
   LIBRARY_SIDEBAR_TAB,
+  ORIG_ID,
   arrayToMap,
   cloneJSON,
   preventUnload,
@@ -466,25 +467,37 @@ export const distributeLibraryItemsOnSquareGrid = (
     const offsetCenterY = (maxHeightCurrRow - height) / 2;
     resElements.push(
       // eslint-disable-next-line no-loop-func
-      ...item.elements.map((element) => ({
-        ...element,
-        x:
-          element.x +
-          // offset for column
-          colOffsetX +
-          // offset to center in given square grid
-          offsetCenterX -
-          // subtract minX so that given item starts at 0 coord
-          minX,
-        y:
-          element.y +
-          // offset for row
-          rowOffsetY +
-          // offset to center in given square grid
-          offsetCenterY -
-          // subtract minY so that given item starts at 0 coord
-          minY,
-      })),
+      ...item.elements.map((element) => {
+        const positionedElement = {
+          ...element,
+          x:
+            element.x +
+            // offset for column
+            colOffsetX +
+            // offset to center in given square grid
+            offsetCenterX -
+            // subtract minX so that given item starts at 0 coord
+            minX,
+          y:
+            element.y +
+            // offset for row
+            rowOffsetY +
+            // offset to center in given square grid
+            offsetCenterY -
+            // subtract minY so that given item starts at 0 coord
+            minY,
+        };
+
+        if (ORIG_ID in element) {
+          Object.defineProperty(positionedElement, ORIG_ID, {
+            value: (element as any)[ORIG_ID],
+            writable: false,
+            enumerable: false,
+          });
+        }
+
+        return positionedElement;
+      }),
     );
     colOffsetX += maxWidthCurrCol + PADDING;
     index++;
