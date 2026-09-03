@@ -706,17 +706,18 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
       closable
     >
       <div className="palette-dialog-inner">
-        <div className="palette-input-wrapper">
-          <input
-            ref={inputRef}
-            className="palette-input"
-            type="text"
-            value={query}
-            placeholder="搜索菜单、命令或画板..."
-            aria-label="搜索菜单、命令或画板"
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
+        <div className="ExcTextField ExcTextField--fullWidth">
+          <div className="ExcTextField__input">
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              placeholder="搜索菜单、命令或画板..."
+              aria-label="搜索菜单、命令或画板"
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+          </div>
         </div>
 
         <div className="shortcuts-wrapper">
@@ -766,7 +767,7 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
                           e.ctrlKey || e.metaKey || e.button === 1;
                         executeItem(item, isNewTab);
                       }}
-                      onMouseEnter={() => setActiveIndex(itemIndex)}
+                      onMouseMove={() => setActiveIndex(itemIndex)}
                     >
                       <div className="name">
                         <div className="icon">{item.icon}</div>

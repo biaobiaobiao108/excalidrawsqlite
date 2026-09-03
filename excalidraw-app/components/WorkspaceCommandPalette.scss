@@ -1,4 +1,17 @@
 .workspace-command-palette-dialog {
+  // 继承并定义 Excalidraw 原生调色板与组件变量（严格限定在本弹窗内）
+  --color-surface-low: #ececf4;
+  --color-surface-mid: #f6f6f9;
+  --color-surface-lowest: #ffffff;
+  --color-gray-20: #ebebeb;
+  --color-gray-40: #ced4da;
+  --color-gray-50: #868e96;
+  --color-brand-hover: #5e59cc;
+  --color-brand-active: #4843b8;
+  --color-primary-light: #e0dfff;
+  --color-primary-darker: #363299;
+  --popup-text-color: #1b1b1f;
+
   .workspace-dialog-content-shell {
     inline-size: min(720px, calc(100% - 2rem));
     max-block-size: min(680px, calc(100dvh - 2.5rem));
@@ -7,8 +20,8 @@
     display: flex;
     flex-direction: column;
     border-radius: 12px;
-    border: 1px solid var(--workspace-border, #e8e8f0);
-    background: var(--workspace-bg, #ffffff);
+    border: 1px solid var(--color-gray-20);
+    background: var(--color-surface-lowest);
     box-shadow: 0 20px 60px rgba(25, 23, 60, 0.2);
     user-select: none;
   }
@@ -26,44 +39,62 @@
     flex-direction: column;
     min-block-size: 0;
     block-size: 100%;
-    color: var(--workspace-text, #22212c);
+    color: var(--popup-text-color);
 
-    .palette-input-wrapper {
+    // 1:1 照搬 Excalidraw 原生 ExcTextField 结构与悬停/聚焦变色
+    .ExcTextField {
       position: relative;
-      display: flex;
-      align-items: center;
       width: 100%;
+      flex-grow: 1;
 
-      .palette-input {
-        inline-size: 100%;
-        block-size: 3rem;
+      &__input {
         box-sizing: border-box;
-        padding: 0 1rem;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        height: 3rem;
+        background: var(--color-surface-low);
+        border: 1px solid var(--color-gray-20);
         border-radius: 0.5rem;
-        border: none;
-        outline: none;
-        box-shadow: none;
-        background: var(--color-surface-low, #ececf4);
-        font-size: 1rem;
-        font-family: inherit;
-        color: var(--workspace-text, #22212c);
-        transition: background-color 150ms ease;
+        padding: 0 0.75rem;
+        transition: border-color 150ms ease;
 
-        &:focus,
-        &:active {
-          border: none;
-          outline: none;
-          box-shadow: none;
-          background: var(--color-surface-low, #ececf4);
+        &:hover {
+          border-color: var(--color-brand-hover);
         }
 
-        &::placeholder {
-          color: var(--workspace-muted, #747487);
-          opacity: 0.8;
+        &:active,
+        &:focus-within {
+          border-color: var(--color-brand-active);
+        }
+
+        input {
+          display: flex;
+          align-items: center;
+          border: none;
+          outline: none;
+          padding: 0;
+          margin: 0;
+          height: 1.5rem;
+          color: var(--popup-text-color);
+          font-family: inherit;
+          font-style: normal;
+          font-weight: 400;
+          font-size: 1rem;
+          line-height: 150%;
+          text-overflow: ellipsis;
+          background: transparent;
+          width: 100%;
+
+          &::placeholder {
+            color: var(--color-gray-50);
+            opacity: 0.8;
+          }
         }
       }
     }
 
+    // 1:1 照搬 Excalidraw 原生 shortcuts-wrapper 与 shortcut 规范
     .shortcuts-wrapper {
       display: flex;
       justify-content: center;
@@ -85,6 +116,11 @@
         display: flex;
       }
 
+      .shortcut-plus {
+        margin: 0 4px;
+        color: var(--color-gray-50);
+      }
+
       .shortcut-key {
         padding: 0 4px;
         height: 16px;
@@ -92,24 +128,25 @@
         display: flex;
         justify-content: center;
         align-items: center;
-        background-color: var(--workspace-primary-soft, #f0efff);
-        color: var(--workspace-primary, #6965db);
+        background-color: var(--color-primary-light);
+        color: var(--color-primary-darker);
         font-weight: 600;
       }
 
       .shortcut-desc {
         margin-inline-start: 4px;
-        color: var(--workspace-muted, #747487);
+        color: var(--color-gray-50);
       }
     }
 
+    // 1:1 照搬 Excalidraw 原生 commands 与 command-item / item-selected 样式
     .commands {
       overflow-y: auto;
       box-sizing: border-box;
       margin-block-start: 12px;
       padding-inline-end: 4px;
       max-block-size: min(460px, calc(100dvh - 16rem));
-      color: var(--workspace-text, #22212c);
+      color: var(--popup-text-color);
       user-select: none;
       scrollbar-gutter: stable;
 
@@ -133,7 +170,7 @@
       .command-category {
         display: flex;
         flex-direction: column;
-        padding: 8px 0;
+        padding: 12px 0;
 
         &:first-child {
           padding-block-start: 2px;
@@ -141,19 +178,18 @@
       }
 
       .command-category-title {
-        font-size: 0.95rem;
+        font-size: 1rem;
         font-weight: 600;
         margin-block-end: 6px;
-        padding-inline: 0.4rem;
         display: flex;
         align-items: center;
-        color: var(--workspace-text, #22212c);
+        color: var(--popup-text-color);
 
         .icon {
           display: inline-flex;
           align-items: center;
           margin-inline-start: 6px;
-          color: var(--workspace-muted, #747487);
+          color: var(--color-gray-50);
 
           svg {
             width: 1rem;
@@ -163,13 +199,13 @@
       }
 
       .command-item {
-        color: var(--workspace-text, #22212c);
-        block-size: 2.5rem;
+        color: var(--popup-text-color);
+        height: 2.5rem;
         display: flex;
         justify-content: space-between;
         align-items: center;
         box-sizing: border-box;
-        padding: 0 0.65rem;
+        padding: 0 0.5rem;
         margin-block: 1px;
         border: 0;
         border-radius: 8px;
@@ -179,33 +215,24 @@
         font-family: inherit;
         inline-size: 100%;
         text-align: start;
-        transition: background-color 100ms ease, color 100ms ease;
+        transition: background-color 100ms ease;
 
-        --icon-size: 1.1rem;
+        --icon-size: 1rem;
 
-        &.item-selected,
-        &:hover {
-          background-color: var(--workspace-primary-soft, #f0efff);
-          color: var(--workspace-primary, #6965db);
-
-          .icon {
-            color: var(--workspace-primary, #6965db);
-          }
-
-          .item-folder,
-          .item-tag {
-            border-color: rgba(105, 101, 219, 0.25);
-          }
+        // 原生选中态：浅灰底，字体颜色保持中性深色
+        &.item-selected {
+          background-color: var(--color-surface-mid);
         }
 
+        // 原生点击激活态：略深一档的浅灰底
         &:active {
-          background-color: rgba(105, 101, 219, 0.15);
+          background-color: var(--color-surface-low);
         }
 
         .name {
           display: flex;
           align-items: center;
-          gap: 0.45rem;
+          gap: 0.25rem;
           overflow: hidden;
           flex: 1 1 auto;
           min-inline-size: 0;
@@ -221,7 +248,7 @@
             align-items: center;
             gap: 0.35rem;
             font-size: 0.75rem;
-            color: var(--workspace-muted, #747487);
+            color: var(--color-gray-50);
             margin-inline-start: 0.25rem;
             white-space: nowrap;
             overflow: hidden;
@@ -234,7 +261,7 @@
               padding: 0.05rem 0.3rem;
               border-radius: 4px;
               background: rgba(140, 137, 180, 0.1);
-              border: 1px solid var(--workspace-border, #e8e8f0);
+              border: 1px solid var(--color-gray-20);
               font-size: 0.7rem;
             }
 
@@ -244,7 +271,7 @@
               padding: 0.05rem 0.3rem;
               border-radius: 4px;
               background: rgba(105, 101, 219, 0.08);
-              color: var(--workspace-primary, #6965db);
+              color: var(--color-brand-hover);
               font-size: 0.7rem;
             }
 
@@ -262,7 +289,7 @@
           display: flex;
           align-items: center;
           justify-content: center;
-          color: var(--workspace-muted, #747487);
+          color: var(--color-gray-50);
 
           svg {
             inline-size: 100%;
@@ -284,8 +311,8 @@
           .active-pill {
             padding: 0.1rem 0.35rem;
             border-radius: 4px;
-            background: var(--workspace-primary-soft, #f0efff);
-            color: var(--workspace-primary, #6965db);
+            background: var(--color-surface-low);
+            color: var(--color-brand-hover);
             font-size: 0.72rem;
             font-weight: 600;
           }
@@ -298,7 +325,7 @@
         align-items: center;
         margin-block-start: 36px;
         gap: 0.5rem;
-        color: var(--workspace-muted, #747487);
+        color: var(--color-gray-50);
         font-size: 0.95rem;
 
         .icon {
