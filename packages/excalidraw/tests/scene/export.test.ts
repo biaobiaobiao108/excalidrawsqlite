@@ -78,7 +78,7 @@ describe("exportToSvg", () => {
       null,
     );
 
-    expect(svgElement).toMatchSnapshot();
+    expect(svgElement.outerHTML).toMatchSnapshot();
   });
 
   it("with a CJK font", async () => {
@@ -99,7 +99,7 @@ describe("exportToSvg", () => {
       null,
     );
 
-    expect(svgElement).toMatchSnapshot();
+    expect(svgElement.outerHTML).toMatchSnapshot();
     // extend the timeout, as it needs to first load the fonts from disk and then perform whole woff2 decode, subset and encode (without workers)
   }, 30_000);
 
