@@ -35,10 +35,13 @@
 - Implement proper error boundaries in React components
 - Always log errors with contextual information
 
-## Testing
+## Testing & Quality Verification
 
-- Always attempt to fix #problems
-- Always offer to run `bun run test:app --watch=false` in the project root after modifications are complete and attempt fixing the issues reported
+- Follow tiered verification guidelines:
+  - Backend/persistence changes: run `bun run test:server` (< 1.5s)
+  - Frontend component/logic changes: run `bun test packages/excalidraw/tests` or `bun run test:typecheck`
+  - Document/markdown changes: exempt from testing (commit directly)
+  - Static code checking: run `bun run test:code` / `bun run fix:code`
 
 ## Types
 

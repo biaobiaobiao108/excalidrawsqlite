@@ -24,7 +24,7 @@
   - 生产构建使用 Bun 1.4 支持的现代浏览器目标（当前为 `target: "browser"`；Bun 1.4 不接受 `esnext` 作为构建目标），仅支持最新 Chrome、Edge、Firefox、Safari 和 iOS Safari。严禁引入过时浏览器兼容降级包。
 - **按需动态加载**：
   - AI、Mermaid、CJK 字体、CodeMirror、pako 回退和字体子集化能力必须保持按需加载。新增大型依赖前先确认不会被静态 import 拉入主入口，优先使用动态 `import()`；
-  - 「霞鹜文楷」资源位于 `packages/excalidraw/fonts/LXGWWenKai`，必须通过 `Fonts.ts` 的动态 import 按需加载，UI 字体文件在构建阶段同步复制至 `build/fonts/`；
+  - 「霞鹜文楷」资源位于 `packages/excalidraw/fonts/LXGWWenKai`，必须通过 `Fonts.ts` 的动态 import 按需加载；Bun HTML Bundler 原生解析并打包导入的字体资产，构建阶段仅保留字体开源许可（`OFL.txt`），杜绝向 `build/` 目录冗余复制全量字体源文件；
   - `encode`/`decode` 及图片、SVG 元数据编码接口是异步的，调用方必须 `await`。
 
 ## 4. 全栈开发与热重载规范 (Unified Dev Server)
@@ -72,6 +72,6 @@
    - 规则：优先运行与该改动直接相关的测试文件（如 `bun test packages/excalidraw/tests`）或 `bun run test:typecheck`，不要盲目跑全量测试。
 4. **全量与发布级验证 (必要时执行)**：
    - 适用范围：修改了 `package.json`、核心依赖项、`scripts/build-frontend.ts` 打包引擎配置、核心跨模块接口或用户显式要求。
-   - 规则：运行 `bun run test:server && bun run test:typecheck && bun run build`。
+   - 规则：运行 `bun run test:server && bun run test:typecheck && bun run build`；涉及内部子包发布构建时，额外运行 `bun run build:packages`。
 
 - **原子提交要求**：每次代码或文档修改完成后立即执行一次原子 Git 提交，提交信息使用 Conventional Commits 格式。文档修改也应单独或与同一主题的代码修改一起提交，保持提交记录可追溯。
