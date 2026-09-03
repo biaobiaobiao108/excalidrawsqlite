@@ -78,7 +78,6 @@ describe("contextMenu element", () => {
     checkpoint("end of test");
 
     mouse.reset();
-    mouse.down(0, 0);
   });
 
   it("shows context menu for canvas", () => {
