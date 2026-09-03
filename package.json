@@ -22,7 +22,6 @@
     "eslint-plugin-import": "2.31.0",
     "jsdom": "22.1.0",
     "pepjs": "0.5.3",
-    "rewire": "6.0.0",
     "sass": "^1.85.0",
     "typescript": "5.9.3"
   },
@@ -31,7 +30,6 @@
   },
   "homepage": ".",
   "scripts": {
-    "build-node": "bun ./scripts/build-node.js",
     "build:app:docker": "bun --cwd ./excalidraw-app build:app:docker",
     "build:app": "bun --cwd ./excalidraw-app build:app",
     "build:common": "bun --cwd ./packages/common build:esm",

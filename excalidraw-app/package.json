@@ -28,7 +28,6 @@
     "react-dom": "19.0.0"
   },
   "scripts": {
-    "build-node": "bun ./scripts/build-node.js",
     "build:app:docker": "bun ../scripts/build-frontend.ts",
     "build:app": "bun ../scripts/build-frontend.ts",
     "build:version": "bun ../scripts/build-version.js",
