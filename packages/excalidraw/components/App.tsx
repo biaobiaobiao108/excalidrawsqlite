@@ -3841,6 +3841,11 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   public componentWillUnmount() {
+    // A pointer-up handler may be attached to the window while a gesture is
+    // active. Clean it up before removing the editor listeners so an
+    // unmounted editor cannot affect a later editor instance.
+    this.maybeCleanupAfterMissingPointerUp(null);
+
     // we're recreating the api object reference so that the
     // <ExcalidrawAPIContext.Provider/> picks up on it
     this.api = { ...this.api, isDestroyed: true };
