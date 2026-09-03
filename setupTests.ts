@@ -74,6 +74,10 @@ if (typeof window === "undefined") {
   globalThis.XMLSerializer = win.XMLSerializer;
   globalThis.requestAnimationFrame = (cb: any) => setTimeout(cb, 16) as any;
   globalThis.cancelAnimationFrame = (id: any) => clearTimeout(id);
+  win.setTimeout = globalThis.setTimeout.bind(globalThis);
+  win.clearTimeout = globalThis.clearTimeout.bind(globalThis);
+  win.setInterval = globalThis.setInterval.bind(globalThis);
+  win.clearInterval = globalThis.clearInterval.bind(globalThis);
 }
 
 (globalThis as any).assert = assert;
