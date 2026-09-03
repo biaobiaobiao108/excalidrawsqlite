@@ -47,7 +47,7 @@
     "start:example": "bun run build:packages && bun --cwd ./examples/with-script-in-browser start",
     "test:all": "bun run test:typecheck && bun run test:code && bun run test:server && bun run test:app",
     "test:server": "bun test --max-concurrency=1 server/server.test.ts",
-    "test:app": "bun test packages/excalidraw/tests",
+    "test:app": "bun test --max-concurrency=1 packages/excalidraw/tests",
     "test:code": "eslint --max-warnings=0 --ext .js,.ts,.tsx .",
     "test:typecheck": "tsc",
     "test": "bun run test:app",
