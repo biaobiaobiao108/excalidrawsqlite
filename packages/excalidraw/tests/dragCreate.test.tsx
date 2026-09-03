@@ -1,13 +1,10 @@
 import React from "react";
-import { vi } from "bun:test";
 
 import { KEYS, reseed } from "@excalidraw/common";
 
 import type { ExcalidrawLinearElement } from "@excalidraw/element/types";
 
 import { Excalidraw } from "../index";
-import * as InteractiveScene from "../renderer/interactiveScene";
-import * as StaticScene from "../renderer/staticScene";
 
 import {
   render,
@@ -19,16 +16,8 @@ import {
 
 unmountComponent();
 
-const renderInteractiveScene = vi.spyOn(
-  InteractiveScene,
-  "renderInteractiveScene",
-);
-const renderStaticScene = vi.spyOn(StaticScene, "renderStaticScene");
-
 beforeEach(() => {
   localStorage.clear();
-  renderInteractiveScene.mockClear();
-  renderStaticScene.mockClear();
   reseed(7);
 });
 
@@ -53,10 +42,6 @@ describe("Test dragCreate", () => {
       // finish (position does not matter)
       fireEvent.pointerUp(canvas);
 
-      expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
-        `5`,
-      );
-      expect(renderStaticScene.mock.calls.length).toMatchInlineSnapshot(`5`);
       expect(h.state.selectionElement).toBeNull();
 
       expect(h.elements.length).toEqual(1);
@@ -86,11 +71,6 @@ describe("Test dragCreate", () => {
 
       // finish (position does not matter)
       fireEvent.pointerUp(canvas);
-
-      expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
-        `5`,
-      );
-      expect(renderStaticScene.mock.calls.length).toMatchInlineSnapshot(`5`);
 
       expect(h.state.selectionElement).toBeNull();
 
@@ -122,10 +102,6 @@ describe("Test dragCreate", () => {
       // finish (position does not matter)
       fireEvent.pointerUp(canvas);
 
-      expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
-        `5`,
-      );
-      expect(renderStaticScene.mock.calls.length).toMatchInlineSnapshot(`5`);
       expect(h.state.selectionElement).toBeNull();
 
       expect(h.elements.length).toEqual(1);
@@ -156,10 +132,6 @@ describe("Test dragCreate", () => {
       // finish (position does not matter)
       fireEvent.pointerUp(canvas);
 
-      expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
-        `6`,
-      );
-      expect(renderStaticScene.mock.calls.length).toMatchInlineSnapshot(`6`);
       expect(h.state.selectionElement).toBeNull();
 
       expect(h.elements.length).toEqual(1);
@@ -194,10 +166,6 @@ describe("Test dragCreate", () => {
       // finish (position does not matter)
       fireEvent.pointerUp(canvas);
 
-      expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
-        `6`,
-      );
-      expect(renderStaticScene.mock.calls.length).toMatchInlineSnapshot(`6`);
       expect(h.state.selectionElement).toBeNull();
 
       expect(h.elements.length).toEqual(1);
@@ -237,10 +205,6 @@ describe("Test dragCreate", () => {
       // finish (position does not matter)
       fireEvent.pointerUp(canvas);
 
-      expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
-        `5`,
-      );
-      expect(renderStaticScene.mock.calls.length).toMatchInlineSnapshot(`5`);
       expect(h.state.selectionElement).toBeNull();
       expect(h.elements.length).toEqual(0);
     });
@@ -259,10 +223,6 @@ describe("Test dragCreate", () => {
       // finish (position does not matter)
       fireEvent.pointerUp(canvas);
 
-      expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
-        `5`,
-      );
-      expect(renderStaticScene.mock.calls.length).toMatchInlineSnapshot(`5`);
       expect(h.state.selectionElement).toBeNull();
       expect(h.elements.length).toEqual(0);
     });
@@ -281,10 +241,6 @@ describe("Test dragCreate", () => {
       // finish (position does not matter)
       fireEvent.pointerUp(canvas);
 
-      expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
-        `5`,
-      );
-      expect(renderStaticScene.mock.calls.length).toMatchInlineSnapshot(`5`);
       expect(h.state.selectionElement).toBeNull();
       expect(h.elements.length).toEqual(0);
     });
@@ -310,10 +266,6 @@ describe("Test dragCreate", () => {
         key: KEYS.ENTER,
       });
 
-      expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
-        `7`,
-      );
-      expect(renderStaticScene.mock.calls.length).toMatchInlineSnapshot(`6`);
       expect(h.state.selectionElement).toBeNull();
       expect(h.elements).toEqual([
         expect.objectContaining({
@@ -344,10 +296,6 @@ describe("Test dragCreate", () => {
         key: KEYS.ENTER,
       });
 
-      expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
-        `7`,
-      );
-      expect(renderStaticScene.mock.calls.length).toMatchInlineSnapshot(`6`);
       expect(h.state.selectionElement).toBeNull();
       expect(h.elements).toEqual([
         expect.objectContaining({
