@@ -21,21 +21,21 @@
     "bun": ">=1.4.0"
   },
   "dependencies": {
-    "i18next-browser-languagedetector": "6.1.4",
-    "idb-keyval": "6.0.3",
-    "jotai": "2.11.0",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "idb-keyval": "^6.3.0",
+    "jotai": "^2.12.1",
     "react": "19.0.0",
     "react-dom": "19.0.0"
   },
   "scripts": {
     "build-node": "bun ./scripts/build-node.js",
-    "build:app:docker": "vite build",
-    "build:app": "vite build",
+    "build:app:docker": "bun ../scripts/build-frontend.ts",
+    "build:app": "bun ../scripts/build-frontend.ts",
     "build:version": "bun ../scripts/build-version.js",
     "build": "bun run build:app && bun run build:version",
-    "start": "vite",
+    "start": "bun ../server/server.ts --dev",
     "start:production": "bun run build && bun run serve",
     "serve": "bun ../scripts/serve-static.ts --dir build --host localhost --port 5001",
-    "build:preview": "bun run build && vite preview --port 5000"
+    "build:preview": "bun run build && bun run serve"
   }
 }

@@ -1,10 +1,35 @@
 import fs from "fs";
+import { JSDOM } from "jsdom";
 
-// vitest.setup.ts
-import "vitest-canvas-mock";
+if (typeof window === "undefined") {
+  const dom = new JSDOM("<!DOCTYPE html><html><body><div id=\"root\"></div></body></html>", {
+    url: "http://localhost/",
+    pretendToBeVisual: true,
+  });
+  const win = dom.window as any;
+  globalThis.window = win;
+  globalThis.document = win.document;
+  globalThis.navigator = win.navigator;
+  globalThis.HTMLElement = win.HTMLElement;
+  globalThis.HTMLCanvasElement = win.HTMLCanvasElement;
+  globalThis.Node = win.Node;
+  globalThis.Element = win.Element;
+  globalThis.Event = win.Event;
+  globalThis.CustomEvent = win.CustomEvent;
+  globalThis.DOMParser = win.DOMParser;
+  globalThis.XMLSerializer = win.XMLSerializer;
+  globalThis.requestAnimationFrame = (cb: any) => setTimeout(cb, 16) as any;
+  globalThis.cancelAnimationFrame = (id: any) => clearTimeout(id);
+}
+
+// setupTests.ts
+import { assert } from "chai";
+(globalThis as any).assert = assert;
+import { setupCanvasMock } from "./packages/excalidraw/tests/canvas-mock-shim";
+setupCanvasMock(globalThis);
 import "@testing-library/jest-dom";
 import { configure } from "@testing-library/react";
-import { vi } from "vitest";
+import { vi } from "./packages/excalidraw/tests/vitest-shim";
 
 import { mockThrottleRAF } from "./packages/excalidraw/tests/helpers/mocks";
 import { yellow } from "./packages/excalidraw/tests/helpers/colorize";
@@ -31,14 +56,13 @@ if (!debugDom) {
   });
 }
 
-vi.mock("@excalidraw/common", async (importOriginal) => {
-  const module = await importOriginal<typeof import("@excalidraw/common")>();
+import * as commonModule from "./packages/common/src/index";
+import { mock } from "bun:test";
 
-  return {
-    ...module,
-    throttleRAF: mockThrottleRAF,
-  };
-});
+mock.module("@excalidraw/common", () => ({
+  ...commonModule,
+  throttleRAF: mockThrottleRAF,
+}));
 
 // mock for pep.js not working with setPointerCapture()
 HTMLElement.prototype.setPointerCapture = vi.fn();
@@ -96,30 +120,25 @@ Object.defineProperty(window, "EXCALIDRAW_ASSET_PATH", {
 });
 
 // mock the font fetch only, so that everything else, as font subsetting, can run inside of the (snapshot) tests
-vi.mock(
-  "./packages/excalidraw/fonts/ExcalidrawFontFace",
-  async (importOriginal) => {
-    const mod = await importOriginal<
-      typeof import("./packages/excalidraw/fonts/ExcalidrawFontFace")
-    >();
-    const ExcalidrawFontFaceImpl = mod.ExcalidrawFontFace;
+import * as fontFaceModule from "./packages/excalidraw/fonts/ExcalidrawFontFace";
 
-    return {
-      ...mod,
-      ExcalidrawFontFace: class extends ExcalidrawFontFaceImpl {
-        public async fetchFont(url: URL): Promise<ArrayBuffer> {
-          if (!url.toString().startsWith("file://")) {
-            return super.fetchFont(url);
-          }
-
-          // read local assets directly, without running a server
-          const content = await fs.promises.readFile(url);
-          return content.buffer;
+mock.module("./packages/excalidraw/fonts/ExcalidrawFontFace", () => {
+  const ExcalidrawFontFaceImpl = fontFaceModule.ExcalidrawFontFace;
+  return {
+    ...fontFaceModule,
+    ExcalidrawFontFace: class extends ExcalidrawFontFaceImpl {
+      public async fetchFont(url: URL): Promise<ArrayBuffer> {
+        if (!url.toString().startsWith("file://")) {
+          return super.fetchFont(url);
         }
-      },
-    };
-  },
-);
+
+        // read local assets directly, without running a server
+        const content = await fs.promises.readFile(url);
+        return content.buffer;
+      }
+    },
+  };
+});
 
 // ReactDOM is located inside index.tsx file
 // as a result, we need a place for it to render into

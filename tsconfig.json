@@ -3,7 +3,7 @@
     "rootDir": "./",
     "target": "ESNext",
     "lib": ["dom", "dom.iterable", "esnext"],
-    "types": ["vitest/globals", "@testing-library/jest-dom"],
+    "types": ["@types/bun", "@types/node", "@testing-library/jest-dom"],
     "allowJs": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -18,6 +18,9 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "paths": {
+      "vitest": ["./packages/excalidraw/tests/vitest-shim.ts"],
+      "vitest/*": ["./packages/excalidraw/tests/vitest-shim.ts"],
+      "vitest-canvas-mock": ["./packages/excalidraw/tests/canvas-mock-shim.ts"],
       "@excalidraw/common": ["./packages/common/src/index.ts"],
       "@excalidraw/common/*": ["./packages/common/src/*"],
       "@excalidraw/excalidraw": ["./packages/excalidraw/index.tsx"],
@@ -34,6 +37,6 @@
       "@excalidraw/utils/*": ["./packages/utils/src/*"]
     }
   },
-  "include": ["packages", "excalidraw-app"],
-  "exclude": ["examples", "dist", "types", "tests", "excalidraw-app/build"]
+  "include": ["packages", "excalidraw-app", "env.d.ts"],
+  "exclude": ["examples", "dist", "types", "tests", "**/tests", "**/*.test.*", "excalidraw-app/build"]
 }

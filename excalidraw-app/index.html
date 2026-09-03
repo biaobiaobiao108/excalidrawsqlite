@@ -40,7 +40,6 @@
     <script src="/theme-init.js"></script>
 
     <!-- Following placeholder is replaced during the build step -->
-    <% if (typeof PROD != 'undefined' && PROD == true) { %>
     <!-- PLACEHOLDER:EXCALIDRAW_APP_FONTS -->
 
     <!-- Register Assistant as the UI font, before the scene inits -->
@@ -50,19 +49,12 @@
       type="text/css"
     />
 
-    <% } else { %> <% } %>
-
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
 
     <!-- Excalidraw version -->
     <meta name="version" content="{version}" />
-
-    <% if (typeof VITE_APP_DEV_DISABLE_LIVE_RELOAD != 'undefined' &&
-    VITE_APP_DEV_DISABLE_LIVE_RELOAD == true) { %>
-    <script src="/dev-live-reload-guard.js"></script>
-    <% } %>
   </head>
 
   <body>
