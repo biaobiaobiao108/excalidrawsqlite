@@ -1,4 +1,4 @@
-// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
 exports[`Test Linear Elements > Test bound text element > should bind text to arrow when clicked on arrow and enter pressed 1`] = `
 "Online whiteboard
