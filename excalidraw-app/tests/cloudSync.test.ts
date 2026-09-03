@@ -17,9 +17,6 @@ const advanceTimersAndFlush = async (milliseconds: number) => {
   vi.advanceTimersByTime(milliseconds);
   await Promise.resolve();
   await Promise.resolve();
-  vi.advanceTimersByTime(0);
-  await Promise.resolve();
-  await Promise.resolve();
 };
 
 const runAllTimersAndFlush = async () => {
@@ -131,7 +128,7 @@ describe("cloud save queue", () => {
     expect(onAuthRequired).toHaveBeenCalledWith("scene-1");
 
     queue.resumeAfterAuth("scene-1");
-    await advanceTimersAndFlush(0);
+    await runAllTimersAndFlush();
     expect(saveCloudScene).toHaveBeenCalledTimes(2);
     queue.dispose();
   });
@@ -187,7 +184,7 @@ describe("cloud save queue", () => {
     await advanceTimersAndFlush(30_000);
     queue.enqueue(makeSnapshot("newest"));
     queue.resolveConflict("scene-1", 2, true);
-    await advanceTimersAndFlush(0);
+    await runAllTimersAndFlush();
 
     expect(saveCloudScene).toHaveBeenLastCalledWith(
       "scene-1",
