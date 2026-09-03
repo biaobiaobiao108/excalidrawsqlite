@@ -106,6 +106,7 @@ const { configure } = await import("@testing-library/react");
 Object.assign(globalThis, testPolyfills);
 PolyfillLocalStorage();
 (globalThis as any).localStorage = window.localStorage;
+(globalThis as any).sessionStorage = window.sessionStorage;
 
 // By default testing-library dumps the entire serialized DOM into the error
 // message whenever a `waitFor`/`getBy*` fails, which floods the test output
