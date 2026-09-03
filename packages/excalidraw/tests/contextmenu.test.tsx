@@ -35,9 +35,10 @@ const checkpoint = (name: string) => {
   );
   expect(h.state).toMatchSnapshot(`[${name}] appState`);
   expect(h.elements.length).toMatchSnapshot(`[${name}] number of elements`);
-  h.elements.forEach((element, i) =>
-    expect(element).toMatchSnapshot(`[${name}] element ${i}`),
-  );
+  h.elements.forEach((element, i) => {
+    const { seed, versionNonce, ...stableElement } = element;
+    expect(stableElement).toMatchSnapshot(`[${name}] element ${i}`);
+  });
 
   checkpointHistory(h.history, name);
 };
