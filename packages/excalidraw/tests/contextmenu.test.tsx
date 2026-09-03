@@ -72,7 +72,6 @@ describe("contextMenu element", () => {
 
   afterAll(() => {
     restoreOriginalGetBoundingClientRect();
-    renderStaticScene.mockRestore();
   });
 
   afterEach(() => {
