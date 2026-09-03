@@ -21,6 +21,12 @@ import {
 
 const { h } = window;
 
+const getStableMenuMarkup = (container: HTMLElement) =>
+  queryByTestId(container, "dropdown-menu")?.outerHTML.replace(
+    /radix-:[^"]+/g,
+    "radix-id",
+  );
+
 describe("<Excalidraw/>", () => {
   afterEach(() => {
     const menu = document.querySelector(".dropdown-menu");
@@ -143,7 +149,7 @@ describe("<Excalidraw/>", () => {
         );
         //open menu
         toggleMenu(container);
-        expect(queryByTestId(container, "dropdown-menu")?.outerHTML).toMatchSnapshot();
+        expect(getStableMenuMarkup(container)).toMatchSnapshot();
       });
 
       it("should hide clear canvas button when clearCanvas is false", async () => {
@@ -423,7 +429,7 @@ describe("<Excalidraw/>", () => {
       );
       //open menu
       toggleMenu(container);
-      expect(queryByTestId(container, "dropdown-menu")?.outerHTML).toMatchSnapshot();
+      expect(getStableMenuMarkup(container)).toMatchSnapshot();
     });
 
     it("should update themeToggle text even if MainMenu memoized", async () => {
