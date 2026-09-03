@@ -26,7 +26,7 @@ export interface WorkspaceCommandPaletteProps {
   currentLayout: LayoutMode;
   selectedFolderId: string | null;
   onSelectScene: (scene: CloudSceneSummary, newTab?: boolean) => void;
-  onCreateScene: () => void;
+  onCreateScene: (folderId?: string | null) => void;
   onCreateFolder: () => void;
   onChangeView: (view: BoardView) => void;
   onSelectFolder: (folderId: string | null) => void;
@@ -295,21 +295,61 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
   }, []);
 
   const allActions = useMemo<PaletteCommand[]>(() => {
+    const selectedFolder = folders.find((f) => f.id === selectedFolderId);
+    const defaultSceneLabel = selectedFolder
+      ? `新建画板 (当前：${selectedFolder.name})`
+      : "新建画板 (根目录)";
+
     const list: PaletteCommand[] = [
       // 常用操作
       {
         id: "action-create-scene",
         category: "常用操作",
-        label: "新建画板",
-        keywords: ["xinjian", "huaban", "create", "scene", "new", "board"],
+        label: defaultSceneLabel,
+        keywords: [
+          "xinjian",
+          "huaban",
+          "create",
+          "scene",
+          "new",
+          "board",
+          selectedFolder?.name || "root",
+        ],
         icon: <PlusIcon />,
         shortcut: "↵",
         perform: () => {
           recordRecent("action-create-scene");
           onClose();
-          onCreateScene();
+          onCreateScene(selectedFolderId);
         },
       },
+    ];
+
+    for (const folder of folders) {
+      list.push({
+        id: `action-create-scene-folder-${folder.id}`,
+        category: "常用操作",
+        label: `在「${folder.name}」中新建画板`,
+        keywords: [
+          "xinjian",
+          "huaban",
+          "folder",
+          "create",
+          "scene",
+          "board",
+          "new",
+          folder.name,
+        ],
+        icon: <FolderPlusIcon />,
+        perform: () => {
+          recordRecent(`action-create-scene-folder-${folder.id}`);
+          onClose();
+          onCreateScene(folder.id);
+        },
+      });
+    }
+
+    list.push(
       {
         id: "action-create-folder",
         category: "常用操作",
@@ -334,7 +374,7 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
           onReload();
         },
       },
-    ];
+    );
 
     if (trashCount > 0) {
       list.push({

@@ -98,10 +98,31 @@ describe("WorkspaceCommandPalette component", () => {
     expect(screen.getByText("显示设置")).toBeDefined();
 
     // Verify key action labels
-    expect(screen.getByText("新建画板")).toBeDefined();
+    expect(screen.getByText("新建画板 (根目录)")).toBeDefined();
+    expect(screen.getByText("在「工作目录」中新建画板")).toBeDefined();
     expect(screen.getByText("新建文件夹")).toBeDefined();
     expect(screen.getByText("清空回收站 (1)")).toBeDefined();
     expect(screen.getByText("架构设计图")).toBeDefined();
+  });
+
+  it("reflects currently selected folder in default create scene item", () => {
+    const props = createDefaultProps({ selectedFolderId: "folder-1" });
+    render(<WorkspaceCommandPalette {...props} />);
+
+    expect(screen.getByText("新建画板 (当前：工作目录)")).toBeDefined();
+  });
+
+  it("creates scene in a specific folder via dedicated command", () => {
+    const onCreateScene = vi.fn();
+    const onClose = vi.fn();
+    const props = createDefaultProps({ onCreateScene, onClose });
+    render(<WorkspaceCommandPalette {...props} />);
+
+    const folderCreateBtn = screen.getByText("在「工作目录」中新建画板");
+    fireEvent.click(folderCreateBtn);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onCreateScene).toHaveBeenCalledWith("folder-1");
   });
 
   it("filters items according to search query", () => {
@@ -134,13 +155,12 @@ describe("WorkspaceCommandPalette component", () => {
 
     const input = screen.getByPlaceholderText("搜索菜单、命令或画板...");
 
-    // First item is "新建画板" by default
-    // Press ArrowDown to move to "新建文件夹"
+    // First item is "新建画板 (根目录)"
+    // Press ArrowDown once -> "在「工作目录」中新建画板"
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    expect(onCreateFolder).toHaveBeenCalledTimes(1);
-    expect(onCreateScene).not.toHaveBeenCalled();
+    expect(onCreateScene).toHaveBeenCalledWith("folder-1");
   });
 
   it("calls onSelectScene with newTab=true on Ctrl+Enter", () => {
@@ -175,7 +195,7 @@ describe("WorkspaceCommandPalette component", () => {
     const props = createDefaultProps({ onCreateScene, onClose });
     render(<WorkspaceCommandPalette {...props} />);
 
-    const createBtn = screen.getByText("新建画板");
+    const createBtn = screen.getByText("新建画板 (根目录)");
     fireEvent.click(createBtn);
 
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -206,11 +226,11 @@ describe("WorkspaceCommandPalette component", () => {
     );
     expect(screen.queryByText("最近使用")).toBeNull();
 
-    // Click "新建画板" to trigger recents recording
-    fireEvent.click(screen.getByText("新建画板"));
+    // Click "在「工作目录」中新建画板" to trigger recents recording
+    fireEvent.click(screen.getByText("在「工作目录」中新建画板"));
     unmount();
 
-    // 2. Next render has "最近使用" with "新建画板"
+    // 2. Next render has "最近使用" with "在「工作目录」中新建画板"
     render(<WorkspaceCommandPalette {...createDefaultProps()} />);
     expect(screen.getByText("最近使用")).toBeDefined();
   });

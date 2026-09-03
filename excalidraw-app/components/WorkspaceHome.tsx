@@ -864,16 +864,18 @@ export const WorkspaceHome = ({
     ownerWindow.location.assign(`${url.pathname}${url.search}`);
   };
 
-  const handleCreateScene = async () => {
+  const handleCreateScene = async (targetFolderId?: string | null) => {
     if (pendingAction) {
       return;
     }
+    const folderId =
+      targetFolderId !== undefined ? targetFolderId : selectedFolderId;
     setPendingAction("create-scene");
     setError("");
     try {
       const scene = await createCloudScene({
         name: "未命名白板",
-        folder_id: selectedFolderId,
+        folder_id: folderId,
       });
       navigateToScene(scene);
     } catch (requestError: any) {
@@ -1142,7 +1144,7 @@ export const WorkspaceHome = ({
           <button
             className="primary-button header-create-button"
             type="button"
-            onClick={handleCreateScene}
+            onClick={() => void handleCreateScene()}
             disabled={!!pendingAction}
             title={
               selectedFolderId
@@ -1465,7 +1467,7 @@ export const WorkspaceHome = ({
                     <button
                       className="primary-button"
                       type="button"
-                      onClick={handleCreateScene}
+                      onClick={() => void handleCreateScene()}
                     >
                       新建第一个画板
                     </button>
