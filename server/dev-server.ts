@@ -2,70 +2,99 @@ import fs from "node:fs";
 import path from "node:path";
 import { broadcastDevReload } from "./dev-reload";
 import { buildFrontend } from "../scripts/build-frontend";
+import { PROJECT_ROOT } from "./paths";
 
 export const startDevWatcher = async (): Promise<() => void> => {
-  const buildIndexHtml = path.resolve("./excalidraw-app/build/index.html");
-  if (!fs.existsSync(buildIndexHtml)) {
-    console.log("[Dev] 📦 首次开发启动，正在执行初始前端编译...");
-    await buildFrontend({ isDev: true });
-  }
+  console.log("[Dev] 📦 正在生成开发前端构建...");
+  await buildFrontend({ isDev: true });
 
-  const watchDirs = [
-    path.resolve("./excalidraw-app"),
-    path.resolve("./packages"),
+  const watchTargets = [
+    { path: path.join(PROJECT_ROOT, "excalidraw-app"), recursive: true },
+    { path: path.join(PROJECT_ROOT, "packages"), recursive: true },
+    { path: path.join(PROJECT_ROOT, "public"), recursive: true },
+    { path: PROJECT_ROOT, recursive: false },
+    {
+      path: path.join(PROJECT_ROOT, "scripts", "build-frontend.ts"),
+      recursive: false,
+    },
   ];
 
   let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
   let isBuilding = false;
+  let rebuildPending = false;
+
+  const isIgnoredChange = (filename: string) => {
+    const parts = filename.split(/[\\/]/).filter(Boolean);
+    return parts.some(
+      (part) =>
+        ["build", "dist", "node_modules", ".git"].includes(part) ||
+        part.endsWith(".tmp"),
+    );
+  };
 
   const handleRebuild = () => {
     if (rebuildTimer) {
       clearTimeout(rebuildTimer);
     }
     rebuildTimer = setTimeout(async () => {
-      if (isBuilding) return;
-      isBuilding = true;
-      try {
-        console.log("\n[Dev] ⚡ 检测到前端源码变动，正在增量重新打包...");
-        await buildFrontend({ isDev: true });
-        console.log("[Dev] 📢 编译完成，正在通知浏览器热刷新...");
-        broadcastDevReload();
-      } catch (error) {
-        console.error("[Dev] ❌ 增量打包失败:", error);
-      } finally {
-        isBuilding = false;
+      rebuildTimer = null;
+      if (isBuilding) {
+        rebuildPending = true;
+        return;
       }
+      isBuilding = true;
+      do {
+        rebuildPending = false;
+        try {
+          console.log("\n[Dev] ⚡ 检测到前端源码变动，正在重新打包...");
+          await buildFrontend({ isDev: true });
+          console.log("[Dev] 📢 编译完成，正在通知浏览器热刷新...");
+          broadcastDevReload();
+        } catch (error) {
+          console.error("[Dev] ❌ 增量打包失败:", error);
+        }
+      } while (rebuildPending);
+      isBuilding = false;
     }, 100);
   };
 
   const watchers: fs.FSWatcher[] = [];
-  for (const dir of watchDirs) {
-    if (fs.existsSync(dir)) {
+  for (const target of watchTargets) {
+    if (fs.existsSync(target.path)) {
       try {
-        const watcher = fs.watch(dir, { recursive: true }, (_event, filename) => {
-          if (!filename) return;
-          const name = String(filename);
-          if (
-            name.includes("build") ||
-            name.includes("dist") ||
-            name.includes("node_modules") ||
-            name.includes(".git") ||
-            name.endsWith(".tmp")
-          ) {
-            return;
-          }
-          handleRebuild();
-        });
+        const watcher = fs.watch(
+          target.path,
+          { recursive: target.recursive },
+          (_event, filename) => {
+            if (!filename) return;
+            const name = String(filename);
+            if (isIgnoredChange(name)) {
+              return;
+            }
+            if (
+              target.path === PROJECT_ROOT &&
+              !/^\.env(?:\.[A-Za-z0-9_-]+)?$/.test(path.basename(name))
+            ) {
+              return;
+            }
+            handleRebuild();
+          },
+        );
         watchers.push(watcher);
       } catch (err) {
-        console.warn(`[Dev] 无法监听目录 ${dir}:`, err);
+        console.warn(`[Dev] 无法监听路径 ${target.path}:`, err);
       }
     }
   }
 
-  console.info("[Dev] 👁️ 前端源码热重载观察器已就绪 (excalidraw-app, packages)");
+  console.info(
+    "[Dev] 👁️ 前端源码热重载观察器已就绪 (excalidraw-app, packages, public, env)",
+  );
 
   return () => {
+    if (rebuildTimer) {
+      clearTimeout(rebuildTimer);
+    }
     for (const w of watchers) {
       try {
         w.close();

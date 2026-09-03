@@ -14,6 +14,7 @@ import {
 import { createRequestHandler } from "./routes";
 import { createRuntime } from "./runtime";
 import { startDevWatcher } from "./dev-server";
+import { resolveProjectPath } from "./paths";
 
 export { createServerConfig } from "./config";
 export {
@@ -32,17 +33,20 @@ export {
 export { createRequestHandler } from "./routes";
 export type { RequestAddressResolver, ServerConfig, ServerRuntime } from "./types";
 
-export const startServer = () => {
-  const dataDir = path.resolve(process.env.DATA_DIR || "./data");
-  const dbPath = path.resolve(
-    process.env.DB_PATH || path.join(dataDir, "excalidraw.db"),
+export const startServer = async () => {
+  const dataDir = resolveProjectPath(process.env.DATA_DIR, "data");
+  const dbPath = resolveProjectPath(
+    process.env.DB_PATH,
+    path.join(dataDir, "excalidraw.db"),
   );
-  const filesDir = path.resolve(
-    process.env.FILES_DIR || path.join(dataDir, "files"),
+  const filesDir = resolveProjectPath(
+    process.env.FILES_DIR,
+    path.join(dataDir, "files"),
   );
-  const staticDir = process.env.STATIC_DIR
-    ? path.resolve(process.env.STATIC_DIR)
-    : path.resolve("./excalidraw-app/build");
+  const staticDir = resolveProjectPath(
+    process.env.STATIC_DIR,
+    "excalidraw-app/build",
+  );
   const runtime = createRuntime({ dbPath, filesDir, staticDir });
   const serverRef: { current?: ReturnType<typeof Bun.serve> } = {};
   const handler = createRequestHandler(
@@ -56,9 +60,7 @@ export const startServer = () => {
 
   let closeDevWatcher: (() => void) | null = null;
   if (isDev) {
-    void startDevWatcher().then((close) => {
-      closeDevWatcher = close;
-    });
+    closeDevWatcher = await startDevWatcher();
   }
 
   const runMaintenance = () => {
@@ -147,5 +149,5 @@ if (import.meta.main) {
   if (typeof process !== "undefined") {
     process.title = "excalidrawsqlite";
   }
-  startServer();
+  await startServer();
 }

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { ServerRuntime } from "./types";
+import { PROJECT_ROOT } from "./paths";
 
 export const buildStaticPath = (staticDir: string, pathname: string) => {
   let decoded = pathname;
@@ -23,10 +24,10 @@ export const getStaticDir = (runtime: ServerRuntime) => {
     return path.resolve(runtime.staticDir);
   }
   const candidates = [
-    path.resolve("./excalidraw-app/build"),
-    path.resolve("./excalidraw-app/dist"),
-    path.resolve("./dist"),
-    path.resolve("./build"),
+    path.join(PROJECT_ROOT, "excalidraw-app/build"),
+    path.join(PROJECT_ROOT, "excalidraw-app/dist"),
+    path.join(PROJECT_ROOT, "dist"),
+    path.join(PROJECT_ROOT, "build"),
   ];
   return (
     candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0]
