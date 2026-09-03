@@ -1,4 +1,4 @@
-import { vi } from "./vitest-shim";
+import { vi } from "bun:test";
 
 import { ROUNDNESS, KEYS, arrayToMap, cloneJSON } from "@excalidraw/common";
 
@@ -22,7 +22,7 @@ import { actionFlipHorizontal, actionFlipVertical } from "../actions";
 import { createPasteEvent } from "../clipboard";
 import { Excalidraw } from "../index";
 
-// Importing to spy on it and mock the implementation (mocking does not work with simple vi.mock for some reason)
+// Importing the module allows Bun's native spy to replace the implementation.
 import * as blobModule from "../data/blob";
 
 import { SMILEY_IMAGE_DIMENSIONS } from "./fixtures/constants";
@@ -39,7 +39,10 @@ import {
 
 import { getTextEditor } from "./queries/dom";
 
-import { mockHTMLImageElement } from "./helpers/mocks";
+import {
+  mockHTMLImageElement,
+  restoreMockHTMLImageElement,
+} from "./helpers/mocks";
 
 import type { NormalizedZoomValue } from "../types";
 
@@ -758,7 +761,7 @@ describe("image", () => {
   });
 
   afterAll(() => {
-    vi.unstubAllGlobals();
+    restoreMockHTMLImageElement();
     h.state.height = 0;
   });
 

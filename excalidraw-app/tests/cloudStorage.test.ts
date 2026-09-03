@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "bun:test";
 
 import type { FileId } from "@excalidraw/element/types";
 import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
@@ -13,7 +13,14 @@ import {
   verifyAuthPassword,
 } from "../data/cloudStorage";
 
+const originalFetch = globalThis.fetch;
+
+const replaceFetch = (fetchMock: typeof fetch) => {
+  globalThis.fetch = fetchMock;
+};
+
 afterEach(() => {
+  globalThis.fetch = originalFetch;
   vi.restoreAllMocks();
 });
 
@@ -24,7 +31,7 @@ describe("cloud storage", () => {
       .mockResolvedValue(
         new Response(JSON.stringify({ success: true }), { status: 200 }),
       );
-    vi.stubGlobal("fetch", fetchMock);
+    replaceFetch(fetchMock as typeof fetch);
 
     await expect(verifyAuthPassword("secret-password")).resolves.toBe(true);
 
@@ -59,7 +66,7 @@ describe("cloud storage", () => {
         }),
       );
     });
-    vi.stubGlobal("fetch", fetchMock);
+    replaceFetch(fetchMock as typeof fetch);
 
     const result = await fetchCloudFiles([
       "file-ok",
@@ -78,14 +85,13 @@ describe("cloud storage", () => {
   });
 
   it("rejects failed attachment uploads instead of treating them as successful", async () => {
-    vi.stubGlobal(
-      "fetch",
+    replaceFetch(
       vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ code: "STORAGE_ERROR" }), {
           status: 500,
           headers: { "Content-Type": "application/json" },
         }),
-      ),
+      ) as typeof fetch,
     );
     const file = {
       id: "file-1",
@@ -109,7 +115,7 @@ describe("cloud storage", () => {
         new Response(JSON.stringify({ error: "暂时不可用" }), { status: 502 }),
       )
       .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
+    replaceFetch(fetchMock as typeof fetch);
 
     await expect(fetchCloudScenes()).resolves.toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -158,7 +164,7 @@ describe("cloud storage", () => {
         }
         return Promise.resolve(new Response(null, { status: 404 }));
       });
-    vi.stubGlobal("fetch", fetchMock);
+    replaceFetch(fetchMock as typeof fetch);
 
     const trash = await fetchCloudTrashScenes();
     expect(trash).toEqual([

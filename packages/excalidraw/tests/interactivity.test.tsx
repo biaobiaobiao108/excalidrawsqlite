@@ -1,5 +1,5 @@
 import React from "react";
-import { vi } from "./vitest-shim";
+import { vi } from "bun:test";
 
 import { CODES, CURSOR_TYPE, POINTER_BUTTON } from "@excalidraw/common";
 
@@ -22,7 +22,7 @@ import {
   waitFor,
 } from "./test-utils";
 
-import type { MockInstance } from "./vitest-shim";
+import type { Mock } from "bun:test";
 
 import type { ExcalidrawProps } from "../types";
 
@@ -876,7 +876,7 @@ describe("interaction={false} ui={false}", () => {
 
 describe("interaction={{ enabled: { links } }}", () => {
   let onLinkOpenSpy: ReturnType<typeof vi.fn>;
-  let windowOpenSpy: MockInstance<typeof window.open>;
+  let windowOpenSpy: Mock<typeof window.open>;
 
   // prevent default inside the handler so the editor doesn't call
   // window.open (mocked anyway, defensively)

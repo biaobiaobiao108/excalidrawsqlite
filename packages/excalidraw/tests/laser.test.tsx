@@ -1,4 +1,4 @@
-import { vi } from "./vitest-shim";
+import { vi } from "bun:test";
 
 import { CURSOR_TYPE } from "@excalidraw/common";
 import { getElementAbsoluteCoords } from "@excalidraw/element";

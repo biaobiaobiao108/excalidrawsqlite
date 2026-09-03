@@ -1,6 +1,7 @@
 import { act, queryByTestId } from "@testing-library/react";
 import React from "react";
-import { vi } from "./vitest-shim";
+import { mock, vi } from "bun:test";
+import * as browserFsAccess from "browser-fs-access";
 
 import { MIME_TYPES, ORIG_ID } from "@excalidraw/common";
 
@@ -24,9 +25,7 @@ import type { LibraryItem, LibraryItems } from "../types";
 
 const { h } = window;
 
-const { mockNativeFileOpen } = vi.hoisted(() => ({
-  mockNativeFileOpen: vi.fn(),
-}));
+const mockNativeFileOpen = vi.fn();
 
 const libraryJSONPromise = API.readFile(
   "./fixtures/fixture_library.excalidrawlib",
@@ -45,14 +44,10 @@ const mockLibraryFilePromise = new Promise<Blob>(async (resolve, reject) => {
 
 mockNativeFileOpen.mockImplementation(() => mockLibraryFilePromise);
 
-vi.mock("browser-fs-access", async (importOriginal) => {
-  const module = await importOriginal();
-  return {
-    //@ts-ignore browser-fs-access has no usable type for importOriginal() here
-    ...module,
+mock.module("browser-fs-access", () => ({
+    ...browserFsAccess,
     fileOpen: mockNativeFileOpen,
-  };
-});
+}));
 
 describe("library items inserting", () => {
   beforeEach(async () => {

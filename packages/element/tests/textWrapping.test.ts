@@ -8,8 +8,7 @@ import type { FontString } from "../src/types";
 
 describe("Test wrapText", () => {
   // font is irrelevant as jsdom does not support FontFace API
-  // `measureText` width is mocked to return `text.length` by `jest-canvas-mock`
-  // https://github.com/hustcc/jest-canvas-mock/blob/master/src/classes/TextMetrics.js
+  // `measureText` width is mocked to return `text.length` by the canvas test mock.
   const font = "10px Cascadia, Segoe UI Emoji" as FontString;
 
   it("should wrap the text correctly when word length is exactly equal to max width", () => {

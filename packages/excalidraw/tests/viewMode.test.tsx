@@ -1,5 +1,5 @@
 import React from "react";
-import { vi } from "./vitest-shim";
+import { vi } from "bun:test";
 
 import { CURSOR_TYPE, KEYS } from "@excalidraw/common";
 

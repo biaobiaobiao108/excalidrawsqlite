@@ -91,7 +91,7 @@ export const testPolyfills = {
   ClipboardEvent,
   DataTransfer,
   DataTransferItem,
-  // https://github.com/vitest-dev/vitest/pull/4164#issuecomment-2172729965
+  // Bun's test runtime needs this browser API for clipboard-related tests.
   URL,
 };
 

@@ -1,5 +1,5 @@
 import { pointFrom } from "@excalidraw/math";
-import { vi } from "vitest";
+import { vi } from "bun:test";
 
 import {
   convertToExcalidrawElements,

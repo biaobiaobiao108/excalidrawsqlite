@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 
 import type { OrderedExcalidrawElement } from "@excalidraw/element/types";
 
@@ -12,6 +12,27 @@ const makeSnapshot = (name: string): CloudSaveSnapshot => ({
   appState: { viewBackgroundColor: "#fff", gridSize: 0 },
   files: {},
 });
+
+const advanceTimersAndFlush = async (milliseconds: number) => {
+  vi.advanceTimersByTime(milliseconds);
+  await Promise.resolve();
+  await Promise.resolve();
+  vi.advanceTimersByTime(0);
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
+const runAllTimersAndFlush = async () => {
+  for (let i = 0; i < 20; i++) {
+    vi.runOnlyPendingTimers();
+    await Promise.resolve();
+    await Promise.resolve();
+    if (vi.getTimerCount() === 0) {
+      return;
+    }
+  }
+  throw new Error("Timer queue did not settle");
+};
 
 describe("cloud save queue", () => {
   const saveCloudScene =
@@ -71,7 +92,7 @@ describe("cloud save queue", () => {
     );
 
     queue.enqueue(makeSnapshot("first"));
-    await vi.advanceTimersByTimeAsync(30_000);
+    await advanceTimersAndFlush(30_000);
     queue.enqueue(makeSnapshot("latest"));
     releaseFirstSave({
       success: true,
@@ -79,7 +100,7 @@ describe("cloud save queue", () => {
       updated_at: 2,
       revision: 2,
     });
-    await vi.runAllTimersAsync();
+    await runAllTimersAndFlush();
 
     expect(calls).toEqual(["files", "files", "scene:latest"]);
     expect(saveCloudScene).toHaveBeenCalledTimes(2);
@@ -106,11 +127,11 @@ describe("cloud save queue", () => {
     );
 
     queue.enqueue(makeSnapshot("pending"));
-    await vi.advanceTimersByTimeAsync(30_000);
+    await advanceTimersAndFlush(30_000);
     expect(onAuthRequired).toHaveBeenCalledWith("scene-1");
 
     queue.resumeAfterAuth("scene-1");
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersAndFlush(0);
     expect(saveCloudScene).toHaveBeenCalledTimes(2);
     queue.dispose();
   });
@@ -133,10 +154,10 @@ describe("cloud save queue", () => {
     );
 
     queue.enqueue(makeSnapshot("to-delete"));
-    await vi.advanceTimersByTimeAsync(30_000);
+    await advanceTimersAndFlush(30_000);
     queue.cancel("scene-1");
     releaseUpload();
-    await vi.runAllTimersAsync();
+    await runAllTimersAndFlush();
 
     expect(saveCloudScene).not.toHaveBeenCalled();
     queue.dispose();
@@ -163,10 +184,10 @@ describe("cloud save queue", () => {
     );
 
     queue.enqueue(makeSnapshot("conflicted"));
-    await vi.advanceTimersByTimeAsync(30_000);
+    await advanceTimersAndFlush(30_000);
     queue.enqueue(makeSnapshot("newest"));
     queue.resolveConflict("scene-1", 2, true);
-    await vi.advanceTimersByTimeAsync(0);
+    await advanceTimersAndFlush(0);
 
     expect(saveCloudScene).toHaveBeenLastCalledWith(
       "scene-1",
@@ -248,10 +269,10 @@ describe("cloud save queue", () => {
     );
 
     queue.enqueue(makeSnapshot("delayed"));
-    await vi.advanceTimersByTimeAsync(29_999);
+    await advanceTimersAndFlush(29_999);
     expect(saveCloudScene).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(1);
+    await advanceTimersAndFlush(1);
     expect(saveCloudScene).toHaveBeenCalledOnce();
     queue.dispose();
   });
@@ -279,7 +300,7 @@ describe("cloud save queue", () => {
 
     queue.enqueue(makeSnapshot("retry"));
     const firstFlush = queue.flush("scene-1");
-    await vi.runAllTimersAsync();
+    await runAllTimersAndFlush();
     await firstFlush;
     expect(onError).toHaveBeenCalledOnce();
     expect(queue.hasPending("scene-1")).toBe(true);

@@ -1,6 +1,6 @@
 import { pointCenter, pointFrom } from "@excalidraw/math";
 import { act, queryByTestId, queryByText } from "@testing-library/react";
-import { vi } from "../../excalidraw/tests/vitest-shim";
+import { vi } from "bun:test";
 
 import {
   ROUNDNESS,

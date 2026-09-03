@@ -5,7 +5,7 @@ import {
   queryByTestId,
   waitFor,
 } from "@testing-library/react";
-import { vi } from "./vitest-shim";
+import { vi } from "bun:test";
 import { pointFrom } from "@excalidraw/math";
 
 import { newElementWith } from "@excalidraw/element";
@@ -53,6 +53,7 @@ import {
 import { createUndoAction, createRedoAction } from "../actions/actionHistory";
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 import * as StaticScene from "../renderer/staticScene";
+import { restoreMockHTMLImageElement } from "./helpers/mocks";
 import { getDefaultAppState } from "../appState";
 import { Excalidraw } from "../index";
 import { createPasteEvent } from "../clipboard";
@@ -122,7 +123,7 @@ describe("history", () => {
     unmountComponent();
     renderStaticScene.mockClear();
     vi.clearAllMocks();
-    vi.unstubAllGlobals();
+    restoreMockHTMLImageElement();
 
     reseed(7);
 
@@ -2973,7 +2974,7 @@ describe("history", () => {
       expect(h.state.editingGroupId).toBeNull();
     });
 
-    // TODO mark with "noncritical" tag once we migrate to vitest 4
+    // TODO mark with "noncritical" tag once Bun supports test tags.
     it.skip("should support undo and redo when escape unwinds nested group editing", async () => {
       const rectA = API.createElement({
         type: "rectangle",

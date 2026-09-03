@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from "./vitest-shim";
+import { beforeEach, describe, expect, it, mock, vi } from "bun:test";
 
 import { EDITOR_LS_KEYS } from "@excalidraw/common";
 
@@ -8,10 +8,10 @@ import { EditorLocalStorage } from "../data/EditorLocalStorage";
 import { getTextEditor, updateTextEditor } from "./queries/dom";
 import { render, waitFor, screen } from "./test-utils";
 
-vi.mock("@codemirror/view", () => ({}));
-vi.mock("@codemirror/state", () => ({}));
-vi.mock("@codemirror/language", () => ({}));
-vi.mock("@lezer/highlight", () => ({}));
+mock.module("@codemirror/view", () => ({}));
+mock.module("@codemirror/state", () => ({}));
+mock.module("@codemirror/language", () => ({}));
+mock.module("@lezer/highlight", () => ({}));
 
 describe("Test <OutlineToDiagram/>", () => {
   beforeEach(async () => {

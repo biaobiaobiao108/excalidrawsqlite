@@ -5,7 +5,7 @@ import {
 } from "@excalidraw/common";
 import { CaptureUpdateAction } from "@excalidraw/element";
 import { pointFrom } from "@excalidraw/math";
-import { vi } from "./vitest-shim";
+import { vi } from "bun:test";
 
 import type { LocalPoint } from "@excalidraw/math";
 
@@ -112,18 +112,40 @@ describe("bucket fill tool", () => {
   it("does not rebuild or reapply an unchanged bucket fill cursor", () => {
     selectBucketFill();
     const encodeURIComponentSpy = vi.spyOn(globalThis, "encodeURIComponent");
-    const cursorSetterSpy = vi.spyOn(
-      GlobalTestState.interactiveCanvas.style,
-      "cursor",
-      "set",
-    );
+    const style = GlobalTestState.interactiveCanvas.style;
+    let owner: object | null = style;
+    let cursorDescriptor: PropertyDescriptor | undefined;
+    while (owner && !cursorDescriptor) {
+      cursorDescriptor = Object.getOwnPropertyDescriptor(owner, "cursor");
+      owner = Object.getPrototypeOf(owner);
+    }
+    if (!cursorDescriptor?.set) {
+      throw new Error("CSSStyleDeclaration.cursor setter is unavailable");
+    }
+    const ownCursorDescriptor = Object.getOwnPropertyDescriptor(style, "cursor");
+    const cursorSetterSpy = vi.fn((value: string) => {
+      cursorDescriptor?.set?.call(style, value);
+    });
+    Object.defineProperty(style, "cursor", {
+      configurable: true,
+      enumerable: cursorDescriptor.enumerable,
+      get: cursorDescriptor.get,
+      set: cursorSetterSpy,
+    });
 
-    h.app.cursor.applyForTool();
+    try {
+      h.app.cursor.applyForTool();
 
-    expect(encodeURIComponentSpy).not.toHaveBeenCalled();
-    expect(cursorSetterSpy).not.toHaveBeenCalled();
-    encodeURIComponentSpy.mockRestore();
-    cursorSetterSpy.mockRestore();
+      expect(encodeURIComponentSpy).not.toHaveBeenCalled();
+      expect(cursorSetterSpy).not.toHaveBeenCalled();
+    } finally {
+      encodeURIComponentSpy.mockRestore();
+      if (ownCursorDescriptor) {
+        Object.defineProperty(style, "cursor", ownCursorDescriptor);
+      } else {
+        delete (style as unknown as Record<string, unknown>).cursor;
+      }
+    }
   });
 
   it("cycles the non-white top picks on repeated B presses", () => {

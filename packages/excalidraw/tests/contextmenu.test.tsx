@@ -1,5 +1,5 @@
 import React from "react";
-import { vi } from "./vitest-shim";
+import { vi } from "bun:test";
 
 import { KEYS, STROKE_WIDTH, reseed } from "@excalidraw/common";
 

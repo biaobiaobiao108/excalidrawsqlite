@@ -1,3 +1,5 @@
+import { describe, expect, it, vi } from "bun:test";
+
 import { FONT_FAMILY } from "@excalidraw/common";
 import {
   DEFAULT_CHART_COLOR_INDEX,

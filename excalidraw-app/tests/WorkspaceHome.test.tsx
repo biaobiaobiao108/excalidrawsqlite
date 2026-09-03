@@ -1,5 +1,5 @@
 import React from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { WorkspaceHome } from "../components/WorkspaceHome";
@@ -62,11 +62,11 @@ const mockFolders: CloudFolder[] = [
   },
 ];
 
+const originalFetch = globalThis.fetch;
+
 describe("WorkspaceHome component", () => {
   beforeEach(() => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: RequestInfo, init?: RequestInit) => {
+    globalThis.fetch = vi.fn().mockImplementation((input: RequestInfo, init?: RequestInit) => {
         const url = String(input);
         if (url.endsWith("/api/auth/status")) {
           return Promise.resolve(
@@ -123,11 +123,11 @@ describe("WorkspaceHome component", () => {
         return Promise.resolve(
           new Response(JSON.stringify({ success: true }), { status: 200 }),
         );
-      }),
-    );
+      }) as typeof fetch;
   });
 
   afterEach(() => {
+    globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
 

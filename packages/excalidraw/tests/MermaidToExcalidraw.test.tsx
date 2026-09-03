@@ -1,4 +1,4 @@
-import { expect, vi } from "./vitest-shim";
+import { expect, mock, vi } from "bun:test";
 
 import { EDITOR_LS_KEYS } from "@excalidraw/common";
 import { pointFrom, type LocalPoint } from "@excalidraw/math";
@@ -12,10 +12,10 @@ import { render, waitFor } from "./test-utils";
 
 // Mock CodeMirror deps so the dynamic import of CodeMirrorEditor fails,
 // causing TTDDialogInput to fall back to <textarea> in tests.
-vi.mock("@codemirror/view", () => ({}));
-vi.mock("@codemirror/state", () => ({}));
-vi.mock("@codemirror/language", () => ({}));
-vi.mock("@lezer/highlight", () => ({}));
+mock.module("@codemirror/view", () => ({}));
+mock.module("@codemirror/state", () => ({}));
+mock.module("@codemirror/language", () => ({}));
+mock.module("@lezer/highlight", () => ({}));
 
 mockMermaidToExcalidraw({
   parseMermaidToExcalidraw: async (definition) => {

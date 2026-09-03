@@ -1,6 +1,6 @@
 import * as MermaidToExcalidraw from "@excalidraw/mermaid-to-excalidraw";
 import React from "react";
-import { vi } from "../vitest-shim";
+import { vi } from "bun:test";
 
 import type { parseMermaidToExcalidraw } from "@excalidraw/mermaid-to-excalidraw";
 import type { throttleRAF as throttleRAFType } from "@excalidraw/common";
@@ -27,14 +27,6 @@ export const mockMermaidToExcalidraw = (opts: {
   parseMermaidToExcalidraw: typeof parseMermaidToExcalidraw;
   mockRef?: boolean;
 }) => {
-  vi.mock("@excalidraw/mermaid-to-excalidraw", async (importActual) => {
-    const module = (await importActual()) as any;
-
-    return {
-      __esModule: true,
-      ...module,
-    };
-  });
   const parseMermaidToExcalidrawSpy = vi.spyOn(
     MermaidToExcalidraw,
     "parseMermaidToExcalidraw",
@@ -51,15 +43,35 @@ export const mockMermaidToExcalidraw = (opts: {
   }
 };
 
-// Mock for HTMLImageElement (use with `vi.unstubAllGlobals()`)
+let originalImageDescriptor: PropertyDescriptor | undefined;
+
+const restoreImage = () => {
+  if (originalImageDescriptor) {
+    Object.defineProperty(globalThis, "Image", originalImageDescriptor);
+    originalImageDescriptor = undefined;
+  } else {
+    delete (globalThis as { Image?: unknown }).Image;
+  }
+};
+
+export const restoreMockHTMLImageElement = restoreImage;
+
+// Mock for HTMLImageElement.
 // as jsdom.resources: "usable" throws an error on image load
 export const mockHTMLImageElement = (
   naturalWidth: number,
   naturalHeight: number,
 ) => {
-  vi.stubGlobal(
+  restoreImage();
+  originalImageDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
     "Image",
-    class extends Image {
+  );
+  const OriginalImage = window.Image;
+  Object.defineProperty(globalThis, "Image", {
+    configurable: true,
+    writable: true,
+    value: class extends OriginalImage {
       constructor() {
         super();
 
@@ -75,7 +87,7 @@ export const mockHTMLImageElement = (
         });
       }
     },
-  );
+  });
 };
 
 // Mocks for multiple HTMLImageElements (dimensions are assigned in the order of image initialization)
@@ -84,9 +96,16 @@ export const mockMultipleHTMLImageElements = (
 ) => {
   const _sizes = [...sizes];
 
-  vi.stubGlobal(
+  restoreImage();
+  originalImageDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
     "Image",
-    class extends Image {
+  );
+  const OriginalImage = window.Image;
+  Object.defineProperty(globalThis, "Image", {
+    configurable: true,
+    writable: true,
+    value: class extends OriginalImage {
       constructor() {
         super();
 
@@ -107,5 +126,5 @@ export const mockMultipleHTMLImageElements = (
         });
       }
     },
-  );
+  });
 };

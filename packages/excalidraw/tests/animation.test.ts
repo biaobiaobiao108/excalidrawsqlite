@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "./vitest-shim";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 
 import { AnimationController } from "../renderer/animation";
 
@@ -28,7 +28,8 @@ describe("AnimationController", () => {
     expect(firstFrames).toBe(1);
 
     AnimationController.cancel(FIRST_KEY);
-    await vi.runOnlyPendingTimersAsync();
+    vi.runOnlyPendingTimers();
+    await Promise.resolve();
 
     let secondFrames = 0;
     AnimationController.start(SECOND_KEY, () => {
@@ -38,7 +39,8 @@ describe("AnimationController", () => {
 
     expect(secondFrames).toBe(1);
 
-    await vi.runOnlyPendingTimersAsync();
+    vi.runOnlyPendingTimers();
+    await Promise.resolve();
 
     expect(secondFrames).toBe(2);
     expect(AnimationController.running(SECOND_KEY)).toBe(false);
@@ -64,7 +66,8 @@ describe("AnimationController", () => {
       return null;
     });
 
-    await vi.runOnlyPendingTimersAsync();
+    vi.runOnlyPendingTimers();
+    await Promise.resolve();
 
     expect(firstFrames).toBe(1);
     expect(secondFrames).toBe(1);
@@ -83,7 +86,8 @@ describe("AnimationController", () => {
     expect(frames).toBe(1);
     expect(AnimationController.running(FIRST_KEY)).toBe(false);
 
-    await vi.runOnlyPendingTimersAsync();
+    vi.runOnlyPendingTimers();
+    await Promise.resolve();
     expect(frames).toBe(1);
   });
 
@@ -96,7 +100,8 @@ describe("AnimationController", () => {
 
     expect(AnimationController.running(FIRST_KEY)).toBe(false);
 
-    await vi.runOnlyPendingTimersAsync();
+    vi.runOnlyPendingTimers();
+    await Promise.resolve();
     expect(AnimationController.running(FIRST_KEY)).toBe(false);
   });
 
@@ -120,7 +125,8 @@ describe("AnimationController", () => {
     expect(replacementFrames).toBe(1);
     expect(AnimationController.running(FIRST_KEY)).toBe(true);
 
-    await vi.runOnlyPendingTimersAsync();
+    vi.runOnlyPendingTimers();
+    await Promise.resolve();
 
     expect(originalFrames).toBe(1);
     expect(replacementFrames).toBe(2);
@@ -156,13 +162,15 @@ describe("AnimationController", () => {
       return null;
     });
 
-    await vi.advanceTimersToNextTimerAsync();
+    vi.advanceTimersToNextTimer();
+    await Promise.resolve();
 
     expect(originalFrames).toBe(1);
     expect(replacementFrames).toBe(1);
     expect(AnimationController.running(FIRST_KEY)).toBe(true);
 
-    await vi.runOnlyPendingTimersAsync();
+    vi.runOnlyPendingTimers();
+    await Promise.resolve();
 
     expect(originalFrames).toBe(1);
     expect(replacementFrames).toBe(2);

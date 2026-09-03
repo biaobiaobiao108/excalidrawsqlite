@@ -1,3 +1,5 @@
+import { describe, expect, it, vi } from "bun:test";
+
 import { COLOR_PALETTE } from "@excalidraw/common";
 
 import type { ColorPaletteCustom } from "@excalidraw/common";

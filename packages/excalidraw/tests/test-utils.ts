@@ -273,23 +273,6 @@ expect.extend({
   },
 });
 
-/**
- * Serializer for IEE754 float pointing numbers to avoid random failures due to tiny precision differences
- */
-expect.addSnapshotSerializer({
-  serialize(val, config, indentation, depth, refs, printer) {
-    return printer(val.toFixed(5), config, indentation, depth, refs);
-  },
-  test(val) {
-    return (
-      typeof val === "number" &&
-      Number.isFinite(val) &&
-      !Number.isNaN(val) &&
-      !Number.isInteger(val)
-    );
-  },
-});
-
 export const getCloneByOrigId = <T extends boolean = false>(
   origId: ExcalidrawElement["id"],
   returnNullIfNotExists: T = false as T,

@@ -5,7 +5,7 @@ import {
   render as renderReact,
   waitFor,
 } from "@testing-library/react";
-import { vi } from "./vitest-shim";
+import { vi } from "bun:test";
 
 import { Excalidraw } from "../index";
 

@@ -1,5 +1,5 @@
 import React from "react";
-import { vi } from "vitest";
+import { vi } from "bun:test";
 
 import { DEFAULT_SIDEBAR } from "@excalidraw/common";
 
@@ -301,7 +301,7 @@ describe("Sidebar", () => {
 
     it("shouldn't be user-dockable when only `onDock` supplied w/o `docked`", async () => {
       // we expect warnings in this test and don't want to pollute stdout
-      const mock = jest.spyOn(console, "warn").mockImplementation(() => {});
+      const mock = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       await render(
         <Excalidraw

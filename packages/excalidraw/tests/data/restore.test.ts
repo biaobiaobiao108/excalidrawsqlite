@@ -1,5 +1,5 @@
 import { pointFrom } from "@excalidraw/math";
-import { vi } from "../vitest-shim";
+import { vi } from "bun:test";
 
 import { DEFAULT_SIDEBAR, FONT_FAMILY, ROUNDNESS } from "@excalidraw/common";
 

@@ -1,5 +1,5 @@
 import React from "react";
-import { expect } from "./vitest-shim";
+import { expect } from "bun:test";
 
 import { reseed } from "@excalidraw/common";
 

@@ -8,11 +8,11 @@ import {
   describe,
   expect as bunExpect,
   it,
+  vi,
+  mock,
   test,
 } from "bun:test";
 import { assert } from "chai";
-import { vi } from "./packages/excalidraw/tests/vitest-shim";
-import { mock, vi as bunTestVi } from "bun:test";
 import * as fontFaceModule from "./packages/excalidraw/fonts/ExcalidrawFontFace";
 import { mockThrottleRAF } from "./packages/excalidraw/tests/helpers/mocks";
 import { yellow } from "./packages/excalidraw/tests/helpers/colorize";
@@ -104,16 +104,6 @@ if (!debugDom) {
 }
 
 const commonModule = await import("./packages/common/src/index");
-
-Object.assign(bunTestVi, {
-  runOnlyPendingTimersAsync: vi.runOnlyPendingTimersAsync,
-  advanceTimersToNextTimerAsync: vi.advanceTimersToNextTimerAsync,
-});
-
-// Bun 1.4 exposes the Vitest-shaped method for compatibility but does not
-// implement custom snapshot serializers yet. Keep the existing serializer
-// registration harmless while the snapshots continue to use Bun's printer.
-(bunExpect as any).addSnapshotSerializer = () => {};
 
 mock.module("@excalidraw/common", () => ({
   ...commonModule,

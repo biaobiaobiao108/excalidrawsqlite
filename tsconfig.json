@@ -18,9 +18,6 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "paths": {
-      "vitest": ["./packages/excalidraw/tests/vitest-shim.ts"],
-      "vitest/*": ["./packages/excalidraw/tests/vitest-shim.ts"],
-      "vitest-canvas-mock": ["./packages/excalidraw/tests/canvas-mock-shim.ts"],
       "@excalidraw/common": ["./packages/common/src/index.ts"],
       "@excalidraw/common/*": ["./packages/common/src/*"],
       "@excalidraw/excalidraw": ["./packages/excalidraw/index.tsx"],

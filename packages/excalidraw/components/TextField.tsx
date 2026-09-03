@@ -55,7 +55,7 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
 
     useLayoutEffect(() => {
       if (selectOnRender) {
-        // focusing first is needed because vitest/jsdom
+        // Focusing first is needed because the test DOM does not perform layout.
         innerRef.current?.focus();
         innerRef.current?.select();
       }

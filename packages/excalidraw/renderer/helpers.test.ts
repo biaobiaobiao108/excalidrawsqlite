@@ -1,3 +1,5 @@
+import { describe, expect, it, vi } from "bun:test";
+
 import { COLOR_WHITE } from "@excalidraw/common";
 
 import { bootstrapCanvas } from "./helpers";

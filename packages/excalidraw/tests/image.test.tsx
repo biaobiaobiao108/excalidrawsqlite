@@ -1,3 +1,5 @@
+import { beforeEach, describe, expect, it, vi } from "bun:test";
+
 import { MIME_TYPES, randomId, reseed } from "@excalidraw/common";
 
 import type { FileId } from "@excalidraw/element/types";
@@ -8,7 +10,10 @@ import { Excalidraw } from "../index";
 import { createPasteEvent } from "../clipboard";
 
 import { API } from "./helpers/api";
-import { mockMultipleHTMLImageElements } from "./helpers/mocks";
+import {
+  mockMultipleHTMLImageElements,
+  restoreMockHTMLImageElement,
+} from "./helpers/mocks";
 import { UI } from "./helpers/ui";
 import { GlobalTestState, render, waitFor } from "./test-utils";
 import {
@@ -36,7 +41,7 @@ export const setupImageTest = async (
 
 describe("resizeImageFile", () => {
   beforeEach(() => {
-    vi.unstubAllGlobals();
+    restoreMockHTMLImageElement();
   });
 
   it("returns the original file when it already fits the max dimensions", async () => {
@@ -55,7 +60,7 @@ describe("resizeImageFile", () => {
 describe("image insertion", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.unstubAllGlobals();
+    restoreMockHTMLImageElement();
 
     reseed(7);
 
