@@ -34,6 +34,7 @@ import { importFromLocalStorage } from "../data/localStorage";
 import { AuthDialog } from "./AuthDialog";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import { CustomSelect } from "./CustomSelect";
+import { WorkspaceCommandPalette } from "./WorkspaceCommandPalette";
 
 import "./WorkspaceHome.scss";
 
@@ -692,6 +693,7 @@ export const WorkspaceHome = ({
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(
     null,
   );
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const loadRequestRef = useRef(0);
 
@@ -760,7 +762,23 @@ export const WorkspaceHome = ({
   useEffect(() => {
     const ownerWindow = getOwnerWindow(rootRef.current);
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      const isCtrlOrCmd = event.metaKey || event.ctrlKey;
+      if (!isCtrlOrCmd) {
+        return;
+      }
+
+      if (
+        !event.altKey &&
+        (event.key === "/" ||
+          (event.shiftKey && event.key.toLowerCase() === "p"))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        setCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      if (event.key.toLowerCase() === "k") {
         event.preventDefault();
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
@@ -824,15 +842,25 @@ export const WorkspaceHome = ({
     [scenes],
   );
 
-  const navigateToScene = (scene: CloudSceneSummary) => {
-    if (onSelectScene) {
-      onSelectScene(scene.id);
-      return;
-    }
+  const navigateToScene = (scene: CloudSceneSummary, newTab = false) => {
     const ownerWindow = getOwnerWindow(rootRef.current);
     const url = new URL(ownerWindow.location.href);
     url.search = `?id=${encodeURIComponent(scene.id)}`;
     url.hash = "";
+
+    if (newTab) {
+      ownerWindow.open(
+        `${url.pathname}${url.search}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+      return;
+    }
+
+    if (onSelectScene) {
+      onSelectScene(scene.id);
+      return;
+    }
     ownerWindow.location.assign(`${url.pathname}${url.search}`);
   };
 
@@ -1520,6 +1548,34 @@ export const WorkspaceHome = ({
           void loadWorkspace();
         }}
         onClose={() => setAuthOpen(false)}
+      />
+      <WorkspaceCommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        scenes={scenes}
+        folders={folders}
+        trashCount={trashScenes.length}
+        currentView={view}
+        currentSort={sort}
+        currentLayout={layoutMode}
+        selectedFolderId={selectedFolderId}
+        onSelectScene={navigateToScene}
+        onCreateScene={handleCreateScene}
+        onCreateFolder={() => setFolderDialog({ id: null, name: "" })}
+        onChangeView={(nextView) => {
+          setView(nextView);
+          setSelectedFolderId(null);
+        }}
+        onSelectFolder={(folderId) => {
+          setSelectedFolderId(folderId);
+          setView("all");
+        }}
+        onChangeSort={setSort}
+        onToggleLayout={() =>
+          setLayoutMode((current) => (current === "grid" ? "list" : "grid"))
+        }
+        onEmptyTrash={handleEmptyTrash}
+        onReload={loadWorkspace}
       />
     </div>
   );

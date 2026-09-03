@@ -1414,18 +1414,37 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
         <CommandPalette
           customCommandPaletteItems={[
             {
-              label: "云端画板管理 (SQLite)",
+              label: "返回至主页",
               category: DEFAULT_CATEGORIES.app,
               predicate: true,
+              icon: (
+                <svg
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
+                </svg>
+              ),
               keywords: [
+                "home",
+                "zhuye",
+                "fanhuizhuye",
+                "return",
                 "cloud",
                 "scene",
                 "board",
                 "sqlite",
-                "save",
-                "load",
                 "画板",
+                "主页",
                 "云端",
+                "返回",
               ],
               perform: () => {
                 void navigateHomeAfterSave();

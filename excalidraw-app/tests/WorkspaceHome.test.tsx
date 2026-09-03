@@ -1,6 +1,6 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { WorkspaceHome } from "../components/WorkspaceHome";
 
@@ -127,6 +127,7 @@ describe("WorkspaceHome component", () => {
   });
 
   afterEach(() => {
+    cleanup();
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
@@ -431,5 +432,35 @@ describe("WorkspaceHome component", () => {
     await waitFor(() => {
       expect(screen.queryByText("废弃草稿")).toBeNull();
     });
+  });
+
+  it("opens command palette via Ctrl+/ and Ctrl+Shift+P shortcuts", async () => {
+    render(<WorkspaceHome />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("架构设计图").length).toBeGreaterThan(0);
+    });
+
+    // 1. Open via Ctrl+/ shortcut
+    fireEvent.keyDown(window, { key: "/", ctrlKey: true });
+    expect(screen.getByPlaceholderText("搜索菜单、命令或画板...")).toBeDefined();
+    expect(screen.getByText("常用操作")).toBeDefined();
+
+    // Close via Esc
+    fireEvent.keyDown(screen.getByPlaceholderText("搜索菜单、命令或画板..."), {
+      key: "Escape",
+    });
+    expect(screen.queryByPlaceholderText("搜索菜单、命令或画板...")).toBeNull();
+
+    // 2. Toggle open and close via Ctrl+/
+    fireEvent.keyDown(window, { key: "/", ctrlKey: true });
+    expect(screen.getByPlaceholderText("搜索菜单、命令或画板...")).toBeDefined();
+
+    fireEvent.keyDown(window, { key: "/", ctrlKey: true });
+    expect(screen.queryByPlaceholderText("搜索菜单、命令或画板...")).toBeNull();
+
+    // 3. Open via Ctrl+Shift+P shortcut
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true, shiftKey: true });
+    expect(screen.getByPlaceholderText("搜索菜单、命令或画板...")).toBeDefined();
   });
 });
