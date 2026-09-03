@@ -44,6 +44,7 @@
     "build:version": "bun --cwd ./excalidraw-app build:version",
     "build": "bun --cwd ./excalidraw-app build",
     "build:preview": "bun --cwd ./excalidraw-app build:preview",
+    "dev": "bun server/server.ts --dev",
     "start": "bun server/server.ts --dev",
     "start:server": "bun scripts/start-server.js",
     "start:production": "bun --cwd ./excalidraw-app start:production",

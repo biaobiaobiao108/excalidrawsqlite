@@ -13,6 +13,7 @@ import {
 } from "./files";
 import { createRequestHandler } from "./routes";
 import { createRuntime } from "./runtime";
+import { startDevWatcher } from "./dev-server";
 
 export { createServerConfig } from "./config";
 export {
@@ -50,6 +51,15 @@ const startServer = () => {
   );
   const port = Number(process.env.PORT) || DEFAULT_PORT;
   const hostname = process.env.HOST || "0.0.0.0";
+  const isDev =
+    process.argv.includes("--dev") || process.env.NODE_ENV === "development";
+
+  let closeDevWatcher: (() => void) | null = null;
+  if (isDev) {
+    void startDevWatcher().then((close) => {
+      closeDevWatcher = close;
+    });
+  }
 
   const runMaintenance = () => {
     cleanupExpiredSessions(runtime, Date.now());
@@ -102,6 +112,13 @@ const startServer = () => {
 
   const handleShutdown = () => {
     process.stdout.write("\n[Server] 正在优雅关闭...\n");
+    if (closeDevWatcher) {
+      try {
+        closeDevWatcher();
+      } catch {
+        // ignore
+      }
+    }
     try {
       runtime.db.run("PRAGMA wal_checkpoint(TRUNCATE);");
     } catch (error) {
@@ -120,6 +137,9 @@ const startServer = () => {
 
   process.stdout.write(`[Database] SQLite initialized at: ${dbPath}\n`);
   process.stdout.write(`[Files] Persistent file directory: ${filesDir}\n`);
+  if (isDev) {
+    process.stdout.write(`⚡ Development mode active (Live Reload enabled)\n`);
+  }
   process.stdout.write(
     `🚀 Excalidraw server is running at http://localhost:${port}\n`,
   );

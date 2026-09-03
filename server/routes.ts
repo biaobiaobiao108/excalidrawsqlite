@@ -8,6 +8,7 @@ import {
   WRITE_RATE_WINDOW_MS,
   WRITE_REQUESTS_PER_WINDOW,
 } from "./config";
+import { handleDevReloadRequest } from "./dev-reload";
 import { HttpError } from "./errors";
 import {
   cleanupExpiredSessions,
@@ -966,6 +967,10 @@ export const createRequestHandler = (
               : "private, max-age=31536000, immutable",
           },
         });
+      }
+
+      if (pathname === "/__dev_reload") {
+        return handleDevReloadRequest(req);
       }
 
       if (pathname.startsWith("/api/")) {
