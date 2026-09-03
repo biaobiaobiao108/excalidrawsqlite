@@ -50,16 +50,22 @@ export function setupCanvasMock(targetWindow: any = typeof window !== "undefined
     isPointInStroke: () => false,
     canvas: null,
   };
+  const contexts = new WeakMap<object, any>();
 
   CanvasElement.prototype.getContext = function (contextType: string) {
     if (contextType === "2d") {
+      const existingContext = contexts.get(this);
+      if (existingContext) {
+        return existingContext;
+      }
+
       const events: Array<{ type: string; props: Record<string, unknown> }> =
         [];
       const record = (type: string, props: Record<string, unknown>) => {
         events.push({ type, props });
       };
 
-      return {
+      const context = {
         ...dummyContext,
         canvas: this,
         fillRect: (x: number, y: number, width: number, height: number) =>
@@ -75,6 +81,8 @@ export function setupCanvasMock(targetWindow: any = typeof window !== "undefined
           events.length = 0;
         },
       } as any;
+      contexts.set(this, context);
+      return context;
     }
     return null;
   };
