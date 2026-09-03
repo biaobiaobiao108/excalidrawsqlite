@@ -4792,7 +4792,7 @@ class App extends React.Component<AppProps, AppState> {
         x: element.x + gridX - minX,
         y: element.y + gridY - minY,
       });
-    });
+    }) as NonDeletedExcalidrawElement[];
 
     const duplicatedElements = opts.alreadyDuplicated
       ? positionedElements
