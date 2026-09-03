@@ -13,6 +13,7 @@ import {
 import { assert } from "chai";
 import { vi } from "./packages/excalidraw/tests/vitest-shim";
 import { mock, vi as bunTestVi } from "bun:test";
+import * as fontFaceModule from "./packages/excalidraw/fonts/ExcalidrawFontFace";
 import { mockThrottleRAF } from "./packages/excalidraw/tests/helpers/mocks";
 import { yellow } from "./packages/excalidraw/tests/helpers/colorize";
 import {
@@ -178,8 +179,6 @@ Object.defineProperty(window, "EXCALIDRAW_ASSET_PATH", {
 });
 
 // mock the font fetch only, so that everything else, as font subsetting, can run inside of the (snapshot) tests
-import * as fontFaceModule from "./packages/excalidraw/fonts/ExcalidrawFontFace";
-
 mock.module("./packages/excalidraw/fonts/ExcalidrawFontFace", () => {
   const ExcalidrawFontFaceImpl = fontFaceModule.ExcalidrawFontFace;
   return {

@@ -8,7 +8,6 @@ import {
   afterAll,
   afterEach,
   mock,
-  spyOn,
   vi as bunVi,
 } from "bun:test";
 
@@ -23,7 +22,9 @@ export {
   afterEach,
 };
 
-export type MockInstance<T extends (...args: any[]) => any = any> = any;
+export type MockInstance<T extends (...args: any[]) => any = any> = T & {
+  mock: Record<string, unknown>;
+};
 
 const spyOn = (object: any, property: string, accessType?: "get" | "set") => {
   if (!accessType) {

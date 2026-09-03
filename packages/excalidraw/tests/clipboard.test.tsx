@@ -1,6 +1,4 @@
 import React from "react";
-import { vi } from "./vitest-shim";
-
 import { getLineHeightInPx } from "@excalidraw/element";
 
 import { KEYS, arrayToMap, getLineHeight } from "@excalidraw/common";

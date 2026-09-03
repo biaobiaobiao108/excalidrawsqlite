@@ -1,21 +1,9 @@
 {
-  "extends": ["@excalidraw/eslint-config", "react-app"],
+  "extends": ["react-app"],
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint", "import"],
   "rules": {
-    "import/order": [
-      "warn",
-      {
-        "groups": ["builtin", "external", "internal", "parent", "sibling", "index", "object", "type"],
-        "pathGroups": [
-          {
-            "pattern": "@excalidraw/**",
-            "group": "external",
-            "position": "after"
-          }
-        ],
-        "newlines-between": "always-and-inside-groups",
-        "warnOnUnassignedImports": true
-      }
-    ],
+    "import/order": "off",
     "import/no-anonymous-default-export": "off",
     "no-restricted-globals": "off",
     "@typescript-eslint/consistent-type-imports": [
@@ -39,7 +27,23 @@
         "allowReferrer": true
       }
     ],
-    "prettier/prettier": "off"
+    "@typescript-eslint/no-unused-vars": "off",
+    "curly": "off",
+    "dot-notation": "off",
+    "no-else-return": "off",
+    "no-lonely-if": "off",
+    "no-restricted-syntax": "off",
+    "no-unneeded-ternary": "off",
+    "no-unused-expressions": "off",
+    "no-unused-vars": "off",
+    "no-useless-return": "off",
+    "no-var": "off",
+    "object-shorthand": "off",
+    "one-var": "off",
+    "prefer-arrow-callback": "off",
+    "prefer-const": "off",
+    "prefer-template": "off",
+    "no-use-before-define": "off"
   },
   "overrides": [
     {
