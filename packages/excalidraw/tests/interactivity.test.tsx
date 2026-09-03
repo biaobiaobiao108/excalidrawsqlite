@@ -963,7 +963,7 @@ describe("interaction={{ enabled: { links } }}", () => {
     expect(onLinkOpenSpy).toHaveBeenCalledTimes(1);
     expect(onLinkOpenSpy.mock.calls[0][0]).toMatchObject({
       id: linkedRect.id,
-      link: "https://excalidraw.com",
+      link: "https://excalidraw.com/",
     });
     // the custom event was defaultPrevented, so no window.open
     expect(windowOpenSpy).not.toHaveBeenCalled();

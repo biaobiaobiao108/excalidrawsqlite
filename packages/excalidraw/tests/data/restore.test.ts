@@ -27,7 +27,7 @@ describe("restoreElements", () => {
   const mockSizeHelper = vi.spyOn(sizeHelpers, "isInvisiblySmallElement");
 
   beforeEach(() => {
-    mockSizeHelper.mockReset();
+    mockSizeHelper.mockClear();
   });
 
   afterAll(() => {
