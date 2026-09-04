@@ -897,9 +897,14 @@ describe("cloud persistence server", () => {
     const afterDelete = await request(handler, "/api/folders", {
       headers: { Cookie: cookie },
     });
-    expect(await responseJson<Array<{ id: string; scene_count: number }>>(
-      afterDelete,
-    )).toEqual([{ id: folder.id, scene_count: 0 }]);
+    const foldersAfterDelete = await responseJson<
+      Array<{ id: string; scene_count: number }>
+    >(afterDelete);
+    expect(foldersAfterDelete).toHaveLength(1);
+    expect(foldersAfterDelete[0]).toMatchObject({
+      id: folder.id,
+      scene_count: 0,
+    });
 
     const restored = await request(
       handler,
@@ -910,9 +915,14 @@ describe("cloud persistence server", () => {
     const afterRestore = await request(handler, "/api/folders", {
       headers: { Cookie: cookie },
     });
-    expect(await responseJson<Array<{ id: string; scene_count: number }>>(
-      afterRestore,
-    )).toEqual([{ id: folder.id, scene_count: 1 }]);
+    const foldersAfterRestore = await responseJson<
+      Array<{ id: string; scene_count: number }>
+    >(afterRestore);
+    expect(foldersAfterRestore).toHaveLength(1);
+    expect(foldersAfterRestore[0]).toMatchObject({
+      id: folder.id,
+      scene_count: 1,
+    });
   });
 
   it("rejects oversized, invalid and traversal file requests", async () => {
@@ -959,7 +969,7 @@ describe("cloud persistence server", () => {
     expect(directUpload.status).toBe(415);
     expect(
       runtime.db.query("SELECT id FROM files WHERE id = ?").get("svg_direct"),
-    ).toBeUndefined();
+    ).toBeNull();
 
     const batchUpload = await jsonRequest(
       handler,
@@ -976,7 +986,7 @@ describe("cloud persistence server", () => {
     expect(batchUpload.status).toBe(415);
     expect(
       runtime.db.query("SELECT id FROM files WHERE id = ?").get("svg_batch"),
-    ).toBeUndefined();
+    ).toBeNull();
 
     const legacyPath = path.join(directory, "files", "legacy_svg");
     await fs.writeFile(legacyPath, svg);
