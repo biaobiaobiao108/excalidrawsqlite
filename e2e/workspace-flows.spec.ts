@@ -1,4 +1,21 @@
 import { test, expect } from "./fixtures";
+import type { Locator } from "@playwright/test";
+
+const readRect = async (locator: Locator) => {
+  return locator.evaluate((element) => {
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return { x, y, width, height };
+  });
+};
+
+const expectRectsToMatch = (
+  actual: Awaited<ReturnType<typeof readRect>>,
+  expected: Awaited<ReturnType<typeof readRect>>,
+) => {
+  for (const key of ["x", "y", "width", "height"] as const) {
+    expect(Math.abs(actual[key] - expected[key])).toBeLessThanOrEqual(1);
+  }
+};
 
 test.describe("Workspace behavior", () => {
   test("manages folders, metadata, favorites, and the recycle bin", async ({
@@ -132,6 +149,128 @@ test.describe("Workspace behavior", () => {
     await expect(
       page.getByRole("button", { name: /新建画板/ }),
     ).toBeVisible();
+  });
+
+  test("keeps the home command palette stable while creating a named board", async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.locator(".workspace-home")).toBeVisible();
+    await page.keyboard.press("Control+Shift+p");
+
+    const palette = page.locator("dialog.workspace-command-palette-dialog");
+    const input = palette.locator(
+      'input[aria-label="搜索菜单、命令或画板"]',
+    );
+    const shell = palette.locator(".workspace-dialog-content-shell");
+    await expect(palette).toBeVisible();
+    await page.waitForTimeout(250);
+
+    const shellBaseline = await readRect(shell);
+    const inputBaseline = await readRect(input);
+    for (const query of ["", "新", "新建", "新建 任意名称"]) {
+      await input.fill(query);
+      await expect(input).toHaveValue(query);
+      await page.waitForTimeout(30);
+      expectRectsToMatch(await readRect(shell), shellBaseline);
+      expectRectsToMatch(await readRect(input), inputBaseline);
+    }
+
+    await expect(
+      palette.locator(".command-item").filter({ hasText: "任意名称" }),
+    ).toBeVisible();
+    await input.press("Enter");
+    await page.waitForURL(/\?id=/);
+
+    const sceneId = new URL(page.url()).searchParams.get("id");
+    expect(sceneId).toBeTruthy();
+    const scenesResponse = await page.request.get("/api/scenes");
+    const scenes = await scenesResponse.json();
+    expect(
+      scenes.some(
+        (scene: { id: string; name: string }) =>
+          scene.id === sceneId && scene.name === "任意名称",
+      ),
+    ).toBe(true);
+
+    await page.request.delete(`/api/scenes/${sceneId}?permanent=true`);
+  });
+
+  test("matches the editor command palette geometry", async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.keyboard.press("Control+Shift+p");
+
+    const workspacePalette = page.locator(
+      "dialog.workspace-command-palette-dialog",
+    );
+    await expect(workspacePalette).toBeVisible();
+    await page.waitForTimeout(250);
+    const workspaceShell = await readRect(
+      workspacePalette.locator(".workspace-dialog-content-shell"),
+    );
+    const workspaceInput = await readRect(
+      workspacePalette.locator('input[aria-label="搜索菜单、命令或画板"]'),
+    );
+
+    await page.keyboard.press("Escape");
+    await expect(workspacePalette).not.toBeVisible();
+    await page.getByRole("button", { name: /新建画板/ }).first().click();
+    await page.waitForURL(/\?id=/);
+    await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
+
+    await page.getByTestId("main-menu-trigger").click();
+    await page.getByTestId("command-palette-button").click();
+    const editorPalette = page.locator(".command-palette-dialog");
+    await expect(editorPalette).toBeVisible();
+    await page.waitForTimeout(250);
+
+    expectRectsToMatch(
+      await readRect(editorPalette.locator(".Modal__content")),
+      workspaceShell,
+    );
+    expectRectsToMatch(
+      await readRect(editorPalette.locator("input").first()),
+      workspaceInput,
+    );
+
+    const sceneId = new URL(page.url()).searchParams.get("id");
+    if (sceneId) {
+      await page.request.delete(`/api/scenes/${sceneId}?permanent=true`);
+    }
+  });
+
+  test("keeps the mobile home command palette stable", async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await expect(page.locator(".workspace-home")).toBeVisible();
+    await page.keyboard.press("Control+Shift+p");
+
+    const palette = page.locator("dialog.workspace-command-palette-dialog");
+    const input = palette.locator(
+      'input[aria-label="搜索菜单、命令或画板"]',
+    );
+    const shell = palette.locator(".workspace-dialog-content-shell");
+    await expect(palette).toBeVisible();
+    await page.waitForTimeout(250);
+
+    const shellBaseline = await readRect(shell);
+    const inputBaseline = await readRect(input);
+    expect(shellBaseline.x).toBeLessThanOrEqual(1);
+    expect(shellBaseline.y).toBeLessThanOrEqual(1);
+    expect(Math.abs(shellBaseline.width - 390)).toBeLessThanOrEqual(1);
+    expect(Math.abs(shellBaseline.height - 844)).toBeLessThanOrEqual(1);
+
+    for (const query of ["", "新", "新建", "新建 移动端名称"]) {
+      await input.fill(query);
+      await expect(input).toHaveValue(query);
+      await page.waitForTimeout(30);
+      expectRectsToMatch(await readRect(shell), shellBaseline);
+      expectRectsToMatch(await readRect(input), inputBaseline);
+    }
   });
 
   test("switches the editor language through the accessible menu", async ({
