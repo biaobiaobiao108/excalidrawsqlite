@@ -131,4 +131,27 @@ test.describe("Workspace behavior", () => {
       page.getByRole("button", { name: /新建画板/ }),
     ).toBeVisible();
   });
+
+  test("switches the editor language through the accessible menu", async ({
+    authenticatedPage: page,
+  }) => {
+    await page.getByRole("button", { name: /新建画板/ }).click();
+    await page.waitForURL(/\?id=/);
+    await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
+
+    await page.getByTestId("main-menu-trigger").click();
+    const languageButton = page.getByRole("button", {
+      name: /Select language|选择语言/,
+    });
+    await expect(languageButton).toBeVisible();
+    const languageLabel = await languageButton.getAttribute("aria-label");
+    await languageButton.click();
+    await expect(
+      page.getByRole("listbox", { name: languageLabel || undefined }),
+    ).toBeVisible();
+    await page.getByRole("option", { name: "English" }).click();
+    await expect(
+      page.getByRole("button", { name: "Select language" }),
+    ).toBeVisible();
+  });
 });
