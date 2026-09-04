@@ -63,6 +63,26 @@ describe("server shutdown", () => {
     expect(calls).toEqual([]);
   });
 
+  it("bounds shutdown when closing development reload subscribers stalls", async () => {
+    const { calls, runtime } = createRuntimeStub();
+    const stopCalls: boolean[] = [];
+
+    const result = await shutdownServer({
+      server: {
+        stop: async (force = false) => {
+          stopCalls.push(force);
+        },
+      },
+      runtime,
+      closeDevReload: () => new Promise<void>(() => {}),
+      timeoutMs: 10,
+    });
+
+    expect(result).toEqual({ forced: true });
+    expect(stopCalls).toEqual([true]);
+    expect(calls).toEqual([]);
+  });
+
   it("handles repeated shutdown signals only once", async () => {
     let shutdownCalls = 0;
     let resolveShutdown!: (result: { forced: boolean }) => void;

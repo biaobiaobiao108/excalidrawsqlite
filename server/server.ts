@@ -45,6 +45,7 @@ export const shutdownServer = async (options: {
   server: StoppableServer;
   runtime: ServerRuntime;
   closeDevWatcher?: (() => void) | null;
+  closeDevReload?: () => Promise<void>;
   maintenanceTimer?: ReturnType<typeof setInterval>;
   backgroundTasks?: ReadonlySet<Promise<unknown>>;
   timeoutMs?: number;
@@ -53,6 +54,7 @@ export const shutdownServer = async (options: {
     server,
     runtime,
     closeDevWatcher,
+    closeDevReload = closeDevReloadSubscribers,
     maintenanceTimer,
     backgroundTasks = new Set(),
     timeoutMs = 15_000,
@@ -68,7 +70,7 @@ export const shutdownServer = async (options: {
     } catch {
       // Ignore watcher shutdown failures while closing the server.
     }
-    await closeDevReloadSubscribers();
+    await closeDevReload();
     await Promise.all([Promise.resolve(server.stop()), ...backgroundTasks]);
   })().catch((error) => {
     gracefulError = error;
