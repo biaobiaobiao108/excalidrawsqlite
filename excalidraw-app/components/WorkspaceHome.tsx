@@ -27,7 +27,10 @@ import {
   type CloudFolder,
   type CloudSceneSummary,
 } from "../data/cloudStorage";
-import { subscribeCloudTabSync } from "../data/cloudSync";
+import {
+  broadcastWorkspaceChanged,
+  subscribeCloudTabSync,
+} from "../data/cloudSync";
 import { LocalData } from "../data/LocalData";
 import { importFromLocalStorage } from "../data/localStorage";
 
@@ -798,6 +801,16 @@ export const WorkspaceHome = ({
     [scenes],
   );
 
+  const folderSceneCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const scene of scenes) {
+      if (scene.folder_id) {
+        counts.set(scene.folder_id, (counts.get(scene.folder_id) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [scenes]);
+
   const filteredScenes = useMemo(() => {
     const targetScenes = view === "trash" ? trashScenes : scenes;
     const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
@@ -880,6 +893,7 @@ export const WorkspaceHome = ({
         name: sceneName?.trim() || "未命名白板",
         folder_id: folderId,
       });
+      broadcastWorkspaceChanged();
       navigateToScene(scene);
     } catch (requestError: any) {
       if (requestError?.status === 401) {
@@ -911,6 +925,7 @@ export const WorkspaceHome = ({
       setScenes((current) =>
         current.map((item) => (item.id === scene.id ? updated : item)),
       );
+      broadcastWorkspaceChanged();
     } catch (requestError: any) {
       setScenes((current) =>
         current.map((item) =>
@@ -966,6 +981,7 @@ export const WorkspaceHome = ({
             setTrashScenes((current) =>
               current.filter((item) => item.id !== scene.id),
             );
+            broadcastWorkspaceChanged();
           } catch (requestError: any) {
             setError(requestError?.message || "彻底删除画板失败");
           } finally {
@@ -984,6 +1000,7 @@ export const WorkspaceHome = ({
         { ...scene, deleted_at: Date.now() },
         ...current,
       ]);
+      broadcastWorkspaceChanged();
     } catch (requestError: any) {
       setError(requestError?.message || "删除画板失败");
     } finally {
@@ -1005,6 +1022,7 @@ export const WorkspaceHome = ({
         try {
           await clearCloudTrash();
           setTrashScenes([]);
+          broadcastWorkspaceChanged();
         } catch (requestError: any) {
           setError(requestError?.message || "清空回收站失败");
         } finally {
@@ -1023,6 +1041,7 @@ export const WorkspaceHome = ({
         current.filter((item) => item.id !== scene.id),
       );
       setScenes((current) => [{ ...scene, deleted_at: null }, ...current]);
+      broadcastWorkspaceChanged();
     } catch (requestError: any) {
       setError(requestError?.message || "还原画板失败");
     } finally {
@@ -1043,7 +1062,7 @@ export const WorkspaceHome = ({
         );
         setFolders((current) =>
           current.map((folder) =>
-            folder.id === updated.id ? updated : folder,
+            folder.id === updated.id ? { ...folder, ...updated } : folder,
           ),
         );
         setScenes((current) =>
@@ -1053,9 +1072,11 @@ export const WorkspaceHome = ({
               : scene,
           ),
         );
+        broadcastWorkspaceChanged();
       } else {
         const created = await createCloudFolder(folderDialog.name.trim());
         setFolders((current) => [...current, created]);
+        broadcastWorkspaceChanged();
       }
       setFolderDialog(null);
     } catch (requestError: any) {
@@ -1082,9 +1103,10 @@ export const WorkspaceHome = ({
             current.map((scene) =>
               scene.folder_id === folder.id
                 ? { ...scene, folder_id: null, folder_name: null }
-                : scene,
+              : scene,
             ),
           );
+          broadcastWorkspaceChanged();
           if (selectedFolderId === folder.id) {
             setSelectedFolderId(null);
           }
@@ -1249,7 +1271,7 @@ export const WorkspaceHome = ({
                 >
                   <FolderIcon />
                   <span>{folder.name}</span>
-                  <small>{folder.scene_count}</small>
+                  <small>{folderSceneCounts.get(folder.id) || 0}</small>
                 </button>
                 <button
                   type="button"
