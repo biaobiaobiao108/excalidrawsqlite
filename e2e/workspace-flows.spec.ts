@@ -142,6 +142,24 @@ test.describe("Workspace behavior", () => {
       await expect(firstFolderRow).toBeVisible();
       await expect(secondFolderRow).toBeVisible();
 
+      const workspaceChangedMessage = secondPage.evaluate(
+        () =>
+          new Promise<boolean>((resolve) => {
+            const channel = new BroadcastChannel("excalidraw_cloud_tab_sync");
+            const timeout = window.setTimeout(() => {
+              channel.close();
+              resolve(false);
+            }, 5_000);
+            channel.addEventListener("message", (event) => {
+              if (event.data?.type === "workspace_changed") {
+                window.clearTimeout(timeout);
+                channel.close();
+                resolve(true);
+              }
+            });
+          }),
+      );
+
       await firstFolderRow.locator("button.folder-more").click();
       const folderDialog = page.locator("dialog[open]");
       await folderDialog.locator("input").fill(renamedFolder);
@@ -150,6 +168,7 @@ test.describe("Workspace behavior", () => {
       await expect(
         page.locator(".folder-row").filter({ hasText: renamedFolder }),
       ).toBeVisible();
+      expect(await workspaceChangedMessage).toBe(true);
       await expect(
         secondPage.locator(".folder-row").filter({ hasText: renamedFolder }),
       ).toBeVisible();
