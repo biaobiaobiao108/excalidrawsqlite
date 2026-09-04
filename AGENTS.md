@@ -72,6 +72,6 @@
    - 规则：优先运行与该改动直接相关的测试文件（如 `bun test packages/excalidraw/tests`）或 `bun run test:typecheck`，不要盲目跑全量测试。
 4. **全量与发布级验证 (必要时执行)**：
    - 适用范围：修改了 `package.json`、核心依赖项、`scripts/build-frontend.ts` 打包引擎配置、核心跨模块接口或用户显式要求。
-   - 规则：运行 `bun run test:server && bun run test:typecheck && bun run build`；涉及内部子包发布构建时，额外运行 `bun run build:packages`；涉及前后端全链路交付时，可运行 `bun run test:e2e`。
+   - 规则：运行 `bun run test:server && bun run test:typecheck && bun run build`。
 
 - **原子提交要求**：每次代码或文档修改完成后立即执行一次原子 Git 提交，提交信息使用 Conventional Commits 格式。文档修改也应单独或与同一主题的代码修改一起提交，保持提交记录可追溯。
