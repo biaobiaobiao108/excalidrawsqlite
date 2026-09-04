@@ -10,11 +10,18 @@ const TEST_RESULTS_DIR = path.join(os.tmpdir(), "excalidraw-playwright-results")
 
 const cleanDataDir = () => {
   try {
-    fs.rmSync(DATA_DIR, { recursive: true, force: true });
+    fs.rmSync(DATA_DIR, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
   } catch {
     // The web server may still be releasing SQLite handles during teardown.
   }
 };
+
+process.once("exit", cleanDataDir);
 
 // Ensure clean test database directory before server starts
 cleanDataDir();
