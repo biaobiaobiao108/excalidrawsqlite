@@ -112,7 +112,9 @@ test.describe("Workspace behavior", () => {
     });
     expect([200, 201]).toContain(upload.status());
 
-    const download = await page.request.get(`/api/files/${fileId}`);
+    const download = await page.request.get(`/api/files/${fileId}`, {
+      headers: { Accept: "application/octet-stream" },
+    });
     expect(download.status()).toBe(200);
     expect(download.headers()["content-type"]).toContain("image/png");
     expect(Buffer.from(await download.body())).toEqual(png);
