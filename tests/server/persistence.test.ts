@@ -946,6 +946,69 @@ describe("cloud persistence server", () => {
     expect(traversal.status).toBe(400);
   });
 
+  it("rejects SVG uploads and serves legacy SVGs as safe downloads", async () => {
+    const { handler, runtime, directory } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script /></svg>';
+
+    const directUpload = await request(handler, "/api/files/svg_direct", {
+      method: "PUT",
+      headers: { Cookie: cookie, "Content-Type": "image/svg+xml" },
+      body: svg,
+    });
+    expect(directUpload.status).toBe(415);
+    expect(
+      runtime.db.query("SELECT id FROM files WHERE id = ?").get("svg_direct"),
+    ).toBeUndefined();
+
+    const batchUpload = await jsonRequest(
+      handler,
+      "/api/files",
+      {
+        id: "svg_batch",
+        mimeType: "IMAGE/SVG+XML",
+        dataURL: `data:image/svg+xml;base64,${Buffer.from(svg).toString(
+          "base64",
+        )}`,
+      },
+      { headers: { Cookie: cookie } },
+    );
+    expect(batchUpload.status).toBe(415);
+    expect(
+      runtime.db.query("SELECT id FROM files WHERE id = ?").get("svg_batch"),
+    ).toBeUndefined();
+
+    const legacyPath = path.join(directory, "files", "legacy_svg");
+    await fs.writeFile(legacyPath, svg);
+    runtime.db.run(
+      `INSERT INTO files
+       (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "legacy_svg",
+        "legacy_svg",
+        "image/svg+xml",
+        Buffer.byteLength(svg),
+        "legacy",
+        1,
+        1,
+      ],
+    );
+
+    const download = await request(handler, "/api/files/legacy_svg", {
+      headers: { Cookie: cookie, Accept: "image/svg+xml" },
+    });
+    expect(download.status).toBe(200);
+    expect(download.headers.get("content-type")).toBe(
+      "application/octet-stream",
+    );
+    expect(download.headers.get("content-disposition")).toContain(
+      "attachment",
+    );
+    expect(download.headers.get("cache-control")).toBe("private, no-store");
+    expect(await download.text()).toBe(svg);
+  });
+
   it("restores the previous file when its metadata update fails", async () => {
     const { handler, runtime, directory } = createTestRuntime();
     const cookie = await authenticate(handler);
