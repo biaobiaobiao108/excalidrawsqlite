@@ -199,6 +199,13 @@ const InteractiveCanvas = (props: InteractiveCanvasProps) => {
     }
   });
 
+  useEffect(() => {
+    return () => {
+      AnimationController.cancel(INTERACTIVE_SCENE_ANIMATION_KEY);
+      rendererParams.current = null;
+    };
+  }, []);
+
   return (
     <canvas
       className="excalidraw__canvas interactive"
