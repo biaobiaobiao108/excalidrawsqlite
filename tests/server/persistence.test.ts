@@ -9,7 +9,7 @@ import {
   createRuntime,
   createServerConfig,
   type ServerRuntime,
-} from "./server";
+} from "../../server/server";
 
 const runtimes: ServerRuntime[] = [];
 const testDirectories: string[] = [];
