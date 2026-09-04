@@ -142,22 +142,12 @@ test.describe("Workspace behavior", () => {
       await expect(firstFolderRow).toBeVisible();
       await expect(secondFolderRow).toBeVisible();
 
-      const workspaceChangedMessage = secondPage.evaluate(
-        () =>
-          new Promise<boolean>((resolve) => {
-            const channel = new BroadcastChannel("excalidraw_cloud_tab_sync");
-            const timeout = window.setTimeout(() => {
-              channel.close();
-              resolve(false);
-            }, 5_000);
-            channel.addEventListener("message", (event) => {
-              if (event.data?.type === "workspace_changed") {
-                window.clearTimeout(timeout);
-                channel.close();
-                resolve(true);
-              }
-            });
-          }),
+      const secondFolderRefresh = secondPage.waitForResponse(
+        (response) =>
+          response.request().method() === "GET" &&
+          response.url().endsWith("/api/folders") &&
+          response.ok(),
+        { timeout: 5_000 },
       );
 
       await firstFolderRow.locator("button.folder-more").click();
@@ -168,7 +158,12 @@ test.describe("Workspace behavior", () => {
       await expect(
         page.locator(".folder-row").filter({ hasText: renamedFolder }),
       ).toBeVisible();
-      expect(await workspaceChangedMessage).toBe(true);
+      const refreshedFolders = await (await secondFolderRefresh).json();
+      expect(refreshedFolders).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: folder.id, name: renamedFolder }),
+        ]),
+      );
       await expect(
         secondPage.locator(".folder-row").filter({ hasText: renamedFolder }),
       ).toBeVisible();
