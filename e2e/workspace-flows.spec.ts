@@ -148,6 +148,9 @@ test.describe("Workspace behavior", () => {
       await folderDialog.getByRole("button", { name: "保存" }).click();
 
       await expect(
+        page.locator(".folder-row").filter({ hasText: renamedFolder }),
+      ).toBeVisible();
+      await expect(
         secondPage.locator(".folder-row").filter({ hasText: renamedFolder }),
       ).toBeVisible();
     } finally {
