@@ -4,6 +4,12 @@
     "types": ["@types/bun", "@playwright/test"],
     "noEmit": true
   },
-  "include": ["tests/**/*.ts", "e2e/**/*.ts", "playwright.config.ts"],
+  "include": [
+    "tests/**/*.ts",
+    "e2e/**/*.ts",
+    "playwright.config.ts",
+    "env.d.ts",
+    "packages/excalidraw/global.d.ts"
+  ],
   "exclude": ["node_modules"]
 }

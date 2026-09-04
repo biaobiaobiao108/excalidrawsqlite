@@ -427,7 +427,9 @@ describe("cloud persistence server", () => {
     });
     expect(initialStatus.status).toBe(200);
     expect(
-      await responseJson<{ authenticated: boolean }>(initialStatus),
+      await responseJson<{ authRequired: boolean; authenticated: boolean }>(
+        initialStatus,
+      ),
     ).toEqual({
       authRequired: true,
       authenticated: true,
@@ -453,7 +455,9 @@ describe("cloud persistence server", () => {
     });
     expect(restoredStatus.status).toBe(200);
     expect(
-      await responseJson<{ authenticated: boolean }>(restoredStatus),
+      await responseJson<{ authRequired: boolean; authenticated: boolean }>(
+        restoredStatus,
+      ),
     ).toEqual({
       authRequired: true,
       authenticated: true,

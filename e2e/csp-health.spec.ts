@@ -4,7 +4,7 @@ test.describe("CSP & Browser Console Health", () => {
   test("should load workbench and canvas with zero CSP violations", async ({
     page,
   }) => {
-    const cspViolations = [];
+    const cspViolations: string[] = [];
 
     page.on("console", (msg) => {
       const text = msg.text();

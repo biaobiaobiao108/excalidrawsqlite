@@ -17,7 +17,7 @@ const ellipseElement = {
 
 describe("pure shape utilities", () => {
   it("converts an ellipse element into a geometric shape", () => {
-    expect(getEllipseShape(ellipseElement)).toEqual({
+    expect(getEllipseShape(ellipseElement as any)).toEqual({
       type: "ellipse",
       data: {
         center: [30, 30],
@@ -34,12 +34,20 @@ describe("pure shape utilities", () => {
     { point: [51, 30], inside: false },
     { point: [30, 41], inside: false },
   ])("checks ellipse containment for $point", ({ point, inside }) => {
-    expect(pointInEllipse(point as [number, number], getEllipseShape(ellipseElement).data)).toBe(inside);
+    expect(
+      pointInEllipse(
+        point as any,
+        getEllipseShape(ellipseElement as any).data,
+      ),
+    ).toBe(inside);
   });
 
   it("finds a point on the rotated ellipse boundary", () => {
-    const shape = getEllipseShape({ ...ellipseElement, angle: Math.PI / 2 });
-    expect(pointOnEllipse([30, 50], shape.data)).toBe(true);
-    expect(pointOnEllipse([50, 30], shape.data)).toBe(false);
+    const shape = getEllipseShape({
+      ...ellipseElement,
+      angle: Math.PI / 2,
+    } as any);
+    expect(pointOnEllipse([30, 50] as any, shape.data)).toBe(true);
+    expect(pointOnEllipse([50, 30] as any, shape.data)).toBe(false);
   });
 });

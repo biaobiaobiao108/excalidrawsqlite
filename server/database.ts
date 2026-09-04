@@ -7,6 +7,7 @@ import { decodeDataUrl, extractFileIds } from "./files";
 import { validateId } from "./validation";
 
 import type { Database } from "bun:sqlite";
+import type { ServerRuntime } from "./types";
 
 const ensureColumn = (
   db: Database,

@@ -9,6 +9,7 @@ import {
   AUTH_COOKIE_PRODUCTION,
   AUTH_RATE_WINDOW_MS,
   MAX_AUTH_PASSWORD_LENGTH,
+  WRITE_RATE_WINDOW_MS,
 } from "./config";
 import { getCookie, isSecureRequest } from "./http";
 
