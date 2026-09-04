@@ -161,6 +161,15 @@ test.describe("Workspace behavior", () => {
       await folderDialog.locator("input").fill(renamedFolder);
       await folderDialog.getByRole("button", { name: "保存" }).click();
       await renameResponse;
+      expect(
+        await page.evaluate(() =>
+          JSON.parse(
+            window.localStorage.getItem(
+              "excalidraw_cloud_tab_sync_message",
+            ) || "null",
+          ),
+        ),
+      ).toMatchObject({ type: "workspace_changed" });
 
       await expect(
         page.locator(".folder-row").filter({ hasText: renamedFolder }),
