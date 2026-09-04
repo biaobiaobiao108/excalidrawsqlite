@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import fs, { rm } from "node:fs/promises";
 import path from "node:path";
 
@@ -120,13 +121,33 @@ describe("cloud persistence server", () => {
   it("surfaces configuration errors before opening persistent storage", () => {
     const root = Bun.env.TEMP || Bun.env.TMP || ".";
     const directory = `${root}/excalidraw-server-config-${crypto.randomUUID()}`;
+    const previousEnvironment = {
+      NODE_ENV: process.env.NODE_ENV,
+      AUTH_PASSWORD: process.env.AUTH_PASSWORD,
+      ALLOW_ANONYMOUS: process.env.ALLOW_ANONYMOUS,
+    };
 
-    expect(() =>
-      createRuntime({
-        dbPath: path.join(directory, "excalidraw.db"),
-        filesDir: path.join(directory, "files"),
-      }),
-    ).toThrow("AUTH_PASSWORD must be configured");
+    process.env.NODE_ENV = "production";
+    delete process.env.AUTH_PASSWORD;
+    delete process.env.ALLOW_ANONYMOUS;
+
+    try {
+      expect(() =>
+        createRuntime({
+          dbPath: path.join(directory, "excalidraw.db"),
+          filesDir: path.join(directory, "files"),
+        }),
+      ).toThrow("AUTH_PASSWORD must be configured");
+      expect(existsSync(directory)).toBe(false);
+    } finally {
+      for (const [key, value] of Object.entries(previousEnvironment)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
   });
 
   it("rate limits repeated failed authentication attempts", async () => {
