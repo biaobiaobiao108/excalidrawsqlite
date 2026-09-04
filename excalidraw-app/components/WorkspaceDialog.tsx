@@ -50,8 +50,7 @@ export const WorkspaceDialog = ({
       if (typeof dialog.showModal === "function") {
         dialog.showModal();
       } else {
-        // jsdom does not implement the dialog API. The open attribute keeps
-        // the component testable while production browsers use showModal().
+        // Browsers without the dialog API can still honor the open attribute.
         dialog.setAttribute("open", "");
       }
     }

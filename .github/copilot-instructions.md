@@ -39,9 +39,9 @@
 
 - Follow tiered verification guidelines:
   - Backend/persistence changes: run `bun run test:server` (< 1.5s)
-  - Frontend component/logic changes: run `bun test packages/excalidraw/tests` or `bun run test:typecheck`
+  - Frontend component/logic changes: run `bun test` / `bun run test:unit` or `bun run test:typecheck`
   - Document/markdown changes: exempt from testing (commit directly)
-  - Static code checking: run `bun run test:code` / `bun run fix:code`
+  - Static code checking: run `bun run test:code` / `bun run fix`
 
 ## Types
 

@@ -682,7 +682,7 @@ const copyTextViaExecCommand = (text: string | null) => {
 export const isClipboardEvent = (
   event: React.SyntheticEvent | Event,
 ): event is ClipboardEvent => {
-  /** not using instanceof ClipboardEvent due to tests (jsdom) */
+  /** Avoid instanceof so clipboard events from another realm are recognized. */
   return (
     event.type === EVENT.PASTE ||
     event.type === EVENT.COPY ||

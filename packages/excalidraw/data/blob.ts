@@ -386,8 +386,8 @@ export const resizeImageFile = async (
     import("image-blob-reduce").then((res) => res.default),
   ]);
 
-  // CRA's minification settings break pica in WebWorkers, so let's disable
-  // them for now
+  // Some bundler minifiers break pica in WebWorkers, so keep this
+  // configuration explicit for now.
   // https://github.com/nodeca/image-blob-reduce/issues/21#issuecomment-757365513
   const reduce = imageBlobReduce({
     pica: pica({ features: ["js", "wasm"] }),

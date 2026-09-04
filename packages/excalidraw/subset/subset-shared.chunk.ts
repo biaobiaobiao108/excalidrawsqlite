@@ -18,7 +18,8 @@ export const Commands = {
 } as const;
 
 /**
- * Used by browser (main thread), node and jsdom, to subset the font based on the passed codepoints.
+ * Used by browser and server-compatible runtimes to subset the font based on
+ * the passed codepoints.
  *
  * @returns woff2 font as a base64 encoded string
  */
@@ -58,7 +59,7 @@ export const subsetToBinary = async (
 };
 
 /**
- * Util for isomoprhic browser (main thread), node and jsdom usage.
+ * Utility for isomorphic browser and server-compatible runtime usage.
  *
  * Isn't used inside the worker to avoid copying large binary strings (as dataurl) between worker threads and the main thread.
  */
@@ -66,7 +67,7 @@ export const toBase64 = async (arrayBuffer: ArrayBuffer) => {
   let base64: string;
 
   if (typeof Buffer !== "undefined") {
-    // node, jsdom
+    // Server-compatible runtimes
     base64 = Buffer.from(arrayBuffer).toString("base64");
   } else {
     // browser (main thread)

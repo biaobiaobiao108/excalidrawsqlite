@@ -39,7 +39,7 @@
 提交 Pull Request 或执行代码修改前，请严格按照修改类型执行**分级验证**：
 
 1. **纯文档与注释改动 (免测)**：
-   - 范围：`*.md`、`*.mdx`、`dev-docs/`、`docs/`、代码注释；
+   - 范围：`*.md`、`*.mdx`、`docs/`、代码注释；
    - 规则：直接执行 Git 提交，**严禁运行全量测试或构建命令**。
 
 2. **后端与持久化改动 (极速验证)**：
@@ -53,8 +53,10 @@
    - 范围：`packages/` 或 `excalidraw-app/` 内局部组件与业务逻辑；
    - 优先运行直接相关的测试或类型检查：
      ```bash
-     bun test packages/excalidraw/tests
+     bun test
      # 或
+     bun run test:unit
+     # 类型检查可作为补充
      bun run test:typecheck
      ```
 
@@ -62,14 +64,14 @@
    - 范围：修改了 `package.json`、核心打包配置 `scripts/build-frontend.ts`、跨模块接口等；
    - 运行全量流水线：
      ```bash
-     bun run test:server && bun run test:typecheck && bun run build
+     bun run test:all
      ```
 
 5. **代码风格与规范检查**：
    ```bash
    bun run test:code
    # 自动修复
-   bun run fix:code
+   bun run fix
    ```
 
 ---
@@ -91,4 +93,3 @@
 ## 🤖 AI 智能体协助指南
 
 如果你使用 AI 智能体（如 GitHub Copilot、Antigravity 等）协助开发，请确保智能体遵循 [`AGENTS.md`](./AGENTS.md) 中的核心原则与 CSP 安全规范。
-

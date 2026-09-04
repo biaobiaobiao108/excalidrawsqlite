@@ -154,7 +154,7 @@ bun install
 
 # 3. 构建前端产物并启动全栈服务 (默认端口 8080)
 bun run build
-AUTH_PASSWORD=your-password bun run start:server
+AUTH_PASSWORD=your-password bun run start
 ```
 
 如需进行前端热重载开发：
@@ -203,11 +203,10 @@ AUTH_PASSWORD=your-password bun run dev
 │   ├── files.ts            # 附件、缩略图与存储一致性维护
 │   ├── backup.ts           # SQLite 快照与完整备份
 │   ├── static.ts           # 静态资源路径与 SPA fallback 辅助
-│   └── server.test.ts      # 持久化、备份、并发与安全自动化测试
+│   └── ...                  # 持久化、备份、并发与安全模块
 ├── scripts/
 │   ├── build-frontend.ts   # 纯原生 Bun HTML Bundler 打包引擎 (含 dev/watch)
 │   ├── build-version.js    # 版本号与 Git SHA 元数据生成
-│   └── start-server.js     # 生产环境一键单进程服务启动脚本
 ├── excalidraw-app/         # Excalidraw 前端主应用 (Bun HTML Bundler + React)
 │   ├── components/
 │   │   ├── WorkspaceHome.tsx     # 工作台多画板管理、文件夹、回收站与卡片组件
@@ -221,6 +220,10 @@ AUTH_PASSWORD=your-password bun run dev
 │   ├── excalidraw/         # 核心渲染与画布引擎 (包含霞鹜文楷本地子集包)
 │   ├── element/            # 图元数据结构与计算
 │   └── ...
+├── tests/
+│   ├── unit/                # Bun 原生纯逻辑单元测试
+│   └── server/              # Bun SQLite/API 集成测试
+├── e2e/                     # Playwright + Chromium 全栈测试
 ├── docs/                   # GitHub Pages 介绍落地页 (单文件、现代化动效与手绘 SVG)
 ├── Dockerfile              # oven/bun:1.4.1-alpine 纯 Bun 多阶段极小容器构建 (零 Node.js)
 ├── docker-compose.yml      # 容器化编排配置文件
