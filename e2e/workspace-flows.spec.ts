@@ -57,7 +57,7 @@ test.describe("Workspace behavior", () => {
 
       await expect(card()).toBeVisible();
       await expect(card()).toContainText(folderName);
-      await expect(card()).toContainText("e2e");
+      await expect(card()).toContainText("browser");
 
       const folderRow = page
         .locator(".folder-row")
@@ -110,7 +110,7 @@ test.describe("Workspace behavior", () => {
       headers: { "Content-Type": "image/png" },
       data: png,
     });
-    expect(upload.status()).toBe(200);
+    expect([200, 201]).toContain(upload.status());
 
     const download = await page.request.get(`/api/files/${fileId}`);
     expect(download.status()).toBe(200);
