@@ -117,6 +117,18 @@ describe("cloud persistence server", () => {
     ).toBe(true);
   });
 
+  it("surfaces configuration errors before opening persistent storage", () => {
+    const root = Bun.env.TEMP || Bun.env.TMP || ".";
+    const directory = `${root}/excalidraw-server-config-${crypto.randomUUID()}`;
+
+    expect(() =>
+      createRuntime({
+        dbPath: path.join(directory, "excalidraw.db"),
+        filesDir: path.join(directory, "files"),
+      }),
+    ).toThrow("AUTH_PASSWORD must be configured");
+  });
+
   it("rate limits repeated failed authentication attempts", async () => {
     const { handler } = createTestRuntime();
     for (let attempt = 0; attempt < 5; attempt++) {

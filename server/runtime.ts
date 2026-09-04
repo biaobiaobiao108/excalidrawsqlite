@@ -16,6 +16,8 @@ export const createRuntime = (options: {
 }): ServerRuntime => {
   const dbPath = path.resolve(options.dbPath);
   const filesDir = path.resolve(options.filesDir);
+  const config = options.config || createServerConfig();
+
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     fs.mkdirSync(filesDir, { recursive: true });
@@ -32,7 +34,7 @@ export const createRuntime = (options: {
       staticDir: options.staticDir
         ? path.resolve(options.staticDir)
         : undefined,
-      config: options.config || createServerConfig(),
+      config,
       sessions: new Map(),
       authAttempts: new Map(),
       writeAttempts: new Map(),

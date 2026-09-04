@@ -157,6 +157,16 @@ bun run build
 AUTH_PASSWORD=your-password bun run start
 ```
 
+PowerShell 请先设置当前终端会话的环境变量：
+
+```powershell
+$env:AUTH_PASSWORD = "your-password"
+bun run build
+bun run start
+```
+
+如果你明确需要关闭密码保护，请改为设置 `$env:ALLOW_ANONYMOUS = "true"`；生产环境不会默认匿名开放。
+
 如需进行前端热重载开发：
 
 ```bash
