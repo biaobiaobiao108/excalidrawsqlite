@@ -142,13 +142,15 @@ test.describe("Workspace behavior", () => {
       await expect(firstFolderRow).toBeVisible();
       await expect(secondFolderRow).toBeVisible();
 
-      const secondFolderRefresh = secondPage.waitForResponse(
-        (response) =>
-          response.request().method() === "GET" &&
-          response.url().endsWith("/api/folders") &&
-          response.ok(),
-        { timeout: 5_000 },
-      );
+      const secondFolderRefresh = secondPage
+        .waitForResponse(
+          (response) =>
+            response.request().method() === "GET" &&
+            response.url().endsWith("/api/folders") &&
+            response.ok(),
+          { timeout: 5_000 },
+        )
+        .catch(() => null);
       const renameResponse = page.waitForResponse(
         (response) =>
           response.request().method() === "PATCH" &&
@@ -174,7 +176,9 @@ test.describe("Workspace behavior", () => {
       await expect(
         page.locator(".folder-row").filter({ hasText: renamedFolder }),
       ).toBeVisible();
-      const refreshedFolders = await (await secondFolderRefresh).json();
+      const refreshedResponse = await secondFolderRefresh;
+      expect(refreshedResponse).not.toBeNull();
+      const refreshedFolders = await refreshedResponse!.json();
       expect(refreshedFolders).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: folder.id, name: renamedFolder }),
