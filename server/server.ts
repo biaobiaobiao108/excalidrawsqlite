@@ -58,21 +58,19 @@ export const shutdownServer = async (options: {
     timeoutMs = 15_000,
   } = options;
 
-  if (maintenanceTimer) {
-    clearInterval(maintenanceTimer);
-  }
-  try {
-    closeDevWatcher?.();
-  } catch {
-    // Ignore watcher shutdown failures while closing the server.
-  }
-  await closeDevReloadSubscribers();
-
   let gracefulError: unknown;
-  const gracefulStop = Promise.all([
-    Promise.resolve(server.stop()),
-    ...backgroundTasks,
-  ]).catch((error) => {
+  const gracefulStop = (async () => {
+    if (maintenanceTimer) {
+      clearInterval(maintenanceTimer);
+    }
+    try {
+      closeDevWatcher?.();
+    } catch {
+      // Ignore watcher shutdown failures while closing the server.
+    }
+    await closeDevReloadSubscribers();
+    await Promise.all([Promise.resolve(server.stop()), ...backgroundTasks]);
+  })().catch((error) => {
     gracefulError = error;
   });
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
