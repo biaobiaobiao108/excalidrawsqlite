@@ -31,7 +31,7 @@
     "test:unit": "bun test --max-concurrency=1",
     "test:server": "bun test --max-concurrency=1 ./tests/server",
     "test:e2e": "bun run build && bunx playwright test",
-    "test:all": "bun run test:unit && bun run test:server && bun run test:e2e",
+    "test:all": "bun run test:unit && bun run test:server && bun run test:typecheck && bun run test:code && bun run test:e2e",
     "test:typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.tests.json",
     "test:code": "eslint --max-warnings=0 --ext .js,.ts,.tsx .",
     "fix": "eslint --max-warnings=0 --ext .js,.ts,.tsx . --fix"

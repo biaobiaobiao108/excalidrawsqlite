@@ -284,6 +284,9 @@ AUTH_PASSWORD=your-password bun run dev
 本仓库遵循严格的代码质量与测试规范：
 
 ```bash
+# 运行轻量 Bun 原生纯单元测试（默认 bun test 门禁）
+bun test
+
 # 运行后端持久化测试 (基于 Bun 原生测试驱动，耗时 < 1.5s)
 bun run test:server
 
@@ -292,9 +295,6 @@ bun run test:typecheck
 
 # 运行代码规范与 ESLint 检查
 bun run test:code
-
-# 运行前端应用与工作台测试
-bun run test:app
 
 # 运行生产构建与产物体积预算检查
 bun run build
