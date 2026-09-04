@@ -39,6 +39,7 @@ export default defineConfig({
       PORT: String(PORT),
       HOST: "127.0.0.1",
       AUTH_PASSWORD: "test-e2e-password",
+      AUTH_ATTEMPTS_PER_WINDOW: "100",
       DATA_DIR: DATA_DIR,
       STATIC_DIR: STATIC_DIR,
     },

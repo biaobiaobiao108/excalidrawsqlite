@@ -3,7 +3,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
-  AUTH_ATTEMPTS_PER_WINDOW,
   AUTH_RATE_WINDOW_MS,
   WRITE_RATE_WINDOW_MS,
   WRITE_REQUESTS_PER_WINDOW,
@@ -201,7 +200,7 @@ export const createRequestHandler = (
         const rate = consumeRateLimit(
           runtime.authAttempts,
           getClientKey(runtime, req, requestAddressResolver),
-          AUTH_ATTEMPTS_PER_WINDOW,
+          runtime.config.authAttemptsPerWindow,
           AUTH_RATE_WINDOW_MS,
         );
         if (!rate.allowed) {

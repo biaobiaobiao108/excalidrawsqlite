@@ -63,6 +63,10 @@ export const createServerConfig = (
     nodeEnv,
     trustProxy: parseBooleanEnv(env.TRUST_PROXY),
     corsOrigins: splitOrigins(env.CORS_ORIGIN),
+    authAttemptsPerWindow: parsePositiveIntegerEnv(
+      env.AUTH_ATTEMPTS_PER_WINDOW,
+      AUTH_ATTEMPTS_PER_WINDOW,
+    ),
     maxFileBytes: parsePositiveIntegerEnv(
       env.MAX_FILE_BYTES,
       DEFAULT_MAX_FILE_BYTES,

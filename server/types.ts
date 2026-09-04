@@ -6,6 +6,7 @@ export type ServerConfig = {
   nodeEnv: string;
   trustProxy: boolean;
   corsOrigins: Set<string>;
+  authAttemptsPerWindow: number;
   maxFileBytes: number;
   maxSceneBodyBytes: number;
   maxFilesBodyBytes: number;
