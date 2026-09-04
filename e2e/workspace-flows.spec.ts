@@ -149,11 +149,18 @@ test.describe("Workspace behavior", () => {
           response.ok(),
         { timeout: 5_000 },
       );
+      const renameResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PATCH" &&
+          response.url().endsWith(`/api/folders/${folder.id}`) &&
+          response.ok(),
+      );
 
       await firstFolderRow.locator("button.folder-more").click();
       const folderDialog = page.locator("dialog[open]");
       await folderDialog.locator("input").fill(renamedFolder);
       await folderDialog.getByRole("button", { name: "保存" }).click();
+      await renameResponse;
 
       await expect(
         page.locator(".folder-row").filter({ hasText: renamedFolder }),
