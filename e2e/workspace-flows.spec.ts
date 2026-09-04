@@ -142,6 +142,7 @@ test.describe("Workspace behavior", () => {
       await expect(firstFolderRow).toBeVisible();
       await expect(secondFolderRow).toBeVisible();
 
+      await firstFolderRow.hover();
       await firstFolderRow.locator("button.folder-more").click();
       const folderDialog = page.locator("dialog[open]");
       await folderDialog.locator("input").fill(renamedFolder);
