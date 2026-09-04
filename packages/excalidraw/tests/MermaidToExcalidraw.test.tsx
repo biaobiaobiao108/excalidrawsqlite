@@ -129,6 +129,7 @@ describe("Test <MermaidToExcalidraw/>", () => {
       expect(
         dialog.querySelector('[data-testid="ttd-dialog-output-error"]'),
       ).toBeNull();
+      expect(dialog.querySelector(".ttd-dialog-input")).not.toBeNull();
     });
     expect(normalizeDialogSnapshot(dialog)).toMatchSnapshot();
   });

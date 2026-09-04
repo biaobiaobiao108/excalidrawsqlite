@@ -16,6 +16,7 @@ interface Props {
 
 export const InitializeApp = (props: Props) => {
   const [loading, setLoading] = useState(true);
+  const initializedRef = React.useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,6 +24,7 @@ export const InitializeApp = (props: Props) => {
     const updateLang = async () => {
       await setLanguage(currentLang);
       if (!cancelled) {
+        initializedRef.current = true;
         setLoading(false);
       }
     };
@@ -31,6 +33,7 @@ export const InitializeApp = (props: Props) => {
     void updateLang().catch((error) => {
       console.error("Failed to initialize language:", error);
       if (!cancelled) {
+        initializedRef.current = true;
         setLoading(false);
       }
     });
@@ -40,5 +43,9 @@ export const InitializeApp = (props: Props) => {
     };
   }, [props.langCode]);
 
-  return loading ? <LoadingMessage theme={props.theme} /> : props.children;
+  return loading && !initializedRef.current ? (
+    <LoadingMessage theme={props.theme} />
+  ) : (
+    props.children
+  );
 };

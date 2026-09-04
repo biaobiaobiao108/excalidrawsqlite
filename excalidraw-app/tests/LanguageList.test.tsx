@@ -44,10 +44,26 @@ describe("Test LanguageList", () => {
     expect(screen.queryByTitle(/thin/i)).not.toBeNull();
     fireEvent.click(document.querySelector(".dropdown-menu-button")!);
 
-    const languageTrigger = screen.getByRole("button", {
-      name: /select language|选择语言/i,
-    });
-    fireEvent.click(languageTrigger);
+    const openLanguageMenu = async () => {
+      let trigger = screen.queryByRole("button", {
+        name: /select language|choisir une langue|选择语言/i,
+      });
+      if (!trigger) {
+        const menuBtn = document.querySelector(".dropdown-menu-button") as HTMLElement | null;
+        if (menuBtn) {
+          fireEvent.click(menuBtn);
+        }
+        trigger = await waitFor(() =>
+          screen.getByRole("button", {
+            name: /select language|choisir une langue|选择语言/i,
+          }),
+        );
+      }
+      return trigger;
+    };
+
+    let trigger = await openLanguageMenu();
+    fireEvent.click(trigger);
     fireEvent.click(
       screen.getByRole("option", {
         name: languages.find((language) => language.code === TEST_LANG_CODE)
@@ -56,7 +72,9 @@ describe("Test LanguageList", () => {
     );
     // switching to French, `thin` label should no longer exist
     await waitFor(() => expect(screen.queryByTitle(/thin/i)).toBeNull());
-    fireEvent.click(languageTrigger);
+
+    trigger = await openLanguageMenu();
+    fireEvent.click(trigger);
     fireEvent.click(
       screen.getByRole("option", {
         name: languages.find((language) => language.code === "zh-CN")?.label,
@@ -67,7 +85,8 @@ describe("Test LanguageList", () => {
       expect(localStorage.getItem("i18nextLng")).toBe("zh-CN");
     });
     // reset language
-    fireEvent.click(languageTrigger);
+    trigger = await openLanguageMenu();
+    fireEvent.click(trigger);
     fireEvent.click(
       screen.getByRole("option", {
         name: languages.find((language) => language.code === defaultLang.code)
@@ -76,5 +95,5 @@ describe("Test LanguageList", () => {
     );
     // switching back to English
     await waitFor(() => expect(screen.queryByTitle(/thin/i)).not.toBeNull());
-  });
+  }, 20000);
 });

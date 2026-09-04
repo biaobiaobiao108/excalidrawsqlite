@@ -205,11 +205,7 @@ globalThis.fetch = (async (input, init) => {
   return nativeFetch(input, init);
 }) as typeof fetch;
 
-// ReactDOM is located inside index.tsx file
-// as a result, we need a place for it to render into
-const element = document.createElement("div");
-element.id = "root";
-document.body.appendChild(element);
+// ReactDOM renders into the root element created by JSDOM in window setup
 
 const _consoleError = console.error.bind(console);
 console.error = (...args) => {
@@ -225,13 +221,14 @@ console.error = (...args) => {
 
 afterEach(() => {
   // Clean up rendered DOM nodes to prevent memory explosion across tests in the same worker
+  try {
+    const { cleanup } = require("@testing-library/react");
+    cleanup();
+  } catch {}
   if (typeof document !== "undefined") {
     const root = document.getElementById("root");
     if (root) {
       root.innerHTML = "";
     }
-  }
-  if (typeof (Bun as any)?.gc === "function") {
-    (Bun as any).gc(false);
   }
 });
