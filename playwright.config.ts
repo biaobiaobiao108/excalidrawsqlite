@@ -1,19 +1,23 @@
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 
 const PORT = 5055;
 const DATA_DIR = path.resolve(__dirname, "data-e2e");
 const STATIC_DIR = path.resolve(__dirname, "excalidraw-app/build");
+const TEST_RESULTS_DIR = path.join(os.tmpdir(), "excalidraw-playwright-results");
 
-// Ensure clean test database directory before server starts
-if (fs.existsSync(DATA_DIR)) {
+const cleanDataDir = () => {
   try {
     fs.rmSync(DATA_DIR, { recursive: true, force: true });
   } catch {
-    // ignore
+    // The web server may still be releasing SQLite handles during teardown.
   }
-}
+};
+
+// Ensure clean test database directory before server starts
+cleanDataDir();
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 export default defineConfig({
@@ -26,6 +30,10 @@ export default defineConfig({
   workers: 1, // Single worker avoids database write collisions
   retries: 0,
   reporter: "list",
+  outputDir: TEST_RESULTS_DIR,
+  globalTeardown: async () => {
+    cleanDataDir();
+  },
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: "on-first-retry",
