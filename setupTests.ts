@@ -222,3 +222,16 @@ console.error = (...args) => {
     _consoleError(...args);
   }
 };
+
+afterEach(() => {
+  // Clean up rendered DOM nodes to prevent memory explosion across tests in the same worker
+  if (typeof document !== "undefined") {
+    const root = document.getElementById("root");
+    if (root) {
+      root.innerHTML = "";
+    }
+  }
+  if (typeof (Bun as any)?.gc === "function") {
+    (Bun as any).gc(false);
+  }
+});

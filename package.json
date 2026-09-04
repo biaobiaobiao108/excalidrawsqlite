@@ -32,6 +32,7 @@
     "dev": "bun server/server.ts --dev",
     "start": "NODE_ENV=production bun server/server.ts",
     "build": "bun --cwd ./excalidraw-app build",
+    "test": "bun test --parallel=5 --max-concurrency=1",
     "test:server": "bun test --max-concurrency=1 server/server.test.ts",
     "test:app": "bun test --max-concurrency=1 packages/excalidraw/tests",
     "test:typecheck": "tsc",
