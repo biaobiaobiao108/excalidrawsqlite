@@ -56,7 +56,7 @@ describe("math primitives", () => {
     expect(vectorCross(first, second)).toBe(10);
     expect(vectorMagnitude(first)).toBe(5);
     expect(vectorNormalize(first)).toEqual([0.6, 0.8] as any);
-    expect(first).toEqual([3, 4]);
+    expect(first).toEqual([3, 4] as any);
   });
 
   it.each([
