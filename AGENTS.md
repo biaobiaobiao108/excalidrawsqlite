@@ -9,7 +9,7 @@
 
 ## 2. 环境与包管理规范 (Bun Ecosystem & Pure Full-Stack)
 
-- 本项目已完全迁移至 **Bun (1.4+)**，在运行时、构建器与自动化测试中彻底剔除 Node.js / Vite / Vitest / npm / yarn。
+- 本项目统一使用 **Bun (1.4+)**；运行时、构建器和测试入口不得重新引入 Vite、Vitest、npm 或 yarn。
 - 安装依赖统一使用 `bun install`（维护 `bun.lock`）。
 - 脚本执行与构建统一使用 `bun run <script>` 或直接通过 `bun` 执行 TypeScript 文件。
 - 代码中的 `node:*` 协议导入（如 `node:path`、`node:crypto`）仅作为服务端标准模块命名空间，由 Bun 原生 Zig/C++ 实现高性能驱动，绝不允许引入 Node.js 运行时依赖。
@@ -57,21 +57,20 @@
 - `Dockerfile` 运行阶段和默认 `docker-compose.yml` 不得擅自改为固定的 `bun` 用户或 `1000:1000` UID/GID；当前默认 root 身份用于兼容 rootless Podman/Docker 的用户命名空间和绑定挂载权限。
 - 若确需非 root 运行，必须由部署方显式配置 `user: "UID:GID"`（或等价参数），同步更新部署文档，并验证 SQLite/WAL 及附件目录的读写权限；不得把固定 UID 作为镜像默认值。
 
-## 8. 分级验证与提交规范 (Tiered Verification & Commit)
+## 8. 测试与验证
 
-根据实际修改的文件类型与影响范围，严格执行分级验证，避免无意义的全量测试开销：
+测试按层级运行，普通单元测试不得加载浏览器环境：
 
-1. **纯文档与注释改动 (免测)**：
-   - 适用范围：`*.md`、`*.mdx`、`dev-docs/`、`docs/`、`LICENSE`、代码注释或纯文档配置。
-   - 规则：**直接执行 Git 提交，严禁运行全量测试或构建命令**。
-2. **后端与持久化改动 (极速验证)**：
-   - 适用范围：`server/`、数据库迁移逻辑、API 路由。
-   - 规则：运行快速后端测试 `bun run test:server`（耗时 < 1.5s）。
-3. **前端局部功能与模块改动 (局部验证)**：
-   - 适用范围：`packages/` 或 `excalidraw-app/` 内的局部组件、算法或样式修改。
-   - 规则：优先运行与该改动直接相关的测试文件（如 `bun test packages/excalidraw/tests`）或 `bun run test:typecheck`，不要盲目跑全量测试。
-4. **全量与发布级验证 (必要时执行)**：
-   - 适用范围：修改了 `package.json`、核心依赖项、`scripts/build-frontend.ts` 打包引擎配置、核心跨模块接口或用户显式要求。
-   - 规则：运行 `bun run test:server && bun run test:typecheck && bun run build`。
+- `bun test` / `bun run test:unit`：运行 `tests/unit` 中基于 `bun:test` 的纯逻辑测试；不得依赖 JSDOM、React 全局 setup 或大规模快照。
+- `bun run test:server`：运行 `tests/server` 中基于 Bun 原生 SQLite/API 的集成测试；测试必须清理临时数据库、附件和锁文件。
+- `bun run test:e2e`：先构建前端，再用 Playwright + Chromium 验证认证、工作台、场景持久化、附件、移动端、语言和 CSP。
+- `bun run test:all`：依次执行单元、服务端、类型、代码规范和 E2E 门禁。
 
-- **原子提交要求**：每次代码或文档修改完成后立即执行一次原子 Git 提交，提交信息使用 Conventional Commits 格式。文档修改也应单独或与同一主题的代码修改一起提交，保持提交记录可追溯。
+按改动范围选择验证：
+
+1. 文档或注释：免测，直接提交。
+2. `server/` 或持久化：运行 `bun run test:server`。
+3. 局部前端或算法：运行 `bun test` 或 `bun run test:typecheck`；涉及 UI 行为时运行相关 E2E。
+4. 依赖、构建配置、跨模块接口或发布级改动：运行 `bun run test:all`。
+
+每次代码或文档修改后立即执行一次 Conventional Commit。
