@@ -163,8 +163,10 @@ test.describe("Workspace behavior", () => {
         secondPage.locator(".folder-row").filter({ hasText: renamedFolder }),
       ).toBeVisible();
     } finally {
-      await page.request.delete(`/api/folders/${folder.id}`);
-      await secondPage.close();
+      await page.request
+        .delete(`/api/folders/${folder.id}`, { timeout: 3_000 })
+        .catch(() => {});
+      await secondPage.close().catch(() => {});
     }
   });
 
