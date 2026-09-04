@@ -54,14 +54,23 @@ export type CloudTabSyncMessage =
 
 const CLOUD_SYNC_CHANNEL_NAME = "excalidraw_cloud_tab_sync";
 
+let cloudSyncPublisher: BroadcastChannel | null = null;
+
+const getCloudSyncPublisher = () => {
+  if (!cloudSyncPublisher) {
+    cloudSyncPublisher = new BroadcastChannel(CLOUD_SYNC_CHANNEL_NAME);
+  }
+  return cloudSyncPublisher;
+};
+
 export const broadcastCloudSync = (message: CloudTabSyncMessage) => {
   if (typeof BroadcastChannel !== "undefined") {
     try {
-      const channel = new BroadcastChannel(CLOUD_SYNC_CHANNEL_NAME);
-      channel.postMessage(message);
-      channel.close();
+      getCloudSyncPublisher().postMessage(message);
     } catch {
       // BroadcastChannel might be unavailable or restricted in sandboxed environments
+      cloudSyncPublisher?.close();
+      cloudSyncPublisher = null;
     }
   }
 };
