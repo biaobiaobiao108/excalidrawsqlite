@@ -54,16 +54,23 @@ export type CloudTabSyncMessage =
 
 const CLOUD_SYNC_CHANNEL_NAME = "excalidraw_cloud_tab_sync";
 const CLOUD_SYNC_STORAGE_KEY = "excalidraw_cloud_tab_sync_message";
+const CLOUD_SYNC_CLIENT_ID =
+  typeof window !== "undefined" &&
+  typeof window.crypto?.randomUUID === "function"
+    ? window.crypto.randomUUID()
+    : `${Date.now()}_${Math.random()}`;
 
 let cloudSyncPublisher: BroadcastChannel | null = null;
 
+type CloudTabSyncEnvelope = CloudTabSyncMessage & { sourceId?: string };
+
 const parseCloudTabSyncMessage = (
   value: unknown,
-): CloudTabSyncMessage | null => {
+): CloudTabSyncEnvelope | null => {
   if (!value || typeof value !== "object" || !("type" in value)) {
     return null;
   }
-  return value as CloudTabSyncMessage;
+  return value as CloudTabSyncEnvelope;
 };
 
 const getCloudSyncPublisher = () => {
@@ -74,11 +81,18 @@ const getCloudSyncPublisher = () => {
 };
 
 export const broadcastCloudSync = (message: CloudTabSyncMessage) => {
+  const payload: CloudTabSyncEnvelope =
+    message.type === "workspace_changed"
+      ? { ...message, sourceId: CLOUD_SYNC_CLIENT_ID }
+      : message;
   if (message.type === "workspace_changed" && typeof window !== "undefined") {
     try {
       window.localStorage.setItem(
         CLOUD_SYNC_STORAGE_KEY,
-        JSON.stringify({ ...message, nonce: `${Date.now()}_${Math.random()}` }),
+        JSON.stringify({
+          ...payload,
+          nonce: `${Date.now()}_${Math.random()}`,
+        }),
       );
       return;
     } catch {
@@ -87,7 +101,7 @@ export const broadcastCloudSync = (message: CloudTabSyncMessage) => {
   }
   if (typeof BroadcastChannel !== "undefined") {
     try {
-      getCloudSyncPublisher().postMessage(message);
+      getCloudSyncPublisher().postMessage(payload);
     } catch {
       // BroadcastChannel might be unavailable or restricted in sandboxed environments
       cloudSyncPublisher?.close();
@@ -113,7 +127,7 @@ export const subscribeCloudTabSync = (
       channel = new BroadcastChannel(CLOUD_SYNC_CHANNEL_NAME);
       channelListener = (event: MessageEvent) => {
         const message = parseCloudTabSyncMessage(event.data);
-        if (message) {
+        if (message && message.sourceId !== CLOUD_SYNC_CLIENT_ID) {
           callback(message);
         }
       };
@@ -131,7 +145,7 @@ export const subscribeCloudTabSync = (
     }
     try {
       const message = parseCloudTabSyncMessage(JSON.parse(event.newValue));
-      if (message) {
+      if (message && message.sourceId !== CLOUD_SYNC_CLIENT_ID) {
         callback(message);
       }
     } catch {
