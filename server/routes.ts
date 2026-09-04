@@ -61,6 +61,20 @@ import {
 
 import type { RequestAddressResolver, ServerRuntime } from "./types";
 
+const getFolderSummary = (runtime: ServerRuntime, id: string) =>
+  runtime.db
+    .query(
+      `SELECT folders.id, folders.name, folders.created_at, folders.updated_at,
+              COUNT(scenes.id) AS scene_count
+       FROM folders
+       LEFT JOIN scenes
+         ON scenes.folder_id = folders.id
+        AND scenes.deleted_at IS NULL
+       WHERE folders.id = ?
+       GROUP BY folders.id`,
+    )
+    .get(id);
+
 export const createRequestHandler = (
   runtime: ServerRuntime,
   requestAddressResolver?: RequestAddressResolver,
@@ -413,7 +427,9 @@ export const createRequestHandler = (
             `SELECT folders.id, folders.name, folders.created_at, folders.updated_at,
                     COUNT(scenes.id) AS scene_count
              FROM folders
-             LEFT JOIN scenes ON scenes.folder_id = folders.id
+             LEFT JOIN scenes
+               ON scenes.folder_id = folders.id
+              AND scenes.deleted_at IS NULL
              GROUP BY folders.id
              ORDER BY folders.name COLLATE NOCASE ASC`,
           )
@@ -466,11 +482,13 @@ export const createRequestHandler = (
           "UPDATE folders SET name = ?, updated_at = ? WHERE id = ?",
           [name, now, id],
         );
+        const updated = getFolderSummary(runtime, id);
+        if (!updated) {
+          throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
+        }
         return jsonResponse(runtime, req, {
           success: true,
-          id,
-          name,
-          updated_at: now,
+          ...updated,
         });
       }
 
@@ -948,6 +966,17 @@ export const createRequestHandler = (
         const filePath = getFilePath(runtime, id);
         if (!(await fileExists(filePath))) {
           throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
+        }
+        if (String(row.mime_type).toLowerCase() === "image/svg+xml") {
+          return response(runtime, req, Bun.file(filePath), {
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "Content-Disposition": `attachment; filename="${id}"`,
+              "Content-Length": String(row.byte_size),
+              "X-File-Created-At": String(row.created_at),
+              "Cache-Control": "private, no-store",
+            },
+          });
         }
         const accept = req.headers.get("accept") || "";
         const wantsBinary =

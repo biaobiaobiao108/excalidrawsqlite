@@ -140,12 +140,17 @@ export const getPathId = (
 export const isSafeMimeType = (value: unknown) =>
   typeof value === "string" &&
   MIME_TYPE_PATTERN.test(value) &&
+  value.toLowerCase() !== "image/svg+xml" &&
   (value.toLowerCase().startsWith("image/") ||
     value.toLowerCase() === "application/octet-stream");
 
 export const validateMimeType = (value: unknown) => {
   if (!isSafeMimeType(value)) {
-    throw new HttpError(415, "INVALID_MIME_TYPE", "仅支持图片或二进制附件");
+    throw new HttpError(
+      415,
+      "INVALID_MIME_TYPE",
+      "不支持 SVG 图片，仅支持栅格图片或二进制附件",
+    );
   }
   return value as string;
 };
