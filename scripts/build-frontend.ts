@@ -189,6 +189,13 @@ export async function buildFrontend(options: BuildOptions = {}) {
       "",
     );
 
+    // Keep the browser favicon URL stable across builds so tab icons do not
+    // depend on a generated asset hash or a stale cached HTML document.
+    finalHtml = finalHtml.replace(
+      /href="\/favicon-[^"]+\.ico"/g,
+      'href="/favicon.ico"',
+    );
+
     // Strip crossorigin attributes from same-origin bundles to avoid unnecessary CORS mode
     finalHtml = finalHtml.replace(/\scrossorigin(="[^"]*")?/g, "");
 
