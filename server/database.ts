@@ -131,7 +131,7 @@ export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
     (column) => column.name === "data_url",
   );
 
-  if (version >= SCHEMA_VERSION && !hasLegacyDataUrl) {
+  if (version >= SCHEMA_VERSION) {
     return;
   }
   if (!hasLegacyDataUrl && version === 0) {

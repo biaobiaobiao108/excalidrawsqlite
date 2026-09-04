@@ -23,7 +23,7 @@ export const WRITE_REQUESTS_PER_WINDOW = 120;
 export const WRITE_RATE_WINDOW_MS = 60 * 1000;
 export const ORPHAN_FILE_GRACE_MS = 24 * 60 * 60 * 1000;
 export const STALE_FILE_ARTIFACT_MS = 60 * 60 * 1000;
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const parseBooleanEnv = (value: string | undefined) =>
   value?.toLowerCase() === "true";

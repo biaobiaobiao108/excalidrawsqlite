@@ -1,5 +1,18 @@
 const subscribers = new Set<WritableStreamDefaultWriter>();
 
+export const closeDevReloadSubscribers = async () => {
+  await Promise.all(
+    Array.from(subscribers, async (writer) => {
+      subscribers.delete(writer);
+      try {
+        await writer.close();
+      } catch {
+        // The client may already have disconnected.
+      }
+    }),
+  );
+};
+
 export const handleDevReloadRequest = (req: Request): Response => {
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
