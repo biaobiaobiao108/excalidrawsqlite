@@ -42,7 +42,7 @@
     "build": "bun --cwd ./excalidraw-app build",
     "build:preview": "bun --cwd ./excalidraw-app build:preview",
     "dev": "bun server/server.ts --dev",
-    "start": "bun scripts/start-server.js",
+    "start": "bun server/server.ts",
     "start:server": "bun scripts/start-server.js",
     "start:production": "bun --cwd ./excalidraw-app start:production",
     "start:example": "bun run build:packages && bun --cwd ./examples/with-script-in-browser start",
