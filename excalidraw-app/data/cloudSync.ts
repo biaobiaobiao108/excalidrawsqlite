@@ -49,7 +49,8 @@ const AUTO_SAVE_DELAY_MS = 30_000;
 export type CloudTabSyncMessage =
   | { type: "scene_saved"; sceneId: string; revision: number }
   | { type: "scene_renamed"; sceneId: string; name: string; revision: number }
-  | { type: "scene_deleted"; sceneId: string };
+  | { type: "scene_deleted"; sceneId: string }
+  | { type: "workspace_changed" };
 
 const CLOUD_SYNC_CHANNEL_NAME = "excalidraw_cloud_tab_sync";
 
@@ -63,6 +64,10 @@ export const broadcastCloudSync = (message: CloudTabSyncMessage) => {
       // BroadcastChannel might be unavailable or restricted in sandboxed environments
     }
   }
+};
+
+export const broadcastWorkspaceChanged = () => {
+  broadcastCloudSync({ type: "workspace_changed" });
 };
 
 export const subscribeCloudTabSync = (
