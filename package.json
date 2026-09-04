@@ -40,6 +40,6 @@
     "test:typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.tests.json",
     "test:code": "eslint --max-warnings=0 --ext .js,.ts,.tsx .",
     "fix": "eslint --max-warnings=0 --ext .js,.ts,.tsx . --fix",
-    "build:packages": "bun --cwd packages/common run build:esm && bun --cwd packages/fractional-indexing run build:esm && bun --cwd packages/laser-pointer run build:esm && bun --cwd packages/math run build:esm && bun --cwd packages/element run build:esm && bun --cwd packages/excalidraw run build:esm"
+    "build:packages": "bun run --cwd packages/common build:esm && bun run --cwd packages/fractional-indexing build:esm && bun run --cwd packages/laser-pointer build:esm && bun run --cwd packages/math build:esm && bun run --cwd packages/element build:esm && bun run --cwd packages/excalidraw build:esm"
   }
 }
