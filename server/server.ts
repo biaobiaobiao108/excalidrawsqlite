@@ -16,6 +16,8 @@ import { createRequestHandler } from "./routes";
 import { createRuntime } from "./runtime";
 import { resolveProjectPath } from "./paths";
 
+import type { ServerRuntime } from "./types";
+
 export { createServerConfig } from "./config";
 export {
   initializeDatabase,
