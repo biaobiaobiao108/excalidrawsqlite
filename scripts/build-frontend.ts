@@ -100,6 +100,10 @@ export async function buildFrontend(options: BuildOptions = {}) {
 
         // Rewrite public root references so Bun can bundle favicons
         content = content.replace(
+          /href="\/favicon\.ico"/g,
+          'href="../public/favicon.ico"',
+        );
+        content = content.replace(
           /href="\/apple-touch-icon\.png"/g,
           'href="../public/apple-touch-icon.png"',
         );
