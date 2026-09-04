@@ -147,6 +147,10 @@ test.describe("Workspace behavior", () => {
       const folderDialog = page.locator("dialog[open]");
       await folderDialog.locator("input").fill(renamedFolder);
       await folderDialog.getByRole("button", { name: "保存" }).click();
+
+      await expect(
+        page.locator(".folder-row").filter({ hasText: renamedFolder }),
+      ).toBeVisible();
       expect(
         await page.evaluate(() =>
           JSON.parse(
@@ -157,9 +161,6 @@ test.describe("Workspace behavior", () => {
         ),
       ).toMatchObject({ type: "workspace_changed" });
 
-      await expect(
-        page.locator(".folder-row").filter({ hasText: renamedFolder }),
-      ).toBeVisible();
       await expect(
         secondPage.locator(".folder-row").filter({ hasText: renamedFolder }),
       ).toBeVisible();
