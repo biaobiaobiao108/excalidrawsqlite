@@ -31,9 +31,7 @@ export default defineConfig({
   retries: 0,
   reporter: "list",
   outputDir: TEST_RESULTS_DIR,
-  globalTeardown: async () => {
-    cleanDataDir();
-  },
+  globalTeardown: "./e2e/global-teardown.ts",
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: "on-first-retry",
