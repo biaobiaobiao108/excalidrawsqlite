@@ -13,8 +13,9 @@
   --popup-text-color: #1b1b1f;
 
   .workspace-dialog-content-shell {
-    inline-size: min(720px, calc(100% - 2rem));
-    max-block-size: min(680px, calc(100dvh - 2.5rem));
+    inline-size: min(720px, 100%);
+    block-size: 100%;
+    max-block-size: min(750px, calc(100dvh - 2rem));
     padding: 1.5rem;
     overflow: hidden;
     display: flex;
@@ -45,7 +46,6 @@
     .ExcTextField {
       position: relative;
       width: 100%;
-      flex-grow: 1;
 
       &__input {
         box-sizing: border-box;
@@ -145,7 +145,7 @@
       box-sizing: border-box;
       margin-block-start: 12px;
       padding-inline-end: 4px;
-      max-block-size: min(460px, calc(100dvh - 16rem));
+      min-block-size: 0;
       color: var(--popup-text-color);
       user-select: none;
       scrollbar-gutter: stable;
@@ -171,10 +171,6 @@
         display: flex;
         flex-direction: column;
         padding: 12px 0;
-
-        &:first-child {
-          padding-block-start: 2px;
-        }
       }
 
       .command-category-title {
@@ -206,7 +202,6 @@
         align-items: center;
         box-sizing: border-box;
         padding: 0 0.5rem;
-        margin-block: 1px;
         border: 0;
         border-radius: 8px;
         background: transparent;
@@ -344,6 +339,23 @@
           }
         }
       }
+    }
+  }
+}
+
+@media screen and (max-width: 599px),
+  screen and (max-width: 999px) and (max-height: 499px) {
+  .workspace-command-palette-dialog {
+    padding: 0;
+
+    .workspace-dialog-content-shell {
+      inline-size: 100%;
+      max-inline-size: none;
+      block-size: 100%;
+      max-block-size: none;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
     }
   }
 }

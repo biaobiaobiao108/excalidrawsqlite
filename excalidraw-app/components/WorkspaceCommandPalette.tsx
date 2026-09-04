@@ -869,7 +869,7 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
       closable
     >
       <div className="palette-dialog-inner">
-        <div className="ExcTextField ExcTextField--fullWidth">
+        <div className="ExcTextField">
           <div className="ExcTextField__input">
             <input
               ref={inputRef}
