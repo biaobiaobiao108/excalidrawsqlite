@@ -844,6 +844,77 @@ describe("cloud persistence server", () => {
     ).toBe(null);
   });
 
+  it("returns complete folder summaries and excludes trashed scenes", async () => {
+    const { handler } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const folderResponse = await jsonRequest(
+      handler,
+      "/api/folders",
+      { name: "计数文件夹" },
+      { headers: { Cookie: cookie } },
+    );
+    const folder = await responseJson<{
+      id: string;
+      created_at: number;
+    }>(folderResponse);
+
+    const sceneResponse = await jsonRequest(
+      handler,
+      "/api/scenes",
+      {
+        id: "scene_folder_counts",
+        name: "计数画板",
+        folder_id: folder.id,
+        elements: [],
+        appState: {},
+      },
+      { headers: { Cookie: cookie } },
+    );
+    expect(sceneResponse.status).toBe(201);
+
+    const renamedResponse = await request(
+      handler,
+      `/api/folders/${folder.id}`,
+      {
+        method: "PATCH",
+        headers: { Cookie: cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "已重命名计数文件夹" }),
+      },
+    );
+    expect(renamedResponse.status).toBe(200);
+    expect(await responseJson(renamedResponse)).toMatchObject({
+      id: folder.id,
+      name: "已重命名计数文件夹",
+      created_at: folder.created_at,
+      scene_count: 1,
+    });
+
+    const deleted = await request(handler, "/api/scenes/scene_folder_counts", {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(deleted.status).toBe(200);
+    const afterDelete = await request(handler, "/api/folders", {
+      headers: { Cookie: cookie },
+    });
+    expect(await responseJson<Array<{ id: string; scene_count: number }>>(
+      afterDelete,
+    )).toEqual([{ id: folder.id, scene_count: 0 }]);
+
+    const restored = await request(
+      handler,
+      "/api/scenes/scene_folder_counts/restore",
+      { method: "POST", headers: { Cookie: cookie } },
+    );
+    expect(restored.status).toBe(200);
+    const afterRestore = await request(handler, "/api/folders", {
+      headers: { Cookie: cookie },
+    });
+    expect(await responseJson<Array<{ id: string; scene_count: number }>>(
+      afterRestore,
+    )).toEqual([{ id: folder.id, scene_count: 1 }]);
+  });
+
   it("rejects oversized, invalid and traversal file requests", async () => {
     const { handler } = createTestRuntime({ MAX_FILE_BYTES: "3" });
     const cookie = await authenticate(handler);
@@ -1152,6 +1223,19 @@ describe("cloud persistence server", () => {
           user_version: number;
         }
       ).user_version,
-    ).toBe(3);
+    ).toBe(4);
+
+    runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [
+      "legacy_scene",
+    ]);
+    runtimes.pop();
+    runtime.db.close();
+    const restarted = createRuntime({ dbPath, filesDir, config });
+    runtimes.push(restarted);
+    expect(
+      restarted.db
+        .query("SELECT COUNT(*) AS count FROM scene_files WHERE scene_id = ?")
+        .get("legacy_scene"),
+    ).toEqual({ count: 0 });
   });
 });

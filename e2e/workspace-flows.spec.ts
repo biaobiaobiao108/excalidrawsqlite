@@ -79,6 +79,7 @@ test.describe("Workspace behavior", () => {
       const folderRow = page
         .locator(".folder-row")
         .filter({ hasText: folderName });
+      await expect(folderRow.locator("small")).toHaveText("1");
       await folderRow.locator("button").first().click();
       await expect(page.locator(".all-boards-heading h2")).toHaveText(
         folderName,
@@ -88,6 +89,7 @@ test.describe("Workspace behavior", () => {
       await card()
         .getByRole("button", { name: `移至回收站“${renamedScene}”` })
         .click();
+      await expect(folderRow.locator("small")).toHaveText("0");
       await page
         .locator(".workspace-nav button")
         .filter({ hasText: "回收站" })
@@ -102,6 +104,7 @@ test.describe("Workspace behavior", () => {
         .getByRole("button", { name: `还原画板“${renamedScene}”` })
         .click();
       await expect(trashCard()).not.toBeVisible();
+      await expect(folderRow.locator("small")).toHaveText("1");
 
       const scenesResponse = await page.request.get("/api/scenes");
       const scenes = await scenesResponse.json();
