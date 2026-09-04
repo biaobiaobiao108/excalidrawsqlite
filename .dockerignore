@@ -2,8 +2,6 @@
 !.env.development
 !.env.production
 !.eslintrc.json
-!.npmrc
-!.prettierrc
 !excalidraw-app/
 !package.json
 !public/
