@@ -3,10 +3,20 @@ import path from "node:path";
 import { broadcastDevReload } from "./dev-reload";
 import { PROJECT_ROOT } from "./paths";
 
+const runFrontendBuild = async (): Promise<boolean> => {
+  const buildScript = path.join(PROJECT_ROOT, "scripts", "build-frontend.ts");
+  const proc = Bun.spawn([process.execPath, buildScript, "--dev"], {
+    cwd: PROJECT_ROOT,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const exitCode = await proc.exited;
+  return exitCode === 0;
+};
+
 export const startDevWatcher = async (): Promise<() => void> => {
-  const { buildFrontend } = await import("../scripts/build-frontend");
   console.log("[Dev] 📦 正在生成开发前端构建...");
-  await buildFrontend({ isDev: true });
+  await runFrontendBuild();
 
   const watchTargets = [
     { path: path.join(PROJECT_ROOT, "excalidraw-app"), recursive: true },
@@ -47,11 +57,15 @@ export const startDevWatcher = async (): Promise<() => void> => {
         rebuildPending = false;
         try {
           console.log("\n[Dev] ⚡ 检测到前端源码变动，正在重新打包...");
-          await buildFrontend({ isDev: true });
-          console.log("[Dev] 📢 编译完成，正在通知浏览器热刷新...");
-          broadcastDevReload();
+          const ok = await runFrontendBuild();
+          if (ok) {
+            console.log("[Dev] 📢 编译完成，正在通知浏览器热刷新...");
+            broadcastDevReload();
+          } else {
+            console.error("[Dev] ❌ 增量打包失败 (退出码非 0)");
+          }
         } catch (error) {
-          console.error("[Dev] ❌ 增量打包失败:", error);
+          console.error("[Dev] ❌ 增量打包执行出错:", error);
         }
       } while (rebuildPending);
       isBuilding = false;
