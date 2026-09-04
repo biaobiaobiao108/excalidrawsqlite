@@ -206,7 +206,7 @@ AUTH_PASSWORD=your-password bun run dev
 │   └── ...                  # 持久化、备份、并发与安全模块
 ├── scripts/
 │   ├── build-frontend.ts   # 纯原生 Bun HTML Bundler 打包引擎 (含 dev/watch)
-│   ├── build-version.js    # 版本号与 Git SHA 元数据生成
+│   └── build-version.js    # 版本号与 Git SHA 元数据生成
 ├── excalidraw-app/         # Excalidraw 前端主应用 (Bun HTML Bundler + React)
 │   ├── components/
 │   │   ├── WorkspaceHome.tsx     # 工作台多画板管理、文件夹、回收站与卡片组件
