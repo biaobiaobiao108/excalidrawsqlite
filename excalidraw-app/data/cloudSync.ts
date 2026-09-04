@@ -57,6 +57,15 @@ const CLOUD_SYNC_STORAGE_KEY = "excalidraw_cloud_tab_sync_message";
 
 let cloudSyncPublisher: BroadcastChannel | null = null;
 
+const parseCloudTabSyncMessage = (
+  value: unknown,
+): CloudTabSyncMessage | null => {
+  if (!value || typeof value !== "object" || !("type" in value)) {
+    return null;
+  }
+  return value as CloudTabSyncMessage;
+};
+
 const getCloudSyncPublisher = () => {
   if (!cloudSyncPublisher) {
     cloudSyncPublisher = new BroadcastChannel(CLOUD_SYNC_CHANNEL_NAME);
@@ -98,68 +107,45 @@ export const subscribeCloudTabSync = (
     return () => {};
   }
   let channel: BroadcastChannel | null = null;
+  let channelListener: ((event: MessageEvent) => void) | null = null;
   try {
     if (typeof BroadcastChannel !== "undefined") {
       channel = new BroadcastChannel(CLOUD_SYNC_CHANNEL_NAME);
-      const listener = (event: MessageEvent<CloudTabSyncMessage>) => {
-        if (
-          event.data &&
-          typeof event.data === "object" &&
-          "type" in event.data
-        ) {
-          callback(event.data);
+      channelListener = (event: MessageEvent) => {
+        const message = parseCloudTabSyncMessage(event.data);
+        if (message) {
+          callback(message);
         }
       };
-      channel.addEventListener("message", listener);
-      channel.addEventListener("messageerror", () => {});
-      const storageListener = (event: StorageEvent) => {
-        if (event.key !== CLOUD_SYNC_STORAGE_KEY || !event.newValue) {
-          return;
-        }
-        try {
-          const message = JSON.parse(event.newValue) as CloudTabSyncMessage;
-          if (
-            message &&
-            typeof message === "object" &&
-            "type" in message
-          ) {
-            callback(message);
-          }
-        } catch {
-          // Ignore malformed cross-tab payloads.
-        }
-      };
-      window.addEventListener("storage", storageListener);
-      return () => {
-        channel?.removeEventListener("message", listener);
-        channel?.close();
-        window.removeEventListener("storage", storageListener);
-      };
-    } else {
-      const storageListener = (event: StorageEvent) => {
-        if (event.key !== CLOUD_SYNC_STORAGE_KEY || !event.newValue) {
-          return;
-        }
-        try {
-          const message = JSON.parse(event.newValue) as CloudTabSyncMessage;
-          if (
-            message &&
-            typeof message === "object" &&
-            "type" in message
-          ) {
-            callback(message);
-          }
-        } catch {
-          // Ignore malformed cross-tab payloads.
-        }
-      }
-      window.addEventListener("storage", storageListener);
-      return () => window.removeEventListener("storage", storageListener);
+      channel.addEventListener("message", channelListener);
     }
   } catch {
     channel?.close();
-    return () => {};
+    channel = null;
+    channelListener = null;
   }
+
+  const storageListener = (event: StorageEvent) => {
+    if (event.key !== CLOUD_SYNC_STORAGE_KEY || !event.newValue) {
+      return;
+    }
+    try {
+      const message = parseCloudTabSyncMessage(JSON.parse(event.newValue));
+      if (message) {
+        callback(message);
+      }
+    } catch {
+      // Ignore malformed cross-tab payloads.
+    }
+  }
+  window.addEventListener("storage", storageListener);
+  return () => {
+    if (channel && channelListener) {
+      channel.removeEventListener("message", channelListener);
+    }
+    channel?.close();
+    window.removeEventListener("storage", storageListener);
+  };
 };
 
 const sleep = (duration: number) =>
