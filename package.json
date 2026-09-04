@@ -8,7 +8,6 @@
     "examples/*"
   ],
   "devDependencies": {
-    "@babel/preset-env": "7.26.9",
     "@playwright/test": "1.62.1",
     "@types/bun": "1.4.0",
     "@types/lodash.throttle": "4.1.7",

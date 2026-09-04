@@ -113,16 +113,3 @@ declare module "image-blob-reduce" {
   const reduce: ImageBlobReduce.ImageBlobReduceStatic;
   export = reduce;
 }
-
-interface CustomMatchers {
-  toBeNonNaNNumber(): void;
-  toCloselyEqualPoints(
-    points: readonly [number, number][],
-    precision?: number,
-  ): void;
-}
-
-declare namespace jest {
-  interface Expect extends CustomMatchers {}
-  interface Matchers extends CustomMatchers {}
-}
