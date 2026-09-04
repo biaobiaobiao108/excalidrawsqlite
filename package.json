@@ -30,7 +30,7 @@
     "build": "bun --cwd ./excalidraw-app build",
     "test": "bun test --max-concurrency=1",
     "test:unit": "bun test --max-concurrency=1",
-    "test:server": "bun test --max-concurrency=1 tests/server",
+    "test:server": "bun test --max-concurrency=1 ./tests/server",
     "test:e2e": "bun run build && bunx playwright test",
     "test:all": "bun run test:unit && bun run test:server && bun run test:e2e",
     "test:typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.tests.json",
