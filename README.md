@@ -140,7 +140,7 @@ podman run -d \
 
 #### 前置要求
 
-- 安装 [Bun](https://bun.sh/) (v1.4.0+)
+- 安装 [Bun](https://bun.sh/) (v1.4.1+)
 
 #### 操作步骤
 
@@ -222,7 +222,7 @@ AUTH_PASSWORD=your-password bun run dev
 │   ├── element/            # 图元数据结构与计算
 │   └── ...
 ├── docs/                   # GitHub Pages 介绍落地页 (单文件、现代化动效与手绘 SVG)
-├── Dockerfile              # oven/bun:1.4.0-alpine 纯 Bun 多阶段极小容器构建 (零 Node.js)
+├── Dockerfile              # oven/bun:1.4.1-alpine 纯 Bun 多阶段极小容器构建 (零 Node.js)
 ├── docker-compose.yml      # 容器化编排配置文件
 └── bun.lock                # Bun 统一依赖锁文件
 ```

@@ -8,7 +8,7 @@
 
 ## 🛠️ 环境准备与技术栈
 
-- **运行时环境**：必须安装 [Bun](https://bun.sh/) (>= 1.4.0)；
+- **运行时环境**：必须安装 [Bun](https://bun.sh/) (>= 1.4.1)；
 - **包管理器**：统一使用 `bun install`（维护根目录 `bun.lock`），严禁引入 `package-lock.json` 或 `yarn.lock`；
 - **前端构建引擎**：纯原生 **Bun HTML Bundler**（配合 Dart Sass 插件直接以 `excalidraw-app/index.html` 为入口进行打包）；
 - **后端持久化**：Bun 原生 `bun:sqlite` 与原生 Web 标准 `Request`/`Response` 路由，无第三方 HTTP 框架。

@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "excalidraw-monorepo",
-  "packageManager": "bun@1.4.0",
+  "packageManager": "bun@1.4.1",
   "workspaces": [
     "excalidraw-app",
     "packages/*",
@@ -25,7 +25,7 @@
     "typescript": "5.9.3"
   },
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.1"
   },
   "homepage": ".",
   "scripts": {
