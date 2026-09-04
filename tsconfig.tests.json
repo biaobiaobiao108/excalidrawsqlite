@@ -9,6 +9,7 @@
     "e2e/**/*.ts",
     "playwright.config.ts",
     "env.d.ts",
+    "react.d.ts",
     "packages/excalidraw/global.d.ts"
   ],
   "exclude": ["node_modules"]

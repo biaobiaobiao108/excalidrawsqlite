@@ -20,8 +20,8 @@ describe("pure shape utilities", () => {
     expect(getEllipseShape(ellipseElement as any)).toEqual({
       type: "ellipse",
       data: {
-        center: [30, 30],
-        angle: 0,
+        center: [30, 30] as any,
+        angle: 0 as any,
         halfWidth: 20,
         halfHeight: 10,
       },
@@ -37,7 +37,7 @@ describe("pure shape utilities", () => {
     expect(
       pointInEllipse(
         point as any,
-        getEllipseShape(ellipseElement as any).data,
+        getEllipseShape(ellipseElement as any).data as any,
       ),
     ).toBe(inside);
   });
@@ -47,7 +47,7 @@ describe("pure shape utilities", () => {
       ...ellipseElement,
       angle: Math.PI / 2,
     } as any);
-    expect(pointOnEllipse([30, 50] as any, shape.data)).toBe(true);
-    expect(pointOnEllipse([50, 30] as any, shape.data)).toBe(false);
+    expect(pointOnEllipse([30, 50] as any, shape.data as any)).toBe(true);
+    expect(pointOnEllipse([50, 30] as any, shape.data as any)).toBe(false);
   });
 });

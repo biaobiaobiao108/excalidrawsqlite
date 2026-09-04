@@ -34,6 +34,6 @@
       "@excalidraw/utils/*": ["./packages/utils/src/*"]
     }
   },
-  "include": ["packages", "excalidraw-app", "env.d.ts"],
+  "include": ["packages", "excalidraw-app", "env.d.ts", "react.d.ts"],
   "exclude": ["examples", "dist", "types", "tests", "**/tests", "**/*.test.*", "excalidraw-app/build"]
 }
