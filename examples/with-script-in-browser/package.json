@@ -14,6 +14,6 @@
   "scripts": {
     "start": "bun ./index.html",
     "build": "bun build ./index.html --outdir dist",
-    "build:packages": "bun --cwd ../../ build:packages"
+    "build:packages": "bun --cwd ../../ run build:packages"
   }
 }
