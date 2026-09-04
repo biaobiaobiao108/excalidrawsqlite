@@ -68,8 +68,8 @@ describe("math primitives", () => {
   it("checks points against an ellipse", () => {
     const shape = ellipse(pointFrom(10, 10), 4, 2);
 
-    expect(ellipseIncludesPoint(shape, pointFrom(10, 10))).toBe(true);
-    expect(ellipseIncludesPoint(shape, pointFrom(14, 10))).toBe(true);
-    expect(ellipseIncludesPoint(shape, pointFrom(15, 10))).toBe(false);
+    expect(ellipseIncludesPoint(pointFrom(10, 10), shape)).toBe(true);
+    expect(ellipseIncludesPoint(pointFrom(14, 10), shape)).toBe(true);
+    expect(ellipseIncludesPoint(pointFrom(15, 10), shape)).toBe(false);
   });
 });
