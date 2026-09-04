@@ -117,6 +117,45 @@ test.describe("Workspace behavior", () => {
     }
   });
 
+  test("synchronizes workspace mutations across open tabs", async ({
+    authenticatedPage: page,
+  }) => {
+    const suffix = Date.now().toString(36);
+    const folderName = `E2E 跨标签文件夹 ${suffix}`;
+    const renamedFolder = `${folderName} 已更新`;
+    const secondPage = await page.context().newPage();
+    const folderResponse = await page.request.post("/api/folders", {
+      data: { name: folderName },
+    });
+    expect(folderResponse.status()).toBe(201);
+    const folder = await folderResponse.json();
+
+    try {
+      await page.reload();
+      await secondPage.goto("/");
+      const firstFolderRow = page
+        .locator(".folder-row")
+        .filter({ hasText: folderName });
+      const secondFolderRow = secondPage
+        .locator(".folder-row")
+        .filter({ hasText: folderName });
+      await expect(firstFolderRow).toBeVisible();
+      await expect(secondFolderRow).toBeVisible();
+
+      await firstFolderRow.locator("button.folder-more").click();
+      const folderDialog = page.locator("dialog[open]");
+      await folderDialog.locator("input").fill(renamedFolder);
+      await folderDialog.getByRole("button", { name: "保存" }).click();
+
+      await expect(
+        secondPage.locator(".folder-row").filter({ hasText: renamedFolder }),
+      ).toBeVisible();
+    } finally {
+      await page.request.delete(`/api/folders/${folder.id}`);
+      await secondPage.close();
+    }
+  });
+
   test("uploads and serves an attachment through the authenticated API", async ({
     authenticatedPage: page,
   }) => {
