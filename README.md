@@ -314,8 +314,11 @@ bun run test:typecheck
 # 运行代码规范与 ESLint 检查
 bun run test:code
 
-# 运行生产构建与产物体积预算检查
+# 运行生产构建
 bun run build
+
+# 运行生产构建与产物体积预算检查 (JS 512 KiB / CSS 220 KiB)
+bun run test:size
 
 # 运行真实浏览器 Playwright E2E 冒烟测试
 bun run test:e2e
