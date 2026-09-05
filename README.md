@@ -10,14 +10,17 @@
 
 | 对比维度 | 官方 / 社区原版 Excalidraw | 本项目 (Excalidraw Bun + SQLite 纯净版) |
 | :-- | :-- | :-- |
-| **运行时与架构** | Node.js + Yarn，微服务或多容器配置 | **100% 全栈 Bun (1.4+) 驱动**，单进程一体化极速托管 |
-| **数据持久化** | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端 | **原生 SQLite WAL 高性能持久化**，单卷挂载 `./data:/app/data` |
-| **多画板管理** | 单画板模式，需手动导出/导入 `.excalidraw` 文件 | **内置画板工作台**：列表浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达 |
+| **运行时与架构** | Node.js + Yarn，微服务或多容器配置 | **100% 全栈 Bun (1.4.2+) 驱动**，单进程一体化极速托管，纯 TypeScript ESM 脚本工具链 |
+| **数据持久化** | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端 | **原生 SQLite WAL 高性能持久化**，Prepared Statements 预编译单例复用，单卷挂载 `./data:/app/data` |
+| **多画板管理** | 单画板模式，需手动导出/导入 `.excalidraw` 文件 | **内置画板工作台**：列表/网格浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达 |
 | **图元统计** | 无图元数量感知 | **内置图元数量统计**：基于 SQLite `json_array_length` 毫秒级统计并在卡片展示 |
+| **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存 | **本地文件系统独立归档 + ETag / 304 Not Modified 秒级增量协商缓存** |
 | **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **100% 纯净私有化**：零第三方外链打点，默认只访问本机/局域网服务 |
 | **中文字体支持** | 默认依赖外部在线 Google Fonts 或英文字体 | **内置「霞鹜文楷」CJK 手绘中文字体**（Unicode 子集化拆分按需动态加载） |
 | **身份认证安全** | 无或 Token 明文保存在浏览器本地存储 | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据 |
 | **浏览器与构建** | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置 | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
+| **前端现代体验** | 传统弹窗布局与全局媒体查询 | **原生 `<dialog>` 无障碍模型（`aria-modal`） + CSS `@container` 容器查询与 `:has()` 现代选择器** |
+| **代码工程质量** | 旧版 ESLint 8 与多份分散的编译器依赖 | **TypeScript 6.0+ 全 Monorepo 统一驱动 + ESLint 9 Flat Config** |
 | **全栈开发体验** | 需分别启动前端开发服务与后端 API，跨端口代理 | **`bun run dev` 一体化热重载**，单命令启动前后端，原生 SSE 毫秒级自动热刷新 |
 | **资源消耗** | 内存占用 500MB+，冷启动较慢 | **毫秒级冷启动，内存占用低至约 50~80MB** |
 
@@ -216,7 +219,9 @@ AUTH_PASSWORD=your-password bun run dev
 │   └── ...                  # 持久化、备份、并发与安全模块
 ├── scripts/
 │   ├── build-frontend.ts   # 纯原生 Bun HTML Bundler 打包引擎 (含 dev/watch)
-│   └── build-version.js    # 版本号与 Git SHA 元数据生成
+│   ├── build-version.ts    # 版本号与 Git SHA 元数据生成 (纯 Bun TypeScript ESM)
+│   ├── buildPackage.ts     # Packages 子包 ESM 打包工具
+│   └── release.ts          # 发布与 Changelog 自动化脚本
 ├── excalidraw-app/         # Excalidraw 前端主应用 (Bun HTML Bundler + React)
 │   ├── components/
 │   │   ├── WorkspaceHome.tsx     # 工作台多画板管理、文件夹、回收站与卡片组件
@@ -269,8 +274,8 @@ AUTH_PASSWORD=your-password bun run dev
 | `POST` | `/api/folders` | 新建文件夹 |
 | `PATCH` | `/api/folders/:id` | 重命名文件夹 |
 | `DELETE` | `/api/folders/:id` | 删除文件夹 |
-| `PUT` | `/api/files/:id` | 上传图片附件到本地文件系统 (`data/files/`) |
-| `GET` | `/api/files/:id` | 读取图片附件二进制内容 |
+| `PUT` | `/api/files/:id` | 上传图片附件到本地文件系统 (`data/files/`)，自动计算 SHA-256 哈希 |
+| `GET` | `/api/files/:id` | 读取图片附件内容（支持 `ETag` 与 `If-None-Match` 协商缓存，秒级 `304 Not Modified`） |
 | `GET` | `/api/backup/full` | 导出包含 SQLite 数据库与全部图片附件的完整 `.tar` 备份 |
 | `GET` | `/api/health` | 容器健康检查（数据库响应性与目录可写性） |
 

@@ -11,7 +11,7 @@
 
 - 本项目统一使用 **Bun (1.4+)**；运行时、构建器和测试入口不得重新引入 Vite、Vitest、npm 或 yarn。
 - 安装依赖统一使用 `bun install`（维护 `bun.lock`）。
-- 脚本执行与构建统一使用 `bun run <script>` 或直接通过 `bun` 执行 TypeScript 文件。
+- 脚本执行与构建统一使用 `bun run <script>` 或直接通过 `bun` 执行 TypeScript 文件；项目根目录与 `scripts/` 下全部脚本均须使用纯 TypeScript ESM 规范（使用 `Bun.file` / `Bun.write` / `Bun.spawnSync`），严禁使用 CommonJS `require`。
 - 代码中的 `node:*` 协议导入（如 `node:path`、`node:crypto`）仅作为服务端标准模块命名空间，由 Bun 原生 Zig/C++ 实现高性能驱动，绝不允许引入 Node.js 运行时依赖。
 
 ## 3. 前端构建与现代浏览器性能规范 (Bun HTML Bundler)
@@ -47,6 +47,8 @@
 
 - 后端启动入口是 `server/server.ts`，职责模块位于 `server/` 目录，基于 Bun 原生 `bun:sqlite`，数据文件默认位于 `data/excalidraw.db`。
 - `server/server.ts` 只负责服务启动、定时维护、优雅关闭和兼容导出；新增业务逻辑应放入对应职责模块。
+- 后端高频查询操作优先通过预编译语句（Prepared Statements，如 `WeakMap<ServerRuntime, ...>` 缓存的 `db.query` 对象）单例复用，降低重复编译 SQL 开销。
+- 附件与静态文件分发接口需提供基于 SHA-256 摘要的 `ETag` 与 `If-None-Match` 协商缓存，支持秒级 `304 Not Modified` 响应以节省网络资源。
 - 后端模块按以下方向依赖：共享类型/错误/校验/HTTP 基础能力 → 鉴权、数据库、附件、画板和备份模块 → `routes.ts` → `server.ts`。业务模块不得反向导入 `server.ts`，不得引入不必要的循环依赖。
 - 控制台输出一律使用 `console.log` / `console.info`（调用 Windows 宽字符 API），禁止使用原始字节流写入的 `process.stdout.write`，防止在非 UTF-8 代码页终端下出现乱码。
 - SQLite WAL、数据库迁移、旧版 `data_url` 附件迁移、附件原子写入与回滚逻辑属于持久化契约，修改后必须覆盖兼容性和失败场景测试。
