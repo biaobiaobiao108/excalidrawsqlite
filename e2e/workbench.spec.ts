@@ -35,6 +35,22 @@ test.describe("Workbench & Scene Management", () => {
       "点击右上角“我的画板”，管理所有画板。",
     );
     await expect(welcomeHeading).not.toContainText("浏览器存储");
+    await expect
+      .poll(() =>
+        welcomeHeading.evaluate((element) =>
+          getComputedStyle(element).fontFamily.includes("Excalifont"),
+        ),
+      )
+      .toBe(true);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          Array.from(document.fonts).some(
+            (font) => font.family === "Xiaolai" && font.status === "loaded",
+          ),
+        ),
+      )
+      .toBe(true);
 
     // Return to workbench using header button or direct navigation
     const backBtn = page.locator('button[title*="管理我的云端画板"]');
