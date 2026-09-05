@@ -413,6 +413,18 @@ describe("cloud persistence server", () => {
     expect(new Uint8Array(await download.arrayBuffer())).toEqual(bytes);
     expect(download.headers.get("content-type")).toContain("image/png");
     expect(download.headers.get("cache-control")).toContain("immutable");
+    const fileEtag = download.headers.get("etag");
+    expect(fileEtag).toBeTruthy();
+
+    const notModifiedDownload = await request(handler, "/api/files/file_test", {
+      headers: {
+        Cookie: cookie,
+        Accept: "application/octet-stream",
+        "If-None-Match": fileEtag!,
+      },
+    });
+    expect(notModifiedDownload.status).toBe(304);
+    expect(notModifiedDownload.headers.get("etag")).toBe(fileEtag);
 
     const createScene = await jsonRequest(
       handler,

@@ -75,10 +75,49 @@ const getFolderSummary = (runtime: ServerRuntime, id: string) =>
     )
     .get(id);
 
+const preparedStatementsMap = new WeakMap<
+  ServerRuntime,
+  {
+    healthCheck: ReturnType<ServerRuntime["db"]["query"]>;
+    getFileById: ReturnType<ServerRuntime["db"]["query"]>;
+    getSceneById: ReturnType<ServerRuntime["db"]["query"]>;
+    getSceneRawById: ReturnType<ServerRuntime["db"]["query"]>;
+    touchSceneLastOpened: ReturnType<ServerRuntime["db"]["query"]>;
+    getFolderById: ReturnType<ServerRuntime["db"]["query"]>;
+    getFileUpdatedAt: ReturnType<ServerRuntime["db"]["query"]>;
+  }
+>();
+
+const getPreparedStatements = (runtime: ServerRuntime) => {
+  let stmts = preparedStatementsMap.get(runtime);
+  if (!stmts) {
+    stmts = {
+      healthCheck: runtime.db.query("SELECT 1"),
+      getFileById: runtime.db.query("SELECT * FROM files WHERE id = ?"),
+      getSceneById: runtime.db.query(
+        "SELECT id FROM scenes WHERE id = ? AND deleted_at IS NULL",
+      ),
+      getSceneRawById: runtime.db.query(
+        "SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL",
+      ),
+      touchSceneLastOpened: runtime.db.query(
+        "UPDATE scenes SET last_opened_at = ? WHERE id = ?",
+      ),
+      getFolderById: runtime.db.query("SELECT id FROM folders WHERE id = ?"),
+      getFileUpdatedAt: runtime.db.query(
+        "SELECT updated_at FROM files WHERE id = ?",
+      ),
+    };
+    preparedStatementsMap.set(runtime, stmts);
+  }
+  return stmts;
+};
+
 export const createRequestHandler = (
   runtime: ServerRuntime,
   requestAddressResolver?: RequestAddressResolver,
 ) => {
+  const stmts = getPreparedStatements(runtime);
   const handler = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const pathname = url.pathname;
@@ -126,7 +165,7 @@ export const createRequestHandler = (
     try {
       if (pathname === "/api/health" && req.method === "GET") {
         try {
-          runtime.db.query("SELECT 1").get();
+          stmts.healthCheck.get();
           fs.accessSync(path.dirname(runtime.dbPath), fs.constants.W_OK);
           fs.accessSync(runtime.filesDir, fs.constants.W_OK);
           // Keep health checks O(1). Full attachment consistency scans run in
@@ -562,17 +601,12 @@ export const createRequestHandler = (
           "/api/scenes/",
           "scene",
         );
-        const existing = runtime.db
-          .query("SELECT id FROM scenes WHERE id = ? AND deleted_at IS NULL")
-          .get(id);
+        const existing = stmts.getSceneById.get(id);
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
         const lastOpenedAt = Date.now();
-        runtime.db.run("UPDATE scenes SET last_opened_at = ? WHERE id = ?", [
-          lastOpenedAt,
-          id,
-        ]);
+        stmts.touchSceneLastOpened.run(lastOpenedAt, id);
         return jsonResponse(runtime, req, { success: true, id, lastOpenedAt });
       }
 
@@ -586,9 +620,7 @@ export const createRequestHandler = (
           "/api/scenes/",
           "scene",
         );
-        const existing = runtime.db
-          .query("SELECT id FROM scenes WHERE id = ? AND deleted_at IS NULL")
-          .get(id);
+        const existing = stmts.getSceneById.get(id);
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
@@ -626,9 +658,9 @@ export const createRequestHandler = (
           );
         }
         return withThumbnailWriteLock(thumbnailId, async () => {
-          const currentThumbnail = runtime.db
-            .query("SELECT updated_at FROM files WHERE id = ?")
-            .get(thumbnailId) as { updated_at: number } | null;
+          const currentThumbnail = stmts.getFileUpdatedAt.get(thumbnailId) as
+            | { updated_at: number }
+            | null;
           if (
             thumbnailVersion !== undefined &&
             currentThumbnail &&
@@ -697,9 +729,9 @@ export const createRequestHandler = (
           );
         }
         return withThumbnailWriteLock(thumbnailId, async () => {
-          const currentThumbnail = runtime.db
-            .query("SELECT updated_at FROM files WHERE id = ?")
-            .get(thumbnailId) as { updated_at: number } | null;
+          const currentThumbnail = stmts.getFileUpdatedAt.get(thumbnailId) as
+            | { updated_at: number }
+            | null;
           if (
             thumbnailVersion !== undefined &&
             currentThumbnail &&
@@ -957,9 +989,7 @@ export const createRequestHandler = (
 
       if (pathname.startsWith("/api/files/") && req.method === "GET") {
         const id = getPathId(pathname, "/api/files/", "file");
-        const row = runtime.db
-          .query("SELECT * FROM files WHERE id = ?")
-          .get(id) as any;
+        const row = stmts.getFileById.get(id) as any;
         if (!row?.storage_path) {
           throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
         }
@@ -967,6 +997,10 @@ export const createRequestHandler = (
         if (!(await fileExists(filePath))) {
           throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
         }
+
+        const etag = row.sha256 ? `"${row.sha256}"` : undefined;
+        const ifNoneMatch = req.headers.get("if-none-match");
+
         if (String(row.mime_type).toLowerCase() === "image/svg+xml") {
           return response(runtime, req, Bun.file(filePath), {
             headers: {
@@ -978,30 +1012,65 @@ export const createRequestHandler = (
             },
           });
         }
+
+        const cacheControl = id.startsWith("thumbnail_")
+          ? "private, no-cache"
+          : "private, max-age=31536000, immutable";
+
+        if (etag && ifNoneMatch) {
+          const clientEtags = ifNoneMatch
+            .split(",")
+            .map((item) => item.trim());
+          if (clientEtags.includes(etag) || clientEtags.includes("*")) {
+            const notModifiedHeaders: Record<string, string> = {
+              ETag: etag,
+              "Cache-Control": cacheControl,
+            };
+            return response(runtime, req, null, {
+              status: 304,
+              headers: notModifiedHeaders,
+            });
+          }
+        }
+
         const accept = req.headers.get("accept") || "";
         const wantsBinary =
           accept.includes("application/octet-stream") ||
           accept.includes("image/");
         if (!wantsBinary) {
           const bytes = await Bun.file(filePath).arrayBuffer();
-          return jsonResponse(runtime, req, {
-            id,
-            dataURL: `data:${row.mime_type};base64,${Buffer.from(
-              bytes,
-            ).toString("base64")}`,
-            mimeType: row.mime_type,
-            created_at: row.created_at,
-          });
+          const jsonHeaders: Record<string, string> = {};
+          if (etag) {
+            jsonHeaders.ETag = etag;
+          }
+          return jsonResponse(
+            runtime,
+            req,
+            {
+              id,
+              dataURL: `data:${row.mime_type};base64,${Buffer.from(
+                bytes,
+              ).toString("base64")}`,
+              mimeType: row.mime_type,
+              created_at: row.created_at,
+            },
+            200,
+            jsonHeaders,
+          );
         }
+
+        const responseHeaders: Record<string, string> = {
+          "Content-Type": row.mime_type,
+          "Content-Length": String(row.byte_size),
+          "X-File-Created-At": String(row.created_at),
+          "Cache-Control": cacheControl,
+        };
+        if (etag) {
+          responseHeaders.ETag = etag;
+        }
+
         return response(runtime, req, Bun.file(filePath), {
-          headers: {
-            "Content-Type": row.mime_type,
-            "Content-Length": String(row.byte_size),
-            "X-File-Created-At": String(row.created_at),
-            "Cache-Control": id.startsWith("thumbnail_")
-              ? "private, no-cache"
-              : "private, max-age=31536000, immutable",
-          },
+          headers: responseHeaders,
         });
       }
 
