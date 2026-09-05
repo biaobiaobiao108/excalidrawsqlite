@@ -646,13 +646,13 @@ export const textWysiwyg = ({
         ownerDocument,
       ).then(
         () => {
-          if (currentInputSequence === inputSequence) {
+          if (!isDestroyed && currentInputSequence === inputSequence) {
             onChange(nextOriginalText);
           }
         },
         () => {
           // Keep text editing responsive even if a font resource fails to load.
-          if (currentInputSequence === inputSequence) {
+          if (!isDestroyed && currentInputSequence === inputSequence) {
             onChange(nextOriginalText);
           }
         },
