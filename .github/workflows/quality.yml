@@ -2,7 +2,8 @@ name: Quality
 
 on:
   push:
-  pull_request:
+    branches:
+      - "**"
 
 jobs:
   quality:
