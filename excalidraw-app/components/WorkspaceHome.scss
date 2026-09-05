@@ -616,6 +616,11 @@
   border-color: #c9c7f7;
   box-shadow: 0 8px 22px rgba(65, 60, 150, 0.1);
   transform: translateY(-2px);
+
+  &:has(.board-card-open:not(.is-disabled)) .board-card-title,
+  &:has(.board-card-open:not(.is-disabled)) .board-card-mobile-title {
+    color: var(--workspace-primary);
+  }
 }
 
 .board-card-open {

@@ -111,6 +111,7 @@ export const WorkspaceDialog = ({
     <dialog
       ref={dialogRef}
       className={`workspace-dialog${className ? ` ${className}` : ""}`}
+      aria-modal="true"
       aria-labelledby={title ? titleId : undefined}
       aria-label={title ? undefined : "对话框"}
     >
