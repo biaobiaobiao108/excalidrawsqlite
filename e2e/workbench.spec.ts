@@ -19,6 +19,17 @@ test.describe("Workbench & Scene Management", () => {
     const canvas = page.locator("canvas.excalidraw__canvas").first();
     await expect(canvas).toBeVisible();
 
+    const welcomeHeading = page.locator(".welcome-screen-center__heading");
+    await expect(welcomeHeading).toBeVisible();
+    await expect(welcomeHeading).toContainText("欢迎使用私人云端白板。");
+    await expect(welcomeHeading).toContainText(
+      "画板修改后会自动保存到云端 SQLite。",
+    );
+    await expect(welcomeHeading).toContainText(
+      "点击右上角“我的画板”，管理所有画板。",
+    );
+    await expect(welcomeHeading).not.toContainText("浏览器存储");
+
     // Return to workbench using header button or direct navigation
     const backBtn = page.locator('button[title*="管理我的云端画板"]');
     if (await backBtn.isVisible({ timeout: 2000 }).catch(() => false)) {

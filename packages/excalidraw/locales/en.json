@@ -594,6 +594,9 @@
   },
   "welcomeScreen": {
     "app": {
+      "cloud_heading": "Welcome to your private cloud whiteboard.",
+      "cloud_heading_line2": "Your board is automatically saved to cloud SQLite.",
+      "cloud_heading_line3": "Use the top-right board manager to manage all boards.",
       "center_heading": "Your drawings are saved in your browser's storage.",
       "center_heading_line2": "Browser storage can be cleared unexpectedly.",
       "center_heading_line3": "Save your work to a file regularly to avoid losing it.",

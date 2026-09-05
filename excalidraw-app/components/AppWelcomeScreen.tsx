@@ -7,11 +7,11 @@ export const AppWelcomeScreen: React.FC = React.memo(() => {
 
   const headingContent = (
     <>
-      {t("welcomeScreen.app.center_heading")}
+      {t("welcomeScreen.app.cloud_heading")}
       <br />
-      {t("welcomeScreen.app.center_heading_line2")}
+      {t("welcomeScreen.app.cloud_heading_line2")}
       <br />
-      {t("welcomeScreen.app.center_heading_line3")}
+      {t("welcomeScreen.app.cloud_heading_line3")}
     </>
   );
 
