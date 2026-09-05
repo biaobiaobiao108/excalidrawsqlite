@@ -56,16 +56,27 @@ test.describe("Workspace behavior", () => {
           .filter({ hasText: sceneName });
 
       await expect(originalCard()).toBeVisible();
+      const favoriteUpdate = page.waitForResponse((response) => {
+        const request = response.request();
+        return (
+          request.method() === "PATCH" &&
+          new URL(response.url()).pathname === `/api/scenes/${scene.id}` &&
+          response.ok()
+        );
+      });
       await originalCard()
         .getByRole("button", { name: "收藏画板" })
         .click();
+      await (await favoriteUpdate).finished();
       await expect(
         originalCard().getByRole("button", { name: "取消收藏" }),
       ).toBeVisible();
 
-      await originalCard()
-        .getByRole("button", { name: `编辑画板信息“${sceneName}”` })
-        .click();
+      const editButton = originalCard().getByRole("button", {
+        name: `编辑画板信息“${sceneName}”`,
+      });
+      await expect(editButton).toBeEnabled();
+      await editButton.click();
       const metadataDialog = page.locator("dialog[open]");
       await expect(metadataDialog).toBeVisible();
       await metadataDialog.locator("input").nth(0).fill(renamedScene);

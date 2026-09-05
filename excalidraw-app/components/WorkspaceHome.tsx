@@ -305,6 +305,7 @@ const BoardCard = ({
   onDelete,
   onRestore,
   isTrash = false,
+  actionPending = false,
   eager,
 }: {
   scene: CloudSceneSummary;
@@ -314,6 +315,7 @@ const BoardCard = ({
   onDelete: (scene: CloudSceneSummary) => void;
   onRestore?: (scene: CloudSceneSummary) => void;
   isTrash?: boolean;
+  actionPending?: boolean;
   eager?: boolean;
 }) => {
   const sceneName = scene.name || "未命名白板";
@@ -433,11 +435,12 @@ const BoardCard = ({
               {onRestore && (
                 <button
                   type="button"
-                  className="icon-button"
-                  aria-label={`还原画板“${sceneName}”`}
-                  title="还原画板"
-                  onClick={() => onRestore(scene)}
-                >
+                className="icon-button"
+                aria-label={`还原画板“${sceneName}”`}
+                title="还原画板"
+                onClick={() => onRestore(scene)}
+                disabled={actionPending}
+              >
                   <RestoreIcon />
                 </button>
               )}
@@ -447,6 +450,7 @@ const BoardCard = ({
                 aria-label={`彻底删除“${sceneName}”`}
                 title="彻底删除"
                 onClick={() => onDelete(scene)}
+                disabled={actionPending}
               >
                 <TrashIcon />
               </button>
@@ -462,6 +466,7 @@ const BoardCard = ({
                 aria-pressed={scene.favorite}
                 title={scene.favorite ? "取消收藏" : "收藏画板"}
                 onClick={() => onToggleFavorite(scene)}
+                disabled={actionPending}
               >
                 <StarIcon filled={scene.favorite} />
               </button>
@@ -471,6 +476,7 @@ const BoardCard = ({
                 aria-label={`编辑画板信息“${sceneName}”`}
                 title="编辑画板信息"
                 onClick={() => onEdit(scene)}
+                disabled={actionPending}
               >
                 <EditIcon />
               </button>
@@ -480,6 +486,7 @@ const BoardCard = ({
                 aria-label={`移至回收站“${sceneName}”`}
                 title="移至回收站"
                 onClick={() => onDelete(scene)}
+                disabled={actionPending}
               >
                 <TrashIcon />
               </button>
@@ -1399,6 +1406,7 @@ export const WorkspaceHome = ({
                         onToggleFavorite={handleToggleFavorite}
                         onEdit={openMetadataDialog}
                         onDelete={handleDeleteScene}
+                        actionPending={!!pendingAction}
                         eager
                       />
                     ))}
@@ -1514,6 +1522,7 @@ export const WorkspaceHome = ({
                     onEdit={openMetadataDialog}
                     onDelete={handleDeleteScene}
                     onRestore={handleRestoreScene}
+                    actionPending={!!pendingAction}
                   />
                 ))}
               </div>
