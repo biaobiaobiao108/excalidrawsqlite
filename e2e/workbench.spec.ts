@@ -6,6 +6,12 @@ test.describe("Workbench & Scene Management", () => {
   }) => {
     await expect(page.locator(".workspace-home")).toBeVisible();
 
+    await page.evaluate(() => {
+      window.localStorage.setItem("i18nextLng", "zh-CN");
+    });
+    await page.reload();
+    await expect(page.locator(".workspace-home")).toBeVisible();
+
     // Click create new board button
     const createBtn = page.getByRole("button", { name: /新建画板/ });
     await expect(createBtn).toBeVisible();
