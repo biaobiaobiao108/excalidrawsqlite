@@ -1,4 +1,5 @@
 import { test as base, expect, type Page } from "@playwright/test";
+export { expect };
 
 export const TEST_PASSWORD = "test-e2e-password";
 
@@ -23,5 +24,3 @@ export const test = base.extend<{
     await use(page);
   },
 });
-
-export { expect };

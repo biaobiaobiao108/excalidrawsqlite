@@ -1,4 +1,5 @@
-import { test, expect, TEST_PASSWORD } from "./fixtures";
+import { test, expect } from "@playwright/test";
+import { TEST_PASSWORD } from "./fixtures";
 
 test.describe("CSP & Browser Console Health", () => {
   test("should load workbench and canvas with zero CSP violations", async ({

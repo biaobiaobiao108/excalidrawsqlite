@@ -71,6 +71,7 @@ test.describe("Workspace behavior", () => {
       await metadataDialog.locator("input").nth(0).fill(renamedScene);
       await metadataDialog.locator("input").nth(1).fill("browser, e2e");
       await metadataDialog.getByRole("button", { name: "保存信息" }).click();
+      await expect(metadataDialog).not.toBeVisible();
 
       await expect(card()).toBeVisible();
       await expect(card()).toContainText(folderName);
