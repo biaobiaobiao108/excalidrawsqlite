@@ -71,7 +71,7 @@
   "homepage": "https://github.com/excalidraw/excalidraw/tree/master/packages/excalidraw",
   "scripts": {
     "gen:types": "rm -rf types && tsc",
-    "build:esm": "rm -rf dist && bun ../../scripts/buildPackage.js && bun run gen:types"
+    "build:esm": "rm -rf dist && bun ../../scripts/buildPackage.ts && bun run gen:types"
   },
   "peerDependencies": {
     "react": "^17.0.2 || ^18.2.0 || ^19.0.0",

@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import * as sass from "sass";
 
-const { getClientEnvVariables } = require("../packages/excalidraw/env.cjs");
+import { getClientEnvVariables } from "../packages/excalidraw/env";
 
 const projectRoot = path.resolve(__dirname, "..");
 const appDir = path.join(projectRoot, "excalidraw-app");

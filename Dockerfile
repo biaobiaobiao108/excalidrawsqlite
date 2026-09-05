@@ -18,8 +18,8 @@ COPY packages/utils/package.json ./packages/utils/
 COPY packages/excalidraw/package.json ./packages/excalidraw/
 COPY excalidraw-app/package.json ./excalidraw-app/
 
-# Install dependencies with frozen lockfile
-RUN bun install --frozen-lockfile
+# Install dependencies with frozen lockfile and cache mount for accelerated rebuilds
+RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
 
 # Copy source files
 COPY . .

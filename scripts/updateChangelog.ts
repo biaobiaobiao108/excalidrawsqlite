@@ -1,10 +1,8 @@
-const fs = require("fs");
-const util = require("util");
-const exec = util.promisify(require("child_process").exec);
+import fs from "node:fs";
+import { spawnSync } from "bun";
+import pkg from "../packages/excalidraw/package.json";
 
 const excalidrawDir = `${__dirname}/../packages/excalidraw`;
-const excalidrawPackage = `${excalidrawDir}/package.json`;
-const pkg = require(excalidrawPackage);
 const lastVersion = pkg.version;
 const existingChangeLog = fs.readFileSync(
   `${excalidrawDir}/CHANGELOG.md`,
@@ -12,7 +10,7 @@ const existingChangeLog = fs.readFileSync(
 );
 
 const supportedTypes = ["feat", "fix", "style", "refactor", "perf", "build"];
-const headerForType = {
+const headerForType: Record<string, string> = {
   feat: "Features",
   fix: "Fixes",
   style: "Styles",
@@ -21,27 +19,39 @@ const headerForType = {
   build: "Build",
 };
 
-const badCommits = [];
-const getCommitHashForLastVersion = async () => {
+const badCommits: string[] = [];
+
+const runGit = (args: string[]): string => {
+  const res = spawnSync(["git", ...args]);
+  if (res.exitCode !== 0) {
+    throw new Error(`git command failed: git ${args.join(" ")}`);
+  }
+  return res.stdout.toString();
+};
+
+const getCommitHashForLastVersion = (): string => {
   try {
-    const commitMessage = `"release @excalidraw/excalidraw"`;
-    const { stdout } = await exec(
-      `git log --format=format:"%H" --grep=${commitMessage}`,
-    );
-    // take commit hash from latest release
+    const stdout = runGit([
+      "log",
+      "--format=format:%H",
+      '--grep="release @excalidraw/excalidraw"',
+    ]);
     return stdout.split(/\r?\n/)[0];
   } catch (error) {
     console.error(error);
+    return "";
   }
 };
 
-const getLibraryCommitsSinceLastRelease = async () => {
-  const commitHash = await getCommitHashForLastVersion();
-  const { stdout } = await exec(
-    `git log --pretty=format:%s ${commitHash}...master`,
-  );
+const getLibraryCommitsSinceLastRelease = (): Record<string, string[]> => {
+  const commitHash = getCommitHashForLastVersion();
+  const stdout = runGit([
+    "log",
+    "--pretty=format:%s",
+    `${commitHash}...master`,
+  ]);
   const commitsSinceLastRelease = stdout.split("\n");
-  const commitList = {};
+  const commitList: Record<string, string[]> = {};
   supportedTypes.forEach((type) => {
     commitList[type] = [];
   });
@@ -78,8 +88,8 @@ const getLibraryCommitsSinceLastRelease = async () => {
   return commitList;
 };
 
-const updateChangelog = async (nextVersion) => {
-  const commitList = await getLibraryCommitsSinceLastRelease();
+export const updateChangelog = async (nextVersion: string) => {
+  const commitList = getLibraryCommitsSinceLastRelease();
   let changelogForLibrary =
     "## Excalidraw Library\n\n**_This section lists the updates made to the excalidraw library and will not affect the integration._**\n\n";
   supportedTypes.forEach((type) => {
@@ -103,4 +113,5 @@ const updateChangelog = async (nextVersion) => {
   fs.writeFileSync(`${excalidrawDir}/CHANGELOG.md`, updatedContent, "utf8");
 };
 
-module.exports = updateChangelog;
+export default updateChangelog;
+

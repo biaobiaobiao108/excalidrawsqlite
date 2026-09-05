@@ -1,14 +1,17 @@
-const path = require("path");
-const fs = require("fs");
-const { pathToFileURL } = require("url");
+import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
-const { build } = require("esbuild");
-const { sassPlugin } = require("esbuild-sass-plugin");
+import { build, type BuildOptions } from "esbuild";
+import { sassPlugin } from "esbuild-sass-plugin";
 
-const { parseEnvVariables } = require("../packages/excalidraw/env.cjs");
+import { parseEnvVariables } from "../packages/excalidraw/env";
 
 // Resolve a relative path from the source file's directory
-const resolveRelativePath = (importPath, sourceFile) => {
+const resolveRelativePath = (
+  importPath: string,
+  sourceFile: string,
+): string | null => {
   const sourceDir = path.dirname(sourceFile);
   const extensions = [".scss", ".css", ""];
 
@@ -30,7 +33,7 @@ const resolveRelativePath = (importPath, sourceFile) => {
 };
 
 // Precompile function to convert relative paths to absolute paths
-const precompile = (source, sourcePath) => {
+const precompile = (source: string, sourcePath: string): string => {
   // Match @use and @forward statements with relative paths
   const importRegex = /(@use|@forward)\s+["'](\.[^"']+)["']/g;
 
@@ -46,7 +49,7 @@ const precompile = (source, sourcePath) => {
 };
 
 // excludes all external dependencies and bundles only the source code
-const getConfig = (outdir) => ({
+const getConfig = (outdir: string): BuildOptions => ({
   outdir,
   bundle: true,
   splitting: true,
@@ -74,7 +77,7 @@ const getConfig = (outdir) => ({
   },
 });
 
-function buildDev(config, envVars) {
+function buildDev(config: BuildOptions, envVars: Record<string, any>) {
   return build({
     ...config,
     sourcemap: true,
@@ -84,7 +87,7 @@ function buildDev(config, envVars) {
   });
 }
 
-function buildProd(config, envVars) {
+function buildProd(config: BuildOptions, envVars: Record<string, any>) {
   return build({
     ...config,
     minify: true,
@@ -112,7 +115,7 @@ const createESMRawBuild = async () => {
     },
   };
 
-  const chunksConfig = {
+  const chunksConfig: BuildOptions = {
     entryPoints: ["index.tsx", "**/*.chunk.ts"],
     entryNames: "[name]",
   };
@@ -136,6 +139,5 @@ const createESMRawBuild = async () => {
   );
 };
 
-(async () => {
-  await createESMRawBuild();
-})();
+await createESMRawBuild();
+

@@ -1,8 +1,8 @@
-const pkg = require("./package.json");
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
+import pkg from "./package.json";
 
-const parseEnvValue = (value) => {
+export const parseEnvValue = (value: string): string => {
   const trimmed = value.trim();
   if (!trimmed) {
     return "";
@@ -16,8 +16,8 @@ const parseEnvValue = (value) => {
   return trimmed.replace(/\s+#.*$/, "").trim();
 };
 
-const parseEnvSource = (source) => {
-  const envVars = {};
+export const parseEnvSource = (source: string): Record<string, string> => {
+  const envVars: Record<string, string> = {};
 
   for (const line of source.split(/\r?\n/)) {
     const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][\w]*)\s*=\s*(.*)$/);
@@ -29,8 +29,11 @@ const parseEnvSource = (source) => {
   return envVars;
 };
 
-const loadEnvVariables = (projectRoot, mode) => {
-  const envVars = {};
+export const loadEnvVariables = (
+  projectRoot: string,
+  mode: string,
+): Record<string, string> => {
+  const envVars: Record<string, string> = {};
   const filenames = [
     ".env",
     ".env.local",
@@ -48,7 +51,11 @@ const loadEnvVariables = (projectRoot, mode) => {
   return envVars;
 };
 
-const getClientEnvVariables = (projectRoot, mode, overrides = {}) => {
+export const getClientEnvVariables = (
+  projectRoot: string,
+  mode: string,
+  overrides: Record<string, any> = {},
+): Record<string, any> => {
   const processEnv = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => key.startsWith("VITE_")),
   );
@@ -75,13 +82,15 @@ const getClientEnvVariables = (projectRoot, mode, overrides = {}) => {
   );
 };
 
-const parseEnvVariables = async (filepath) => {
+export const parseEnvVariables = async (
+  filepath: string,
+): Promise<Record<string, string>> => {
   // Package builds must also work in clean CI/Docker checkouts where local
   // developer env files are intentionally not committed. Runtime-specific
   // values are injected by the application build instead.
   const file = Bun.file(filepath);
   const source = (await file.exists()) ? await file.text() : "";
-  const envVars = {};
+  const envVars: Record<string, string> = {};
 
   for (const line of source.split(/\r?\n/)) {
     const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][\w]*)\s*=\s*(.*)$/);
@@ -96,4 +105,3 @@ const parseEnvVariables = async (filepath) => {
   return envVars;
 };
 
-module.exports = { getClientEnvVariables, loadEnvVariables, parseEnvVariables };

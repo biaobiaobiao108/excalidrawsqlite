@@ -30,7 +30,7 @@
   "scripts": {
     "build:app:docker": "bun ../scripts/build-frontend.ts",
     "build:app": "bun ../scripts/build-frontend.ts",
-    "build:version": "bun ../scripts/build-version.js",
+    "build:version": "bun ../scripts/build-version.ts",
     "build": "bun run build:app && bun run build:version",
     "start": "bun ../server/server.ts --dev",
     "start:production": "bun run build && bun run serve",

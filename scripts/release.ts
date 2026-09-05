@@ -1,9 +1,9 @@
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
+import readline from "node:readline";
+import { spawnSync } from "bun";
 
-const { spawnSync } = require("bun");
-
-const updateChangelog = require("./updateChangelog");
+import updateChangelog from "./updateChangelog";
 
 // skipping utils for now, as it has independent release process
 const PACKAGES = [
@@ -18,17 +18,9 @@ const PACKAGES_DIR = path.resolve(__dirname, "../packages");
 /**
  * Returns the arguments for the release script.
  *
- * Usage examples:
- * - bun release --help                          -> prints this help message
- * - bun release                                 -> publishes `@excalidraw` packages with "test" tag and "-[hash]" version suffix
- * - bun release --tag=test                      -> same as above
- * - bun release --tag=next                      -> publishes `@excalidraw` packages with "next" tag and version "-[hash]" suffix
- * - bun release --tag=next --non-interactive    -> skips interactive prompts (runs on CI/CD), otherwise same as above
- * - bun release --tag=latest --version=0.19.0   -> publishes `@excalidraw` packages with "latest" tag and version "0.19.0" & prepares changelog for the release
- *
  * @returns [tag, version, nonInteractive]
  */
-const getArguments = () => {
+const getArguments = (): [string, string, boolean] => {
   let tag = "test";
   let version = "";
   let nonInteractive = false;
@@ -75,9 +67,10 @@ const getArguments = () => {
 
   if (!version) {
     // set the next version based on the excalidraw package version + commit hash
-    const excalidrawPackageVersion = require(getPackageJsonPath(
-      "excalidraw",
-    )).version;
+    const excalidrawPkgJson = JSON.parse(
+      fs.readFileSync(getPackageJsonPath("excalidraw"), "utf8"),
+    );
+    const excalidrawPackageVersion = excalidrawPkgJson.version;
 
     const hash = getShortCommitHash();
 
@@ -94,19 +87,19 @@ const getArguments = () => {
   return [tag, version, nonInteractive];
 };
 
-const validatePackageName = (packageName) => {
+const validatePackageName = (packageName: string) => {
   if (!PACKAGES.includes(packageName)) {
     console.error(`Package "${packageName}" not found!`);
     process.exit(1);
   }
 };
 
-const getPackageJsonPath = (packageName) => {
+const getPackageJsonPath = (packageName: string) => {
   validatePackageName(packageName);
   return path.resolve(PACKAGES_DIR, packageName, "package.json");
 };
 
-const runCommand = (args, { cwd, inherit = false } = {}) => {
+const runCommand = (args: string[], { cwd, inherit = false }: { cwd?: string; inherit?: boolean } = {}) => {
   const result = spawnSync(args, {
     cwd,
     stdout: inherit ? "inherit" : "pipe",
@@ -120,11 +113,12 @@ const runCommand = (args, { cwd, inherit = false } = {}) => {
   return result;
 };
 
-const updatePackageJsons = (nextVersion) => {
-  const packageJsons = new Map();
+const updatePackageJsons = (nextVersion: string) => {
+  const packageJsons = new Map<string, string>();
 
   for (const packageName of PACKAGES) {
-    const pkg = require(getPackageJsonPath(packageName));
+    const pkgPath = getPackageJsonPath(packageName);
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 
     pkg.version = nextVersion;
 
@@ -144,7 +138,9 @@ const updatePackageJsons = (nextVersion) => {
   // modify once, to avoid inconsistent state
   for (const packageName of PACKAGES) {
     const content = packageJsons.get(packageName);
-    fs.writeFileSync(getPackageJsonPath(packageName), content, "utf-8");
+    if (content) {
+      fs.writeFileSync(getPackageJsonPath(packageName), content, "utf-8");
+    }
   }
 };
 
@@ -154,13 +150,13 @@ const getShortCommitHash = () => {
     .trim();
 };
 
-const askToCommit = (tag, nextVersion) => {
+const askToCommit = (tag: string, nextVersion: string): Promise<void> => {
   if (tag !== "latest") {
     return Promise.resolve();
   }
 
   return new Promise((resolve) => {
-    const rl = require("readline").createInterface({
+    const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
@@ -209,9 +205,9 @@ const buildPackages = () => {
   }
 };
 
-const askToPublish = (tag, version) => {
+const askToPublish = (tag: string, version: string): Promise<void> => {
   return new Promise((resolve) => {
-    const rl = require("readline").createInterface({
+    const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
@@ -233,7 +229,7 @@ const askToPublish = (tag, version) => {
   });
 };
 
-const publishPackages = (tag, version) => {
+const publishPackages = (tag: string, version: string) => {
   for (const packageName of PACKAGES) {
     runCommand(["bun", "publish", "--tag", tag], {
       cwd: path.resolve(PACKAGES_DIR, packageName),
@@ -247,21 +243,20 @@ const publishPackages = (tag, version) => {
 };
 
 /** main */
-(async () => {
-  const [tag, version, nonInteractive] = getArguments();
+const [tag, version, nonInteractive] = getArguments();
 
-  buildPackages();
+buildPackages();
 
-  if (tag === "latest") {
-    await updateChangelog(version);
-  }
+if (tag === "latest") {
+  await updateChangelog(version);
+}
 
-  updatePackageJsons(version);
+updatePackageJsons(version);
 
-  if (nonInteractive) {
-    publishPackages(tag, version);
-  } else {
-    await askToCommit(tag, version);
-    await askToPublish(tag, version);
-  }
-})();
+if (nonInteractive) {
+  publishPackages(tag, version);
+} else {
+  await askToCommit(tag, version);
+  await askToPublish(tag, version);
+}
+
