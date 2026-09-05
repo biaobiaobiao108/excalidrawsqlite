@@ -75,6 +75,7 @@ import type { ParsedDataTranferList } from "../clipboard";
 
 import type App from "../components/App";
 import type { AppState } from "../types";
+import { Fonts } from "../fonts";
 
 const getTransform = (
   width: number,
@@ -538,6 +539,8 @@ export const textWysiwyg = ({
   })();
 
   if (onChange) {
+    let inputSequence = 0;
+
     editable.onpaste = async (event) => {
       // we need to synchronously get the MIME types so we can preventDefault()
       // in the same tick (FF requires that)
@@ -632,7 +635,28 @@ export const textWysiwyg = ({
         editable.selectionStart = selectionStart;
         editable.selectionEnd = selectionStart;
       }
-      onChange(editable.value);
+
+      const nextOriginalText = editable.value;
+      const currentInputSequence = ++inputSequence;
+      const fontFamily = app.state.currentItemFontFamily ?? element.fontFamily;
+
+      void Fonts.loadFontFamily(
+        fontFamily,
+        nextOriginalText,
+        ownerDocument,
+      ).then(
+        () => {
+          if (currentInputSequence === inputSequence) {
+            onChange(nextOriginalText);
+          }
+        },
+        () => {
+          // Keep text editing responsive even if a font resource fails to load.
+          if (currentInputSequence === inputSequence) {
+            onChange(nextOriginalText);
+          }
+        },
+      );
     };
   }
 

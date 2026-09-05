@@ -1252,8 +1252,12 @@ export const actionChangeFontFamily = register<{
       })}`;
       const chars = Array.from(uniqueChars.values()).join();
       const ownerDocument = app.props.ownerDocument ?? document;
+      const charsToLoad = chars || (currentItemFontFamily ? "Aa中文" : "");
 
-      if (skipFontFaceCheck || ownerDocument.fonts.check(fontString, chars)) {
+      if (
+        skipFontFaceCheck ||
+        (!currentItemFontFamily && ownerDocument.fonts.check(fontString, chars))
+      ) {
         // we either skip the check (have at least one font face loaded) or do the check and find out all the font faces have loaded
         for (const [element, container] of elementContainerMapping) {
           // trigger synchronous redraw
@@ -1261,7 +1265,8 @@ export const actionChangeFontFamily = register<{
         }
       } else {
         // otherwise try to load all font faces for the given chars and redraw elements once our font faces loaded
-        ownerDocument.fonts.load(fontString, chars).then((fontFaces) => {
+        Fonts.loadFontFamily(nextFontFamily, charsToLoad, ownerDocument).then(
+          (fontFaces) => {
           for (const [element, container] of elementContainerMapping) {
             // use latest element state to ensure we don't have closure over an old instance in order to avoid possible race conditions (i.e. font faces load out-of-order while rapidly switching fonts)
             const latestElement = app.scene.getElement(element.id);
@@ -1281,7 +1286,8 @@ export const actionChangeFontFamily = register<{
 
           // trigger update once we've mutated all the elements, which also updates our cache
           app.fonts.onLoaded(fontFaces);
-        });
+          },
+        );
       }
     }
 
