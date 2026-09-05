@@ -50,7 +50,7 @@
 - 后端模块按以下方向依赖：共享类型/错误/校验/HTTP 基础能力 → 鉴权、数据库、附件、画板和备份模块 → `routes.ts` → `server.ts`。业务模块不得反向导入 `server.ts`，不得引入不必要的循环依赖。
 - 控制台输出一律使用 `console.log` / `console.info`（调用 Windows 宽字符 API），禁止使用原始字节流写入的 `process.stdout.write`，防止在非 UTF-8 代码页终端下出现乱码。
 - SQLite WAL、数据库迁移、旧版 `data_url` 附件迁移、附件原子写入与回滚逻辑属于持久化契约，修改后必须覆盖兼容性和失败场景测试。
-- Docker 生产运行阶段必须复制完整的 `server/` 目录；容器环境使用 `oven/bun:1.4.1-alpine`，确保运行镜像内零 Node.js 残留。
+- Docker 生产运行阶段必须复制完整的 `server/` 目录；容器环境使用 `oven/bun:1.4.2-alpine`，确保运行镜像内零 Node.js 残留。
 
 ## 7. 容器运行身份与 rootless 兼容性
 

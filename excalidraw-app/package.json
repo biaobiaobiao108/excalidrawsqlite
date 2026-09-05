@@ -18,7 +18,7 @@
     ]
   },
   "engines": {
-    "bun": ">=1.4.1"
+    "bun": ">=1.4.2"
   },
   "dependencies": {
     "i18next-browser-languagedetector": "^8.2.1",

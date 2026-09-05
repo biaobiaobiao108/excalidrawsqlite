@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "excalidraw-monorepo",
-  "packageManager": "bun@1.4.1",
+  "packageManager": "bun@1.4.2",
   "workspaces": [
     "excalidraw-app",
     "packages/*",
@@ -11,7 +11,7 @@
     "@playwright/test": "1.62.1",
     "@typescript-eslint/eslint-plugin": "5.62.0",
     "@typescript-eslint/parser": "5.62.0",
-    "@types/bun": "1.4.0",
+    "@types/bun": "1.4.1",
     "@types/lodash.throttle": "4.1.7",
     "@types/node": "26.4.1",
     "@types/react": "19.0.10",
@@ -25,7 +25,7 @@
     "typescript": "5.9.3"
   },
   "engines": {
-    "bun": ">=1.4.1"
+    "bun": ">=1.4.2"
   },
   "homepage": ".",
   "scripts": {
