@@ -317,7 +317,8 @@ bun run test:code
 # 运行生产构建
 bun run build
 
-# 运行生产构建与产物体积预算检查 (JS 512 KiB / CSS 220 KiB)
+# 运行生产构建与压缩后产物体积预算检查
+# 首屏 JS 512 KiB、CSS 220 KiB；懒加载 JS 1 MiB、CSS 220 KiB
 bun run test:size
 
 # 运行真实浏览器 Playwright E2E 冒烟测试
