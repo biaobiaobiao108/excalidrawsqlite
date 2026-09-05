@@ -24,9 +24,7 @@
   "repository": "https://github.com/excalidraw/excalidraw",
   "author": "arv@rocicorp.dev",
   "license": "CC0-1.0",
-  "devDependencies": {
-    "typescript": "5.9.3"
-  },
+
   "exports": {
     ".": {
       "types": "./dist/types/fractional-indexing/src/index.d.ts",

@@ -60,7 +60,6 @@
   },
   "devDependencies": {
     "fonteditor-core": "2.4.0",
-    "typescript": "5.9.3",
     "wawoff2": "2.0.1",
     "which": "4.0.0"
   },

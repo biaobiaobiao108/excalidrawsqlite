@@ -8,21 +8,23 @@
     "examples/*"
   ],
   "devDependencies": {
+    "@eslint/compat": "2.1.1",
+    "@eslint/js": "9.39.5",
     "@playwright/test": "1.62.1",
     "@types/bun": "1.4.1",
     "@types/lodash.throttle": "4.1.7",
     "@types/node": "26.4.1",
     "@types/react": "19.0.10",
     "@types/react-dom": "19.0.4",
-    "@typescript-eslint/eslint-plugin": "5.62.0",
-    "@typescript-eslint/parser": "5.62.0",
-    "eslint": "8.57.1",
+    "eslint": "9.39.5",
     "eslint-plugin-import": "2.31.0",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react": "7.37.4",
     "eslint-plugin-react-hooks": "4.6.2",
+    "globals": "17.12.0",
     "sass": "^1.85.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.69.0"
   },
   "engines": {
     "bun": ">=1.4.2"
@@ -38,8 +40,8 @@
     "test:e2e": "bun run build && bunx playwright test",
     "test:all": "bun run test:unit && bun run test:server && bun run test:typecheck && bun run test:code && bun run test:e2e",
     "test:typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.tests.json",
-    "test:code": "eslint --max-warnings=0 --ext .js,.ts,.tsx .",
-    "fix": "eslint --max-warnings=0 --ext .js,.ts,.tsx . --fix",
+    "test:code": "eslint . --max-warnings=0",
+    "fix": "eslint . --max-warnings=0 --fix",
     "build:packages": "bun run --cwd packages/common build:esm && bun run --cwd packages/fractional-indexing build:esm && bun run --cwd packages/laser-pointer build:esm && bun run --cwd packages/math build:esm && bun run --cwd packages/element build:esm && bun run --cwd packages/excalidraw build:esm"
   }
 }

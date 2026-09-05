@@ -120,7 +120,6 @@
     "esbuild": "0.19.10",
     "esbuild-sass-plugin": "2.16.0",
     "fonteditor-core": "2.4.1",
-    "harfbuzzjs": "0.3.6",
-    "typescript": "5.9.3"
+    "harfbuzzjs": "0.3.6"
   }
 }
