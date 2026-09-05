@@ -70,12 +70,12 @@ import {
   actionZoomIn,
   actionZoomOut,
 } from "../actions/actionCanvas";
+import { Fonts } from "../fonts";
 
 import type { ParsedDataTranferList } from "../clipboard";
 
 import type App from "../components/App";
 import type { AppState } from "../types";
-import { Fonts } from "../fonts";
 
 const getTransform = (
   width: number,
