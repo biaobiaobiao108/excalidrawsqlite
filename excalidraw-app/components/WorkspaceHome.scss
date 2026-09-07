@@ -1033,6 +1033,7 @@
 
 .section-tools .custom-select {
   min-inline-size: 0;
+  max-inline-size: 160px;
 }
 
 .section-tools .custom-select__trigger {
@@ -1367,7 +1368,7 @@
   }
 
   .section-tools .custom-select {
-    max-inline-size: 112px;
+    max-inline-size: 130px;
   }
 
   .section-tools .custom-select__trigger {

@@ -71,7 +71,13 @@ class LocalFileManager extends FileManager {
 const saveDataStateToLocalStorage = (
   elements: readonly ExcalidrawElement[],
   appState: AppState,
+  isCloudScene = false,
 ) => {
+  if (isCloudScene) {
+    // In cloud SQLite mode, persistence is managed by SQLite and tab sync by BroadcastChannel.
+    // Avoid serializing diagram elements into 5MB localStorage to eliminate quota errors and tab corruption.
+    return;
+  }
   const localStorageQuotaExceeded = appJotaiStore.get(
     localStorageQuotaExceededAtom,
   );
@@ -117,8 +123,9 @@ export class LocalData {
       appState: AppState,
       files: BinaryFiles,
       onFilesSaved: () => void,
+      isCloudScene = false,
     ) => {
-      saveDataStateToLocalStorage(elements, appState);
+      saveDataStateToLocalStorage(elements, appState, isCloudScene);
 
       await this.fileStorage.saveFiles({
         elements,
@@ -135,10 +142,11 @@ export class LocalData {
     appState: AppState,
     files: BinaryFiles,
     onFilesSaved: () => void,
+    isCloudScene = false,
   ) => {
     // we need to make the `isSavePaused` check synchronously (undebounced)
     if (!this.isSavePaused()) {
-      this._save(elements, appState, files, onFilesSaved);
+      this._save(elements, appState, files, onFilesSaved, isCloudScene);
     }
   };
 

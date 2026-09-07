@@ -158,6 +158,17 @@ const initializeScene = async (): Promise<InitializeSceneResult> => {
   const searchParams = new URLSearchParams(window.location.search);
   const id = searchParams.get("id");
 
+  if (id) {
+    // Cloud scenes are fetched from the server. Start with a clean blank canvas
+    // so we never flash stale elements from another board stored in localStorage.
+    return {
+      scene: {
+        elements: [],
+        appState: null,
+      },
+    };
+  }
+
   const localDataState = importFromLocalStorage();
 
   const scene: Omit<
@@ -174,12 +185,6 @@ const initializeScene = async (): Promise<InitializeSceneResult> => {
     }),
     appState: restoreAppState(localDataState?.appState, null),
   };
-
-  if (id) {
-    // Cloud scenes are loaded after the editor mounts so a slow or unavailable
-    // API cannot keep Excalidraw's initialData promise pending forever.
-    return { scene };
-  }
 
   return { scene };
 };
@@ -913,24 +918,33 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
         return;
       }
       if (!document.hidden) {
-        // don't sync if local state is newer or identical to browser state
-        if (isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_DATA_STATE)) {
+        // For cloud SQLite scenes, scene content sync across browser tabs is handled
+        // securely by subscribeCloudTabSync via BroadcastChannel per sceneId.
+        // We must NEVER overwrite currentSceneId with global localStorage.
+        if (
+          !currentSceneIdRef.current &&
+          isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_DATA_STATE)
+        ) {
           const localDataState = importFromLocalStorage();
           setLangCode(getPreferredLanguage());
           excalidrawAPI.updateScene({
             ...localDataState,
             captureUpdate: CaptureUpdateAction.NEVER,
           });
-          LibraryIndexedDBAdapter.load().then((data) => {
-            if (data) {
-              excalidrawAPI.updateLibrary({
-                libraryItems: data.libraryItems,
-              });
-            }
-          });
         }
 
-        if (isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_FILES)) {
+        LibraryIndexedDBAdapter.load().then((data) => {
+          if (data) {
+            excalidrawAPI.updateLibrary({
+              libraryItems: data.libraryItems,
+            });
+          }
+        });
+
+        if (
+          !currentSceneIdRef.current &&
+          isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_FILES)
+        ) {
           const elements = excalidrawAPI.getSceneElementsIncludingDeleted();
           const currFiles = excalidrawAPI.getFiles();
           const fileIds =
@@ -1038,36 +1052,41 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
     appState: AppState,
     files: BinaryFiles,
   ) => {
-    // this check is redundant, but since this is a hot path, it's best
-    // not to evaludate the nested expression every time
+    const isCloudScene = Boolean(currentSceneIdRef.current);
     if (!LocalData.isSavePaused()) {
-      LocalData.save(elements, appState, files, () => {
-        if (excalidrawAPI) {
-          let didChange = false;
+      LocalData.save(
+        elements,
+        appState,
+        files,
+        () => {
+          if (excalidrawAPI) {
+            let didChange = false;
 
-          const elements = excalidrawAPI
-            .getSceneElementsIncludingDeleted()
-            .map((element) => {
-              if (
-                LocalData.fileStorage.shouldUpdateImageElementStatus(element)
-              ) {
-                const newElement = newElementWith(element, { status: "saved" });
-                if (newElement !== element) {
-                  didChange = true;
+            const elements = excalidrawAPI
+              .getSceneElementsIncludingDeleted()
+              .map((element) => {
+                if (
+                  LocalData.fileStorage.shouldUpdateImageElementStatus(element)
+                ) {
+                  const newElement = newElementWith(element, { status: "saved" });
+                  if (newElement !== element) {
+                    didChange = true;
+                  }
+                  return newElement;
                 }
-                return newElement;
-              }
-              return element;
-            });
+                return element;
+              });
 
-          if (didChange) {
-            excalidrawAPI.updateScene({
-              elements,
-              captureUpdate: CaptureUpdateAction.NEVER,
-            });
+            if (didChange) {
+              excalidrawAPI.updateScene({
+                elements,
+                captureUpdate: CaptureUpdateAction.NEVER,
+              });
+            }
           }
-        }
-      });
+        },
+        isCloudScene,
+      );
     }
 
     const activeSceneId = currentSceneIdRef.current;
@@ -1191,8 +1210,16 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   // };
 
   const navigateHomeAfterSave = useCallback(async () => {
-    if (currentSceneIdRef.current && !(await saveCurrentCloudScene())) {
-      return;
+    if (currentSceneIdRef.current) {
+      const saved = await saveCurrentCloudScene();
+      if (!saved) {
+        const shouldLeave = window.confirm(
+          "云端画板保存未完成（可能处于离线或网络异常状态）。是否放弃未保存的更改并返回主页？",
+        );
+        if (!shouldLeave) {
+          return;
+        }
+      }
     }
     if (onNavigateHome) {
       onNavigateHome();
@@ -1383,7 +1410,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
           onOverwrite={() => resolveCloudConflict(true)}
         />
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
-        {localStorageQuotaExceeded && (
+        {!currentSceneId && localStorageQuotaExceeded && (
           <div className="alert alert--danger">
             {t("alerts.localStorageQuotaExceeded")}
           </div>

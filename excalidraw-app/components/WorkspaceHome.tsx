@@ -309,7 +309,7 @@ const BoardCard = ({
   eager,
 }: {
   scene: CloudSceneSummary;
-  onOpen: (scene: CloudSceneSummary) => void;
+  onOpen: (scene: CloudSceneSummary, newTab?: boolean) => void;
   onToggleFavorite: (scene: CloudSceneSummary) => void;
   onEdit: (scene: CloudSceneSummary) => void;
   onDelete: (scene: CloudSceneSummary) => void;
@@ -324,6 +324,21 @@ const BoardCard = ({
   const overflowTags = !isTrash ? scene.tags.slice(maxVisibleTags) : [];
   const hasBadges =
     !isTrash && (Boolean(scene.folder_name) || scene.tags.length > 0);
+
+  const handleOpen = (event: React.MouseEvent) => {
+    const isNewTab =
+      event.button === 1 || event.ctrlKey || event.metaKey;
+    if (isNewTab) {
+      event.preventDefault();
+      event.stopPropagation();
+      onOpen(scene, true);
+      return;
+    }
+    if (event.button === 0) {
+      event.preventDefault();
+      onOpen(scene, false);
+    }
+  };
 
   return (
     <article className={`board-card ${isTrash ? "is-trash-card" : ""}`}>
@@ -341,7 +356,8 @@ const BoardCard = ({
         <div className="board-card-open">
           <button
             className="board-card-thumbnail-button"
-            onClick={() => onOpen(scene)}
+            onClick={handleOpen}
+            onAuxClick={handleOpen}
             type="button"
             aria-label={`打开画板“${sceneName}”`}
           >
@@ -349,7 +365,8 @@ const BoardCard = ({
           </button>
           <button
             className="board-card-title"
-            onClick={() => onOpen(scene)}
+            onClick={handleOpen}
+            onAuxClick={handleOpen}
             type="button"
             aria-label={`打开画板“${sceneName}”`}
             title={sceneName}
@@ -368,7 +385,8 @@ const BoardCard = ({
             <button
               type="button"
               className="board-card-mobile-title"
-              onClick={() => onOpen(scene)}
+              onClick={handleOpen}
+              onAuxClick={handleOpen}
               aria-label={`打开画板“${sceneName}”`}
               title={sceneName}
             >
@@ -1433,6 +1451,21 @@ export const WorkspaceHome = ({
                 <span>{filteredScenes.length}</span>
               </div>
               <div className="section-tools">
+                {folders.length > 0 && view !== "trash" && (
+                  <CustomSelect
+                    className="workspace-select-folder"
+                    value={selectedFolderId || ""}
+                    onChange={(folderId) => setSelectedFolderId(folderId || null)}
+                    ariaLabel="按文件夹筛选"
+                    options={[
+                      { value: "", label: "所有文件夹" },
+                      ...folders.map((folder) => ({
+                        value: folder.id,
+                        label: `${folder.name} (${folderSceneCounts.get(folder.id) || 0})`,
+                      })),
+                    ]}
+                  />
+                )}
                 {allTags.length > 0 && view !== "trash" && (
                   <CustomSelect
                     className="workspace-select-tag"
