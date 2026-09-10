@@ -4,8 +4,7 @@
   "packageManager": "bun@1.4.2",
   "workspaces": [
     "excalidraw-app",
-    "packages/*",
-    "examples/*"
+    "packages/*"
   ],
   "devDependencies": {
     "@eslint/compat": "2.1.1",

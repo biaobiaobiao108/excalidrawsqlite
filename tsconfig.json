@@ -35,5 +35,5 @@
     }
   },
   "include": ["packages", "excalidraw-app", "server", "env.d.ts", "react.d.ts"],
-  "exclude": ["examples", "dist", "types", "tests", "**/tests", "**/*.test.*", "excalidraw-app/build"]
+  "exclude": ["dist", "types", "tests", "**/tests", "**/*.test.*", "excalidraw-app/build"]
 }

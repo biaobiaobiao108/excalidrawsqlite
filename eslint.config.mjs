@@ -16,7 +16,6 @@ export default tseslint.config(
       "**/firebase/**",
       "**/public/workbox/**",
       "packages/excalidraw/types/**",
-      "examples/**/public/**",
       "**/dev-dist/**",
       "**/server-build/**",
       "**/coverage/**",
