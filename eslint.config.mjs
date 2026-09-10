@@ -18,6 +18,7 @@ export default tseslint.config(
       "packages/excalidraw/types/**",
       "examples/**/public/**",
       "**/dev-dist/**",
+      "**/server-build/**",
       "**/coverage/**",
       "package-lock.json",
       "bun.lock",

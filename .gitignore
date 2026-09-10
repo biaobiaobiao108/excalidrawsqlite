@@ -23,6 +23,7 @@ coverage
 dev-dist
 html
 .claude
+server-build
 /data/
 /data-e2e/
 test-results/

@@ -30,7 +30,8 @@ ARG BUILD_SHA=local
 ENV BUILD_SHA=$BUILD_SHA
 ENV VITE_APP_GIT_SHA=$BUILD_SHA
 
-# Build the frontend and version metadata needed by the runtime image.
+# Build the production backend bundle and frontend assets needed by the runtime image.
+RUN bun run build:server
 RUN bun --cwd ./excalidraw-app build
 
 # Stage 2: Production runtime with Bun + SQLite
@@ -45,10 +46,11 @@ ENV DB_PATH=/app/data/excalidraw.db
 ENV FILES_DIR=/app/data/files
 ENV STATIC_DIR=/app/excalidraw-app/build
 
-# Copy the modular production backend and built frontend static assets
+# Copy the production backend bundle and built frontend static assets
 # The server creates the database and files directories on startup. Keeping the
 # runtime stage free of RUN steps avoids target-platform emulation in Buildx.
 COPY server ./server
+COPY --from=builder /app/server-build ./server-build
 COPY --from=builder /app/excalidraw-app/build ./excalidraw-app/build
 
 EXPOSE 8080
@@ -58,4 +60,4 @@ VOLUME ["/app/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD bun -e "fetch('http://127.0.0.1:8080/api/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
 
-CMD ["bun", "server/server.ts"]
+CMD ["bun", "server-build/server.js"]

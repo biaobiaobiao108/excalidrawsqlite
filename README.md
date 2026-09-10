@@ -155,7 +155,7 @@ cd excalidrawsqlite
 # 2. 安装依赖 (使用 Bun 维护 bun.lock)
 bun install
 
-# 3. 构建前端产物并启动全栈服务 (默认端口 8080)
+# 3. 构建生产产物并启动全栈服务 (默认端口 8080)
 bun run build
 AUTH_PASSWORD=your-password bun run start
 ```

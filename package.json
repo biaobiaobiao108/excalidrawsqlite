@@ -32,8 +32,10 @@
   "homepage": ".",
   "scripts": {
     "dev": "bun server/server.ts --dev",
-    "start": "NODE_ENV=production bun server/server.ts",
-    "build": "bun --cwd ./excalidraw-app build",
+    "start": "NODE_ENV=production bun server-build/server.js",
+    "build": "bun run build:frontend && bun run build:server",
+    "build:frontend": "bun --cwd ./excalidraw-app build",
+    "build:server": "bun scripts/build-server.ts",
     "test": "bun test --max-concurrency=1",
     "test:unit": "bun test --max-concurrency=1",
     "test:server": "bun test --max-concurrency=1 ./tests/server",
