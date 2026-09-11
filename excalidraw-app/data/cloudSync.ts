@@ -175,6 +175,7 @@ export class CloudSaveQueue {
   private readonly statuses = new Map<string, CloudSaveStatus>();
   private isSaving = false;
   private activeSceneId: string | null = null;
+  private activeSnapshot: CloudSaveSnapshot | null = null;
   private activeFlushPromise: Promise<void> | null = null;
   private readonly dependencies: CloudSaveDependencies;
 
@@ -199,6 +200,28 @@ export class CloudSaveQueue {
 
   getStatus(sceneId: string): CloudSaveStatus {
     return this.statuses.get(sceneId) || "idle";
+  }
+
+  getMemoryStats() {
+    const snapshots = [
+      ...this.pending.values(),
+      ...this.conflicts.values(),
+      ...(this.activeSnapshot ? [this.activeSnapshot] : []),
+    ];
+    let filesBytes = 0;
+    let elementCount = 0;
+    for (const snapshot of snapshots) {
+      elementCount += snapshot.elements.length;
+      for (const file of Object.values(snapshot.files)) {
+        filesBytes += file.dataURL.length * 2;
+      }
+    }
+    return {
+      snapshotCount: snapshots.length,
+      elementCount,
+      filesBytes,
+      saving: this.isSaving,
+    };
   }
 
   setRevision(sceneId: string, revision: number) {
@@ -378,6 +401,7 @@ export class CloudSaveQueue {
     this.pending.delete(sceneId);
     this.isSaving = true;
     this.activeSceneId = sceneId;
+    this.activeSnapshot = snapshot;
     this.setStatus(sceneId, "saving");
 
     try {
@@ -431,6 +455,7 @@ export class CloudSaveQueue {
     } finally {
       this.isSaving = false;
       this.activeSceneId = null;
+      this.activeSnapshot = null;
       for (const pendingSceneId of this.pending.keys()) {
         if (
           !this.blocked.has(pendingSceneId) &&

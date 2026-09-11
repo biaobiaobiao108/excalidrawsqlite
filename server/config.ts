@@ -4,6 +4,7 @@ export const DEFAULT_PORT = 8080;
 export const DEFAULT_MAX_FILE_BYTES = 4 * 1024 * 1024;
 export const DEFAULT_MAX_SCENE_BODY_BYTES = 16 * 1024 * 1024;
 export const DEFAULT_MAX_FILES_BODY_BYTES = 32 * 1024 * 1024;
+export const DEFAULT_MAX_IN_FLIGHT_BODY_BYTES = 64 * 1024 * 1024;
 export const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const AUTH_COOKIE_PRODUCTION = "__Host-excalidraw_session";
 export const AUTH_COOKIE_DEVELOPMENT = "excalidraw_session";
@@ -78,6 +79,10 @@ export const createServerConfig = (
     maxFilesBodyBytes: parsePositiveIntegerEnv(
       env.MAX_FILES_BODY_BYTES,
       DEFAULT_MAX_FILES_BODY_BYTES,
+    ),
+    maxInFlightBodyBytes: parsePositiveIntegerEnv(
+      env.MAX_IN_FLIGHT_BODY_BYTES,
+      DEFAULT_MAX_IN_FLIGHT_BODY_BYTES,
     ),
     sessionTtlMs: parsePositiveIntegerEnv(
       env.AUTH_SESSION_TTL_MS,

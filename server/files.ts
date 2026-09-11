@@ -73,11 +73,22 @@ type AtomicFileWrite = {
   cleanup: () => Promise<void>;
 };
 
-const writeFileAtomically = async (
+const getFileTooLargeError = (maxBytes: number) => {
+  const limit = maxBytes / (1024 * 1024);
+  const formattedLimit = Number.isInteger(limit)
+    ? `${limit} MiB`
+    : `${maxBytes} 字节`;
+  return new HttpError(
+    413,
+    "FILE_TOO_LARGE",
+    `单个文件不能超过 ${formattedLimit}`,
+  );
+};
+
+const finalizeAtomicFileWrite = async (
   filePath: string,
-  data: Uint8Array,
+  tempPath: string,
 ): Promise<AtomicFileWrite> => {
-  const tempPath = `${filePath}.${randomBytes(8).toString("hex")}.tmp`;
   const backupPath = `${filePath}.${randomBytes(8).toString("hex")}.bak`;
   const hadExistingFile = await fileExists(filePath);
 
@@ -85,7 +96,6 @@ const writeFileAtomically = async (
     if (hadExistingFile) {
       await fs.promises.copyFile(filePath, backupPath);
     }
-    await Bun.write(tempPath, data);
 
     try {
       await fs.promises.rename(tempPath, filePath);
@@ -124,6 +134,113 @@ const writeFileAtomically = async (
   };
 };
 
+const writeFileAtomically = async (
+  filePath: string,
+  data: Uint8Array,
+): Promise<AtomicFileWrite> => {
+  const tempPath = `${filePath}.${randomBytes(8).toString("hex")}.tmp`;
+  try {
+    await Bun.write(tempPath, data);
+    return await finalizeAtomicFileWrite(filePath, tempPath);
+  } catch (error) {
+    await fs.promises.rm(tempPath, { force: true });
+    throw error;
+  }
+};
+
+type PreparedFile = {
+  byteLength: number;
+  sha256: string;
+  data?: Uint8Array;
+  tempPath?: string;
+};
+
+const upsertPreparedFile = async (
+  runtime: ServerRuntime,
+  id: string,
+  mimeType: string,
+  prepared: PreparedFile,
+  createdAt?: number,
+  updatedAt?: number,
+) => {
+  return withStorageMutationLock(runtime, async () => {
+    if (prepared.byteLength > runtime.config.maxFileBytes) {
+      throw getFileTooLargeError(runtime.config.maxFileBytes);
+    }
+    if (!prepared.data && !prepared.tempPath) {
+      throw new Error("文件内容未准备完成");
+    }
+
+    const filePath = getFilePath(runtime, id);
+    const now = Number.isFinite(updatedAt) ? Number(updatedAt) : Date.now();
+    const previous = runtime.db
+      .query("SELECT created_at FROM files WHERE id = ?")
+      .get(id) as { created_at: number } | null;
+
+    const atomicWrite = prepared.tempPath
+      ? await finalizeAtomicFileWrite(filePath, prepared.tempPath)
+      : await writeFileAtomically(filePath, prepared.data!);
+    try {
+      const hasLegacyDataUrl = (
+        runtime.db.query("PRAGMA table_info(files)").all() as Array<{
+          name: string;
+        }>
+      ).some((column) => column.name === "data_url");
+      const columns = hasLegacyDataUrl
+        ? "id, storage_path, data_url, mime_type, byte_size, sha256, created_at, updated_at"
+        : "id, storage_path, mime_type, byte_size, sha256, created_at, updated_at";
+      const values = hasLegacyDataUrl
+        ? "?, ?, '', ?, ?, ?, ?, ?"
+        : "?, ?, ?, ?, ?, ?, ?";
+      runtime.db.run(
+        `INSERT INTO files (${columns})
+         VALUES (${values})
+         ON CONFLICT(id) DO UPDATE SET
+           storage_path = excluded.storage_path,
+           mime_type = excluded.mime_type,
+           byte_size = excluded.byte_size,
+           sha256 = excluded.sha256,
+           updated_at = excluded.updated_at`,
+        [
+          id,
+          id,
+          mimeType,
+          prepared.byteLength,
+          prepared.sha256,
+          previous?.created_at || createdAt || now,
+          now,
+        ],
+      );
+    } catch (error) {
+      try {
+        await atomicWrite.restore();
+      } catch (restoreError) {
+        console.error("[Files] Failed to roll back file after database error", {
+          filePath,
+          error: restoreError,
+        });
+        throw new Error("文件写入回滚失败", { cause: restoreError });
+      }
+      throw error;
+    }
+
+    await atomicWrite.cleanup().catch((error) => {
+      console.error("[Files] Failed to remove temporary backup", {
+        filePath,
+        error,
+      });
+    });
+
+    return {
+      id,
+      mimeType,
+      byteSize: prepared.byteLength,
+      createdAt: previous?.created_at || createdAt || now,
+      updatedAt: now,
+    };
+  });
+};
+
 export const upsertFile = async (
   runtime: ServerRuntime,
   id: string,
@@ -132,85 +249,94 @@ export const upsertFile = async (
   createdAt?: number,
   updatedAt?: number,
 ) => {
-  return withStorageMutationLock(runtime, async () => {
-  if (data.byteLength > runtime.config.maxFileBytes) {
-    const limit = runtime.config.maxFileBytes / (1024 * 1024);
-    const formattedLimit = Number.isInteger(limit)
-      ? `${limit} MiB`
-      : `${runtime.config.maxFileBytes} 字节`;
-    throw new HttpError(
-      413,
-      "FILE_TOO_LARGE",
-      `单个文件不能超过 ${formattedLimit}`,
-    );
-  }
-  const filePath = getFilePath(runtime, id);
-  const hash = createHash("sha256").update(data).digest("hex");
-  const now = Number.isFinite(updatedAt) ? Number(updatedAt) : Date.now();
-  const previous = runtime.db
-    .query("SELECT created_at FROM files WHERE id = ?")
-    .get(id) as { created_at: number } | null;
-
-  const atomicWrite = await writeFileAtomically(filePath, data);
-  try {
-    const hasLegacyDataUrl = (
-      runtime.db.query("PRAGMA table_info(files)").all() as Array<{
-        name: string;
-      }>
-    ).some((column) => column.name === "data_url");
-    const columns = hasLegacyDataUrl
-      ? "id, storage_path, data_url, mime_type, byte_size, sha256, created_at, updated_at"
-      : "id, storage_path, mime_type, byte_size, sha256, created_at, updated_at";
-    const values = hasLegacyDataUrl
-      ? "?, ?, '', ?, ?, ?, ?, ?"
-      : "?, ?, ?, ?, ?, ?, ?";
-    runtime.db.run(
-      `INSERT INTO files (${columns})
-       VALUES (${values})
-       ON CONFLICT(id) DO UPDATE SET
-         storage_path = excluded.storage_path,
-         mime_type = excluded.mime_type,
-         byte_size = excluded.byte_size,
-         sha256 = excluded.sha256,
-         updated_at = excluded.updated_at`,
-      [
-        id,
-        id,
-        mimeType,
-        data.byteLength,
-        hash,
-        previous?.created_at || createdAt || now,
-        now,
-      ],
-    );
-  } catch (error) {
-    try {
-      await atomicWrite.restore();
-    } catch (restoreError) {
-      console.error("[Files] Failed to roll back file after database error", {
-        filePath,
-        error: restoreError,
-      });
-      throw new Error("文件写入回滚失败", { cause: restoreError });
-    }
-    throw error;
-  }
-
-  await atomicWrite.cleanup().catch((error) => {
-    console.error("[Files] Failed to remove temporary backup", {
-      filePath,
-      error,
-    });
-  });
-
-  return {
+  return upsertPreparedFile(
+    runtime,
     id,
     mimeType,
-    byteSize: data.byteLength,
-    createdAt: previous?.created_at || createdAt || now,
-    updatedAt: now,
-  };
-  });
+    {
+      data,
+      byteLength: data.byteLength,
+      sha256: createHash("sha256").update(data).digest("hex"),
+    },
+    createdAt,
+    updatedAt,
+  );
+};
+
+export const stageRequestBodyToFile = async (
+  runtime: ServerRuntime,
+  id: string,
+  req: Request,
+): Promise<PreparedFile> => {
+  const contentLength = Number(req.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > runtime.config.maxFileBytes) {
+    throw getFileTooLargeError(runtime.config.maxFileBytes);
+  }
+  if (!req.body) {
+    throw new HttpError(400, "EMPTY_FILE", "文件内容不能为空");
+  }
+
+  const filePath = getFilePath(runtime, id);
+  const tempPath = `${filePath}.${randomBytes(8).toString("hex")}.tmp`;
+  const writer = Bun.file(tempPath).writer({ highWaterMark: 64 * 1024 });
+  const reader = req.body.getReader();
+  const hash = createHash("sha256");
+  let byteLength = 0;
+
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) {
+        break;
+      }
+      byteLength += result.value.byteLength;
+      if (byteLength > runtime.config.maxFileBytes) {
+        await reader.cancel();
+        throw getFileTooLargeError(runtime.config.maxFileBytes);
+      }
+      hash.update(result.value);
+      await writer.write(result.value);
+    }
+    if (!byteLength) {
+      throw new HttpError(400, "EMPTY_FILE", "文件内容不能为空");
+    }
+    await writer.end();
+    return {
+      tempPath,
+      byteLength,
+      sha256: hash.digest("hex"),
+    };
+  } catch (error) {
+    await Promise.resolve(writer.end()).catch(() => {});
+    await fs.promises.rm(tempPath, { force: true });
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+};
+
+export const upsertStagedFile = async (
+  runtime: ServerRuntime,
+  id: string,
+  mimeType: string,
+  prepared: PreparedFile,
+  createdAt?: number,
+  updatedAt?: number,
+) => {
+  try {
+    return await upsertPreparedFile(
+      runtime,
+      id,
+      mimeType,
+      prepared,
+      createdAt,
+      updatedAt,
+    );
+  } finally {
+    if (prepared.tempPath) {
+      await fs.promises.rm(prepared.tempPath, { force: true });
+    }
+  }
 };
 
 export const decodeDataUrl = (value: unknown, expectedMimeType: string) => {

@@ -27,15 +27,16 @@ import {
   extractFileIds,
   fileExists,
   getFilePath,
+  stageRequestBodyToFile,
   syncSceneFileReferences,
   upsertFile,
+  upsertStagedFile,
   withThumbnailWriteLock,
 } from "./files";
 import {
   errorResponse,
   isAllowedOrigin,
   jsonResponse,
-  readBody,
   readJson,
   response,
 } from "./http";
@@ -265,7 +266,9 @@ export const createRequestHandler = (
             { "Retry-After": String(rate.retryAfter) },
           );
         }
-        const body = requireJsonObject(await readJson(req, 64 * 1024));
+        const body = requireJsonObject(
+          await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
+        );
         const password = body.password;
         if (
           runtime.config.allowAnonymous ||
@@ -383,7 +386,11 @@ export const createRequestHandler = (
 
       if (pathname === "/api/scenes" && req.method === "POST") {
         const body = requireJsonObject(
-          await readJson(req, runtime.config.maxSceneBodyBytes),
+          await readJson(
+            req,
+            runtime.config.maxSceneBodyBytes,
+            runtime.bodyMemoryBudget,
+          ),
         );
         const id = body.id
           ? validateId(body.id, "scene")
@@ -477,7 +484,9 @@ export const createRequestHandler = (
       }
 
       if (pathname === "/api/folders" && req.method === "POST") {
-        const body = requireJsonObject(await readJson(req, 64 * 1024));
+        const body = requireJsonObject(
+          await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
+        );
         const name = validateFolderName(body.name);
         const id = `folder_${Date.now().toString(36)}_${randomBytes(4).toString(
           "hex",
@@ -508,7 +517,9 @@ export const createRequestHandler = (
 
       if (pathname.startsWith("/api/folders/") && req.method === "PATCH") {
         const id = getPathId(pathname, "/api/folders/", "scene");
-        const body = requireJsonObject(await readJson(req, 64 * 1024));
+        const body = requireJsonObject(
+          await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
+        );
         const name = validateFolderName(body.name);
         const existing = runtime.db
           .query("SELECT id FROM folders WHERE id = ?")
@@ -636,10 +647,6 @@ export const createRequestHandler = (
             "画板缩略图必须是 PNG、JPEG 或 WebP",
           );
         }
-        const bytes = await readBody(req, runtime.config.maxFileBytes);
-        if (!bytes.byteLength) {
-          throw new HttpError(400, "EMPTY_THUMBNAIL", "画板缩略图不能为空");
-        }
         const thumbnailId = `thumbnail_${createHash("sha256")
           .update(id)
           .digest("hex")}`;
@@ -673,11 +680,12 @@ export const createRequestHandler = (
               stale: true,
             });
           }
-          await upsertFile(
+          const prepared = await stageRequestBodyToFile(runtime, thumbnailId, req);
+          await upsertStagedFile(
             runtime,
             thumbnailId,
             contentType,
-            bytes,
+            prepared,
             undefined,
             thumbnailVersion,
           );
@@ -764,7 +772,9 @@ export const createRequestHandler = (
 
       if (pathname.startsWith("/api/scenes/") && req.method === "PATCH") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
-        const body = requireJsonObject(await readJson(req, 64 * 1024));
+        const body = requireJsonObject(
+          await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
+        );
         if (
           !["name", "tags", "favorite", "folder_id"].some((key) =>
             hasOwn(body, key),
@@ -829,7 +839,11 @@ export const createRequestHandler = (
       if (pathname.startsWith("/api/scenes/") && req.method === "PUT") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
         const body = requireJsonObject(
-          await readJson(req, runtime.config.maxSceneBodyBytes),
+          await readJson(
+            req,
+            runtime.config.maxSceneBodyBytes,
+            runtime.bodyMemoryBudget,
+          ),
         );
         const existing = runtime.db
           .query("SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL")
@@ -942,7 +956,11 @@ export const createRequestHandler = (
 
       if (pathname === "/api/files" && req.method === "POST") {
         const body = requireJsonObject(
-          await readJson(req, runtime.config.maxFilesBodyBytes),
+          await readJson(
+            req,
+            runtime.config.maxFilesBodyBytes,
+            runtime.bodyMemoryBudget,
+          ),
         );
         const uploaded = [];
         for (const [fileId, value] of parseFileUploadEntries(body)) {
@@ -959,6 +977,13 @@ export const createRequestHandler = (
               Number(data.created),
             ),
           );
+          if (hasOwn(body, fileId)) {
+            delete body[fileId];
+          } else {
+            delete body.dataURL;
+            delete body.mimeType;
+            delete body.created;
+          }
         }
         return jsonResponse(
           runtime,
@@ -979,11 +1004,8 @@ export const createRequestHandler = (
           );
         }
         const mimeType = validateMimeType(contentType);
-        const bytes = await readBody(req, runtime.config.maxFileBytes);
-        if (!bytes.byteLength) {
-          throw new HttpError(400, "EMPTY_FILE", "文件内容不能为空");
-        }
-        const file = await upsertFile(runtime, id, mimeType, bytes);
+        const prepared = await stageRequestBodyToFile(runtime, id, req);
+        const file = await upsertStagedFile(runtime, id, mimeType, prepared);
         return jsonResponse(runtime, req, { success: true, file }, 201);
       }
 

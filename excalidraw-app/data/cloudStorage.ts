@@ -4,6 +4,20 @@ import type { FileId } from "@excalidraw/element/types";
 const CLOUD_API_TIMEOUT_MS = 10_000;
 const CLOUD_READ_RETRIES = 2;
 
+const getCloudFileConcurrency = () => {
+  if (typeof navigator === "undefined") {
+    return 4;
+  }
+  const deviceMemory = (navigator as Navigator & { deviceMemory?: number })
+    .deviceMemory;
+  return (
+    (typeof deviceMemory === "number" && deviceMemory <= 4) ||
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+  )
+    ? 2
+    : 4;
+};
+
 export interface CloudSceneSummary {
   id: string;
   name: string;
@@ -144,6 +158,21 @@ const dataUrlToBlob = (dataURL: string, mimeType: string) => {
   }
   return new Blob([bytes], { type: mimeType });
 };
+
+const blobToDataURL = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new CloudApiError("图片数据格式无效", 0, "INVALID_FILE_DATA"));
+      }
+    };
+    reader.onerror = () =>
+      reject(new CloudApiError("图片数据读取失败", 0, "INVALID_FILE_DATA"));
+    reader.readAsDataURL(blob);
+  });
 
 const runWithConcurrency = async <T>(
   items: readonly T[],
@@ -502,7 +531,7 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
       "保存云端图片失败",
     );
     await assertResponse(res, "保存云端图片失败");
-  });
+  }, getCloudFileConcurrency());
 }
 
 export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
@@ -523,16 +552,7 @@ export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
       const contentType =
         res.headers.get("content-type")?.split(";")[0].trim() ||
         "application/octet-stream";
-      const buffer = await res.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = "";
-      const chunkSize = 0x8000;
-      for (let index = 0; index < bytes.length; index += chunkSize) {
-        binary += String.fromCharCode(
-          ...bytes.subarray(index, Math.min(index + chunkSize, bytes.length)),
-        );
-      }
-      const dataURL = `data:${contentType};base64,${btoa(binary)}`;
+      const dataURL = await blobToDataURL(await res.blob());
       loadedFiles.push({
         id,
         mimeType: contentType as BinaryFileData["mimeType"],
@@ -545,7 +565,7 @@ export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
       }
       erroredFiles.set(id, true);
     }
-  });
+  }, getCloudFileConcurrency());
   return { loadedFiles, erroredFiles };
 }
 

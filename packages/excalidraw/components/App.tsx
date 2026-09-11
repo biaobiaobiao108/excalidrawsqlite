@@ -359,7 +359,9 @@ import Library, { distributeLibraryItemsOnSquareGrid } from "../data/library";
 import { restoreAppState, restoreElements } from "../data/restore";
 import { getCenter, getDistance } from "../gesture";
 import { History } from "../history";
+import { ImageCache } from "../imageCache";
 import { defaultLang, getLanguage, languages, setLanguage, t } from "../i18n";
+import { getEditorRenderScale } from "../renderScale";
 
 import {
   getScrollToContentState,
@@ -643,6 +645,44 @@ class App extends React.Component<AppProps, AppState> {
       typeof globalThis;
   }
 
+  private get editorRenderScale() {
+    const navigator = this.ownerWindow.navigator as Navigator & {
+      deviceMemory?: number;
+    };
+    return getEditorRenderScale({
+      width: this.state.width,
+      height: this.state.height,
+      devicePixelRatio: this.ownerWindow.devicePixelRatio,
+      canvasCount: this.state.newElement ? 3 : 2,
+      deviceMemory: navigator.deviceMemory,
+      userAgent: navigator.userAgent,
+    });
+  }
+
+  public getMemoryStats: AppClassProperties["getMemoryStats"] = () => {
+    let filesBytes = 0;
+    for (const file of Object.values(this.files)) {
+      filesBytes += file.dataURL.length * 2;
+    }
+
+    const editorRenderScale = this.editorRenderScale;
+    const canvasPixels =
+      this.state.width *
+        this.state.height *
+        editorRenderScale *
+        editorRenderScale *
+        (this.state.newElement ? 3 : 2);
+
+    return {
+      filesBytes,
+      fileCount: Object.keys(this.files).length,
+      editorRenderScale,
+      canvasPixels,
+      history: this.history.getMemoryStats(),
+      imageCache: this.imageCache.getMemoryStats(),
+    };
+  };
+
   public scene: Scene;
   public fonts: Fonts;
   public renderer: Renderer;
@@ -656,13 +696,14 @@ class App extends React.Component<AppProps, AppState> {
   public id: string;
   private store: Store;
   private history: History;
+  private filePruneScheduled = false;
   public excalidrawContainerValue: {
     container: HTMLDivElement | null;
     id: string;
   };
 
   public files: BinaryFiles = {};
-  public imageCache: AppClassProperties["imageCache"] = new Map();
+  public imageCache = new ImageCache();
   private iFrameRefs = new Map<ExcalidrawElement["id"], HTMLIFrameElement>();
   private embeddableBlobUrls = new Map<
     ExcalidrawElement["id"],
@@ -889,7 +930,6 @@ class App extends React.Component<AppProps, AppState> {
     };
 
     this.fonts = new Fonts(this.scene, this.ownerDocument);
-    this.history = new History(this.store);
 
     this.actionManager.registerAll(actions);
     this.actionManager.registerAction(createUndoAction(this.history));
@@ -2177,8 +2217,8 @@ class App extends React.Component<AppProps, AppState> {
       if (
         !isElementInViewport(
           f,
-          this.canvas.width / this.ownerWindow.devicePixelRatio,
-          this.canvas.height / this.ownerWindow.devicePixelRatio,
+          this.canvas.width / this.editorRenderScale,
+          this.canvas.height / this.editorRenderScale,
           {
             offsetLeft: this.state.offsetLeft,
             offsetTop: this.state.offsetTop,
@@ -2356,6 +2396,19 @@ class App extends React.Component<AppProps, AppState> {
     this.hasRenderableElements = renderableElementsMap.size > 0;
 
     const allElementsMap = this.scene.getNonDeletedElementsMap();
+    const croppingElement = this.state.croppingElementId
+      ? this.scene.getElement(this.state.croppingElementId)
+      : null;
+    this.imageCache.setPinnedFileIds(
+      [
+        ...visibleElements,
+        ...selectedElements,
+        ...(newElementCanvasElement ? [newElementCanvasElement] : []),
+        ...(croppingElement ? [croppingElement] : []),
+      ]
+        .filter(isInitializedImageElement)
+        .map((element) => element.fileId),
+    );
 
     const shouldBlockPointerEvents =
       // default back to `--ui-pointerEvents` flow if setPointerCapture
@@ -2619,7 +2672,7 @@ class App extends React.Component<AppProps, AppState> {
                             selectionNonce={
                               this.state.selectionElement?.versionNonce
                             }
-                            scale={this.ownerWindow.devicePixelRatio}
+                            scale={this.editorRenderScale}
                             appState={this.state}
                             renderConfig={{
                               imageCache: this.imageCache,
@@ -2641,7 +2694,7 @@ class App extends React.Component<AppProps, AppState> {
                             <NewElementCanvas
                               appState={this.state}
                               newElement={newElementCanvasElement}
-                              scale={this.ownerWindow.devicePixelRatio}
+                              scale={this.editorRenderScale}
                               rc={this.rc}
                               elementsMap={renderableElementsMap}
                               allElementsMap={allElementsMap}
@@ -2672,7 +2725,7 @@ class App extends React.Component<AppProps, AppState> {
                             selectionNonce={
                               this.state.selectionElement?.versionNonce
                             }
-                            scale={this.ownerWindow.devicePixelRatio}
+                            scale={this.editorRenderScale}
                             appState={this.state}
                             renderScrollbars={
                               this.props.renderScrollbars === true
@@ -3742,6 +3795,48 @@ class App extends React.Component<AppProps, AppState> {
     });
   }
 
+  private scheduleFilePrune = () => {
+    if (this.filePruneScheduled) {
+      return;
+    }
+    this.filePruneScheduled = true;
+    queueMicrotask(() => {
+      this.filePruneScheduled = false;
+      if (!this.unmounted) {
+        this.pruneUnusedFiles();
+      }
+    });
+  };
+
+  private pruneUnusedFiles = () => {
+    const referencedFileIds = new Set<FileId>(
+      this.history.getReferencedFileIds(),
+    );
+
+    for (const element of this.scene.getNonDeletedElements()) {
+      if (isInitializedImageElement(element)) {
+        referencedFileIds.add(element.fileId);
+      }
+    }
+    if (isInitializedImageElement(this.state.newElement)) {
+      referencedFileIds.add(this.state.newElement.fileId);
+    }
+
+    const nextFiles: BinaryFiles = {};
+    for (const [fileId, file] of Object.entries(this.files)) {
+      if (referencedFileIds.has(fileId as FileId)) {
+        nextFiles[fileId] = file;
+      } else {
+        this.imageCache.delete(fileId as FileId);
+      }
+    }
+
+    if (Object.keys(nextFiles).length !== Object.keys(this.files).length) {
+      this.files = nextFiles;
+    }
+    this.imageCache.trim();
+  };
+
   public async componentDidMount() {
     this.unmounted = false;
     this.api = this.createExcalidrawAPI();
@@ -3875,6 +3970,8 @@ class App extends React.Component<AppProps, AppState> {
     this.scene = new Scene();
     this.fonts = new Fonts(this.scene, this.ownerDocument);
     this.renderer = new Renderer(this.scene);
+    this.history.clear();
+    this.store.clear();
     this.files = {};
     this.imageCache.clear();
     this.resizeObserver?.disconnect();
@@ -3882,6 +3979,10 @@ class App extends React.Component<AppProps, AppState> {
     this.viewport.destroy();
     this.removeEventListeners();
     this.library.destroy();
+    this.iFrameRefs.clear();
+    this.embedsValidationStatus.clear();
+    this.initializedEmbeds.clear();
+    this.elementsPendingErasure.clear();
     for (const { url } of this.embeddableBlobUrls.values()) {
       this.ownerWindow.URL.revokeObjectURL(url);
     }
@@ -4376,6 +4477,7 @@ class App extends React.Component<AppProps, AppState> {
     if (!this.state.isLoading) {
       this.props.onChange?.(elements, this.state, this.files);
       this.onChangeEmitter.trigger(elements, this.state, this.files);
+      this.scheduleFilePrune();
     }
   }
 
@@ -5177,8 +5279,8 @@ class App extends React.Component<AppProps, AppState> {
       !elements.length ||
       isElementCompletelyInViewport(
         elements,
-        this.canvas.width / this.ownerWindow.devicePixelRatio,
-        this.canvas.height / this.ownerWindow.devicePixelRatio,
+        this.canvas.width / this.editorRenderScale,
+        this.canvas.height / this.editorRenderScale,
         {
           offsetLeft: this.state.offsetLeft,
           offsetTop: this.state.offsetTop,

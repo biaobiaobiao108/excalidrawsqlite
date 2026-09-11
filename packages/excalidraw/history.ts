@@ -9,6 +9,7 @@ import {
 import type { StoreSnapshot, Store } from "@excalidraw/element";
 
 import type { SceneElementsMap } from "@excalidraw/element/types";
+import type { FileId } from "@excalidraw/element/types";
 
 import type { AppState } from "./types";
 
@@ -87,6 +88,67 @@ export class HistoryChangedEvent {
   ) {}
 }
 
+export const HISTORY_MAX_ENTRIES = 200;
+export const HISTORY_MAX_BYTES = 64 * 1024 * 1024;
+
+export type HistoryOptions = {
+  maxEntries?: number;
+  maxBytes?: number;
+};
+
+const estimateValueBytes = (value: unknown, seen: Set<object>): number => {
+  if (value === null || value === undefined) {
+    return 8;
+  }
+
+  switch (typeof value) {
+    case "boolean":
+      return 4;
+    case "number":
+      return 8;
+    case "bigint":
+      return 16;
+    case "string":
+      return 16 + value.length * 2;
+    case "function":
+    case "symbol":
+      return 8;
+    case "object":
+      break;
+    default:
+      return 8;
+  }
+
+  if (seen.has(value)) {
+    return 0;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    let bytes = 24 + value.length * 8;
+    for (const item of value) {
+      bytes += estimateValueBytes(item, seen);
+    }
+    return bytes;
+  }
+
+  let bytes = 32;
+  for (const [key, nestedValue] of Object.entries(value)) {
+    bytes += 16 + key.length * 2 + estimateValueBytes(nestedValue, seen);
+  }
+  return bytes;
+};
+
+/**
+ * Estimates the retained JS object graph for a history delta.
+ *
+ * This is intentionally a conservative approximation that avoids serializing
+ * the full delta. It is used to keep history bounded, not as an exact browser
+ * heap measurement.
+ */
+export const estimateHistoryDeltaBytes = (delta: HistoryDelta) =>
+  estimateValueBytes(delta, new Set<object>());
+
 export class History {
   public readonly onHistoryChangedEmitter = new Emitter<
     [HistoryChangedEvent]
@@ -94,6 +156,11 @@ export class History {
 
   public readonly undoStack: HistoryDelta[] = [];
   public readonly redoStack: HistoryDelta[] = [];
+
+  private undoEstimatedBytes = 0;
+  private redoEstimatedBytes = 0;
+  private readonly maxEntries: number;
+  private readonly maxBytes: number;
 
   public get isUndoStackEmpty() {
     return this.undoStack.length === 0;
@@ -103,11 +170,60 @@ export class History {
     return this.redoStack.length === 0;
   }
 
-  constructor(private readonly store: Store) {}
+  constructor(
+    private readonly store: Store,
+    options: HistoryOptions = {},
+  ) {
+    this.maxEntries = Math.max(
+      1,
+      Math.trunc(options.maxEntries ?? HISTORY_MAX_ENTRIES),
+    );
+    this.maxBytes = Math.max(1, Math.trunc(options.maxBytes ?? HISTORY_MAX_BYTES));
+  }
 
   public clear() {
     this.undoStack.length = 0;
     this.redoStack.length = 0;
+    this.undoEstimatedBytes = 0;
+    this.redoEstimatedBytes = 0;
+  }
+
+  public getMemoryStats() {
+    return {
+      undoCount: this.undoStack.length,
+      redoCount: this.redoStack.length,
+      undoEstimatedBytes: this.undoEstimatedBytes,
+      redoEstimatedBytes: this.redoEstimatedBytes,
+      maxEntries: this.maxEntries,
+      maxBytes: this.maxBytes,
+    };
+  }
+
+  /** Returns file ids retained by undo/redo entries. */
+  public getReferencedFileIds(): ReadonlySet<FileId> {
+    const fileIds = new Set<FileId>();
+
+    for (const historyDelta of [...this.undoStack, ...this.redoStack]) {
+      for (const delta of [
+        historyDelta.elements.added,
+        historyDelta.elements.removed,
+        historyDelta.elements.updated,
+      ]) {
+        for (const elementDelta of Object.values(delta)) {
+          for (const partial of [
+            elementDelta.deleted,
+            elementDelta.inserted,
+          ]) {
+            const fileId = (partial as { fileId?: unknown }).fileId;
+            if (typeof fileId === "string") {
+              fileIds.add(fileId as FileId);
+            }
+          }
+        }
+      }
+    }
+
+    return fileIds;
   }
 
   /**
@@ -122,13 +238,14 @@ export class History {
     // construct history entry, so once it's emitted, it's not recorded again
     const historyDelta = HistoryDelta.inverse(delta);
 
-    this.undoStack.push(historyDelta);
+    this.pushEntry(this.undoStack, "undo", historyDelta);
 
     if (!historyDelta.elements.isEmpty()) {
       // don't reset redo stack on local appState changes,
       // as a simple click (unselect) could lead to losing all the redo entries
       // only reset on non empty elements changes!
       this.redoStack.length = 0;
+      this.redoEstimatedBytes = 0;
     }
 
     this.onHistoryChangedEmitter.trigger(
@@ -140,8 +257,8 @@ export class History {
     return this.perform(
       elements,
       appState,
-      () => History.pop(this.undoStack),
-      (entry: HistoryDelta) => History.push(this.redoStack, entry),
+      () => this.popEntry(this.undoStack, "undo"),
+      (entry: HistoryDelta) => this.pushInverse(this.redoStack, "redo", entry),
     );
   }
 
@@ -149,8 +266,8 @@ export class History {
     return this.perform(
       elements,
       appState,
-      () => History.pop(this.redoStack),
-      (entry: HistoryDelta) => History.push(this.undoStack, entry),
+      () => this.popEntry(this.redoStack, "redo"),
+      (entry: HistoryDelta) => this.pushInverse(this.undoStack, "undo", entry),
     );
   }
 
@@ -228,7 +345,10 @@ export class History {
     }
   }
 
-  private static pop(stack: HistoryDelta[]): HistoryDelta | null {
+  private popEntry(
+    stack: HistoryDelta[],
+    stackName: "undo" | "redo",
+  ): HistoryDelta | null {
     if (!stack.length) {
       return null;
     }
@@ -236,14 +356,57 @@ export class History {
     const entry = stack.pop();
 
     if (entry !== undefined) {
+      this.updateStackBytes(stackName, -estimateHistoryDeltaBytes(entry));
       return entry;
     }
 
     return null;
   }
 
-  private static push(stack: HistoryDelta[], entry: HistoryDelta) {
+  private pushInverse(
+    stack: HistoryDelta[],
+    stackName: "undo" | "redo",
+    entry: HistoryDelta,
+  ) {
     const inversedEntry = HistoryDelta.inverse(entry);
-    return stack.push(inversedEntry);
+    this.pushEntry(stack, stackName, inversedEntry);
+  }
+
+  private pushEntry(
+    stack: HistoryDelta[],
+    stackName: "undo" | "redo",
+    entry: HistoryDelta,
+  ) {
+    stack.push(entry);
+    this.updateStackBytes(stackName, estimateHistoryDeltaBytes(entry));
+    this.trimStack(stack, stackName);
+  }
+
+  private updateStackBytes(stackName: "undo" | "redo", delta: number) {
+    if (stackName === "undo") {
+      this.undoEstimatedBytes = Math.max(0, this.undoEstimatedBytes + delta);
+    } else {
+      this.redoEstimatedBytes = Math.max(0, this.redoEstimatedBytes + delta);
+    }
+  }
+
+  private trimStack(stack: HistoryDelta[], stackName: "undo" | "redo") {
+    const getBytes = () =>
+      stackName === "undo" ? this.undoEstimatedBytes : this.redoEstimatedBytes;
+
+    // Keep one oversized entry so the most recent large operation remains
+    // undoable, but discard older entries until the configured budget is met.
+    while (
+      stack.length > 1 &&
+      (stack.length > this.maxEntries || getBytes() > this.maxBytes)
+    ) {
+      const oldest = stack.shift();
+      if (oldest) {
+        this.updateStackBytes(
+          stackName,
+          -estimateHistoryDeltaBytes(oldest),
+        );
+      }
+    }
   }
 }

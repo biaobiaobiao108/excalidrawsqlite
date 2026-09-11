@@ -1,9 +1,11 @@
 import { Stats } from "@excalidraw/excalidraw";
 import { copyTextToSystemClipboard } from "@excalidraw/excalidraw/clipboard";
+import { useApp } from "@excalidraw/excalidraw/components/App";
 import {
   DEFAULT_VERSION,
   debounce,
   getVersion,
+  isDevEnv,
   nFormatter,
 } from "@excalidraw/common";
 import { t } from "@excalidraw/excalidraw/i18n";
@@ -34,6 +36,7 @@ type Props = {
   appState: UIAppState;
 };
 const CustomStats = (props: Props) => {
+  const app = useApp();
   const [storageSizes, setStorageSizes] = useState<StorageSizes>({
     scene: 0,
     total: 0,
@@ -47,6 +50,7 @@ const CustomStats = (props: Props) => {
   useEffect(() => () => getStorageSizes.cancel(), []);
 
   const version = getVersion();
+  const memoryStats = isDevEnv() ? app.getMemoryStats() : null;
   let hash;
   let timestamp;
 
@@ -84,6 +88,37 @@ const CustomStats = (props: Props) => {
         <div>{t("stats.total")}</div>
         <div>{nFormatter(storageSizes.total, 1)}</div>
       </Stats.StatsRow>
+      {memoryStats && (
+        <>
+          <Stats.StatsRow heading>Memory budget</Stats.StatsRow>
+          <Stats.StatsRow columns={2}>
+            <div>Files</div>
+            <div>{nFormatter(memoryStats.filesBytes, 1)}</div>
+          </Stats.StatsRow>
+          <Stats.StatsRow columns={2}>
+            <div>Decoded images</div>
+            <div>{nFormatter(memoryStats.imageCache.decodedBytes, 1)}</div>
+          </Stats.StatsRow>
+          <Stats.StatsRow columns={2}>
+            <div>History</div>
+            <div>
+              {nFormatter(
+                memoryStats.history.undoEstimatedBytes +
+                  memoryStats.history.redoEstimatedBytes,
+                1,
+              )}
+            </div>
+          </Stats.StatsRow>
+          <Stats.StatsRow columns={2}>
+            <div>Canvas pixels</div>
+            <div>{nFormatter(memoryStats.canvasPixels, 1)}</div>
+          </Stats.StatsRow>
+          <Stats.StatsRow columns={2}>
+            <div>Render scale</div>
+            <div>{memoryStats.editorRenderScale.toFixed(2)}</div>
+          </Stats.StatsRow>
+        </>
+      )}
     </Stats.StatsRows>
   );
 };

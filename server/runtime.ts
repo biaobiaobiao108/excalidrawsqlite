@@ -5,6 +5,7 @@ import { Database } from "bun:sqlite";
 
 import { createServerConfig } from "./config";
 import { initializeDatabase, migrateLegacyDatabase } from "./database";
+import { BodyMemoryBudget } from "./types";
 
 import type { ServerConfig, ServerRuntime } from "./types";
 
@@ -38,6 +39,7 @@ export const createRuntime = (options: {
       sessions: new Map(),
       authAttempts: new Map(),
       writeAttempts: new Map(),
+      bodyMemoryBudget: new BodyMemoryBudget(config.maxInFlightBodyBytes),
     };
   } catch (error) {
     throw new Error(

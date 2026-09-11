@@ -167,46 +167,90 @@ export const isSecureRequest = (runtime: ServerRuntime, req: Request) => {
   );
 };
 
-export const readBody = async (req: Request, maxBytes: number) => {
-  const contentLength = Number(req.headers.get("content-length"));
+export const readBody = async (
+  req: Request,
+  maxBytes: number,
+  bodyMemoryBudget?: {
+    acquire: (bytes: number) => Promise<number>;
+    release: (bytes: number) => void;
+  },
+) => {
+  const contentLengthHeader = req.headers.get("content-length");
+  const contentLength =
+    contentLengthHeader === null ? Number.NaN : Number(contentLengthHeader);
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
     throw new HttpError(413, "BODY_TOO_LARGE", "请求内容超过大小限制");
   }
 
-  if (!req.body) {
-    return new Uint8Array();
-  }
+  const expectedLength =
+    Number.isSafeInteger(contentLength) && contentLength >= 0
+      ? contentLength
+      : null;
+  const reservedBytes = bodyMemoryBudget
+    ? await bodyMemoryBudget.acquire(expectedLength ?? maxBytes)
+    : 0;
 
-  const reader = req.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
   try {
-    while (true) {
-      const result = await reader.read();
-      if (result.done) {
-        break;
-      }
-      total += result.value.byteLength;
-      if (total > maxBytes) {
-        await reader.cancel();
-        throw new HttpError(413, "BODY_TOO_LARGE", "请求内容超过大小限制");
-      }
-      chunks.push(result.value);
+    if (!req.body) {
+      return new Uint8Array();
     }
-  } finally {
-    reader.releaseLock();
-  }
 
-  const body = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
+    const preallocated =
+      expectedLength !== null ? new Uint8Array(expectedLength) : null;
+    const reader = req.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const result = await reader.read();
+        if (result.done) {
+          break;
+        }
+        total += result.value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel();
+          throw new HttpError(413, "BODY_TOO_LARGE", "请求内容超过大小限制");
+        }
+
+        if (preallocated && total <= preallocated.byteLength) {
+          preallocated.set(result.value, total - result.value.byteLength);
+        } else {
+          if (preallocated && !chunks.length) {
+            chunks.push(preallocated.slice(0, total - result.value.byteLength));
+          }
+          chunks.push(result.value);
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (preallocated && !chunks.length) {
+      return preallocated.subarray(0, total);
+    }
+
+    const body = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      body.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return body;
+  } finally {
+    if (bodyMemoryBudget) {
+      bodyMemoryBudget.release(reservedBytes);
+    }
   }
-  return body;
 };
 
-export const readJson = async (req: Request, maxBytes: number) => {
+export const readJson = async (
+  req: Request,
+  maxBytes: number,
+  bodyMemoryBudget?: {
+    acquire: (bytes: number) => Promise<number>;
+    release: (bytes: number) => void;
+  },
+) => {
   const contentType = req.headers.get("content-type") || "";
   if (!contentType.toLowerCase().includes("application/json")) {
     throw new HttpError(
@@ -215,7 +259,7 @@ export const readJson = async (req: Request, maxBytes: number) => {
       "请求必须使用 JSON 格式",
     );
   }
-  const body = await readBody(req, maxBytes);
+  const body = await readBody(req, maxBytes, bodyMemoryBudget);
   try {
     return JSON.parse(new TextDecoder().decode(body)) as unknown;
   } catch {

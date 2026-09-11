@@ -1,5 +1,62 @@
 import type { Database } from "bun:sqlite";
 
+export class BodyMemoryBudget {
+  private availableBytes: number;
+  private currentBytes = 0;
+  private peakBytes = 0;
+  private readonly waiters: Array<{
+    bytes: number;
+    resolve: () => void;
+  }> = [];
+
+  constructor(private readonly maxBytes: number) {
+    this.availableBytes = maxBytes;
+  }
+
+  async acquire(requestedBytes: number) {
+    const bytes = Math.min(Math.max(1, requestedBytes), this.maxBytes);
+    if (this.availableBytes >= bytes) {
+      this.availableBytes -= bytes;
+      this.currentBytes += bytes;
+      this.peakBytes = Math.max(this.peakBytes, this.currentBytes);
+      return bytes;
+    }
+
+    await new Promise<void>((resolve) => {
+      this.waiters.push({ bytes, resolve });
+    });
+    this.currentBytes += bytes;
+    this.peakBytes = Math.max(this.peakBytes, this.currentBytes);
+    return bytes;
+  }
+
+  release(bytes: number) {
+    this.availableBytes = Math.min(this.maxBytes, this.availableBytes + bytes);
+    this.currentBytes = Math.max(0, this.currentBytes - bytes);
+    while (this.waiters.length) {
+      const waiter = this.waiters[0];
+      if (this.availableBytes < waiter.bytes) {
+        break;
+      }
+      this.availableBytes -= waiter.bytes;
+      this.currentBytes += waiter.bytes;
+      this.peakBytes = Math.max(this.peakBytes, this.currentBytes);
+      this.waiters.shift();
+      waiter.resolve();
+    }
+  }
+
+  getStats() {
+    return {
+      maxBytes: this.maxBytes,
+      availableBytes: this.availableBytes,
+      currentBytes: this.currentBytes,
+      peakBytes: this.peakBytes,
+      queuedRequests: this.waiters.length,
+    };
+  }
+}
+
 export type ServerConfig = {
   authPassword: string;
   allowAnonymous: boolean;
@@ -10,6 +67,7 @@ export type ServerConfig = {
   maxFileBytes: number;
   maxSceneBodyBytes: number;
   maxFilesBodyBytes: number;
+  maxInFlightBodyBytes: number;
   sessionTtlMs: number;
 };
 export type RequestAddressResolver = (req: Request) => string | undefined;
@@ -23,4 +81,5 @@ export type ServerRuntime = {
   sessions: Map<string, number>;
   authAttempts: Map<string, { startedAt: number; count: number }>;
   writeAttempts: Map<string, { startedAt: number; count: number }>;
+  bodyMemoryBudget: BodyMemoryBudget;
 };

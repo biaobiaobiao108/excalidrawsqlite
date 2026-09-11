@@ -1129,6 +1129,26 @@ export type AppClassProperties = {
   onInsertElements: App["onInsertElements"];
   onExportImage: App["onExportImage"];
   viewport: App["viewport"];
+  getMemoryStats(): {
+    filesBytes: number;
+    fileCount: number;
+    editorRenderScale: number;
+    canvasPixels: number;
+    history: {
+      undoCount: number;
+      redoCount: number;
+      undoEstimatedBytes: number;
+      redoEstimatedBytes: number;
+      maxEntries: number;
+      maxBytes: number;
+    };
+    imageCache: {
+      entries: number;
+      decodedBytes: number;
+      maxDecodedBytes: number;
+      pinnedEntries: number;
+    };
+  };
   addFiles: App["addFiles"];
   addElementsFromPasteOrLibrary: App["addElementsFromPasteOrLibrary"];
   togglePenMode: App["togglePenMode"];
