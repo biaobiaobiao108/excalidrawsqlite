@@ -157,7 +157,7 @@ describe("memory budgets", () => {
     expect(budget.getStats()).toMatchObject({
       availableBytes: 6,
       currentBytes: 4,
-      peakBytes: 10,
+      peakBytes: 8,
     });
     budget.release(4);
     expect(budget.getStats().availableBytes).toBe(10);

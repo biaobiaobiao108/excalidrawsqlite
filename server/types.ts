@@ -25,8 +25,6 @@ export class BodyMemoryBudget {
     await new Promise<void>((resolve) => {
       this.waiters.push({ bytes, resolve });
     });
-    this.currentBytes += bytes;
-    this.peakBytes = Math.max(this.peakBytes, this.currentBytes);
     return bytes;
   }
 
