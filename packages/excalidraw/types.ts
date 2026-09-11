@@ -1129,6 +1129,7 @@ export type AppClassProperties = {
   onInsertElements: App["onInsertElements"];
   onExportImage: App["onExportImage"];
   viewport: App["viewport"];
+  getEditorRenderScale(): number;
   getMemoryStats(): {
     filesBytes: number;
     fileCount: number;

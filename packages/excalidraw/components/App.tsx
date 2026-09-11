@@ -659,13 +659,15 @@ class App extends React.Component<AppProps, AppState> {
     });
   }
 
+  public getEditorRenderScale = () => this.editorRenderScale;
+
   public getMemoryStats: AppClassProperties["getMemoryStats"] = () => {
     let filesBytes = 0;
     for (const file of Object.values(this.files)) {
       filesBytes += file.dataURL.length * 2;
     }
 
-    const editorRenderScale = this.editorRenderScale;
+    const editorRenderScale = this.getEditorRenderScale();
     const canvasPixels =
       this.state.width *
         this.state.height *

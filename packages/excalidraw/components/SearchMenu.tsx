@@ -221,8 +221,8 @@ export const SearchMenu = () => {
         if (
           !isElementCompletelyInViewport(
             [matchAsElement],
-            app.canvas.width / app.ownerWindow.devicePixelRatio,
-            app.canvas.height / app.ownerWindow.devicePixelRatio,
+            app.canvas.width / app.getEditorRenderScale(),
+            app.canvas.height / app.getEditorRenderScale(),
             {
               offsetLeft: app.state.offsetLeft,
               offsetTop: app.state.offsetTop,

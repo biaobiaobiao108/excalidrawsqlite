@@ -112,8 +112,8 @@ export const EyeDropper: React.FC<{
       clientY: number;
     }) => {
       const pixel = ctx.getImageData(
-        (clientX - appState.offsetLeft) * ownerWindow.devicePixelRatio,
-        (clientY - appState.offsetTop) * ownerWindow.devicePixelRatio,
+        (clientX - appState.offsetLeft) * app.getEditorRenderScale(),
+        (clientY - appState.offsetTop) * app.getEditorRenderScale(),
         1,
         1,
       ).data;
