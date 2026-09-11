@@ -277,6 +277,7 @@ export const stageRequestBodyToFile = async (
   }
 
   const filePath = getFilePath(runtime, id);
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${randomBytes(8).toString("hex")}.tmp`;
   const writer = Bun.file(tempPath).writer({ highWaterMark: 64 * 1024 });
   const reader = req.body.getReader();
