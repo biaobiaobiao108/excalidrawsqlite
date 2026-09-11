@@ -243,6 +243,7 @@ export const EyeDropper: React.FC<{
     };
   }, [
     stableProps,
+    app,
     app.canvas,
     eyeDropperContainer,
     colorPickerType,
