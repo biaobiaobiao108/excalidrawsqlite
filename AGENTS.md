@@ -76,3 +76,12 @@
 4. 依赖、构建配置、跨模块接口或发布级改动：运行 `bun run test:all`。
 
 每次代码或文档修改后立即执行一次 Conventional Commit。
+
+## 9. 内存占用与生命周期规范
+
+- 总原则：以编辑体验和导出质量为先；所有新增历史、缓存、队列和临时数据都必须有明确上限及释放路径。不得修改数据库 schema、场景/图片/备份 API 或 `BinaryFileData` 类型来换取内存优化。
+- History：默认最多保留 200 条、估算上限 64 MiB；按点数组、字符串、数组和字段数量估算，不序列化完整对象。超限从最老记录淘汰，但最近的单个超大操作仍保留；撤销、重做和分支写入必须同步维护预算。`Store.clear()`、编辑器卸载时必须清理待执行动作、History、Store 和临时引用，但不能清掉云端保存队列仍持有的最新快照。
+- Canvas：`StaticCanvas`、`InteractiveCanvas`、`NewElementCanvas` 使用统一的自适应 `renderScale`。编辑画布总预算约为普通设备 32M、低内存设备 16M RGBA 像素；无预览按 2 层、有预览按 3 层计算，并随视口/DPR变化调整。CSS 尺寸和导出分辨率不得降低；分配失败时应降低比例重试。
+- 图片：`files` 只保存可重新解码的数据，`imageCache` 必须保持 Map 兼容并使用按解码像素计费的 LRU；默认预算为普通设备 128 MiB、低内存/移动设备 64 MiB。当前可见、选中、裁剪和交互中的图片固定保留；只有不再被场景、History、云端快照、缩略图任务或交互引用的文件才能回收，淘汰后必须能从 `files`/IndexedDB 重新解码。第一阶段不要把 `dataURL` 改为 Blob/Object URL。
+- 云端与服务端：云端图片加载使用 Blob/FileReader 路径，普通设备最多 4 路、低内存/移动设备最多 2 路并发。服务端使用 `MAX_IN_FLIGHT_BODY_BYTES`（默认 64 MiB）限制聚合请求体；已知 `Content-Length` 时按目标大小预分配。二进制上传必须流式写临时文件、增量计算 SHA-256/大小，成功后原子替换，超限或数据库失败时清理并回滚；批量 JSON 逐项处理并及时释放已消费的 data URL。备份格式和内容必须保持兼容。
+- 统计与验证：内存统计仅用于开发/测试，不进入生产日志；至少覆盖 History、`files`、解码图片、缓存条目、Canvas 像素、云端待保存快照和服务端 body 当前/峰值占用。内存相关改动运行 `bun test`、`bun run test:typecheck`、`bun run test:code`、`bun run test:server`；涉及渲染或交互时追加 `bun run test:e2e`，跨模块或发布级改动运行 `bun run test:all`。
