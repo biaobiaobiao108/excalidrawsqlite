@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { Database } from "bun:sqlite";
@@ -8,6 +7,7 @@ import {
   getFilePath,
   withStorageMutationLock,
 } from "./files";
+import { randomHex } from "./crypto";
 
 import type { ServerRuntime } from "./types";
 
@@ -17,7 +17,7 @@ export const createDatabaseSnapshot = async (
 ) => {
   const tempBackupFile = path.join(
     path.dirname(runtime.dbPath),
-    `excalidraw-backup-${timestamp}-${randomBytes(4).toString("hex")}.db`,
+    `excalidraw-backup-${timestamp}-${randomHex(4)}.db`,
   );
   const escapedPath = tempBackupFile.replace(/'/g, "''");
   runtime.db.run(`VACUUM INTO '${escapedPath}'`);

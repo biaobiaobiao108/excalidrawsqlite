@@ -1,8 +1,8 @@
-import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import { SCHEMA_VERSION } from "./config";
+import { randomHex, sha256Hex } from "./crypto";
 import { decodeDataUrl, extractFileIds } from "./files";
 import { validateId } from "./validation";
 
@@ -164,7 +164,7 @@ export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
         const id = validateId(row.id, "file");
         const bytes = decodeDataUrl(row.data_url, row.mime_type);
         const filePath = path.resolve(filesDir, id);
-        const tempPath = `${filePath}.${randomBytes(8).toString("hex")}.tmp`;
+        const tempPath = `${filePath}.${randomHex(8)}.tmp`;
         try {
           fs.writeFileSync(tempPath, bytes);
           try {
@@ -179,7 +179,7 @@ export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
         } finally {
           fs.rmSync(tempPath, { force: true });
         }
-        const hash = createHash("sha256").update(bytes).digest("hex");
+        const hash = sha256Hex(bytes);
         const now = Date.now();
         db.run(
           `UPDATE files

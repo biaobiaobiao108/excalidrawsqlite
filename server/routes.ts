@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -7,6 +6,7 @@ import {
   WRITE_RATE_WINDOW_MS,
   WRITE_REQUESTS_PER_WINDOW,
 } from "./config";
+import { randomHex, sha256Hex } from "./crypto";
 import { handleDevReloadRequest } from "./dev-reload";
 import { HttpError } from "./errors";
 import {
@@ -394,9 +394,7 @@ export const createRequestHandler = (
         );
         const id = body.id
           ? validateId(body.id, "scene")
-          : `scene_${Date.now().toString(36)}_${randomBytes(4).toString(
-              "hex",
-            )}`;
+          : `scene_${Date.now().toString(36)}_${randomHex(4)}`;
         const name = hasOwn(body, "name")
           ? validateName(body.name)
           : "未命名白板";
@@ -488,9 +486,7 @@ export const createRequestHandler = (
           await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
         );
         const name = validateFolderName(body.name);
-        const id = `folder_${Date.now().toString(36)}_${randomBytes(4).toString(
-          "hex",
-        )}`;
+        const id = `folder_${Date.now().toString(36)}_${randomHex(4)}`;
         const now = Date.now();
         try {
           runtime.db.run(
@@ -647,9 +643,7 @@ export const createRequestHandler = (
             "画板缩略图必须是 PNG、JPEG 或 WebP",
           );
         }
-        const thumbnailId = `thumbnail_${createHash("sha256")
-          .update(id)
-          .digest("hex")}`;
+        const thumbnailId = `thumbnail_${sha256Hex(id)}`;
         const thumbnailVersionHeader = req.headers.get("x-thumbnail-version");
         const thumbnailVersion = thumbnailVersionHeader
           ? Number(thumbnailVersionHeader)
@@ -719,9 +713,7 @@ export const createRequestHandler = (
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
-        const thumbnailId = `thumbnail_${createHash("sha256")
-          .update(id)
-          .digest("hex")}`;
+        const thumbnailId = `thumbnail_${sha256Hex(id)}`;
         const thumbnailVersionHeader = req.headers.get("x-thumbnail-version");
         const thumbnailVersion = thumbnailVersionHeader
           ? Number(thumbnailVersionHeader)

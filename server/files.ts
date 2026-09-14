@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -7,6 +6,7 @@ import {
   ORPHAN_FILE_GRACE_MS,
   STALE_FILE_ARTIFACT_MS,
 } from "./config";
+import { randomHex, sha256Hex } from "./crypto";
 import { HttpError } from "./errors";
 import { isRecord, validateId } from "./validation";
 
@@ -89,7 +89,7 @@ const finalizeAtomicFileWrite = async (
   filePath: string,
   tempPath: string,
 ): Promise<AtomicFileWrite> => {
-  const backupPath = `${filePath}.${randomBytes(8).toString("hex")}.bak`;
+  const backupPath = `${filePath}.${randomHex(8)}.bak`;
   const hadExistingFile = await fileExists(filePath);
 
   try {
@@ -138,7 +138,7 @@ const writeFileAtomically = async (
   filePath: string,
   data: Uint8Array,
 ): Promise<AtomicFileWrite> => {
-  const tempPath = `${filePath}.${randomBytes(8).toString("hex")}.tmp`;
+  const tempPath = `${filePath}.${randomHex(8)}.tmp`;
   try {
     await Bun.write(tempPath, data);
     return await finalizeAtomicFileWrite(filePath, tempPath);
@@ -256,7 +256,7 @@ export const upsertFile = async (
     {
       data,
       byteLength: data.byteLength,
-      sha256: createHash("sha256").update(data).digest("hex"),
+      sha256: sha256Hex(data),
     },
     createdAt,
     updatedAt,
@@ -278,10 +278,10 @@ export const stageRequestBodyToFile = async (
 
   const filePath = getFilePath(runtime, id);
   await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.${randomBytes(8).toString("hex")}.tmp`;
+  const tempPath = `${filePath}.${randomHex(8)}.tmp`;
   const writer = Bun.file(tempPath).writer({ highWaterMark: 64 * 1024 });
   const reader = req.body.getReader();
-  const hash = createHash("sha256");
+  const hash = new Bun.CryptoHasher("sha256");
   let byteLength = 0;
 
   try {

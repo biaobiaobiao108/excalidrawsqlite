@@ -1,16 +1,15 @@
 import {
-  createHmac,
-  randomBytes,
-  timingSafeEqual,
-} from "node:crypto";
-
-import {
   AUTH_COOKIE_DEVELOPMENT,
   AUTH_COOKIE_PRODUCTION,
   AUTH_RATE_WINDOW_MS,
   MAX_AUTH_PASSWORD_LENGTH,
   WRITE_RATE_WINDOW_MS,
 } from "./config";
+import {
+  hmacSha256Hex,
+  randomBase64Url,
+  timingSafeEqual,
+} from "./crypto";
 import { getCookie, isSecureRequest } from "./http";
 
 import type { RequestAddressResolver, ServerRuntime } from "./types";
@@ -73,10 +72,10 @@ export const getSessionToken = (runtime: ServerRuntime, req: Request) => {
 };
 
 export const hashSessionToken = (runtime: ServerRuntime, token: string) =>
-  createHmac("sha256", runtime.config.authPassword).update(token).digest("hex");
+  hmacSha256Hex(runtime.config.authPassword, token);
 
 export const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
-  const token = randomBytes(32).toString("base64url");
+  const token = randomBase64Url(32);
   const expiresAt = Date.now() + runtime.config.sessionTtlMs;
   runtime.sessions.set(token, expiresAt);
   try {
@@ -184,8 +183,8 @@ export const verifyPassword = (input: unknown, expected: string) => {
   if (typeof input !== "string" || input.length > MAX_AUTH_PASSWORD_LENGTH) {
     return false;
   }
-  const inputBuffer = Buffer.from(input);
-  const expectedBuffer = Buffer.from(expected);
+  const inputBuffer = new TextEncoder().encode(input);
+  const expectedBuffer = new TextEncoder().encode(expected);
   return (
     inputBuffer.length === expectedBuffer.length &&
     timingSafeEqual(inputBuffer, expectedBuffer)
