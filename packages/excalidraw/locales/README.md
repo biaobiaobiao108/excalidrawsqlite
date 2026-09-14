@@ -7,6 +7,6 @@ Please do not contribute changes directly to these files, as we manage them with
 
 ## Completion of translation
 
-[percentages.json](./percentages.json) holds a percentage of completion for each language. Regenerate it with `bun scripts/build-locales-coverage.js` when translations change.
+[percentages.json](./percentages.json) holds a percentage of completion for each language. Regenerate it with `bun scripts/build-locales-coverage.ts` when translations change.
 
 We only make a language available on the app if it exceeds a certain threshold of completion.
