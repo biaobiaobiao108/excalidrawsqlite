@@ -1192,6 +1192,18 @@ describe("cloud persistence server", () => {
     expect(header).toBe("SQLite format 3");
   });
 
+  it("rejects a database snapshot before creating an oversized temp file", async () => {
+    const { handler } = createTestRuntime({ MAX_BACKUP_BYTES: "1" });
+    const cookie = await authenticate(handler);
+    const response = await request(handler, "/api/backup/snapshot", {
+      headers: { Cookie: cookie },
+    });
+    expect(response.status).toBe(413);
+    expect(await responseJson<{ code: string }>(response)).toMatchObject({
+      code: "BACKUP_TOO_LARGE",
+    });
+  });
+
   it("exports a complete backup containing the database, manifest and attachments", async () => {
     const { handler } = createTestRuntime();
     const cookie = await authenticate(handler);

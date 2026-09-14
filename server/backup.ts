@@ -33,6 +33,21 @@ export const createDatabaseSnapshot = async (
   runtime: ServerRuntime,
   timestamp: string,
 ) => {
+  const pageCount = Number(
+    (runtime.db.query("PRAGMA page_count").get() as { page_count?: number })
+      ?.page_count,
+  );
+  const pageSize = Number(
+    (runtime.db.query("PRAGMA page_size").get() as { page_size?: number })
+      ?.page_size,
+  );
+  if (
+    Number.isSafeInteger(pageCount) &&
+    Number.isSafeInteger(pageSize) &&
+    pageCount * pageSize > runtime.config.maxBackupBytes
+  ) {
+    throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+  }
   const tempBackupFile = path.join(
     path.dirname(runtime.dbPath),
     `excalidraw-backup-${timestamp}-${randomHex(4)}.db`,
