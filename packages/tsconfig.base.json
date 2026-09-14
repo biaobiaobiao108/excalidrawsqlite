@@ -3,6 +3,7 @@
     "target": "ESNext",
     "strict": true,
     "skipLibCheck": true,
+    "types": ["@types/bun", "@types/node"],
     "declaration": true,
     "allowSyntheticDefaultImports": true,
     "module": "ESNext",

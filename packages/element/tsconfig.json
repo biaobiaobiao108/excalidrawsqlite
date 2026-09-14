@@ -4,6 +4,6 @@
     "rootDir": "../",
     "outDir": "./dist/types"
   },
-  "include": ["src/**/*", "global.d.ts"],
+  "include": ["src/**/*", "global.d.ts", "../../env.d.ts"],
   "exclude": ["**/*.test.*", "tests", "types", "dist"]
 }
