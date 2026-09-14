@@ -93,7 +93,7 @@
         "@types/resize-observer-browser": "0.1.7",
         "esbuild": "0.28.2",
         "esbuild-sass-plugin": "3.7.0",
-        "fonteditor-core": "2.6.3",
+        "fonteditor-core": "2.4.1",
         "harfbuzzjs": "0.3.6",
       },
       "peerDependencies": {
@@ -852,7 +852,7 @@
 
     "flatted": ["flatted@3.4.4", "", {}, "sha512-5+ybhBZANEJxaH3X5evAFatUxLfEHSr7n6kYJ+1Qd0mUqr4eu9gIf6GDbWHf8RJijHrjjO8G+la14SlL2SeS1Q=="],
 
-    "fonteditor-core": ["fonteditor-core@2.6.3", "", { "dependencies": { "@xmldom/xmldom": "^0.8.3" } }, "sha512-YUryIKjkenjZ41E7JvM3V+02Ak4mTHDDTwBWgs9KBzypzHqLZHuua1UDRevZNTKawmnq1dbBAa70Jddl2+F4FQ=="],
+    "fonteditor-core": ["fonteditor-core@2.4.1", "", { "dependencies": { "@xmldom/xmldom": "^0.8.3" } }, "sha512-nKDDt6kBQGq665tQO5tCRQUClJG/2MAF9YT1eKHl+I4NasdSb6DgXrv/gMjNxjo9NyaVEv9KU9VZxLHMstN1wg=="],
 
     "for-each": ["for-each@0.3.5", "", { "dependencies": { "is-callable": "^1.2.7" } }, "sha512-dKx12eRCVIzqCxFGplyFKJMPvLEWgmNtUrpTiJIR5u97zEhRG8ySrtboPHZXx7daLxQVrl643cTzbab2tkQjxg=="],
 

@@ -114,7 +114,7 @@
     "@types/resize-observer-browser": "0.1.7",
     "esbuild": "0.28.2",
     "esbuild-sass-plugin": "3.7.0",
-    "fonteditor-core": "2.6.3",
+    "fonteditor-core": "2.4.1",
     "harfbuzzjs": "0.3.6"
   }
 }

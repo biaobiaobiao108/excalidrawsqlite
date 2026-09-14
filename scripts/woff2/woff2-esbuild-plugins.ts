@@ -7,6 +7,37 @@ import wawoff from "wawoff2";
 
 type FontInstance = InstanceType<typeof Font>;
 
+let fontDecodeQueue = Promise.resolve();
+
+const decodeFont = async (woff2Buffer: ArrayBuffer) => {
+  const previous = fontDecodeQueue;
+  let release!: () => void;
+  fontDecodeQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    const snftBuffer = new Uint8Array(
+      await wawoff.decompress(woff2Buffer),
+    ).buffer;
+    try {
+      return Font.create(snftBuffer, {
+        type: "ttf",
+        hinting: true,
+        kerning: true,
+      });
+    } catch {
+      return Font.create(snftBuffer, {
+        type: "otf",
+        hinting: true,
+        kerning: true,
+      });
+    }
+  } finally {
+    release();
+  }
+};
+
 /**
  * Custom esbuild plugin to:
  * 1. inline all woff2 (url and relative imports) as base64 for server-side use cases (no need for additional font fetch; works in both esm and commonjs)
@@ -34,22 +65,7 @@ export const woff2ServerPlugin = (options: { outdir?: string } = {}): Plugin => 
         }
 
         const woff2Buffer = await Bun.file(args.path).arrayBuffer();
-        const snftBuffer = await wawoff.decompress(woff2Buffer);
-        let font: FontInstance;
-
-        try {
-          font = Font.create(snftBuffer, {
-            type: "ttf",
-            hinting: true,
-            kerning: true,
-          });
-        } catch {
-          font = Font.create(snftBuffer, {
-            type: "otf",
-            hinting: true,
-            kerning: true,
-          });
-        }
+        const font = await decodeFont(woff2Buffer);
 
         const fontFamily = font.data.name.fontFamily;
         const subFamily = font.data.name.fontSubFamily;
