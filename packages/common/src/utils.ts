@@ -151,31 +151,142 @@ export const nextAnimationFrame = async (cb: () => any) => {
   requestAnimationFrame(() => requestAnimationFrame(cb));
 };
 
-export const debounce = <T extends any[]>(
-  fn: (...args: T) => void,
+type DebouncedFunction<T extends (...args: any[]) => any> = {
+  (...args: Parameters<T>): ReturnType<T> | undefined;
+  cancel: () => void;
+  flush: () => ReturnType<T> | undefined;
+};
+
+export const debounce = <T extends (...args: any[]) => any>(
+  fn: T,
   timeout: number,
-) => {
-  let handle = 0;
-  let lastArgs: T | null = null;
-  const ret = (...args: T) => {
-    lastArgs = args;
-    clearTimeout(handle);
-    handle = window.setTimeout(() => {
-      lastArgs = null;
-      fn(...args);
-    }, timeout);
-  };
-  ret.flush = () => {
-    clearTimeout(handle);
-    if (lastArgs) {
-      const _lastArgs = lastArgs;
-      lastArgs = null;
-      fn(..._lastArgs);
+): DebouncedFunction<T> => {
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  let lastArgs: Parameters<T> | null = null;
+  let lastThis: ThisParameterType<T> | undefined;
+  let result: ReturnType<T> | undefined;
+
+  const invoke = () => {
+    const args = lastArgs;
+    const thisArg = lastThis;
+    lastArgs = null;
+    lastThis = undefined;
+    if (!args) {
+      return result;
     }
+    result = fn.apply(thisArg, args);
+    return result;
+  };
+
+  const ret = function (this: ThisParameterType<T>, ...args: Parameters<T>) {
+    lastArgs = args;
+    lastThis = this;
+    if (handle !== undefined) {
+      clearTimeout(handle);
+    }
+    handle = setTimeout(() => {
+      handle = undefined;
+      invoke();
+    }, timeout);
+    return result;
+  } as DebouncedFunction<T>;
+
+  ret.flush = () => {
+    if (handle !== undefined) {
+      clearTimeout(handle);
+      handle = undefined;
+    }
+    return invoke();
   };
   ret.cancel = () => {
+    if (handle !== undefined) {
+      clearTimeout(handle);
+      handle = undefined;
+    }
     lastArgs = null;
-    clearTimeout(handle);
+    lastThis = undefined;
+  };
+  return ret;
+};
+
+type ThrottleOptions = {
+  leading?: boolean;
+  trailing?: boolean;
+};
+
+export const throttle = <T extends (...args: any[]) => any>(
+  fn: T,
+  timeout: number,
+  options: ThrottleOptions = {},
+): DebouncedFunction<T> => {
+  const leading = options.leading !== false;
+  const trailing = options.trailing !== false;
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  let lastInvoke = 0;
+  let lastArgs: Parameters<T> | null = null;
+  let lastThis: ThisParameterType<T> | undefined;
+  let result: ReturnType<T> | undefined;
+
+  const invoke = () => {
+    const args = lastArgs;
+    const thisArg = lastThis;
+    lastArgs = null;
+    lastThis = undefined;
+    if (!args) {
+      return result;
+    }
+    lastInvoke = Date.now();
+    result = fn.apply(thisArg, args);
+    return result;
+  };
+
+  const later = () => {
+    handle = undefined;
+    if (trailing) {
+      invoke();
+    } else {
+      lastArgs = null;
+      lastThis = undefined;
+    }
+  };
+
+  const ret = function (this: ThisParameterType<T>, ...args: Parameters<T>) {
+    const now = Date.now();
+    if (!lastInvoke && !leading) {
+      lastInvoke = now;
+    }
+    const remaining = timeout - (now - lastInvoke);
+    lastArgs = args;
+    lastThis = this;
+
+    if (remaining <= 0 || remaining > timeout) {
+      if (handle !== undefined) {
+        clearTimeout(handle);
+        handle = undefined;
+      }
+      invoke();
+    } else if (handle === undefined && trailing) {
+      handle = setTimeout(later, remaining);
+    }
+    return result;
+  } as DebouncedFunction<T>;
+
+  ret.cancel = () => {
+    if (handle !== undefined) {
+      clearTimeout(handle);
+      handle = undefined;
+    }
+    lastInvoke = 0;
+    lastArgs = null;
+    lastThis = undefined;
+  };
+  ret.flush = () => {
+    if (handle !== undefined) {
+      clearTimeout(handle);
+      handle = undefined;
+      return invoke();
+    }
+    return result;
   };
   return ret;
 };

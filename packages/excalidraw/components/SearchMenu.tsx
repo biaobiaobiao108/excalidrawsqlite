@@ -1,5 +1,4 @@
 import clsx from "clsx";
-import debounce from "lodash.debounce";
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -8,6 +7,7 @@ import {
   FONT_FAMILY,
   FRAME_STYLE,
   getLineHeight,
+  debounce,
 } from "@excalidraw/common";
 
 import {

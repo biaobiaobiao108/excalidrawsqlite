@@ -1,5 +1,3 @@
-import throttle from "lodash.throttle";
-
 import {
   randomInteger,
   arrayToMap,
@@ -7,6 +5,7 @@ import {
   isDevEnv,
   isTestEnv,
   toArray,
+  throttle,
 } from "@excalidraw/common";
 import { isNonDeletedElement } from "@excalidraw/element";
 import { isFrameLikeElement } from "@excalidraw/element";

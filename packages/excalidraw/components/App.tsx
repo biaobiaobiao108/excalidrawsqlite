@@ -1,5 +1,4 @@
 import clsx from "clsx";
-import throttle from "lodash.throttle";
 import React, { useContext } from "react";
 import { flushSync } from "react-dom";
 import rough from "roughjs/bin/rough";
@@ -63,6 +62,7 @@ import {
   getGridPoint,
   getLineHeight,
   debounce,
+  throttle,
   distance,
   getFontString,
   getNearestScrollableContainer,

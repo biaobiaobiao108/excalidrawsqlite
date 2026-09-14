@@ -1,6 +1,6 @@
-import throttle from "lodash.throttle";
 import { useEffect } from "react";
 
+import { throttle } from "@excalidraw/common";
 import { atom, useAtom } from "../editor-jotai";
 
 const scrollPositionAtom = atom<number>(0);
