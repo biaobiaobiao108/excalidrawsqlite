@@ -14,4 +14,3 @@ export * from "./emitter";
 export * from "./appEventBus";
 export * from "./editorInterface";
 export * from "./versionedSnapshotStore";
-export { Debug } from "../debug";
