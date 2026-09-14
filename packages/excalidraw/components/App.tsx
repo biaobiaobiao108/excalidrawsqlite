@@ -3,7 +3,6 @@ import throttle from "lodash.throttle";
 import React, { useContext } from "react";
 import { flushSync } from "react-dom";
 import rough from "roughjs/bin/rough";
-import { nanoid } from "nanoid";
 
 import {
   clamp,
@@ -90,6 +89,7 @@ import {
   AppEventBus,
   type EXPORT_IMAGE_TYPES,
   randomInteger,
+  randomId,
   CLASSES,
   Emitter,
   MINIMUM_ARROW_SIZE,
@@ -908,7 +908,7 @@ class App extends React.Component<AppProps, AppState> {
     this.refreshEditorInterface();
     this.stylesPanelMode = deriveStylesPanelMode(this.editorInterface);
 
-    this.id = nanoid();
+    this.id = randomId();
     this.library = new Library(this);
     this.actionManager = new ActionManager(
       this.syncActionResult,

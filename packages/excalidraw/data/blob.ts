@@ -1,10 +1,9 @@
-import { nanoid } from "nanoid";
-
 import {
   IMAGE_MIME_TYPES,
   MIME_TYPES,
   bytesToHexString,
   isPromiseLike,
+  randomId,
 } from "@excalidraw/common";
 
 import type { ValueOf } from "@excalidraw/common/utility-types";
@@ -267,7 +266,7 @@ export const generateIdFromFile = async (file: File): Promise<FileId> => {
   } catch (error: any) {
     console.error(error);
     // length 40 to align with the HEX length of SHA-1 (which is 160 bit)
-    return nanoid(40) as FileId;
+    return randomId(40) as FileId;
   }
 };
 

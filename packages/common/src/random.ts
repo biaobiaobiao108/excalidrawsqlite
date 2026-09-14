@@ -1,4 +1,3 @@
-import { nanoid } from "nanoid";
 import { Random } from "roughjs/bin/math";
 
 import { isTestEnv } from "./utils";
@@ -13,4 +12,28 @@ export const reseed = (seed: number) => {
   testIdBase = 0;
 };
 
-export const randomId = () => (isTestEnv() ? `id${testIdBase++}` : nanoid());
+const RANDOM_ID_ALPHABET =
+  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz-";
+
+export const randomId = (length = 21) => {
+  if (isTestEnv()) {
+    return `id${testIdBase++}`;
+  }
+
+  let result = "";
+  const bytes = new Uint8Array(Math.max(1, length * 2));
+  const limit = 256 - (256 % RANDOM_ID_ALPHABET.length);
+  while (result.length < length) {
+    crypto.getRandomValues(bytes);
+    for (const byte of bytes) {
+      if (byte >= limit) {
+        continue;
+      }
+      result += RANDOM_ID_ALPHABET[byte % RANDOM_ID_ALPHABET.length];
+      if (result.length === length) {
+        break;
+      }
+    }
+  }
+  return result;
+};
