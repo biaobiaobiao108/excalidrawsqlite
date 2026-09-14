@@ -556,6 +556,8 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 280px;
   container-type: inline-size;
   min-inline-size: 0;
   overflow: clip;
@@ -976,6 +978,7 @@
   display: grid;
   grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
   min-block-size: 150px;
+  contain-intrinsic-size: auto 150px;
 }
 
 .board-grid.is-list .board-card-open {

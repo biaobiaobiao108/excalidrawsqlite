@@ -1927,6 +1927,31 @@ bun run dev</code></pre>
                     <td><code>./data</code></td>
                     <td>SQLite 数据库与图片附件存储目录。</td>
                   </tr>
+                  <tr>
+                    <td><code>MAX_FILE_BYTES</code></td>
+                    <td><code>4194304</code></td>
+                    <td>单个图片或附件上传大小上限（4MB）。</td>
+                  </tr>
+                  <tr>
+                    <td><code>MAX_SCENE_BODY_BYTES</code></td>
+                    <td><code>16777216</code></td>
+                    <td>单个画板 JSON 请求体大小上限（16MB）。</td>
+                  </tr>
+                  <tr>
+                    <td><code>MAX_FILES_BODY_BYTES</code></td>
+                    <td><code>33554432</code></td>
+                    <td>批量图片 JSON 请求体大小上限（32MB）。</td>
+                  </tr>
+                  <tr>
+                    <td><code>MAX_IN_FLIGHT_BODY_BYTES</code></td>
+                    <td><code>67108864</code></td>
+                    <td>所有并发请求体的聚合内存预算（64MB）。</td>
+                  </tr>
+                  <tr>
+                    <td><code>MAX_BACKUP_BYTES</code></td>
+                    <td><code>134217728</code></td>
+                    <td>单次数据库快照或完整备份的大小上限（128MB）。</td>
+                  </tr>
                 </tbody>
               </table>
             </div>

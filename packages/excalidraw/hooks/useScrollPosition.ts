@@ -21,7 +21,7 @@ export const useScrollPosition = <T extends HTMLElement>(
       setScrollPosition(scrollTop);
     }, 200);
 
-    element.addEventListener("scroll", handleScroll);
+    element.addEventListener("scroll", handleScroll, { passive: true });
 
     return () => {
       handleScroll.cancel();

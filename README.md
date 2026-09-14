@@ -192,7 +192,10 @@ AUTH_PASSWORD=your-password bun run dev
 | `DATA_DIR` | `./data` | 否 | SQLite 数据库文件与图片附件存储目录。 |
 | `AUTH_SESSION_TTL_MS` | `604800000` (7 天) | 否 | 登录会话在服务端与浏览器 Cookie 中的有效期（毫秒）。 |
 | `MAX_FILE_BYTES` | `4194304` (4MB) | 否 | 单个图片/附件上传大小限制（字节）。 |
-| `MAX_SCENE_BODY_BYTES` | `33554432` (32MB) | 否 | 单个画板 JSON 数据最大请求体大小。 |
+| `MAX_SCENE_BODY_BYTES` | `16777216` (16MB) | 否 | 单个画板 JSON 数据最大请求体大小。 |
+| `MAX_FILES_BODY_BYTES` | `33554432` (32MB) | 否 | 批量图片 JSON 请求体大小上限。 |
+| `MAX_IN_FLIGHT_BODY_BYTES` | `67108864` (64MB) | 否 | 所有并发请求体的聚合内存预算；若配置低于单请求上限，会自动提升到安全下限。 |
+| `MAX_BACKUP_BYTES` | `134217728` (128MB) | 否 | 单次数据库快照或完整备份的原始内容大小上限。 |
 
 ---
 
