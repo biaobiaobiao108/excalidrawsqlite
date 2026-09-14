@@ -1,6 +1,5 @@
-const path = require("path");
-
-const { build } = require("esbuild");
+import path from "node:path";
+import { build } from "esbuild";
 
 // contains all dependencies bundled inside
 const getConfig = (outdir) => ({
@@ -11,7 +10,7 @@ const getConfig = (outdir) => ({
   entryNames: "[name]",
   assetNames: "[dir]/[name]",
   alias: {
-    "@excalidraw/utils": path.resolve(__dirname, "../packages/utils/src"),
+    "@excalidraw/utils": path.resolve(import.meta.dir, "../packages/utils/src"),
   },
   external: [
     "@excalidraw/common",
@@ -59,6 +58,4 @@ const createESMRawBuild = async () => {
   await buildProd(getConfig("dist/prod"));
 };
 
-(async () => {
-  await createESMRawBuild();
-})();
+await createESMRawBuild();

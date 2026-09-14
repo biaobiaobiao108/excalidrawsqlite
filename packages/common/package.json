@@ -54,7 +54,7 @@
   "repository": "https://github.com/excalidraw/excalidraw",
   "scripts": {
     "gen:types": "rm -rf types && tsc",
-    "build:esm": "rm -rf dist && bun ../../scripts/buildBase.js && bun run gen:types"
+    "build:esm": "rm -rf dist && bun ../../scripts/buildBase.ts && bun run gen:types"
   },
   "dependencies": {
     "tinycolor2": "1.6.0"

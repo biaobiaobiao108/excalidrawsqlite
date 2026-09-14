@@ -3,13 +3,13 @@
 // @ts-nocheck
 
 /**
-* The following wasm module is generated with `scripts/buildWasm.js` and encoded as base64.
+* The following wasm module is generated with `scripts/buildWasm.ts` and encoded as base64.
 *
 * The source of this content is taken from the package "fonteditor-core", which contains the following metadata:
 * 
 * @author [{"name":"kekee000","email":"kekee000@gmail.com"},{"name":"junmer","email":"junmer@foxmail.com"}] 
 * @license [{"type":"MIT","url":"https://github.com/kekee000/fonteditor-core/raw/master/LICENSE"}]
-* @version 2.4.0
+* @version 2.4.1
 
 The MIT License (MIT)
 

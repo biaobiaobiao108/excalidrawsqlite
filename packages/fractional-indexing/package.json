@@ -11,7 +11,7 @@
   },
   "scripts": {
     "gen:types": "rm -rf types && tsc",
-    "build:esm": "rm -rf dist && bun ../../scripts/buildBase.js && bun run gen:types"
+    "build:esm": "rm -rf dist && bun ../../scripts/buildBase.ts && bun run gen:types"
   },
   "keywords": [
     "fractional",

@@ -1,27 +1,27 @@
 /**
  * This script is used to convert the wasm modules into js modules, with the binary converted into base64 encoded strings.
  */
-const path = require("path");
+import path from "node:path";
 
 const wasmModules = [
   {
     pkg: `../node_modules/fonteditor-core`,
     src: `./wasm/woff2.wasm`,
-    dest: `../packages/excalidraw/fonts/wasm/woff2-wasm.ts`,
+    dest: `../packages/excalidraw/subset/woff2/woff2-wasm.ts`,
   },
   {
     pkg: `../node_modules/harfbuzzjs`,
     src: `./wasm/hb-subset.wasm`,
-    dest: `../packages/excalidraw/fonts/wasm/hb-subset-wasm.ts`,
+    dest: `../packages/excalidraw/subset/harfbuzz/harfbuzz-wasm.ts`,
   },
 ];
 
 (async () => {
 for (const { pkg, src, dest } of wasmModules) {
-  const packagePath = path.resolve(__dirname, pkg, "package.json");
-  const licensePath = path.resolve(__dirname, pkg, "LICENSE");
-  const sourcePath = path.resolve(__dirname, src);
-  const destPath = path.resolve(__dirname, dest);
+  const packagePath = path.resolve(import.meta.dir, pkg, "package.json");
+  const licensePath = path.resolve(import.meta.dir, pkg, "LICENSE");
+  const sourcePath = path.resolve(import.meta.dir, src);
+  const destPath = path.resolve(import.meta.dir, dest);
 
   const {
     name,
@@ -41,7 +41,7 @@ for (const { pkg, src, dest } of wasmModules) {
 // @ts-nocheck
 
 /**
-* The following wasm module is generated with \`scripts/buildWasm.js\` and encoded as base64.
+* The following wasm module is generated with \`scripts/buildWasm.ts\` and encoded as base64.
 *
 * The source of this content is taken from the package "${name}", which contains the following metadata:
 * 

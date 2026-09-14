@@ -1,9 +1,7 @@
-const path = require("path");
-
-const { build } = require("esbuild");
-const { sassPlugin } = require("esbuild-sass-plugin");
-
-const { woff2ServerPlugin } = require("./woff2/woff2-esbuild-plugins");
+import path from "node:path";
+import { build } from "esbuild";
+import { sassPlugin } from "esbuild-sass-plugin";
+import { woff2ServerPlugin } from "./woff2/woff2-esbuild-plugins";
 
 // contains all dependencies bundled inside
 const getConfig = (outdir) => ({
@@ -14,15 +12,15 @@ const getConfig = (outdir) => ({
   entryNames: "[name]",
   assetNames: "[dir]/[name]",
   alias: {
-    "@excalidraw/common": path.resolve(__dirname, "../packages/common/src"),
-    "@excalidraw/element": path.resolve(__dirname, "../packages/element/src"),
-    "@excalidraw/excalidraw": path.resolve(__dirname, "../packages/excalidraw"),
-    "@excalidraw/math": path.resolve(__dirname, "../packages/math/src"),
+    "@excalidraw/common": path.resolve(import.meta.dir, "../packages/common/src"),
+    "@excalidraw/element": path.resolve(import.meta.dir, "../packages/element/src"),
+    "@excalidraw/excalidraw": path.resolve(import.meta.dir, "../packages/excalidraw"),
+    "@excalidraw/math": path.resolve(import.meta.dir, "../packages/math/src"),
     "@excalidraw/fractional-indexing": path.resolve(
-      __dirname,
+      import.meta.dir,
       "../packages/fractional-indexing/src",
     ),
-    "@excalidraw/utils": path.resolve(__dirname, "../packages/utils/src"),
+    "@excalidraw/utils": path.resolve(import.meta.dir, "../packages/utils/src"),
   },
 });
 
@@ -71,6 +69,4 @@ const createESMRawBuild = async () => {
   await buildProd(getConfig("dist/prod"));
 };
 
-(async () => {
-  await createESMRawBuild();
-})();
+await createESMRawBuild();

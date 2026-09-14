@@ -3,7 +3,7 @@
 // @ts-nocheck
 
 /**
-* The following wasm module is generated with `scripts/buildWasm.js` and encoded as base64.
+* The following wasm module is generated with `scripts/buildWasm.ts` and encoded as base64.
 *
 * The source of this content is taken from the package "harfbuzzjs", which contains the following metadata:
 * 

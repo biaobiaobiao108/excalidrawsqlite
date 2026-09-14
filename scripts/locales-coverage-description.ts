@@ -1,4 +1,4 @@
-const fs = require("fs");
+import path from "node:path";
 
 const THRESSHOLD = 85;
 
@@ -164,10 +164,9 @@ const languages = {
   "th-TH": "ภาษาไทย",
 };
 
-const percentages = fs.readFileSync(
-  `${__dirname}/../packages/excalidraw/locales/percentages.json`,
-);
-const rowData = JSON.parse(percentages);
+const rowData = await Bun.file(
+  path.join(import.meta.dir, "../packages/excalidraw/locales/percentages.json"),
+).json();
 
 const coverages = Object.entries(rowData)
   .sort(([, a], [, b]) => b - a)

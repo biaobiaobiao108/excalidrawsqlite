@@ -67,6 +67,6 @@
   "repository": "https://github.com/excalidraw/excalidraw",
   "scripts": {
     "gen:types": "rm -rf types && tsc",
-    "build:esm": "rm -rf dist && bun ../../scripts/buildUtils.js && bun run gen:types"
+    "build:esm": "rm -rf dist && bun ../../scripts/buildUtils.ts && bun run gen:types"
   }
 }
