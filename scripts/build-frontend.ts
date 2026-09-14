@@ -129,7 +129,7 @@ export async function buildFrontend(options: BuildOptions = {}) {
       .trim()
       .slice(0, 7) || "local";
   const mode = isDev ? "development" : "production";
-  const clientEnv = getClientEnvVariables(projectRoot, mode, {
+  const clientEnv = await getClientEnvVariables(projectRoot, mode, {
     VITE_APP_GIT_SHA: gitSha,
   });
   const envDefines = Object.fromEntries(

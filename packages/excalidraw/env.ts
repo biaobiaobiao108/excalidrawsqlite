@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import pkg from "./package.json";
 
@@ -29,10 +28,10 @@ export const parseEnvSource = (source: string): Record<string, string> => {
   return envVars;
 };
 
-export const loadEnvVariables = (
+export const loadEnvVariables = async (
   projectRoot: string,
   mode: string,
-): Record<string, string> => {
+): Promise<Record<string, string>> => {
   const envVars: Record<string, string> = {};
   const filenames = [
     ".env",
@@ -43,24 +42,25 @@ export const loadEnvVariables = (
 
   for (const filename of filenames) {
     const filepath = path.join(projectRoot, filename);
-    if (fs.existsSync(filepath)) {
-      Object.assign(envVars, parseEnvSource(fs.readFileSync(filepath, "utf8")));
+    const file = Bun.file(filepath);
+    if (await file.exists()) {
+      Object.assign(envVars, parseEnvSource(await file.text()));
     }
   }
 
   return envVars;
 };
 
-export const getClientEnvVariables = (
+export const getClientEnvVariables = async (
   projectRoot: string,
   mode: string,
   overrides: Record<string, any> = {},
-): Record<string, any> => {
+): Promise<Record<string, any>> => {
   const processEnv = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => key.startsWith("VITE_")),
   );
   const clientEnv = {
-    ...loadEnvVariables(projectRoot, mode),
+    ...(await loadEnvVariables(projectRoot, mode)),
     ...processEnv,
     MODE: mode,
     NODE_ENV: mode,
@@ -104,4 +104,3 @@ export const parseEnvVariables = async (
 
   return envVars;
 };
-
