@@ -95,11 +95,6 @@ export const base64ToString = (base64: string, isByteString = false) => {
 };
 
 export const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
-  if (typeof Buffer !== "undefined") {
-    // Node.js environment
-    return Buffer.from(base64, "base64").buffer;
-  }
-  // Browser environment
   return byteStringToArrayBuffer(atob(base64));
 };
 

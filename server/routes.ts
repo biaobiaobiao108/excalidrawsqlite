@@ -1062,9 +1062,9 @@ export const createRequestHandler = (
             req,
             {
               id,
-              dataURL: `data:${row.mime_type};base64,${Buffer.from(
+              dataURL: `data:${row.mime_type};base64,${new Uint8Array(
                 bytes,
-              ).toString("base64")}`,
+              ).toBase64()}`,
               mimeType: row.mime_type,
               created_at: row.created_at,
             },

@@ -64,19 +64,14 @@ export const subsetToBinary = async (
  * Isn't used inside the worker to avoid copying large binary strings (as dataurl) between worker threads and the main thread.
  */
 export const toBase64 = async (arrayBuffer: ArrayBuffer) => {
-  let base64: string;
-
-  if (typeof Buffer !== "undefined") {
-    // Server-compatible runtimes
-    base64 = Buffer.from(arrayBuffer).toString("base64");
-  } else {
-    // browser (main thread)
-    // it's perfectly fine to treat each byte independently,
-    // as we care only about turning individual bytes into codepoints,
-    // not about multi-byte unicode characters
-    const byteString = String.fromCharCode(...new Uint8Array(arrayBuffer));
-    base64 = btoa(byteString);
+  // It is perfectly fine to treat each byte independently, as we care only
+  // about turning individual bytes into codepoints, not about multi-byte
+  // unicode characters.
+  let byteString = "";
+  for (const byte of new Uint8Array(arrayBuffer)) {
+    byteString += String.fromCharCode(byte);
   }
+  const base64 = btoa(byteString);
 
   return `data:font/woff2;base64,${base64}`;
 };

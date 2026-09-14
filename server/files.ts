@@ -352,7 +352,9 @@ export const decodeDataUrl = (value: unknown, expectedMimeType: string) => {
       "文件必须是有效的 Base64 data URL",
     );
   }
-  const data = Buffer.from(match[2], "base64");
+  const data = Uint8Array.fromBase64(match[2], {
+    alphabet: "base64url",
+  });
   if (!data.byteLength) {
     throw new HttpError(400, "INVALID_FILE_DATA", "文件内容不能为空");
   }
