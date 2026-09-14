@@ -1,7 +1,6 @@
 /**
  * This script is used to convert the wasm modules into js modules, with the binary converted into base64 encoded strings.
  */
-const fs = require("fs");
 const path = require("path");
 
 const wasmModules = [
@@ -17,6 +16,7 @@ const wasmModules = [
   },
 ];
 
+(async () => {
 for (const { pkg, src, dest } of wasmModules) {
   const packagePath = path.resolve(__dirname, pkg, "package.json");
   const licensePath = path.resolve(__dirname, pkg, "LICENSE");
@@ -30,10 +30,12 @@ for (const { pkg, src, dest } of wasmModules) {
     license,
     authors,
     licenses,
-  } = require(packagePath);
+  } = await Bun.file(packagePath).json();
 
-  const licenseContent = fs.readFileSync(licensePath, "utf-8") || "";
-  const base64 = fs.readFileSync(sourcePath, "base64");
+  const licenseContent = (await Bun.file(licensePath).text()) || "";
+  const base64 = new Uint8Array(
+    await Bun.file(sourcePath).arrayBuffer(),
+  ).toBase64();
   const content = `// GENERATED CODE -- DO NOT EDIT!
 /* eslint-disable */
 // @ts-nocheck
@@ -71,5 +73,6 @@ const __toBinary = /* @__PURE__ */ (() => {
 export default __toBinary(\`${base64}\`);
 `;
 
-  fs.writeFileSync(destPath, content);
+  await Bun.write(destPath, content);
 }
+})();
