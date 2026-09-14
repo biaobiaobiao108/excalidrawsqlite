@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import readline from "node:readline";
 import { spawnSync } from "bun";
 
 import updateChangelog from "./updateChangelog";
@@ -150,43 +149,26 @@ const getShortCommitHash = () => {
     .trim();
 };
 
-const askToCommit = (tag: string, nextVersion: string): Promise<void> => {
+const askToCommit = async (tag: string, nextVersion: string): Promise<void> => {
   if (tag !== "latest") {
-    return Promise.resolve();
+    return;
   }
 
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    rl.question(
-      "Would you like to commit these changes to git? (Y/n): ",
-      (answer) => {
-        rl.close();
-
-        if (answer.toLowerCase() === "y") {
-          runCommand(["git", "add", "-u"], { inherit: true });
-          runCommand(
-            [
-              "git",
-              "commit",
-              "-m",
-              `chore: release @excalidraw/excalidraw@${nextVersion} 🎉`,
-            ],
-            { inherit: true },
-          );
-        } else {
-          console.warn(
-            "Skipping commit. Don't forget to commit manually later!",
-          );
-        }
-
-        resolve();
-      },
+  const answer = (prompt("Would you like to commit these changes to git? (Y/n): ") || "").toLowerCase();
+  if (answer === "y") {
+    runCommand(["git", "add", "-u"], { inherit: true });
+    runCommand(
+      [
+        "git",
+        "commit",
+        "-m",
+        `chore: release @excalidraw/excalidraw@${nextVersion} 🎉`,
+      ],
+      { inherit: true },
     );
-  });
+  } else {
+    console.warn("Skipping commit. Don't forget to commit manually later!");
+  }
 };
 
 const buildPackages = () => {
@@ -205,28 +187,13 @@ const buildPackages = () => {
   }
 };
 
-const askToPublish = (tag: string, version: string): Promise<void> => {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    rl.question(
-      "Would you like to publish these changes to npm? (Y/n): ",
-      (answer) => {
-        rl.close();
-
-        if (answer.toLowerCase() === "y") {
-          publishPackages(tag, version);
-        } else {
-          console.info("Skipping publish.");
-        }
-
-        resolve();
-      },
-    );
-  });
+const askToPublish = async (tag: string, version: string): Promise<void> => {
+  const answer = (prompt("Would you like to publish these changes to npm? (Y/n): ") || "").toLowerCase();
+  if (answer === "y") {
+    publishPackages(tag, version);
+  } else {
+    console.info("Skipping publish.");
+  }
 };
 
 const publishPackages = (tag: string, version: string) => {
@@ -259,4 +226,3 @@ if (nonInteractive) {
   await askToCommit(tag, version);
   await askToPublish(tag, version);
 }
-

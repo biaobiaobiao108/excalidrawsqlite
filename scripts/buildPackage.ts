@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { build, type BuildOptions } from "esbuild";
 import { sassPlugin } from "esbuild-sass-plugin";
@@ -41,7 +40,7 @@ const precompile = (source: string, sourcePath: string): string => {
     const resolvedPath = resolveRelativePath(importPath, sourcePath);
     if (resolvedPath) {
       // Convert to file:// URL format for sass
-      const fileUrl = pathToFileURL(resolvedPath).href;
+      const fileUrl = Bun.pathToFileURL(resolvedPath).href;
       return `${directive} "${fileUrl}"`;
     }
     return match;
@@ -140,4 +139,3 @@ const createESMRawBuild = async () => {
 };
 
 await createESMRawBuild();
-
