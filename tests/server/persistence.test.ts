@@ -102,12 +102,24 @@ describe("cloud persistence server", () => {
   });
 
   it("only exposes the development reload stream over GET", async () => {
-    const { handler } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
+    const { handler } = createTestRuntime({
+      NODE_ENV: "development",
+      ALLOW_ANONYMOUS: "true",
+    });
     const response = await request(handler, "/__dev_reload", {
       method: "POST",
     });
     expect(response.status).toBe(405);
     expect(response.headers.get("allow")).toBe("GET");
+  });
+
+  it("does not expose the development reload stream in production", async () => {
+    const { handler } = createTestRuntime({
+      NODE_ENV: "production",
+      ALLOW_ANONYMOUS: "true",
+    });
+    const response = await request(handler, "/__dev_reload");
+    expect(response.status).toBe(404);
   });
 
   it("requires explicit production authentication configuration", () => {
@@ -968,6 +980,25 @@ describe("cloud persistence server", () => {
     expect(traversal.status).toBe(400);
   });
 
+  it("returns a client error for malformed Base64 batch uploads", async () => {
+    const { handler } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const response = await jsonRequest(
+      handler,
+      "/api/files",
+      {
+        id: "invalid_base64",
+        mimeType: "image/png",
+        dataURL: "data:image/png;base64,A",
+      },
+      { headers: { Cookie: cookie } },
+    );
+    expect(response.status).toBe(400);
+    expect(await responseJson<{ code: string }>(response)).toMatchObject({
+      code: "INVALID_FILE_DATA",
+    });
+  });
+
   it("rejects SVG uploads and serves legacy SVGs as safe downloads", async () => {
     const { handler, runtime, directory } = createTestRuntime();
     const cookie = await authenticate(handler);
@@ -1252,10 +1283,6 @@ describe("cloud persistence server", () => {
       ["legacy_image", "data:image/png;base64,AQID", "image/png", 1],
     );
     legacyDb.run(
-      "INSERT INTO files (id, data_url, mime_type, created_at) VALUES (?, ?, ?, ?)",
-      ["legacy_invalid", "not-a-data-url", "image/png", 1],
-    );
-    legacyDb.run(
       "INSERT INTO scenes (id, name, elements, app_state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
       [
         "legacy_scene",
@@ -1298,10 +1325,6 @@ describe("cloud persistence server", () => {
         .query("SELECT COUNT(*) AS count FROM scene_files WHERE scene_id = ?")
         .get("legacy_scene"),
     ).toEqual({ count: 1 });
-    const invalid = runtime.db
-      .query("SELECT data_url FROM files WHERE id = ?")
-      .get("legacy_invalid") as { data_url: string };
-    expect(invalid.data_url).toBe("not-a-data-url");
     expect(
       (
         runtime.db.query("PRAGMA user_version").get() as {
@@ -1322,5 +1345,59 @@ describe("cloud persistence server", () => {
         .query("SELECT COUNT(*) AS count FROM scene_files WHERE scene_id = ?")
         .get("legacy_scene"),
     ).toEqual({ count: 0 });
+  });
+
+  it("fails startup when a legacy attachment cannot be migrated", async () => {
+    const root = Bun.env.TEMP || Bun.env.TMP || ".";
+    const directory = `${root}/excalidraw-server-legacy-invalid-${crypto.randomUUID()}`;
+    const dbPath = path.join(directory, "excalidraw.db");
+    const filesDir = path.join(directory, "files");
+    await fs.mkdir(filesDir, { recursive: true });
+    const legacyDb = new Database(dbPath);
+    legacyDb.run(
+      `CREATE TABLE scenes (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, elements TEXT NOT NULL,
+        app_state TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      )`,
+    );
+    legacyDb.run(
+      `CREATE TABLE files (
+        id TEXT PRIMARY KEY, data_url TEXT NOT NULL, mime_type TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )`,
+    );
+    legacyDb.run(
+      `CREATE TABLE scene_files (
+        scene_id TEXT NOT NULL, file_id TEXT NOT NULL,
+        PRIMARY KEY (scene_id, file_id)
+      )`,
+    );
+    legacyDb.run(
+      "INSERT INTO files (id, data_url, mime_type, created_at) VALUES (?, ?, ?, ?)",
+      ["legacy_invalid", "not-a-data-url", "image/png", 1],
+    );
+    legacyDb.close();
+
+    const config = createServerConfig({
+      NODE_ENV: "test",
+      AUTH_PASSWORD: "test-password",
+      ALLOW_ANONYMOUS: "true",
+    });
+    let initializationError: unknown;
+    try {
+      createRuntime({ dbPath, filesDir, config });
+    } catch (error) {
+      initializationError = error;
+    }
+    expect(initializationError).toBeInstanceOf(Error);
+    expect((initializationError as Error).cause).toMatchObject({
+      message: expect.stringContaining("旧附件迁移失败"),
+    });
+    const checkDb = new Database(dbPath);
+    expect(checkDb.query("PRAGMA user_version").get()).toEqual({
+      user_version: 0,
+    });
+    checkDb.close();
+    testDirectories.push(directory);
   });
 });

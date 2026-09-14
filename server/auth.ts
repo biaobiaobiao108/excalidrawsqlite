@@ -2,6 +2,7 @@ import {
   AUTH_COOKIE_DEVELOPMENT,
   AUTH_COOKIE_PRODUCTION,
   AUTH_RATE_WINDOW_MS,
+  MAX_RATE_LIMIT_KEYS,
   MAX_AUTH_PASSWORD_LENGTH,
   WRITE_RATE_WINDOW_MS,
 } from "./config";
@@ -169,6 +170,19 @@ export const consumeRateLimit = (
   const now = Date.now();
   const current = bucket.get(key);
   if (!current || now - current.startedAt >= windowMs) {
+    if (!current && bucket.size >= MAX_RATE_LIMIT_KEYS) {
+      let oldestKey: string | undefined;
+      let oldestStartedAt = Number.POSITIVE_INFINITY;
+      for (const [candidateKey, record] of bucket) {
+        if (record.startedAt < oldestStartedAt) {
+          oldestKey = candidateKey;
+          oldestStartedAt = record.startedAt;
+        }
+      }
+      if (oldestKey !== undefined) {
+        bucket.delete(oldestKey);
+      }
+    }
     bucket.set(key, { startedAt: now, count: 1 });
     return { allowed: true, retryAfter: 0 };
   }

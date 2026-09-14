@@ -197,6 +197,11 @@ export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
         });
       }
     }
+    if (invalidFiles > 0) {
+      throw new Error(
+        `旧附件迁移失败：${invalidFiles} 个文件无法迁移，数据库版本保持为 ${version} 以便重试`,
+      );
+    }
   }
 
   db.run("DELETE FROM scene_files");

@@ -20,7 +20,11 @@ import {
   issueSessionCookie,
   verifyPassword,
 } from "./auth";
-import { createDatabaseSnapshot, createFullBackup } from "./backup";
+import {
+  createDatabaseSnapshot,
+  createFullBackup,
+  withBackupLock,
+} from "./backup";
 import {
   assertReferencedFilesExist,
   decodeDataUrl,
@@ -156,14 +160,20 @@ export const createRequestHandler = (
       );
     }
 
-    if (pathname === "/__dev_reload" && req.method !== "GET") {
-      return response(runtime, req, null, {
-        status: 405,
-        headers: { Allow: "GET" },
-      });
-    }
-
     try {
+      if (pathname === "/__dev_reload") {
+        if (runtime.config.nodeEnv !== "development") {
+          throw new HttpError(404, "NOT_FOUND", "接口不存在");
+        }
+        if (req.method !== "GET") {
+          return response(runtime, req, null, {
+            status: 405,
+            headers: { Allow: "GET" },
+          });
+        }
+        return handleDevReloadRequest(req);
+      }
+
       if (pathname === "/api/health" && req.method === "GET") {
         try {
           stmts.healthCheck.get();
@@ -188,7 +198,9 @@ export const createRequestHandler = (
         }
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
         try {
-          const archive = await createFullBackup(runtime, timestamp);
+          const archive = await withBackupLock(runtime, () =>
+            createFullBackup(runtime, timestamp),
+          );
           return response(runtime, req, archive, {
             headers: {
               "Content-Type": "application/x-tar",
@@ -197,6 +209,9 @@ export const createRequestHandler = (
             },
           });
         } catch (error: any) {
+          if (error instanceof HttpError) {
+            throw error;
+          }
           throw new HttpError(
             500,
             "BACKUP_FAILED",
@@ -216,22 +231,29 @@ export const createRequestHandler = (
         }
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
         try {
-          const snapshot = await createDatabaseSnapshot(runtime, timestamp);
-          try {
-            const backupBytes = await Bun.file(
-              snapshot.tempBackupFile,
-            ).arrayBuffer();
-            return response(runtime, req, backupBytes, {
-              headers: {
-                "Content-Type": "application/x-sqlite3",
-                "Content-Disposition": `attachment; filename="excalidraw-backup-${timestamp}.db"`,
-                "Cache-Control": "no-store",
-              },
-            });
-          } finally {
-            await snapshot.cleanup().catch(() => {});
-          }
+          const backupBytes = await withBackupLock(runtime, async () => {
+            const snapshot = await createDatabaseSnapshot(runtime, timestamp);
+            try {
+              const backupFile = Bun.file(snapshot.tempBackupFile);
+              if (backupFile.size > runtime.config.maxBackupBytes) {
+                throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+              }
+              return await backupFile.arrayBuffer();
+            } finally {
+              await snapshot.cleanup().catch(() => {});
+            }
+          });
+          return response(runtime, req, backupBytes, {
+            headers: {
+              "Content-Type": "application/x-sqlite3",
+              "Content-Disposition": `attachment; filename="excalidraw-backup-${timestamp}.db"`,
+              "Cache-Control": "no-store",
+            },
+          });
         } catch (error: any) {
+          if (error instanceof HttpError) {
+            throw error;
+          }
           throw new HttpError(
             500,
             "BACKUP_FAILED",
@@ -1088,10 +1110,6 @@ export const createRequestHandler = (
         });
       }
 
-      if (pathname === "/__dev_reload" && req.method === "GET") {
-        return handleDevReloadRequest(req);
-      }
-
       if (pathname.startsWith("/api/")) {
         throw new HttpError(404, "NOT_FOUND", "接口不存在");
       }
@@ -1101,8 +1119,9 @@ export const createRequestHandler = (
       if (!staticPath) {
         throw new HttpError(400, "INVALID_PATH", "无效的资源路径");
       }
-      if (fs.existsSync(staticPath) && fs.statSync(staticPath).isFile()) {
-        return response(runtime, req, Bun.file(staticPath), {
+      const staticFile = Bun.file(staticPath);
+      if (await staticFile.exists()) {
+        return response(runtime, req, staticFile, {
           headers: { "Cache-Control": getStaticCacheControl(pathname) },
         });
       }
@@ -1111,8 +1130,9 @@ export const createRequestHandler = (
         .includes("text/html");
       if (acceptsHtml) {
         const indexPath = path.join(staticDir, "index.html");
-        if (fs.existsSync(indexPath)) {
-          return response(runtime, req, Bun.file(indexPath), {
+        const indexFile = Bun.file(indexPath);
+        if (await indexFile.exists()) {
+          return response(runtime, req, indexFile, {
             headers: {
               "Content-Type": "text/html; charset=utf-8",
               "Cache-Control": "no-cache",

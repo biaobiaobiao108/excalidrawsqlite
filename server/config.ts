@@ -5,6 +5,7 @@ export const DEFAULT_MAX_FILE_BYTES = 4 * 1024 * 1024;
 export const DEFAULT_MAX_SCENE_BODY_BYTES = 16 * 1024 * 1024;
 export const DEFAULT_MAX_FILES_BODY_BYTES = 32 * 1024 * 1024;
 export const DEFAULT_MAX_IN_FLIGHT_BODY_BYTES = 64 * 1024 * 1024;
+export const DEFAULT_MAX_BACKUP_BYTES = 128 * 1024 * 1024;
 export const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const AUTH_COOKIE_PRODUCTION = "__Host-excalidraw_session";
 export const AUTH_COOKIE_DEVELOPMENT = "excalidraw_session";
@@ -22,6 +23,7 @@ export const AUTH_ATTEMPTS_PER_WINDOW = 5;
 export const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000;
 export const WRITE_REQUESTS_PER_WINDOW = 120;
 export const WRITE_RATE_WINDOW_MS = 60 * 1000;
+export const MAX_RATE_LIMIT_KEYS = 10_000;
 export const ORPHAN_FILE_GRACE_MS = 24 * 60 * 60 * 1000;
 export const STALE_FILE_ARTIFACT_MS = 60 * 60 * 1000;
 export const SCHEMA_VERSION = 4;
@@ -80,9 +82,23 @@ export const createServerConfig = (
       env.MAX_FILES_BODY_BYTES,
       DEFAULT_MAX_FILES_BODY_BYTES,
     ),
-    maxInFlightBodyBytes: parsePositiveIntegerEnv(
-      env.MAX_IN_FLIGHT_BODY_BYTES,
-      DEFAULT_MAX_IN_FLIGHT_BODY_BYTES,
+    maxInFlightBodyBytes: Math.max(
+      parsePositiveIntegerEnv(
+        env.MAX_IN_FLIGHT_BODY_BYTES,
+        DEFAULT_MAX_IN_FLIGHT_BODY_BYTES,
+      ),
+      parsePositiveIntegerEnv(
+        env.MAX_SCENE_BODY_BYTES,
+        DEFAULT_MAX_SCENE_BODY_BYTES,
+      ),
+      parsePositiveIntegerEnv(
+        env.MAX_FILES_BODY_BYTES,
+        DEFAULT_MAX_FILES_BODY_BYTES,
+      ),
+    ),
+    maxBackupBytes: parsePositiveIntegerEnv(
+      env.MAX_BACKUP_BYTES,
+      DEFAULT_MAX_BACKUP_BYTES,
     ),
     sessionTtlMs: parsePositiveIntegerEnv(
       env.AUTH_SESSION_TTL_MS,

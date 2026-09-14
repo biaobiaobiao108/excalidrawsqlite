@@ -279,6 +279,10 @@ export const stageRequestBodyToFile = async (
   const filePath = getFilePath(runtime, id);
   await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${randomHex(8)}.tmp`;
+  const reservedBytes = await runtime.bodyMemoryBudget.acquire(
+    runtime.config.maxFileBytes,
+    req.signal,
+  );
   const writer = Bun.file(tempPath).writer({ highWaterMark: 64 * 1024 });
   const reader = req.body.getReader();
   const hash = new Bun.CryptoHasher("sha256");
@@ -313,6 +317,7 @@ export const stageRequestBodyToFile = async (
     throw error;
   } finally {
     reader.releaseLock();
+    runtime.bodyMemoryBudget.release(reservedBytes);
   }
 };
 
@@ -353,7 +358,12 @@ export const decodeDataUrl = (value: unknown, expectedMimeType: string) => {
     );
   }
   const normalizedBase64 = match[2].replace(/-/g, "+").replace(/_/g, "/");
-  const data = Uint8Array.fromBase64(normalizedBase64);
+  let data: Uint8Array;
+  try {
+    data = Uint8Array.fromBase64(normalizedBase64);
+  } catch {
+    throw new HttpError(400, "INVALID_FILE_DATA", "文件必须是有效的 Base64 data URL");
+  }
   if (!data.byteLength) {
     throw new HttpError(400, "INVALID_FILE_DATA", "文件内容不能为空");
   }

@@ -163,6 +163,20 @@ describe("memory budgets", () => {
     expect(budget.getStats().availableBytes).toBe(10);
   });
 
+  it("removes aborted body readers from the wait queue", async () => {
+    const budget = new BodyMemoryBudget(4);
+    const reserved = await budget.acquire(4);
+    const controller = new AbortController();
+    const waiter = budget.acquire(4, controller.signal);
+
+    controller.abort();
+    await expect(waiter).rejects.toMatchObject({ name: "AbortError" });
+    expect(budget.getStats().queuedRequests).toBe(0);
+
+    budget.release(reserved);
+    expect(budget.getStats().availableBytes).toBe(4);
+  });
+
   it("uses the documented history defaults", () => {
     const history = new History({} as Store);
     expect(history.getMemoryStats()).toMatchObject({

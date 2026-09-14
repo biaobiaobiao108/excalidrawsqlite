@@ -7,14 +7,20 @@ export class BodyMemoryBudget {
   private readonly waiters: Array<{
     bytes: number;
     resolve: () => void;
+    reject: (error: unknown) => void;
+    remove: () => void;
+    settled: boolean;
   }> = [];
 
   constructor(private readonly maxBytes: number) {
     this.availableBytes = maxBytes;
   }
 
-  async acquire(requestedBytes: number) {
+  async acquire(requestedBytes: number, signal?: AbortSignal) {
     const bytes = Math.min(Math.max(1, requestedBytes), this.maxBytes);
+    if (signal?.aborted) {
+      throw new DOMException("The request was aborted", "AbortError");
+    }
     if (this.availableBytes >= bytes) {
       this.availableBytes -= bytes;
       this.currentBytes += bytes;
@@ -22,8 +28,46 @@ export class BodyMemoryBudget {
       return bytes;
     }
 
-    await new Promise<void>((resolve) => {
-      this.waiters.push({ bytes, resolve });
+    await new Promise<void>((resolve, reject) => {
+      const waiter = {
+        bytes,
+        resolve: () => {
+          if (waiter.settled) {
+            return;
+          }
+          waiter.settled = true;
+          waiter.remove();
+          resolve();
+        },
+        reject: (error: unknown) => {
+          if (waiter.settled) {
+            return;
+          }
+          waiter.settled = true;
+          waiter.remove();
+          reject(error);
+        },
+        remove: () => {
+          const index = this.waiters.indexOf(waiter);
+          if (index >= 0) {
+            this.waiters.splice(index, 1);
+          }
+        },
+        settled: false,
+      };
+      if (signal) {
+        const abort = () =>
+          waiter.reject(new DOMException("The request was aborted", "AbortError"));
+        signal.addEventListener("abort", abort, { once: true });
+        waiter.remove = () => {
+          signal.removeEventListener("abort", abort);
+          const index = this.waiters.indexOf(waiter);
+          if (index >= 0) {
+            this.waiters.splice(index, 1);
+          }
+        };
+      }
+      this.waiters.push(waiter);
     });
     return bytes;
   }
@@ -66,6 +110,7 @@ export type ServerConfig = {
   maxSceneBodyBytes: number;
   maxFilesBodyBytes: number;
   maxInFlightBodyBytes: number;
+  maxBackupBytes: number;
   sessionTtlMs: number;
 };
 export type RequestAddressResolver = (req: Request) => string | undefined;

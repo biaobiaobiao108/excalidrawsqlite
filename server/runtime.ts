@@ -18,13 +18,14 @@ export const createRuntime = (options: {
   const dbPath = path.resolve(options.dbPath);
   const filesDir = path.resolve(options.filesDir);
   const config = options.config || createServerConfig();
+  let db: Database | undefined;
 
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     fs.mkdirSync(filesDir, { recursive: true });
     fs.accessSync(path.dirname(dbPath), fs.constants.W_OK);
     fs.accessSync(filesDir, fs.constants.W_OK);
-    const db = new Database(dbPath, { create: true });
+    db = new Database(dbPath, { create: true });
     initializeDatabase(db);
     migrateLegacyDatabase(db, filesDir);
 
@@ -42,6 +43,11 @@ export const createRuntime = (options: {
       bodyMemoryBudget: new BodyMemoryBudget(config.maxInFlightBodyBytes),
     };
   } catch (error) {
+    try {
+      db?.close();
+    } catch {
+      // Ignore cleanup failures while reporting the initialization error.
+    }
     throw new Error(
       `无法初始化持久化存储（数据库：${dbPath}，文件目录：${filesDir}）`,
       { cause: error },

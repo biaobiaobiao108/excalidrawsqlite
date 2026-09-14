@@ -8,8 +8,26 @@ import {
   withStorageMutationLock,
 } from "./files";
 import { randomHex } from "./crypto";
+import { HttpError } from "./errors";
 
 import type { ServerRuntime } from "./types";
+
+const activeBackups = new WeakSet<ServerRuntime>();
+
+export const withBackupLock = async <T>(
+  runtime: ServerRuntime,
+  task: () => Promise<T>,
+) => {
+  if (activeBackups.has(runtime)) {
+    throw new HttpError(429, "BACKUP_BUSY", "已有备份任务正在进行，请稍后重试");
+  }
+  activeBackups.add(runtime);
+  try {
+    return await task();
+  } finally {
+    activeBackups.delete(runtime);
+  }
+};
 
 export const createDatabaseSnapshot = async (
   runtime: ServerRuntime,
@@ -57,27 +75,40 @@ export const createFullBackup = async (
         snapshotDb.close();
       }
 
+      const manifest = JSON.stringify(
+        {
+          format: "excalidraw-full-backup",
+          version: 1,
+          createdAt: new Date().toISOString(),
+          database: "excalidraw.db",
+          filesDirectory: "files",
+          files: fileRows.map(({ id, storage_path, ...metadata }) => ({
+            id,
+            path: storage_path ? `files/${id}` : null,
+            ...metadata,
+          })),
+        },
+        null,
+        2,
+      );
       const entries: Record<string, string | Uint8Array> = {
-        "excalidraw.db": new Uint8Array(
-          await Bun.file(snapshot.tempBackupFile).arrayBuffer(),
-        ),
-        "manifest.json": JSON.stringify(
-          {
-            format: "excalidraw-full-backup",
-            version: 1,
-            createdAt: new Date().toISOString(),
-            database: "excalidraw.db",
-            filesDirectory: "files",
-            files: fileRows.map(({ id, storage_path, ...metadata }) => ({
-              id,
-              path: storage_path ? `files/${id}` : null,
-              ...metadata,
-            })),
-          },
-          null,
-          2,
-        ),
+        "excalidraw.db": new Uint8Array(),
+        "manifest.json": manifest,
       };
+
+      const databaseFile = Bun.file(snapshot.tempBackupFile);
+      let totalBytes = databaseFile.size;
+      if (totalBytes > runtime.config.maxBackupBytes) {
+        throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+      }
+      entries["excalidraw.db"] = new Uint8Array(
+        await databaseFile.arrayBuffer(),
+      );
+      const manifestBytes = new TextEncoder().encode(manifest);
+      totalBytes += manifestBytes.byteLength;
+      if (totalBytes > runtime.config.maxBackupBytes) {
+        throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+      }
 
       for (const row of fileRows) {
         if (!row.storage_path) {
@@ -87,9 +118,12 @@ export const createFullBackup = async (
         if (!(await fileExists(filePath))) {
           throw new Error(`附件文件缺失：${row.id}`);
         }
-        entries[`files/${row.id}`] = new Uint8Array(
-          await Bun.file(filePath).arrayBuffer(),
-        );
+        const file = Bun.file(filePath);
+        totalBytes += file.size;
+        if (totalBytes > runtime.config.maxBackupBytes) {
+          throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+        }
+        entries[`files/${row.id}`] = new Uint8Array(await file.arrayBuffer());
       }
 
       const archive = new Bun.Archive(entries);
