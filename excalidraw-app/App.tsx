@@ -208,6 +208,7 @@ const getCloudPersistenceSignature = (
   elements: readonly any[],
   appState: Pick<AppState, "viewBackgroundColor" | "gridSize">,
   files: BinaryFiles,
+  fileIds = getCloudFileIds(elements),
 ) =>
   JSON.stringify({
     name,
@@ -221,7 +222,7 @@ const getCloudPersistenceSignature = (
       element.isDeleted,
     ]),
     appState,
-    files: getCloudFileIds(elements).map((fileId) => {
+    files: fileIds.map((fileId) => {
       const file = files[fileId];
       return [fileId, file?.mimeType, file?.created, file?.dataURL?.length];
     }),
@@ -607,8 +608,9 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
       // thumbnail remain independently best-effort, but a normal in-app
       // navigation must not race the preview debounce/upload.
       const pendingThumbnail = saveThumbnailDebounced.flush();
+      const fileIds = getCloudFileIds(snapshot.elements);
       await waitForCloudFiles(
-        getCloudFileIds(snapshot.elements),
+        fileIds,
         snapshot.files,
       );
       const signature = getCloudPersistenceSignature(
@@ -616,6 +618,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
         snapshot.elements,
         snapshot.appState,
         snapshot.files,
+        fileIds,
       );
       cloudSaveQueue.enqueue(snapshot);
       const status = await cloudSaveQueue.flush(snapshot.sceneId);
@@ -846,13 +849,12 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
         return;
       }
 
-      const fileIds =
-        data.scene.elements?.reduce((acc, element) => {
-          if (isInitializedImageElement(element)) {
-            return acc.concat(element.fileId);
-          }
-          return acc;
-        }, [] as FileId[]) || [];
+      const fileIds: FileId[] = [];
+      for (const element of data.scene.elements || []) {
+        if (isInitializedImageElement(element)) {
+          fileIds.push(element.fileId);
+        }
+      }
 
       if (isInitialLoad) {
         if (fileIds.length) {
@@ -1092,7 +1094,8 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
     const activeSceneId = currentSceneIdRef.current;
     if (activeSceneId && !isApplyingCloudSceneRef.current) {
       const referencedFiles: BinaryFiles = {};
-      for (const fileId of getCloudFileIds(elements)) {
+      const fileIds = getCloudFileIds(elements);
+      for (const fileId of fileIds) {
         const file = files[fileId];
         if (file) {
           referencedFiles[fileId] = file;
@@ -1108,6 +1111,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
         elements,
         persistedAppState,
         referencedFiles,
+        fileIds,
       );
       if (signature !== cloudPersistenceSignatureRef.current) {
         cloudPersistenceSignatureRef.current = signature;

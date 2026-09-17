@@ -90,6 +90,9 @@ const preparedStatementsMap = new WeakMap<
     touchSceneLastOpened: ReturnType<ServerRuntime["db"]["query"]>;
     getFolderById: ReturnType<ServerRuntime["db"]["query"]>;
     getFileUpdatedAt: ReturnType<ServerRuntime["db"]["query"]>;
+    listScenes: ReturnType<ServerRuntime["db"]["query"]>;
+    listTrashScenes: ReturnType<ServerRuntime["db"]["query"]>;
+    listFolders: ReturnType<ServerRuntime["db"]["query"]>;
   }
 >();
 
@@ -111,6 +114,44 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
       getFolderById: runtime.db.query("SELECT id FROM folders WHERE id = ?"),
       getFileUpdatedAt: runtime.db.query(
         "SELECT updated_at FROM files WHERE id = ?",
+      ),
+      listScenes: runtime.db.query(
+        `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
+                scenes.revision, length(scenes.elements) AS size,
+                CASE WHEN json_valid(scenes.elements) = 1
+                     THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
+                     ELSE 0 END AS element_count,
+                scenes.tags_json, scenes.is_favorite, scenes.folder_id,
+                scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
+                folders.name AS folder_name
+         FROM scenes
+         LEFT JOIN folders ON folders.id = scenes.folder_id
+         WHERE scenes.deleted_at IS NULL
+         ORDER BY scenes.updated_at DESC`,
+      ),
+      listTrashScenes: runtime.db.query(
+        `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
+                scenes.revision, length(scenes.elements) AS size,
+                CASE WHEN json_valid(scenes.elements) = 1
+                     THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
+                     ELSE 0 END AS element_count,
+                scenes.tags_json, scenes.is_favorite, scenes.folder_id,
+                scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
+                folders.name AS folder_name
+         FROM scenes
+         LEFT JOIN folders ON folders.id = scenes.folder_id
+         WHERE scenes.deleted_at IS NOT NULL
+         ORDER BY scenes.deleted_at DESC`,
+      ),
+      listFolders: runtime.db.query(
+        `SELECT folders.id, folders.name, folders.created_at, folders.updated_at,
+                COUNT(scenes.id) AS scene_count
+         FROM folders
+         LEFT JOIN scenes
+           ON scenes.folder_id = folders.id
+          AND scenes.deleted_at IS NULL
+         GROUP BY folders.id
+         ORDER BY folders.name COLLATE NOCASE ASC`,
       ),
     };
     preparedStatementsMap.set(runtime, stmts);
@@ -365,43 +406,15 @@ export const createRequestHandler = (
       }
 
       if (pathname === "/api/scenes" && req.method === "GET") {
-        const rows = runtime.db
-          .query(
-            `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
-                    scenes.revision, length(scenes.elements) AS size,
-                    CASE WHEN json_valid(scenes.elements) = 1
-                         THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
-                         ELSE 0 END AS element_count,
-                    scenes.tags_json, scenes.is_favorite, scenes.folder_id,
-                    scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
-                    folders.name AS folder_name
-             FROM scenes
-             LEFT JOIN folders ON folders.id = scenes.folder_id
-             WHERE scenes.deleted_at IS NULL
-             ORDER BY scenes.updated_at DESC`,
-          )
-          .all()
+        const rows = stmts
+          .listScenes.all()
           .map(getSceneSummary);
         return jsonResponse(runtime, req, rows);
       }
 
       if (pathname === "/api/scenes/trash" && req.method === "GET") {
-        const rows = runtime.db
-          .query(
-            `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
-                    scenes.revision, length(scenes.elements) AS size,
-                    CASE WHEN json_valid(scenes.elements) = 1
-                         THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
-                         ELSE 0 END AS element_count,
-                    scenes.tags_json, scenes.is_favorite, scenes.folder_id,
-                    scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
-                    folders.name AS folder_name
-             FROM scenes
-             LEFT JOIN folders ON folders.id = scenes.folder_id
-             WHERE scenes.deleted_at IS NOT NULL
-             ORDER BY scenes.deleted_at DESC`,
-          )
-          .all()
+        const rows = stmts
+          .listTrashScenes.all()
           .map(getSceneSummary);
         return jsonResponse(runtime, req, rows);
       }
@@ -488,18 +501,7 @@ export const createRequestHandler = (
         pathname === "/api/folders" &&
         req.method === "GET"
       ) {
-        const folders = runtime.db
-          .query(
-            `SELECT folders.id, folders.name, folders.created_at, folders.updated_at,
-                    COUNT(scenes.id) AS scene_count
-             FROM folders
-             LEFT JOIN scenes
-               ON scenes.folder_id = folders.id
-              AND scenes.deleted_at IS NULL
-             GROUP BY folders.id
-             ORDER BY folders.name COLLATE NOCASE ASC`,
-          )
-          .all();
+        const folders = stmts.listFolders.all();
         return jsonResponse(runtime, req, folders);
       }
 

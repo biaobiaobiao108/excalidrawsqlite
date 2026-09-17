@@ -73,6 +73,12 @@ const SORT_OPTIONS = [
   { value: "created", label: "按创建时间" },
 ] as const;
 
+const TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 const getOwnerWindow = (node: HTMLDivElement | null) =>
   node?.ownerDocument.defaultView || window;
 
@@ -86,11 +92,7 @@ const formatDate = (timestamp: number | null) => {
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   const isYesterday = date.toDateString() === yesterday.toDateString();
-  const time = date.toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  const time = TIME_FORMATTER.format(date);
   if (sameDay) {
     return `今天 ${time}`;
   }

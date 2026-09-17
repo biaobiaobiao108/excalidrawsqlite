@@ -106,8 +106,8 @@ export const createFullBackup = async (
         null,
         2,
       );
-      const entries: Record<string, string | Uint8Array> = {
-        "excalidraw.db": new Uint8Array(),
+      const entries: Record<string, BlobPart> = {
+        "excalidraw.db": databaseFile,
         "manifest.json": manifest,
       };
 
@@ -116,9 +116,6 @@ export const createFullBackup = async (
       if (totalBytes > runtime.config.maxBackupBytes) {
         throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
       }
-      entries["excalidraw.db"] = new Uint8Array(
-        await databaseFile.arrayBuffer(),
-      );
       const manifestBytes = new TextEncoder().encode(manifest);
       totalBytes += manifestBytes.byteLength;
       if (totalBytes > runtime.config.maxBackupBytes) {
@@ -138,7 +135,7 @@ export const createFullBackup = async (
         if (totalBytes > runtime.config.maxBackupBytes) {
           throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
         }
-        entries[`files/${row.id}`] = new Uint8Array(await file.arrayBuffer());
+        entries[`files/${row.id}`] = file;
       }
 
       const archive = new Bun.Archive(entries);

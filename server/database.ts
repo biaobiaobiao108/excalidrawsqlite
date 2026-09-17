@@ -112,7 +112,22 @@ export const initializeDatabase = (db: Database) => {
     "CREATE INDEX IF NOT EXISTS idx_scenes_folder_id ON scenes(folder_id)",
   );
   db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_active_updated_at ON scenes(updated_at DESC) WHERE deleted_at IS NULL",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_trash_deleted_at ON scenes(deleted_at DESC) WHERE deleted_at IS NOT NULL",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_active_folder_id ON scenes(folder_id) WHERE deleted_at IS NULL",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_thumbnail_file_id ON scenes(thumbnail_file_id)",
+  );
+  db.run(
     "CREATE INDEX IF NOT EXISTS idx_scene_files_file_id ON scene_files(file_id)",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_files_updated_at ON files(updated_at)",
   );
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",

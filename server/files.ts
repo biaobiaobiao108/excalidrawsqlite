@@ -14,6 +14,21 @@ import type { ServerRuntime } from "./types";
 
 const thumbnailWriteLocks = new Map<string, Promise<void>>();
 const storageMutationLocks = new WeakMap<ServerRuntime, Promise<void>>();
+const legacyDataUrlColumnCache = new WeakMap<ServerRuntime, boolean>();
+
+const hasLegacyDataUrlColumn = (runtime: ServerRuntime) => {
+  const cached = legacyDataUrlColumnCache.get(runtime);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const hasColumn = (
+    runtime.db.query("PRAGMA table_info(files)").all() as Array<{
+      name: string;
+    }>
+  ).some((column) => column.name === "data_url");
+  legacyDataUrlColumnCache.set(runtime, hasColumn);
+  return hasColumn;
+};
 
 export const withStorageMutationLock = async <T>(
   runtime: ServerRuntime,
@@ -181,11 +196,7 @@ const upsertPreparedFile = async (
       ? await finalizeAtomicFileWrite(filePath, prepared.tempPath)
       : await writeFileAtomically(filePath, prepared.data!);
     try {
-      const hasLegacyDataUrl = (
-        runtime.db.query("PRAGMA table_info(files)").all() as Array<{
-          name: string;
-        }>
-      ).some((column) => column.name === "data_url");
+      const hasLegacyDataUrl = hasLegacyDataUrlColumn(runtime);
       const columns = hasLegacyDataUrl
         ? "id, storage_path, data_url, mime_type, byte_size, sha256, created_at, updated_at"
         : "id, storage_path, mime_type, byte_size, sha256, created_at, updated_at";
@@ -389,10 +400,29 @@ export const assertReferencedFilesExist = async (
   runtime: ServerRuntime,
   fileIds: string[],
 ) => {
+  const rowsById = new Map<string, { storage_path: string | null }>();
+  const queryChunkSize = 500;
+  for (let offset = 0; offset < fileIds.length; offset += queryChunkSize) {
+    const chunk = fileIds.slice(offset, offset + queryChunkSize);
+    if (!chunk.length) {
+      continue;
+    }
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = runtime.db
+      .query(
+        `SELECT id, storage_path FROM files WHERE id IN (${placeholders})`,
+      )
+      .all(...chunk) as Array<{
+      id: string;
+      storage_path: string | null;
+    }>;
+    for (const row of rows) {
+      rowsById.set(row.id, row);
+    }
+  }
+
   for (const fileId of fileIds) {
-    const row = runtime.db
-      .query("SELECT storage_path FROM files WHERE id = ?")
-      .get(fileId) as { storage_path: string | null } | null;
+    const row = rowsById.get(fileId);
     if (
       !row?.storage_path ||
       !(await fileExists(getFilePath(runtime, fileId)))
@@ -408,11 +438,11 @@ export const syncSceneFileReferences = (
   fileIds: string[],
 ) => {
   runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [sceneId]);
+  const insertReference = runtime.db.query(
+    "INSERT INTO scene_files (scene_id, file_id) VALUES (?, ?)",
+  );
   for (const fileId of fileIds) {
-    runtime.db.run(
-      "INSERT INTO scene_files (scene_id, file_id) VALUES (?, ?)",
-      [sceneId, fileId],
-    );
+    insertReference.run(sceneId, fileId);
   }
 };
 
