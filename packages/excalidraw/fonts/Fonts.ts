@@ -2,6 +2,7 @@ import {
   FONT_FAMILY,
   FONT_FAMILY_FALLBACKS,
   LXGW_WENKAI_FONT,
+  SOURCE_HAN_SANS_FONT,
   WINDOWS_EMOJI_FALLBACK_FONT,
   FONT_SIZES,
 } from "@excalidraw/common";
@@ -170,8 +171,8 @@ export class Fonts {
    * Load a font family for the given text before rendering it.
    *
    * This is useful for text editing where the text is not in the scene yet.
-   * It also keeps CDN-backed fonts, such as LXGW WenKai, on the same loading
-   * path as fonts discovered from scene elements.
+   * It also keeps CDN-backed fonts, such as LXGW WenKai and Source Han Sans,
+   * on the same loading path as fonts discovered from scene elements.
    */
   public static loadFontFamily = async (
     fontFamily: ExcalidrawTextElement["fontFamily"],
@@ -387,9 +388,10 @@ export class Fonts {
     // Excalifont is the only bundled drawing font.
     init("Excalifont", ...ExcalifontFontFaces);
 
-    // Keep the persisted family registered; its split @font-face rules come
-    // from the CDN stylesheet linked by the app entrypoint.
+    // Keep persisted CDN families registered; their split @font-face rules
+    // come from the stylesheets linked by the app entrypoint.
     init(LXGW_WENKAI_FONT);
+    init(SOURCE_HAN_SANS_FONT);
 
     init(WINDOWS_EMOJI_FALLBACK_FONT, ...EmojiFontFaces);
 

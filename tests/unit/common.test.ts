@@ -5,6 +5,7 @@ import { isBounds } from "../../packages/common/src/bounds";
 import {
   FONT_FAMILY,
   LXGW_WENKAI_FONT,
+  SOURCE_HAN_SANS_FONT,
 } from "../../packages/common/src/constants";
 import { getFontFamilyString } from "../../packages/common/src/utils";
 
@@ -38,6 +39,14 @@ describe("common primitives", () => {
     expect(
       getFontFamilyString({ fontFamily: FONT_FAMILY[LXGW_WENKAI_FONT] }),
     ).toBe("LXGW WenKai, sans-serif, Segoe UI Emoji");
+  });
+
+  it("uses the CDN family name for Source Han Sans", () => {
+    expect(
+      getFontFamilyString({
+        fontFamily: FONT_FAMILY[SOURCE_HAN_SANS_FONT],
+      }),
+    ).toBe("Source Han Sans SC VF, sans-serif, Segoe UI Emoji");
   });
 
   it("uses system fallbacks for unsupported Excalifont glyphs", () => {

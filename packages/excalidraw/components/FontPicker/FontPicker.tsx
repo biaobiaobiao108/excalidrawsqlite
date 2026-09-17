@@ -2,7 +2,11 @@ import { Popover } from "radix-ui";
 import clsx from "clsx";
 import React, { useCallback, useMemo } from "react";
 
-import { FONT_FAMILY, LXGW_WENKAI_FONT } from "@excalidraw/common";
+import {
+  FONT_FAMILY,
+  LXGW_WENKAI_FONT,
+  SOURCE_HAN_SANS_FONT,
+} from "@excalidraw/common";
 
 import type { FontFamilyValues } from "@excalidraw/element/types";
 
@@ -31,6 +35,12 @@ export const DEFAULT_FONTS = [
     icon: FontFamilyNormalIcon,
     text: LXGW_WENKAI_FONT,
     testId: "font-family-lxgw-wenkai",
+  },
+  {
+    value: FONT_FAMILY[SOURCE_HAN_SANS_FONT],
+    icon: FontFamilyNormalIcon,
+    text: SOURCE_HAN_SANS_FONT,
+    testId: "font-family-source-han-sans",
   },
 ];
 

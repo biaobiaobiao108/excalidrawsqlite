@@ -118,6 +118,8 @@ export const FONT_SIZES = {
 
 export const LXGW_WENKAI_FONT = "霞鹜文楷";
 export const LXGW_WENKAI_CSS_FONT = "LXGW WenKai";
+export const SOURCE_HAN_SANS_FONT = "思源黑体";
+export const SOURCE_HAN_SANS_CSS_FONT = "Source Han Sans SC VF";
 export const WINDOWS_EMOJI_FALLBACK_FONT = "Segoe UI Emoji";
 
 /**
@@ -142,6 +144,7 @@ export const FONT_FAMILY = {
   "Liberation Sans": 9,
   Assistant: 10,
   [LXGW_WENKAI_FONT]: 11,
+  [SOURCE_HAN_SANS_FONT]: 12,
 };
 
 // Segoe UI Emoji fails to properly fallback for some glyphs: ∞, ∫, ≠

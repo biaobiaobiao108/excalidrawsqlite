@@ -19,6 +19,8 @@ import {
   getFontFamilyFallbacks,
   LXGW_WENKAI_CSS_FONT,
   LXGW_WENKAI_FONT,
+  SOURCE_HAN_SANS_CSS_FONT,
+  SOURCE_HAN_SANS_FONT,
   WINDOWS_EMOJI_FALLBACK_FONT,
 } from "./constants";
 
@@ -134,6 +136,8 @@ export const getFontFamilyString = ({
         return "Cascadia Code";
       case LXGW_WENKAI_FONT:
         return LXGW_WENKAI_CSS_FONT;
+      case SOURCE_HAN_SANS_FONT:
+        return SOURCE_HAN_SANS_CSS_FONT;
       default:
         return fontFamilyName;
     }
