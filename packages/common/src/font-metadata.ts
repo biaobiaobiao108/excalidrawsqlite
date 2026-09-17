@@ -7,6 +7,7 @@ import {
   FONT_FAMILY,
   FONT_FAMILY_FALLBACKS,
   LXGW_WENKAI_FONT,
+  SOURCE_HAN_SANS_FONT,
 } from "./constants";
 
 /**
@@ -120,6 +121,14 @@ export const FONT_METADATA: Record<number, FontMetadata> = {
       unitsPerEm: 1000,
       ascender: 928,
       descender: -256,
+      lineHeight: 1.25,
+    },
+  },
+  [FONT_FAMILY[SOURCE_HAN_SANS_FONT]]: {
+    metrics: {
+      unitsPerEm: 1000,
+      ascender: 1160,
+      descender: -288,
       lineHeight: 1.25,
     },
   },

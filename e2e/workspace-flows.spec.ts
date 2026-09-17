@@ -364,5 +364,6 @@ test.describe("Workspace behavior", () => {
     await expect(
       page.getByRole("button", { name: "Select language" }),
     ).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
   });
 });

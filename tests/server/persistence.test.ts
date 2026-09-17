@@ -385,6 +385,59 @@ describe("cloud persistence server", () => {
     expect(conflict.status).toBe(409);
   });
 
+  it("guards concurrent scene saves with an atomic revision check", async () => {
+    const { handler } = createTestRuntime();
+    const cookie = await authenticate(handler);
+
+    const upload = await request(handler, "/api/files/file_race", {
+      method: "PUT",
+      headers: {
+        Cookie: cookie,
+        "Content-Type": "image/png",
+      },
+      body: new Uint8Array([1, 2, 3]),
+    });
+    expect(upload.status).toBe(201);
+
+    const createdResponse = await jsonRequest(
+      handler,
+      "/api/scenes",
+      { id: "scene_race", elements: [], appState: {} },
+      { headers: { Cookie: cookie } },
+    );
+    const created = await responseJson<{ revision: number }>(createdResponse);
+
+    const save = (elementId: string) =>
+      jsonRequest(
+        handler,
+        "/api/scenes/scene_race",
+        {
+          elements: [
+            { id: elementId, type: "image", fileId: "file_race" },
+          ],
+          appState: {},
+          baseRevision: created.revision,
+        },
+        { method: "PUT", headers: { Cookie: cookie } },
+      );
+
+    const responses = await Promise.all([save("element-a"), save("element-b")]);
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      200,
+      409,
+    ]);
+
+    const sceneResponse = await request(handler, "/api/scenes/scene_race", {
+      headers: { Cookie: cookie },
+    });
+    const scene = await responseJson<{
+      revision: number;
+      elements: Array<{ id: string }>;
+    }>(sceneResponse);
+    expect(scene.revision).toBe(created.revision + 1);
+    expect(["element-a", "element-b"]).toContain(scene.elements[0]?.id);
+  });
+
   it("stores files on disk and prevents deleted scenes from being recreated", async () => {
     const { handler, runtime, directory } = createTestRuntime();
     const cookie = await authenticate(handler);

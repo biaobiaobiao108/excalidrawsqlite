@@ -81,10 +81,10 @@ const getCloudSyncPublisher = () => {
 };
 
 export const broadcastCloudSync = (message: CloudTabSyncMessage) => {
-  const payload: CloudTabSyncEnvelope =
-    message.type === "workspace_changed"
-      ? { ...message, sourceId: CLOUD_SYNC_CLIENT_ID }
-      : message;
+  const payload: CloudTabSyncEnvelope = {
+    ...message,
+    sourceId: CLOUD_SYNC_CLIENT_ID,
+  };
   if (message.type === "workspace_changed" && typeof window !== "undefined") {
     try {
       window.localStorage.setItem(

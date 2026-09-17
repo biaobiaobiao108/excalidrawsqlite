@@ -7,6 +7,7 @@ import {
   LXGW_WENKAI_FONT,
   SOURCE_HAN_SANS_FONT,
 } from "../../packages/common/src/constants";
+import { FONT_METADATA } from "../../packages/common/src/font-metadata";
 import { getFontFamilyString } from "../../packages/common/src/utils";
 
 describe("common primitives", () => {
@@ -47,6 +48,15 @@ describe("common primitives", () => {
         fontFamily: FONT_FAMILY[SOURCE_HAN_SANS_FONT],
       }),
     ).toBe("Source Han Sans SC VF, sans-serif, Segoe UI Emoji");
+  });
+
+  it("keeps Source Han Sans metrics available for text layout", () => {
+    expect(FONT_METADATA[FONT_FAMILY[SOURCE_HAN_SANS_FONT]]?.metrics).toEqual({
+      unitsPerEm: 1000,
+      ascender: 1160,
+      descender: -288,
+      lineHeight: 1.25,
+    });
   });
 
   it("uses system fallbacks for unsupported Excalifont glyphs", () => {

@@ -38,7 +38,8 @@ export const getStaticCacheControl = (pathname: string) => {
   if (
     pathname === "/" ||
     pathname.endsWith("/index.html") ||
-    pathname === "/manifest.webmanifest"
+    pathname === "/manifest.webmanifest" ||
+    pathname.startsWith("/locales/")
   ) {
     return "no-cache";
   }

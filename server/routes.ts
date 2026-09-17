@@ -803,7 +803,8 @@ export const createRequestHandler = (
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
-        if (baseRevision !== undefined && baseRevision !== existing.revision) {
+        const currentRevision = Number(existing.revision) || 1;
+        if (baseRevision !== undefined && baseRevision !== currentRevision) {
           throw new HttpError(
             409,
             "REVISION_CONFLICT",
@@ -816,22 +817,33 @@ export const createRequestHandler = (
           existing,
         );
         const now = Date.now();
-        const revision = existing.revision + 1;
-        runtime.db.run(
-          `UPDATE scenes
-           SET name = ?, tags_json = ?, is_favorite = ?, folder_id = ?,
-               updated_at = ?, revision = ?
-           WHERE id = ?`,
-          [
-            name,
-            JSON.stringify(tags),
-            favorite ? 1 : 0,
-            folderId,
-            now,
-            revision,
-            id,
-          ],
-        );
+        const revision = currentRevision + 1;
+        const transaction = runtime.db.transaction(() => {
+          const result = runtime.db.run(
+            `UPDATE scenes
+             SET name = ?, tags_json = ?, is_favorite = ?, folder_id = ?,
+                 updated_at = ?, revision = ?
+             WHERE id = ? AND deleted_at IS NULL AND revision = ?`,
+            [
+              name,
+              JSON.stringify(tags),
+              favorite ? 1 : 0,
+              folderId,
+              now,
+              revision,
+              id,
+              currentRevision,
+            ],
+          );
+          if (result.changes !== 1) {
+            throw new HttpError(
+              409,
+              "REVISION_CONFLICT",
+              "云端画板已被其他操作更新",
+            );
+          }
+        });
+        transaction.immediate();
         const updated = runtime.db
           .query(
             `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
@@ -890,11 +902,11 @@ export const createRequestHandler = (
         const now = Date.now();
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {
-          runtime.db.run(
+          const result = runtime.db.run(
             `UPDATE scenes
              SET name = ?, elements = ?, app_state = ?, tags_json = ?,
                  is_favorite = ?, folder_id = ?, updated_at = ?, revision = ?
-             WHERE id = ?`,
+             WHERE id = ? AND deleted_at IS NULL AND revision = ?`,
             [
               name,
               JSON.stringify(elements),
@@ -905,11 +917,19 @@ export const createRequestHandler = (
               now,
               revision,
               id,
+              currentRevision,
             ],
           );
+          if (result.changes !== 1) {
+            throw new HttpError(
+              409,
+              "REVISION_CONFLICT",
+              "云端画板已被其他设备更新",
+            );
+          }
           syncSceneFileReferences(runtime, id, fileIds);
         });
-        transaction();
+        transaction.immediate();
         return jsonResponse(runtime, req, {
           success: true,
           id,

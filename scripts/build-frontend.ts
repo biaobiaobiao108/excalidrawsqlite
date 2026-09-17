@@ -26,12 +26,12 @@ export async function buildFrontend(options: BuildOptions = {}) {
   fs.mkdirSync(outDir, { recursive: true });
 
   // 2. Copy static files from public/ directly to build/. The Bundler emits
-  // the local default Excalifont asset itself; LXGW WenKai is linked by the
-  // HTML entrypoint.
+  // the local default Excalifont asset itself; CDN-backed fonts are linked by
+  // the HTML entrypoint.
   if (fs.existsSync(publicDir)) {
     for (const entry of fs.readdirSync(publicDir, { withFileTypes: true })) {
       // These legacy public copies duplicate the bundled Excalifont asset and
-      // are not needed because LXGW WenKai is loaded by its stylesheet link.
+      // are not needed because CDN-backed fonts are loaded by the stylesheet links.
       if (
         entry.isFile() &&
         /\.(?:woff2?|ttf|otf)$/i.test(entry.name)
@@ -43,6 +43,28 @@ export async function buildFrontend(options: BuildOptions = {}) {
         path.join(publicDir, entry.name),
         path.join(outDir, entry.name),
         { recursive: true },
+      );
+    }
+  }
+  // Locale data is loaded with dynamic JSON imports at runtime. Keep those
+  // imports lazy, but publish their JSON targets alongside the HTML bundle.
+  const localeSourceDir = path.join(
+    projectRoot,
+    "packages/excalidraw/locales",
+  );
+  const localeOutputDir = path.join(outDir, "locales");
+  fs.mkdirSync(localeOutputDir, { recursive: true });
+  for (const entry of fs.readdirSync(localeSourceDir, {
+    withFileTypes: true,
+  })) {
+    if (
+      entry.isFile() &&
+      entry.name.endsWith(".json") &&
+      entry.name !== "percentages.json"
+    ) {
+      fs.copyFileSync(
+        path.join(localeSourceDir, entry.name),
+        path.join(localeOutputDir, entry.name),
       );
     }
   }
