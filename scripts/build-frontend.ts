@@ -26,13 +26,12 @@ export async function buildFrontend(options: BuildOptions = {}) {
   fs.mkdirSync(outDir, { recursive: true });
 
   // 2. Copy static files from public/ directly to build/. The Bundler emits
-  // imported font assets itself, while the CDN-hosted CJK font is loaded from
-  // the stylesheet linked by the HTML entrypoint.
+  // the local default Excalifont asset itself; other runtime fonts are loaded
+  // from versioned CDN stylesheets or remote descriptors.
   if (fs.existsSync(publicDir)) {
     for (const entry of fs.readdirSync(publicDir, { withFileTypes: true })) {
-      // The browser bundle owns all runtime font assets. These legacy public
-      // copies are only needed by the Node canvas entrypoint and otherwise
-      // duplicate files already emitted or embedded by Bun.
+      // These legacy public copies are only needed by the canvas entrypoint
+      // and otherwise duplicate the local default asset or CDN resources.
       if (
         entry.isFile() &&
         /\.(?:woff2?|ttf|otf)$/i.test(entry.name)

@@ -15,7 +15,7 @@
 | **多画板管理** | 单画板模式，需手动导出/导入 `.excalidraw` 文件 | **内置画板工作台**：列表/网格浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达 |
 | **图元统计** | 无图元数量感知 | **内置图元数量统计**：基于 SQLite `json_array_length` 毫秒级统计并在卡片展示 |
 | **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存 | **本地文件系统独立归档 + ETag / 304 Not Modified 秒级增量协商缓存** |
-| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **100% 纯净私有化**：零第三方外链打点，默认只访问本机/局域网服务 |
+| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据仍只访问本机/局域网服务，字体使用版本化 CDN |
 | **中文字体支持** | 默认依赖外部在线 Google Fonts 或英文字体 | **通过 jsDelivr 加载「霞鹜文楷」CJK 手绘中文字体**（Unicode 子集化拆分按需加载） |
 | **身份认证安全** | 无或 Token 明文保存在浏览器本地存储 | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据 |
 | **浏览器与构建** | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置 | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
@@ -56,7 +56,7 @@
 ### 5. ⚡ 现代浏览器性能基线
 
 - 生产构建面向现代浏览器（支持最新 Chrome、Edge、Firefox、Safari、iOS Safari），去除过时 polyfill。Bun 1.4 使用 `target: "browser"` 表达该目标。
-- **按需动态加载**：Mermaid 图表引擎、CodeMirror 代码编辑器、CJK「霞鹜文楷」手绘字体（通过版本化 CDN 样式表）、pako 压缩回退均延迟至使用时加载，首屏极速秒开。
+- **按需动态加载**：Mermaid 图表引擎、CodeMirror 代码编辑器、CJK「霞鹜文楷」与小赖字体（通过版本化 CDN 样式表）、pako 压缩回退均延迟至使用时加载；默认 Excalifont 保留本地，首屏极速秒开。
 - **原生压缩流**：优先使用现代浏览器原生 `CompressionStream` 与 `DecompressionStream`。
 
 ### 6. 🔐 企业级轻量鉴权与安全响应头

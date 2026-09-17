@@ -4,12 +4,10 @@ import {
   CJK_HAND_DRAWN_FALLBACK_FONT,
   LXGW_WENKAI_FONT,
   WINDOWS_EMOJI_FALLBACK_FONT,
-  getFontFamilyFallbacks,
   FONT_SIZES,
 } from "@excalidraw/common";
 import { getContainerElement } from "@excalidraw/element";
 import { charWidth } from "@excalidraw/element";
-import { containsCJK } from "@excalidraw/element";
 
 import {
   FONT_METADATA,
@@ -32,15 +30,12 @@ import type { ValueOf } from "@excalidraw/common/utility-types";
 
 import type { Scene } from "@excalidraw/element";
 
-import { CascadiaFontFaces } from "./Cascadia";
 import { ComicShannsFontFaces } from "./ComicShanns";
 import { EmojiFontFaces } from "./Emoji";
 import { ExcalidrawFontFace } from "./ExcalidrawFontFace";
 import { ExcalifontFontFaces } from "./Excalifont";
 import { HelveticaFontFaces } from "./Helvetica";
 import { LiberationFontFaces } from "./Liberation";
-import { LilitaFontFaces } from "./Lilita";
-import { NunitoFontFaces } from "./Nunito";
 import { VirgilFontFaces } from "./Virgil";
 
 export class Fonts {
@@ -59,8 +54,6 @@ export class Fonts {
     | undefined;
 
   private static _initialized: boolean = false;
-
-  private static _cjkFontFacesPromise: Promise<void> | null = null;
 
   public static get registered() {
     // lazy load the font registration
@@ -206,27 +199,6 @@ export class Fonts {
     const families = Fonts.getUniqueFamilies(elements);
     const charsPerFamily = Fonts.getCharsPerFamily(elements);
 
-    // for simplicity, assuming we have just one family with the CJK handdrawn fallback
-    const familyWithCJK = families.find((x) =>
-      getFontFamilyFallbacks(x).includes(CJK_HAND_DRAWN_FALLBACK_FONT),
-    );
-
-    if (familyWithCJK) {
-      const characters = Fonts.getCharacters(charsPerFamily, familyWithCJK);
-
-      if (containsCJK(characters)) {
-        await Fonts.ensureCJKFontFaces();
-        const family = FONT_FAMILY_FALLBACKS[CJK_HAND_DRAWN_FALLBACK_FONT];
-
-        // adding the same characters to the CJK handrawn family
-        charsPerFamily[family] = new Set(characters);
-
-        // the order between the families and fallbacks is important, as fallbacks need to be defined first and in the reversed order
-        // so that they get overriden with the later defined font faces, i.e. in case they share some codepoints
-        families.unshift(FONT_FAMILY_FALLBACKS[CJK_HAND_DRAWN_FALLBACK_FONT]);
-      }
-    }
-
     // don't trigger hundreds of concurrent requests (each performing fetch, creating a worker, etc.),
     // instead go three requests at a time, in a controlled manner, without completely blocking the main thread
     // and avoiding potential issues such as rate limits
@@ -243,16 +215,6 @@ export class Fonts {
     charsPerFamily: Record<number, Set<string>>,
     ownerDocument: Document,
   ) {
-    const needsCJKFont = fontFamilies.some(
-      (family) =>
-        getFontFamilyFallbacks(family).includes(CJK_HAND_DRAWN_FALLBACK_FONT) &&
-        containsCJK(Fonts.getCharacters(charsPerFamily, family)),
-    );
-
-    if (needsCJKFont) {
-      await Fonts.ensureCJKFontFaces();
-    }
-
     // add all registered font faces into the `document.fonts` (if not added already)
     for (const { fontFaces, metadata } of Fonts.registered.values()) {
       // skip registering font faces for local fonts (i.e. Helvetica)
@@ -277,33 +239,6 @@ export class Fonts {
     const fontFaces = await new PromisePool(iterator, concurrency).all();
     return fontFaces.flat().filter(Boolean);
   }
-
-  private static ensureCJKFontFaces = async () => {
-    const registeredFamily = Fonts.registered.get(
-      FONT_FAMILY_FALLBACKS[CJK_HAND_DRAWN_FALLBACK_FONT],
-    );
-
-    if (!registeredFamily || registeredFamily.fontFaces.length) {
-      return;
-    }
-
-    Fonts._cjkFontFacesPromise ??= import("./Xiaolai").then(
-      ({ XiaolaiFontFaces }) => {
-        registeredFamily.fontFaces.push(
-          ...XiaolaiFontFaces.map(
-            ({ uri, descriptors }) =>
-              new ExcalidrawFontFace(
-                CJK_HAND_DRAWN_FALLBACK_FONT,
-                uri,
-                descriptors,
-              ),
-          ),
-        );
-      },
-    );
-
-    await Fonts._cjkFontFacesPromise;
-  };
 
   private static *fontFacesLoader(
     fontFamilies: Array<ExcalidrawTextElement["fontFamily"]>,
@@ -454,22 +389,26 @@ export class Fonts {
       Fonts.register.call(fonts, family, metadata, ...fontFacesDescriptors);
     };
 
-    init("Cascadia", ...CascadiaFontFaces);
+    // These families are registered by versioned CDN stylesheets linked from
+    // the app entrypoint. Keep their persisted IDs registered here so scenes
+    // continue to resolve the same font families.
+    init("Cascadia");
     init("Comic Shanns", ...ComicShannsFontFaces);
     init("Excalifont", ...ExcalifontFontFaces);
     // keeping for backwards compatibility reasons, uses system font (Helvetica on MacOS, Arial on Win)
     init("Helvetica", ...HelveticaFontFaces);
     // used for server-side pdf & png export instead of helvetica (technically does not need metrics, but kept in for consistency)
     init("Liberation Sans", ...LiberationFontFaces);
-    init("Lilita One", ...LilitaFontFaces);
-    init("Nunito", ...NunitoFontFaces);
+    init("Lilita One");
+    init("Nunito");
     init("Virgil", ...VirgilFontFaces);
 
     // Keep the persisted family registered; its split @font-face rules come
     // from the CDN stylesheet linked by the app entrypoint.
     init(LXGW_WENKAI_FONT);
 
-    // CJK fallback font faces are loaded on demand to keep the initial bundle small.
+    // CJK fallback font faces are registered by the versioned CDN stylesheet
+    // linked from the app entrypoint.
     init(CJK_HAND_DRAWN_FALLBACK_FONT);
     init(WINDOWS_EMOJI_FALLBACK_FONT, ...EmojiFontFaces);
 

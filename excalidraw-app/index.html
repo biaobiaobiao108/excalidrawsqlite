@@ -39,22 +39,47 @@
     <!--   to minimize white flash on load when user has dark mode enabled   -->
     <script src="/theme-init.js"></script>
 
-    <!-- The CDN stylesheet registers the unicode-range-split LXGW WenKai font faces. -->
+    <!-- All non-default fonts are loaded from versioned CDN stylesheets. -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.1.0/style.css"
     />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/assistant@5.3.0/400.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/assistant@5.3.0/500.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/assistant@5.3.0/600.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/assistant@5.3.0/700.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/cascadia-code@5.3.0/400.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/lilita-one@5.3.0/400.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/nunito@5.3.0/500.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@chinese-fonts/xiaolai@3.0.0/dist/Xiaolai/result.css"
+    />
 
     <!-- Following placeholder is replaced during the build step -->
     <!-- PLACEHOLDER:EXCALIDRAW_APP_FONTS -->
-
-    <!-- Register Assistant as the UI font, before the scene inits -->
-    <link
-      rel="stylesheet"
-      href="../packages/excalidraw/fonts/fonts.css"
-      type="text/css"
-    />
 
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />

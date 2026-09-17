@@ -117,6 +117,8 @@ export const FONT_SIZES = {
 } as const;
 
 export const CJK_HAND_DRAWN_FALLBACK_FONT = "Xiaolai";
+export const CJK_HAND_DRAWN_FALLBACK_CSS_FONT = "Xiaolai SC";
+export const CASCADIA_CSS_FONT = "Cascadia Code";
 export const LXGW_WENKAI_FONT = "霞鹜文楷";
 export const LXGW_WENKAI_CSS_FONT = "LXGW WenKai";
 export const WINDOWS_EMOJI_FALLBACK_FONT = "Segoe UI Emoji";

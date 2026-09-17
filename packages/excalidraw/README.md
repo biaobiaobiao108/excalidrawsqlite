@@ -112,9 +112,9 @@ import { exportToSvg } from "@excalidraw/excalidraw";
 
 ## Self-hosting fonts
 
-By default, Excalidraw downloads the fonts it needs from the [CDN](https://esm.run/@excalidraw/excalidraw/dist/prod).
+In this app, Excalifont remains bundled locally as the default drawing font. The other drawing fonts use versioned CDN stylesheets or font files, so they are fetched only when the selected family needs them.
 
-For self-hosting, copy the contents of `node_modules/@excalidraw/excalidraw/dist/prod/fonts` into the path where your app serves static assets, for example `public/`. Then set `window.EXCALIDRAW_ASSET_PATH` to that same path:
+For self-hosting the package assets, copy the contents of `node_modules/@excalidraw/excalidraw/dist/prod/fonts` into the path where your app serves static assets, for example `public/`. Then set `window.EXCALIDRAW_ASSET_PATH` to that same path. The app's external font stylesheets must also be mirrored or replaced in the host page if the deployment cannot reach the CDN:
 
 ```html
 <script>

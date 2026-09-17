@@ -14,6 +14,9 @@ import type {
 
 import {
   DEFAULT_VERSION,
+  CJK_HAND_DRAWN_FALLBACK_CSS_FONT,
+  CJK_HAND_DRAWN_FALLBACK_FONT,
+  CASCADIA_CSS_FONT,
   ENV,
   FONT_FAMILY,
   getFontFamilyFallbacks,
@@ -127,16 +130,29 @@ export const getFontFamilyString = ({
 }: {
   fontFamily: FontFamilyValues;
 }) => {
+  const getCSSFontFamilyName = (fontFamilyName: string) => {
+    switch (fontFamilyName) {
+      case "Cascadia":
+        return CASCADIA_CSS_FONT;
+      case CJK_HAND_DRAWN_FALLBACK_FONT:
+        return CJK_HAND_DRAWN_FALLBACK_CSS_FONT;
+      case LXGW_WENKAI_FONT:
+        return LXGW_WENKAI_CSS_FONT;
+      default:
+        return fontFamilyName;
+    }
+  };
+
   for (const [fontFamilyString, id] of Object.entries(FONT_FAMILY)) {
     if (id === fontFamily) {
-      const cssFontFamily =
-        fontFamily === FONT_FAMILY[LXGW_WENKAI_FONT]
-          ? LXGW_WENKAI_CSS_FONT
-          : fontFamilyString;
+      const cssFontFamily = getCSSFontFamilyName(fontFamilyString);
 
-      return `${cssFontFamily}${getFontFamilyFallbacks(id)
-        .map((x) => `, ${x}`)
-        .join("")}`;
+      return (
+        cssFontFamily +
+        getFontFamilyFallbacks(id)
+          .map((x) => ", " + getCSSFontFamilyName(x))
+          .join("")
+      );
     }
   }
   return WINDOWS_EMOJI_FALLBACK_FONT;
