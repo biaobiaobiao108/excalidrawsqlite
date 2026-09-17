@@ -59,6 +59,11 @@ type CommandGroup = {
 };
 
 const RECENTS_STORAGE_KEY = "excalidraw-workspace-palette-recents";
+const TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
 
 const loadStoredRecents = (): string[] => {
   try {
@@ -100,11 +105,7 @@ const formatSceneTime = (timestamp: number | null) => {
   const date = new Date(timestamp);
   const now = new Date();
   const sameDay = date.toDateString() === now.toDateString();
-  const time = date.toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  const time = TIME_FORMATTER.format(date);
   if (sameDay) {
     return `今天 ${time}`;
   }

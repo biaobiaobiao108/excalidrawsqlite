@@ -87,6 +87,9 @@ const preparedStatementsMap = new WeakMap<
     getFileById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneRawById: ReturnType<ServerRuntime["db"]["query"]>;
+    getSceneStateById: ReturnType<ServerRuntime["db"]["query"]>;
+    getSceneThumbnailById: ReturnType<ServerRuntime["db"]["query"]>;
+    getSceneSummaryById: ReturnType<ServerRuntime["db"]["query"]>;
     touchSceneLastOpened: ReturnType<ServerRuntime["db"]["query"]>;
     getFolderById: ReturnType<ServerRuntime["db"]["query"]>;
     getFileUpdatedAt: ReturnType<ServerRuntime["db"]["query"]>;
@@ -107,6 +110,25 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
       ),
       getSceneRawById: runtime.db.query(
         "SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL",
+      ),
+      getSceneStateById: runtime.db.query(
+        "SELECT id, deleted_at FROM scenes WHERE id = ?",
+      ),
+      getSceneThumbnailById: runtime.db.query(
+        "SELECT id, thumbnail_file_id FROM scenes WHERE id = ? AND deleted_at IS NULL",
+      ),
+      getSceneSummaryById: runtime.db.query(
+        `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
+                scenes.revision, length(scenes.elements) AS size,
+                CASE WHEN json_valid(scenes.elements) = 1
+                     THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
+                     ELSE 0 END AS element_count,
+                scenes.tags_json, scenes.is_favorite, scenes.folder_id,
+                scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
+                folders.name AS folder_name
+         FROM scenes
+         LEFT JOIN folders ON folders.id = scenes.folder_id
+         WHERE scenes.id = ?`,
       ),
       touchSceneLastOpened: runtime.db.query(
         "UPDATE scenes SET last_opened_at = ? WHERE id = ?",
@@ -541,9 +563,7 @@ export const createRequestHandler = (
           await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
         );
         const name = validateFolderName(body.name);
-        const existing = runtime.db
-          .query("SELECT id FROM folders WHERE id = ?")
-          .get(id);
+        const existing = stmts.getFolderById.get(id);
         if (!existing) {
           throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
         }
@@ -564,9 +584,7 @@ export const createRequestHandler = (
 
       if (pathname.startsWith("/api/folders/") && req.method === "DELETE") {
         const id = getPathId(pathname, "/api/folders/", "scene");
-        const existing = runtime.db
-          .query("SELECT id FROM folders WHERE id = ?")
-          .get(id);
+        const existing = stmts.getFolderById.get(id);
         if (!existing) {
           return jsonResponse(runtime, req, {
             success: true,
@@ -595,9 +613,10 @@ export const createRequestHandler = (
           "/api/scenes/",
           "scene",
         );
-        const existing = runtime.db
-          .query("SELECT id, deleted_at FROM scenes WHERE id = ?")
-          .get(id) as { id: string; deleted_at: number | null } | null;
+        const existing = stmts.getSceneStateById.get(id) as {
+          id: string;
+          deleted_at: number | null;
+        } | null;
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
         }
@@ -613,9 +632,7 @@ export const createRequestHandler = (
 
       if (pathname.startsWith("/api/scenes/") && req.method === "GET") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
-        const row = runtime.db
-          .query("SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL")
-          .get(id);
+        const row = stmts.getSceneRawById.get(id);
         if (!row) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
@@ -729,11 +746,10 @@ export const createRequestHandler = (
           "/api/scenes/",
           "scene",
         );
-        const existing = runtime.db
-          .query(
-            "SELECT id, thumbnail_file_id FROM scenes WHERE id = ? AND deleted_at IS NULL",
-          )
-          .get(id) as { id: string; thumbnail_file_id: string | null } | null;
+        const existing = stmts.getSceneThumbnailById.get(id) as {
+          id: string;
+          thumbnail_file_id: string | null;
+        } | null;
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
@@ -799,9 +815,9 @@ export const createRequestHandler = (
           throw new HttpError(400, "INVALID_METADATA", "没有可更新的画板信息");
         }
         const baseRevision = requireRevision(body.baseRevision);
-        const existing = runtime.db
-          .query("SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL")
-          .get(id) as { revision: number } | null;
+        const existing = stmts.getSceneRawById.get(id) as {
+          revision: number;
+        } | null;
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
@@ -846,21 +862,7 @@ export const createRequestHandler = (
           }
         });
         transaction.immediate();
-        const updated = runtime.db
-          .query(
-            `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
-                    scenes.revision, length(scenes.elements) AS size,
-                    CASE WHEN json_valid(scenes.elements) = 1
-                         THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
-                         ELSE 0 END AS element_count,
-                    scenes.tags_json, scenes.is_favorite, scenes.folder_id,
-                    scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
-                    folders.name AS folder_name
-             FROM scenes
-             LEFT JOIN folders ON folders.id = scenes.folder_id
-             WHERE scenes.id = ?`,
-          )
-          .get(id);
+        const updated = stmts.getSceneSummaryById.get(id);
         return jsonResponse(runtime, req, getSceneSummary(updated));
       }
 
@@ -873,9 +875,7 @@ export const createRequestHandler = (
             runtime.bodyMemoryBudget,
           ),
         );
-        const existing = runtime.db
-          .query("SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL")
-          .get(id) as any;
+        const existing = stmts.getSceneRawById.get(id) as any;
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
@@ -952,9 +952,10 @@ export const createRequestHandler = (
 
       if (pathname.startsWith("/api/scenes/") && req.method === "DELETE") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
-        const existing = runtime.db
-          .query("SELECT id, deleted_at FROM scenes WHERE id = ?")
-          .get(id) as { id: string; deleted_at: number | null } | null;
+        const existing = stmts.getSceneStateById.get(id) as {
+          id: string;
+          deleted_at: number | null;
+        } | null;
         if (!existing) {
           return jsonResponse(runtime, req, {
             success: true,
