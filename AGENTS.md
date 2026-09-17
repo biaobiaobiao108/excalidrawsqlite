@@ -24,7 +24,7 @@
   - 生产构建使用 Bun 1.4 支持的现代浏览器目标（当前为 `target: "browser"`；Bun 1.4 不接受 `esnext` 作为构建目标），仅支持最新 Chrome、Edge、Firefox、Safari 和 iOS Safari。严禁引入过时浏览器兼容降级包。
 - **按需动态加载**：
   - AI、Mermaid、CJK 字体、CodeMirror、pako 回退和字体子集化能力必须保持按需加载。新增大型依赖前先确认不会被静态 import 拉入主入口，优先使用动态 `import()`；
-  - 「霞鹜文楷」资源位于 `packages/excalidraw/fonts/LXGWWenKai`，必须通过 `Fonts.ts` 的动态 import 按需加载；Bun HTML Bundler 原生解析并打包导入的字体资产，构建阶段仅保留字体开源许可（`OFL.txt`），杜绝向 `build/` 目录冗余复制全量字体源文件；
+  - 「霞鹜文楷」通过入口 HTML 的 jsDelivr 样式表按需加载；该样式表内部注册分片 `@font-face`，编辑器 CSS 字体名必须使用 `"LXGW WenKai"`，不得把 CSS URL 写入 `@font-face src`，并同步在 CSP 中放行 `cdn.jsdelivr.net` 的样式与字体来源；
   - `encode`/`decode` 及图片、SVG 元数据编码接口是异步的，调用方必须 `await`。
 
 ## 4. 全栈开发与热重载规范 (Unified Dev Server)

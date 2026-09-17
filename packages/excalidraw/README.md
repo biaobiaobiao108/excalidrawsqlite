@@ -122,7 +122,7 @@ For self-hosting, copy the contents of `node_modules/@excalidraw/excalidraw/dist
 </script>
 ```
 
-字体选择器中的「霞鹜文楷」也是按字符范围延迟加载的；自托管时请一并复制 `fonts/LXGWWenKai` 目录，并保留其中的 `OFL.txt` 授权文件。
+字体选择器中的「霞鹜文楷」通过应用入口加载版本化的 jsDelivr 样式表 `https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.1.0/style.css`；该样式表负责注册按 Unicode 范围拆分的 `@font-face`。如果在其他宿主页面中使用这个字体，请添加相同的 `<link rel="stylesheet">`。
 
 ## Demo
 

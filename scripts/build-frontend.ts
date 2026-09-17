@@ -26,8 +26,8 @@ export async function buildFrontend(options: BuildOptions = {}) {
   fs.mkdirSync(outDir, { recursive: true });
 
   // 2. Copy static files from public/ directly to build/. The Bundler emits
-  // imported font assets itself; only preserve the dynamically hosted font
-  // license in the static output instead of copying the whole source tree.
+  // imported font assets itself, while the CDN-hosted CJK font is loaded from
+  // the stylesheet linked by the HTML entrypoint.
   if (fs.existsSync(publicDir)) {
     for (const entry of fs.readdirSync(publicDir, { withFileTypes: true })) {
       // The browser bundle owns all runtime font assets. These legacy public
@@ -47,20 +47,6 @@ export async function buildFrontend(options: BuildOptions = {}) {
       );
     }
   }
-  const fontLicense = path.join(
-    projectRoot,
-    "packages",
-    "excalidraw",
-    "fonts",
-    "LXGWWenKai",
-    "OFL.txt",
-  );
-  if (fs.existsSync(fontLicense)) {
-    const licenseDestination = path.join(outDir, "fonts", "LXGWWenKai");
-    fs.mkdirSync(licenseDestination, { recursive: true });
-    fs.copyFileSync(fontLicense, path.join(licenseDestination, "OFL.txt"));
-  }
-
   // 3. Sass compiler plugin for .scss files
   const sassPlugin = {
     name: "bun-sass-plugin",

@@ -17,6 +17,8 @@ import {
   ENV,
   FONT_FAMILY,
   getFontFamilyFallbacks,
+  LXGW_WENKAI_CSS_FONT,
+  LXGW_WENKAI_FONT,
   WINDOWS_EMOJI_FALLBACK_FONT,
 } from "./constants";
 
@@ -127,7 +129,12 @@ export const getFontFamilyString = ({
 }) => {
   for (const [fontFamilyString, id] of Object.entries(FONT_FAMILY)) {
     if (id === fontFamily) {
-      return `${fontFamilyString}${getFontFamilyFallbacks(id)
+      const cssFontFamily =
+        fontFamily === FONT_FAMILY[LXGW_WENKAI_FONT]
+          ? LXGW_WENKAI_CSS_FONT
+          : fontFamilyString;
+
+      return `${cssFontFamily}${getFontFamilyFallbacks(id)
         .map((x) => `, ${x}`)
         .join("")}`;
     }

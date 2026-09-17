@@ -61,13 +61,13 @@ export const isAllowedOrigin = (runtime: ServerRuntime, req: Request) => {
 const CSP_DIRECTIVES = [
   "default-src 'self'",
   "script-src 'self' 'wasm-unsafe-eval' blob:",
-  "style-src 'self'",
+  "style-src 'self' https://cdn.jsdelivr.net",
   // Mermaid and CodeMirror generate runtime styles. Scope the compatibility
   // allowance to CSS only; script-src remains nonce/source controlled.
-  "style-src-elem 'self' 'unsafe-inline'",
+  "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
   "style-src-attr 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
-  "font-src 'self' data:",
+  "font-src 'self' data: https://cdn.jsdelivr.net",
   "connect-src 'self' data: blob: https: wss:",
   "worker-src 'self' blob:",
   "frame-src 'self' https: blob:",

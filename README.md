@@ -16,7 +16,7 @@
 | **图元统计** | 无图元数量感知 | **内置图元数量统计**：基于 SQLite `json_array_length` 毫秒级统计并在卡片展示 |
 | **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存 | **本地文件系统独立归档 + ETag / 304 Not Modified 秒级增量协商缓存** |
 | **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **100% 纯净私有化**：零第三方外链打点，默认只访问本机/局域网服务 |
-| **中文字体支持** | 默认依赖外部在线 Google Fonts 或英文字体 | **内置「霞鹜文楷」CJK 手绘中文字体**（Unicode 子集化拆分按需动态加载） |
+| **中文字体支持** | 默认依赖外部在线 Google Fonts 或英文字体 | **通过 jsDelivr 加载「霞鹜文楷」CJK 手绘中文字体**（Unicode 子集化拆分按需加载） |
 | **身份认证安全** | 无或 Token 明文保存在浏览器本地存储 | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据 |
 | **浏览器与构建** | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置 | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
 | **前端现代体验** | 传统弹窗布局与全局媒体查询 | **原生 `<dialog>` 无障碍模型（`aria-modal`） + CSS `@container` 容器查询与 `:has()` 现代选择器** |
@@ -56,7 +56,7 @@
 ### 5. ⚡ 现代浏览器性能基线
 
 - 生产构建面向现代浏览器（支持最新 Chrome、Edge、Firefox、Safari、iOS Safari），去除过时 polyfill。Bun 1.4 使用 `target: "browser"` 表达该目标。
-- **按需动态加载**：Mermaid 图表引擎、CodeMirror 代码编辑器、CJK「霞鹜文楷」手绘字体、pako 压缩回退均延迟至使用时加载，首屏极速秒开。
+- **按需动态加载**：Mermaid 图表引擎、CodeMirror 代码编辑器、CJK「霞鹜文楷」手绘字体（通过版本化 CDN 样式表）、pako 压缩回退均延迟至使用时加载，首屏极速秒开。
 - **原生压缩流**：优先使用现代浏览器原生 `CompressionStream` 与 `DecompressionStream`。
 
 ### 6. 🔐 企业级轻量鉴权与安全响应头
@@ -235,7 +235,7 @@ AUTH_PASSWORD=your-password bun run dev
 │   │   └── cloudSync.ts    # 30s 串行防抖自动保存队列与多标签同步
 │   └── index.html          # 前端 HTML 入口 (直接由 Bun.build 解析打包)
 ├── packages/               # Excalidraw 核心内部包 (Monorepo)
-│   ├── excalidraw/         # 核心渲染与画布引擎 (包含霞鹜文楷本地子集包)
+│   ├── excalidraw/         # 核心渲染与画布引擎 (霞鹜文楷由 CDN 样式表加载)
 │   ├── element/            # 图元数据结构与计算
 │   └── ...
 ├── tests/

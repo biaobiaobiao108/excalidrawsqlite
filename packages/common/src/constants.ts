@@ -118,6 +118,7 @@ export const FONT_SIZES = {
 
 export const CJK_HAND_DRAWN_FALLBACK_FONT = "Xiaolai";
 export const LXGW_WENKAI_FONT = "霞鹜文楷";
+export const LXGW_WENKAI_CSS_FONT = "LXGW WenKai";
 export const WINDOWS_EMOJI_FALLBACK_FONT = "Segoe UI Emoji";
 
 /**

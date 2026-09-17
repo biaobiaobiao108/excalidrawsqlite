@@ -62,8 +62,6 @@ export class Fonts {
 
   private static _cjkFontFacesPromise: Promise<void> | null = null;
 
-  private static _lxgwWenKaiFontFacesPromise: Promise<void> | null = null;
-
   public static get registered() {
     // lazy load the font registration
     if (!Fonts._registered) {
@@ -208,10 +206,6 @@ export class Fonts {
     const families = Fonts.getUniqueFamilies(elements);
     const charsPerFamily = Fonts.getCharsPerFamily(elements);
 
-    if (families.includes(FONT_FAMILY[LXGW_WENKAI_FONT])) {
-      await Fonts.ensureLXGWWenKaiFontFaces();
-    }
-
     // for simplicity, assuming we have just one family with the CJK handdrawn fallback
     const familyWithCJK = families.find((x) =>
       getFontFamilyFallbacks(x).includes(CJK_HAND_DRAWN_FALLBACK_FONT),
@@ -249,10 +243,6 @@ export class Fonts {
     charsPerFamily: Record<number, Set<string>>,
     ownerDocument: Document,
   ) {
-    if (fontFamilies.includes(FONT_FAMILY[LXGW_WENKAI_FONT])) {
-      await Fonts.ensureLXGWWenKaiFontFaces();
-    }
-
     const needsCJKFont = fontFamilies.some(
       (family) =>
         getFontFamilyFallbacks(family).includes(CJK_HAND_DRAWN_FALLBACK_FONT) &&
@@ -313,29 +303,6 @@ export class Fonts {
     );
 
     await Fonts._cjkFontFacesPromise;
-  };
-
-  private static ensureLXGWWenKaiFontFaces = async () => {
-    const registeredFamily = Fonts.registered.get(
-      FONT_FAMILY[LXGW_WENKAI_FONT],
-    );
-
-    if (!registeredFamily || registeredFamily.fontFaces.length) {
-      return;
-    }
-
-    Fonts._lxgwWenKaiFontFacesPromise ??= import("./LXGWWenKai").then(
-      ({ LXGWWenKaiFontFaces }) => {
-        registeredFamily.fontFaces.push(
-          ...LXGWWenKaiFontFaces.map(
-            ({ uri, descriptors }) =>
-              new ExcalidrawFontFace(LXGW_WENKAI_FONT, uri, descriptors),
-          ),
-        );
-      },
-    );
-
-    await Fonts._lxgwWenKaiFontFacesPromise;
   };
 
   private static *fontFacesLoader(
@@ -498,8 +465,8 @@ export class Fonts {
     init("Nunito", ...NunitoFontFaces);
     init("Virgil", ...VirgilFontFaces);
 
-    // This full CJK font is split and loaded on demand to keep the initial
-    // bundle small.
+    // Keep the persisted family registered; its split @font-face rules come
+    // from the CDN stylesheet linked by the app entrypoint.
     init(LXGW_WENKAI_FONT);
 
     // CJK fallback font faces are loaded on demand to keep the initial bundle small.

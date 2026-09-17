@@ -2,6 +2,11 @@ import { describe, expect, it } from "bun:test";
 
 import { BinaryHeap } from "../../packages/common/src/binary-heap";
 import { isBounds } from "../../packages/common/src/bounds";
+import {
+  FONT_FAMILY,
+  LXGW_WENKAI_FONT,
+} from "../../packages/common/src/constants";
+import { getFontFamilyString } from "../../packages/common/src/utils";
 
 describe("common primitives", () => {
   it("keeps BinaryHeap values ordered by score", () => {
@@ -27,5 +32,11 @@ describe("common primitives", () => {
     ["0,0,10,10", false],
   ])("validates bounds (%s)", (value, expected) => {
     expect(isBounds(value)).toBe(expected);
+  });
+
+  it("uses the CDN family name for LXGW WenKai", () => {
+    expect(
+      getFontFamilyString({ fontFamily: FONT_FAMILY[LXGW_WENKAI_FONT] }),
+    ).toBe("LXGW WenKai, sans-serif, Segoe UI Emoji");
   });
 });
