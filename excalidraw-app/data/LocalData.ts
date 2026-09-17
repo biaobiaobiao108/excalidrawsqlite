@@ -50,6 +50,7 @@ export const localStorageQuotaExceededAtom = atom(false);
 
 class LocalFileManager extends FileManager {
   clearObsoleteFiles = async (opts: { currentFileIds: FileId[] }) => {
+    const currentFileIds = new Set(opts.currentFileIds);
     await entries(filesStore).then((entries) => {
       for (const [id, imageData] of entries as [FileId, BinaryFileData][]) {
         // if image is unused (not on canvas) & is older than 1 day, delete it
@@ -59,7 +60,7 @@ class LocalFileManager extends FileManager {
         if (
           (!imageData.lastRetrieved ||
             Date.now() - imageData.lastRetrieved > 24 * 3600 * 1000) &&
-          !opts.currentFileIds.includes(id as FileId)
+          !currentFileIds.has(id as FileId)
         ) {
           del(id, filesStore);
         }

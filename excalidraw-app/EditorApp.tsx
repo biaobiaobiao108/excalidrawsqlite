@@ -48,6 +48,7 @@ import type { ResolvablePromise } from "@excalidraw/common/utils";
 
 import CustomStats from "./CustomStats";
 import { useAtomValue } from "./app-jotai";
+import { clearPwaEvent, getPwaEvent } from "./app-pwa";
 import { STORAGE_KEYS, SYNC_BROWSER_TABS_TIMEOUT } from "./app_constants";
 import { AppFooter } from "./components/AppFooter";
 import { AppMainMenu } from "./components/AppMainMenu";
@@ -101,38 +102,6 @@ import {
 import type { CloudSaveSnapshot } from "./data/cloudSync";
 
 window.EXCALIDRAW_THROTTLE_RENDER = true;
-
-declare global {
-  interface BeforeInstallPromptEventChoiceResult {
-    outcome: "accepted" | "dismissed";
-  }
-
-  interface BeforeInstallPromptEvent extends Event {
-    prompt(): Promise<void>;
-    userChoice: Promise<BeforeInstallPromptEventChoiceResult>;
-  }
-
-  interface WindowEventMap {
-    beforeinstallprompt: BeforeInstallPromptEvent;
-  }
-}
-
-let pwaEvent: BeforeInstallPromptEvent | null = null;
-
-// Adding a listener outside of the component as it may (?) need to be
-// subscribed early to catch the event.
-//
-// Also note that it will fire only if certain heuristics are met (user has
-// used the app for some time, etc.)
-window.addEventListener(
-  "beforeinstallprompt",
-  (event: BeforeInstallPromptEvent) => {
-    // prevent Chrome <= 67 from automatically showing the prompt
-    event.preventDefault();
-    // cache for later use
-    pwaEvent = event;
-  },
-);
 
 let isSelfEmbedding = false;
 
@@ -1482,14 +1451,15 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
             {
               label: t("labels.installPWA"),
               category: DEFAULT_CATEGORIES.app,
-              predicate: () => !!pwaEvent,
+              predicate: () => !!getPwaEvent(),
               perform: () => {
-                if (pwaEvent) {
-                  pwaEvent.prompt();
-                  pwaEvent.userChoice.then(() => {
-                    // event cannot be reused, but we'll hopefully
+                const event = getPwaEvent();
+                if (event) {
+                  event.prompt();
+                  event.userChoice.then(() => {
+                    // event cannot be reused, but we’ll hopefully
                     // grab new one as the event should be fired again
-                    pwaEvent = null;
+                    clearPwaEvent();
                   });
                 }
               },

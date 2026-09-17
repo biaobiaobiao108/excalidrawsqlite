@@ -17,6 +17,7 @@ import type {
   BinaryFiles,
 } from "@excalidraw/excalidraw/types";
 
+const textEncoder = new TextEncoder();
 type FileVersion = Required<BinaryFileData>["version"];
 
 export class FileManager {
@@ -240,7 +241,7 @@ export const encodeFilesForUpload = async ({
   }[] = [];
 
   for (const [id, fileData] of files) {
-    const buffer = new TextEncoder().encode(fileData.dataURL);
+    const buffer = textEncoder.encode(fileData.dataURL);
 
     const encodedFile = await compressData<BinaryFileMetadata>(buffer, {
       encryptionKey,

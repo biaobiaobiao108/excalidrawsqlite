@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 
+import "./app-pwa";
 import { Provider, appJotaiStore } from "./app-jotai";
 import { WorkspaceHome } from "./components/WorkspaceHome";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
