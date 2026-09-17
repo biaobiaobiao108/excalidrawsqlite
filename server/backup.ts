@@ -106,12 +106,12 @@ export const createFullBackup = async (
         null,
         2,
       );
-      const entries: Record<string, BlobPart> = {
+      const databaseFile = Bun.file(snapshot.tempBackupFile);
+      const entries: Record<string, string | Blob> = {
         "excalidraw.db": databaseFile,
         "manifest.json": manifest,
       };
 
-      const databaseFile = Bun.file(snapshot.tempBackupFile);
       let totalBytes = databaseFile.size;
       if (totalBytes > runtime.config.maxBackupBytes) {
         throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
