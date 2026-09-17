@@ -50,8 +50,8 @@
 
 ### 4. 🧼 极致纯净私有化 (Privacy First)
 
-- 彻底剔除所有外部跟踪分析打点代码、Sentry 上报和 Google Fonts 外部请求。
-- 默认运行路径 100% 仅访问本机/局域网服务；只有主动使用 Mermaid 或外部嵌入时才会发出对应请求。
+- 彻底剔除所有外部跟踪分析打点代码与 Sentry 上报；字体不直连 Google Fonts，统一使用版本化 jsDelivr CDN。
+- 默认业务数据路径仅访问本机/局域网服务；字体 CDN、Mermaid 或外部嵌入属于明确的静态资源依赖。
 
 ### 5. ⚡ 现代浏览器性能基线
 
@@ -235,7 +235,7 @@ AUTH_PASSWORD=your-password bun run dev
 │   │   └── cloudSync.ts    # 30s 串行防抖自动保存队列与多标签同步
 │   └── index.html          # 前端 HTML 入口 (直接由 Bun.build 解析打包)
 ├── packages/               # Excalidraw 核心内部包 (Monorepo)
-│   ├── excalidraw/         # 核心渲染与画布引擎 (霞鹜文楷由 CDN 样式表加载)
+│   ├── excalidraw/         # 核心渲染与画布引擎 (Excalifont 本地，其余字体由 CDN 加载)
 │   ├── element/            # 图元数据结构与计算
 │   └── ...
 ├── tests/
