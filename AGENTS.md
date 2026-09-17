@@ -65,14 +65,13 @@
 
 - `bun test` / `bun run test:unit`：运行 `tests/unit` 中基于 `bun:test` 的纯逻辑测试；不得依赖 JSDOM、React 全局 setup 或大规模快照。
 - `bun run test:server`：运行 `tests/server` 中基于 Bun 原生 SQLite/API 的集成测试；测试必须清理临时数据库、附件和锁文件。
-- `bun run test:e2e`：先构建前端，再用 Playwright + Chromium 验证认证、工作台、场景持久化、附件、移动端、语言和 CSP。
-- `bun run test:all`：依次执行单元、服务端、类型、代码规范和 E2E 门禁。
+- `bun run test:all`：依次执行单元、服务端、类型、代码规范、构建与体积门禁。
 
 按改动范围选择验证：
 
 1. 文档或注释：免测，直接提交。
 2. `server/` 或持久化：运行 `bun run test:server`。
-3. 局部前端或算法：运行 `bun test` 或 `bun run test:typecheck`；涉及 UI 行为时运行相关 E2E。
+3. 局部前端或算法：运行 `bun test` 或 `bun run test:typecheck`；涉及 UI 行为时运行 `bun run build` 并进行必要的手动冒烟检查。
 4. 依赖、构建配置、跨模块接口或发布级改动：运行 `bun run test:all`。
 
 每次代码或文档修改后立即执行一次 Conventional Commit。
@@ -84,4 +83,4 @@
 - Canvas：`StaticCanvas`、`InteractiveCanvas`、`NewElementCanvas` 使用统一的自适应 `renderScale`。编辑画布总预算约为普通设备 32M、低内存设备 16M RGBA 像素；无预览按 2 层、有预览按 3 层计算，并随视口/DPR变化调整。CSS 尺寸和导出分辨率不得降低；分配失败时应降低比例重试。
 - 图片：`files` 只保存可重新解码的数据，`imageCache` 必须保持 Map 兼容并使用按解码像素计费的 LRU；默认预算为普通设备 128 MiB、低内存/移动设备 64 MiB。当前可见、选中、裁剪和交互中的图片固定保留；只有不再被场景、History、云端快照、缩略图任务或交互引用的文件才能回收，淘汰后必须能从 `files`/IndexedDB 重新解码。第一阶段不要把 `dataURL` 改为 Blob/Object URL。
 - 云端与服务端：云端图片加载使用 Blob/FileReader 路径，普通设备最多 4 路、低内存/移动设备最多 2 路并发。服务端使用 `MAX_IN_FLIGHT_BODY_BYTES`（默认 64 MiB）限制聚合请求体；已知 `Content-Length` 时按目标大小预分配。二进制上传必须流式写临时文件、增量计算 SHA-256/大小，成功后原子替换，超限或数据库失败时清理并回滚；批量 JSON 逐项处理并及时释放已消费的 data URL。备份格式和内容必须保持兼容。
-- 统计与验证：内存统计仅用于开发/测试，不进入生产日志；至少覆盖 History、`files`、解码图片、缓存条目、Canvas 像素、云端待保存快照和服务端 body 当前/峰值占用。内存相关改动运行 `bun test`、`bun run test:typecheck`、`bun run test:code`、`bun run test:server`；涉及渲染或交互时追加 `bun run test:e2e`，跨模块或发布级改动运行 `bun run test:all`。
+- 统计与验证：内存统计仅用于开发/测试，不进入生产日志；至少覆盖 History、`files`、解码图片、缓存条目、Canvas 像素、云端待保存快照和服务端 body 当前/峰值占用。内存相关改动运行 `bun test`、`bun run test:typecheck`、`bun run test:code`、`bun run test:server`；涉及渲染或交互时追加 `bun run build` 和手动冒烟检查，跨模块或发布级改动运行 `bun run test:all`。

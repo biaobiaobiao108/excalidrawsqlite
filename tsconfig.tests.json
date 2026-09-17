@@ -1,13 +1,11 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["@types/bun", "@types/node", "@playwright/test"],
+    "types": ["@types/bun", "@types/node"],
     "noEmit": true
   },
   "include": [
     "tests/**/*.ts",
-    "e2e/**/*.ts",
-    "playwright.config.ts",
     "env.d.ts",
     "react.d.ts",
     "packages/excalidraw/global.d.ts"

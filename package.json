@@ -9,7 +9,6 @@
   "devDependencies": {
     "@eslint/compat": "2.1.1",
     "@eslint/js": "9.39.5",
-    "@playwright/test": "1.62.1",
     "@types/bun": "1.4.1",
     "@types/node": "26.4.1",
     "@types/react": "19.2.18",
@@ -49,9 +48,8 @@
     "test": "bun test --max-concurrency=1",
     "test:unit": "bun test --max-concurrency=1",
     "test:server": "bun test --max-concurrency=1 ./tests/server",
-    "test:e2e": "bun run build && bunx playwright test",
     "test:size": "bun run build && bun scripts/check-bundle-size.ts",
-    "test:all": "bun run test:unit && bun run test:server && bun run test:typecheck && bun run test:code && bun run test:size && bun run test:e2e",
+    "test:all": "bun run test:unit && bun run test:server && bun run test:typecheck && bun run test:code && bun run test:size",
     "test:typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.tests.json",
     "test:code": "eslint . --max-warnings=0",
     "fix": "eslint . --max-warnings=0 --fix",

@@ -241,7 +241,6 @@ AUTH_PASSWORD=your-password bun run dev
 ├── tests/
 │   ├── unit/                # Bun 原生纯逻辑单元测试
 │   └── server/              # Bun SQLite/API 集成测试
-├── e2e/                     # Playwright + Chromium 全栈测试
 ├── docs/                   # GitHub Pages 介绍落地页 (单文件、现代化动效与手绘 SVG)
 ├── Dockerfile              # oven/bun:1.4.2-alpine 纯 Bun 多阶段极小容器构建 (零 Node.js)
 ├── docker-compose.yml      # 容器化编排配置文件
@@ -324,10 +323,7 @@ bun run build
 # 首屏 JS 512 KiB、CSS 220 KiB；懒加载 JS 1 MiB、CSS 220 KiB
 bun run test:size
 
-# 运行真实浏览器 Playwright E2E 冒烟测试
-bun run test:e2e
-
-# 一键运行全量质量测试 (类型、语法、后端与前端)
+# 一键运行全量质量测试 (单元、服务端、类型、语法、构建与体积)
 bun run test:all
 ```
 
