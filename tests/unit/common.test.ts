@@ -5,9 +5,8 @@ import { isBounds } from "../../packages/common/src/bounds";
 import {
   FONT_FAMILY,
   LXGW_WENKAI_FONT,
-  SOURCE_HAN_SANS_FONT,
+  SYSTEM_FONT,
 } from "../../packages/common/src/constants";
-import { FONT_METADATA } from "../../packages/common/src/font-metadata";
 import { getFontFamilyString } from "../../packages/common/src/utils";
 
 describe("common primitives", () => {
@@ -42,26 +41,17 @@ describe("common primitives", () => {
     ).toBe("LXGW WenKai, sans-serif, Segoe UI Emoji");
   });
 
-  it("uses the CDN family name for Source Han Sans", () => {
+  it("uses the system generic family for 系统字体", () => {
     expect(
       getFontFamilyString({
-        fontFamily: FONT_FAMILY[SOURCE_HAN_SANS_FONT],
+        fontFamily: FONT_FAMILY[SYSTEM_FONT],
       }),
-    ).toBe("Source Han Sans SC VF, sans-serif, Segoe UI Emoji");
-  });
-
-  it("keeps Source Han Sans metrics available for text layout", () => {
-    expect(FONT_METADATA[FONT_FAMILY[SOURCE_HAN_SANS_FONT]]?.metrics).toEqual({
-      unitsPerEm: 1000,
-      ascender: 1160,
-      descender: -288,
-      lineHeight: 1.25,
-    });
+    ).toBe("system-ui, sans-serif");
   });
 
   it("uses system fallbacks for unsupported Excalifont glyphs", () => {
     expect(
       getFontFamilyString({ fontFamily: FONT_FAMILY.Excalifont }),
-    ).toBe("Excalifont, sans-serif, Segoe UI Emoji");
+    ).toBe("Excalifont, Xiaolai SC, sans-serif, Segoe UI Emoji");
   });
 });

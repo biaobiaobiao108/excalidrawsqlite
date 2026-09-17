@@ -112,9 +112,9 @@ import { exportToSvg } from "@excalidraw/excalidraw";
 
 ## Self-hosting fonts
 
-In this app, Excalifont remains bundled locally as the default drawing font. LXGW WenKai and Source Han Sans are loaded from versioned jsDelivr stylesheets.
+In this app, Excalifont remains bundled locally as the default drawing font. LXGW WenKai is loaded from a versioned jsDelivr stylesheet, and Xiaolai is loaded as Excalifont's CJK fallback.
 
-For self-hosting the package assets, copy the contents of `node_modules/@excalidraw/excalidraw/dist/prod/fonts` into the path where your app serves static assets, for example `public/`. Then set `window.EXCALIDRAW_ASSET_PATH` to that same path. If the deployment cannot reach the CDN, mirror or replace the LXGW WenKai stylesheet link in the host page:
+For self-hosting the package assets, copy the contents of `node_modules/@excalidraw/excalidraw/dist/prod/fonts` into the path where your app serves static assets, for example `public/`. Then set `window.EXCALIDRAW_ASSET_PATH` to that same path. If the deployment cannot reach the CDN, mirror or replace the LXGW WenKai and Xiaolai stylesheet links in the host page:
 
 ```html
 <script>
@@ -124,7 +124,7 @@ For self-hosting the package assets, copy the contents of `node_modules/@excalid
 
 字体选择器中的「霞鹜文楷」通过应用入口加载版本化的 jsDelivr 样式表 `https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.1.0/style.css`；该样式表负责注册按 Unicode 范围拆分的 `@font-face`。如果在其他宿主页面中使用这个字体，请添加相同的 `<link rel="stylesheet">`。
 
-字体选择器中的「思源黑体」通过应用入口加载版本化的 jsDelivr 样式表 `https://cdn.jsdelivr.net/npm/cn-fontsource-source-han-sans-sc-vf@1.0.10/font.css`；该样式表负责注册按 Unicode 范围拆分的 `@font-face`，CSS 字体名为 `Source Han Sans SC VF`。
+Excalifont 的中文字符通过应用入口加载版本化的 Xiaolai jsDelivr 样式表 `https://cdn.jsdelivr.net/npm/@chinese-fonts/xiaolai@3.0.0/dist/Xiaolai/result.css`；该样式表负责注册 CSS 字体名为 `Xiaolai SC` 的分片 `@font-face`。字体选择器中的「系统字体」直接使用 `system-ui, sans-serif`。
 
 ## Demo
 

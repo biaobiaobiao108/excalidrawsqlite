@@ -5,7 +5,7 @@ import React, { useCallback, useMemo } from "react";
 import {
   FONT_FAMILY,
   LXGW_WENKAI_FONT,
-  SOURCE_HAN_SANS_FONT,
+  SYSTEM_FONT,
 } from "@excalidraw/common";
 
 import type { FontFamilyValues } from "@excalidraw/element/types";
@@ -37,10 +37,10 @@ export const DEFAULT_FONTS = [
     testId: "font-family-lxgw-wenkai",
   },
   {
-    value: FONT_FAMILY[SOURCE_HAN_SANS_FONT],
+    value: FONT_FAMILY[SYSTEM_FONT],
     icon: FontFamilyNormalIcon,
-    text: SOURCE_HAN_SANS_FONT,
-    testId: "font-family-source-han-sans",
+    text: SYSTEM_FONT,
+    testId: "font-family-system",
   },
 ];
 

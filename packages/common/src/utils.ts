@@ -17,10 +17,13 @@ import {
   ENV,
   FONT_FAMILY,
   getFontFamilyFallbacks,
+  CJK_HAND_DRAWN_FALLBACK_CSS_FONT,
+  CJK_HAND_DRAWN_FALLBACK_FONT,
   LXGW_WENKAI_CSS_FONT,
   LXGW_WENKAI_FONT,
-  SOURCE_HAN_SANS_CSS_FONT,
   SOURCE_HAN_SANS_FONT,
+  SYSTEM_FONT,
+  SYSTEM_FONT_CSS_FONT,
   WINDOWS_EMOJI_FALLBACK_FONT,
 } from "./constants";
 
@@ -134,10 +137,13 @@ export const getFontFamilyString = ({
       case "Cascadia":
         // Preserve the CSS name for legacy scenes without shipping the font.
         return "Cascadia Code";
+      case CJK_HAND_DRAWN_FALLBACK_FONT:
+        return CJK_HAND_DRAWN_FALLBACK_CSS_FONT;
       case LXGW_WENKAI_FONT:
         return LXGW_WENKAI_CSS_FONT;
       case SOURCE_HAN_SANS_FONT:
-        return SOURCE_HAN_SANS_CSS_FONT;
+      case SYSTEM_FONT:
+        return SYSTEM_FONT_CSS_FONT;
       default:
         return fontFamilyName;
     }
@@ -146,6 +152,13 @@ export const getFontFamilyString = ({
   for (const [fontFamilyString, id] of Object.entries(FONT_FAMILY)) {
     if (id === fontFamily) {
       const cssFontFamily = getCSSFontFamilyName(fontFamilyString);
+
+      if (
+        fontFamilyString === SYSTEM_FONT ||
+        fontFamilyString === SOURCE_HAN_SANS_FONT
+      ) {
+        return cssFontFamily;
+      }
 
       return (
         cssFontFamily +

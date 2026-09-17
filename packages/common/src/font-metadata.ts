@@ -4,10 +4,10 @@ import type {
 } from "@excalidraw/element/types";
 
 import {
+  CJK_HAND_DRAWN_FALLBACK_FONT,
   FONT_FAMILY,
   FONT_FAMILY_FALLBACKS,
   LXGW_WENKAI_FONT,
-  SOURCE_HAN_SANS_FONT,
 } from "./constants";
 
 /**
@@ -124,13 +124,14 @@ export const FONT_METADATA: Record<number, FontMetadata> = {
       lineHeight: 1.25,
     },
   },
-  [FONT_FAMILY[SOURCE_HAN_SANS_FONT]]: {
+  [FONT_FAMILY_FALLBACKS[CJK_HAND_DRAWN_FALLBACK_FONT]]: {
     metrics: {
       unitsPerEm: 1000,
-      ascender: 1160,
-      descender: -288,
+      ascender: 880,
+      descender: -144,
       lineHeight: 1.25,
     },
+    fallback: true,
   },
   [FONT_FAMILY_FALLBACKS["Segoe UI Emoji"]]: {
     metrics: {

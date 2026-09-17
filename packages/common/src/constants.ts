@@ -116,10 +116,13 @@ export const FONT_SIZES = {
   xl: 36,
 } as const;
 
+export const CJK_HAND_DRAWN_FALLBACK_FONT = "Xiaolai";
+export const CJK_HAND_DRAWN_FALLBACK_CSS_FONT = "Xiaolai SC";
 export const LXGW_WENKAI_FONT = "霞鹜文楷";
 export const LXGW_WENKAI_CSS_FONT = "LXGW WenKai";
 export const SOURCE_HAN_SANS_FONT = "思源黑体";
-export const SOURCE_HAN_SANS_CSS_FONT = "Source Han Sans SC VF";
+export const SYSTEM_FONT = "系统字体";
+export const SYSTEM_FONT_CSS_FONT = "system-ui, sans-serif";
 export const WINDOWS_EMOJI_FALLBACK_FONT = "Segoe UI Emoji";
 
 /**
@@ -144,7 +147,11 @@ export const FONT_FAMILY = {
   "Liberation Sans": 9,
   Assistant: 10,
   [LXGW_WENKAI_FONT]: 11,
+  // Keep this ID as a legacy alias for scenes created before Source Han Sans
+  // was removed. It is rendered with the system font and is not registered in
+  // the font picker anymore.
   [SOURCE_HAN_SANS_FONT]: 12,
+  [SYSTEM_FONT]: 13,
 };
 
 // Segoe UI Emoji fails to properly fallback for some glyphs: ∞, ∫, ≠
@@ -158,6 +165,7 @@ export const FONT_FAMILY_GENERIC_FALLBACKS = {
 };
 
 export const FONT_FAMILY_FALLBACKS = {
+  [CJK_HAND_DRAWN_FALLBACK_FONT]: 100,
   ...FONT_FAMILY_GENERIC_FALLBACKS,
   [WINDOWS_EMOJI_FALLBACK_FONT]: 1000,
 };
@@ -179,6 +187,15 @@ export const getFontFamilyFallbacks = (
   fontFamily: number,
 ): Array<keyof typeof FONT_FAMILY_FALLBACKS> => {
   const genericFallbackFont = getGenericFontFamilyFallback(fontFamily);
+
+  if (fontFamily === FONT_FAMILY.Excalifont) {
+    return [
+      CJK_HAND_DRAWN_FALLBACK_FONT,
+      genericFallbackFont,
+      WINDOWS_EMOJI_FALLBACK_FONT,
+    ];
+  }
+
   return [genericFallbackFont, WINDOWS_EMOJI_FALLBACK_FONT];
 };
 
