@@ -91,6 +91,17 @@ let currentLang: Language = defaultLang;
 let currentLangData = {};
 let languageRequestId = 0;
 
+const loadLocaleData = async (code: string) => {
+  const response = await fetch(
+    `/locales/${encodeURIComponent(code)}.json`,
+    { credentials: "same-origin" },
+  );
+  if (!response.ok) {
+    throw new Error(`Locale request failed with status ${response.status}`);
+  }
+  return response.json();
+};
+
 export const setLanguage = async (lang: Language) => {
   const requestId = ++languageRequestId;
   const previousLang = currentLang;
@@ -101,7 +112,7 @@ export const setLanguage = async (lang: Language) => {
     nextLangData = {};
   } else {
     try {
-      nextLangData = await import(`./locales/${lang.code}.json`);
+      nextLangData = await loadLocaleData(lang.code);
     } catch (error: any) {
       console.error(`Failed to load language ${lang.code}:`, error.message);
       // Keep Chinese available even when the production locale chunk is

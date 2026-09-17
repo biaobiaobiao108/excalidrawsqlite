@@ -1177,6 +1177,17 @@ describe("cloud persistence server", () => {
     expect(asset.status).toBe(200);
     expect(asset.headers.get("cache-control")).toContain("immutable");
 
+    await fs.mkdir(path.join(staticDir, "locales"), { recursive: true });
+    await fs.writeFile(
+      path.join(staticDir, "locales", "en.json"),
+      '{"language":"English"}',
+    );
+    const locale = await request(handler, "/locales/en.json");
+    expect(locale.status).toBe(200);
+    expect(locale.headers.get("content-type")).toContain("application/json");
+    expect(locale.headers.get("cache-control")).toBe("no-cache");
+    expect(await locale.json()).toEqual({ language: "English" });
+
     const hashedRootAsset = await request(handler, "/chunk-a1b2c3d4.js");
     expect(hashedRootAsset.headers.get("cache-control")).toContain("immutable");
 
