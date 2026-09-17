@@ -182,8 +182,8 @@ export class Fonts {
    * Load a font family for the given text before rendering it.
    *
    * This is useful for text editing where the text is not in the scene yet.
-   * It also keeps dynamically registered fonts, such as LXGW WenKai, on the
-   * same loading path as fonts discovered from scene elements.
+   * It also keeps CDN-backed fonts, such as LXGW WenKai, on the same loading
+   * path as fonts discovered from scene elements.
    */
   public static loadFontFamily = async (
     fontFamily: ExcalidrawTextElement["fontFamily"],
