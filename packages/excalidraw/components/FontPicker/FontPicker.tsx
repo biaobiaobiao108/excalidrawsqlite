@@ -6,6 +6,7 @@ import { FONT_FAMILY, LXGW_WENKAI_FONT } from "@excalidraw/common";
 
 import type { FontFamilyValues } from "@excalidraw/element/types";
 
+import { t } from "../../i18n";
 import { RadioSelection } from "../RadioSelection";
 import { ButtonSeparator } from "../ButtonSeparator";
 import {
