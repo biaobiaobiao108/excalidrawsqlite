@@ -81,7 +81,7 @@ export const DropDownMenuItemBadge = ({
     padding: "2px 4px",
     borderRadius: 6,
     fontSize: 9,
-    fontFamily: "Cascadia Code, monospace",
+    fontFamily: "monospace",
     border: theme === THEME.LIGHT ? "1.5px solid white" : "none",
   };
 

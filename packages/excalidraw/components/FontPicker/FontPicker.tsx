@@ -2,15 +2,13 @@ import { Popover } from "radix-ui";
 import clsx from "clsx";
 import React, { useCallback, useMemo } from "react";
 
-import { FONT_FAMILY } from "@excalidraw/common";
+import { FONT_FAMILY, LXGW_WENKAI_FONT } from "@excalidraw/common";
 
 import type { FontFamilyValues } from "@excalidraw/element/types";
 
-import { t } from "../../i18n";
 import { RadioSelection } from "../RadioSelection";
 import { ButtonSeparator } from "../ButtonSeparator";
 import {
-  FontFamilyCodeIcon,
   FontFamilyNormalIcon,
   FreedrawIcon,
 } from "../icons";
@@ -28,16 +26,10 @@ export const DEFAULT_FONTS = [
     testId: "font-family-hand-drawn",
   },
   {
-    value: FONT_FAMILY.Nunito,
+    value: FONT_FAMILY[LXGW_WENKAI_FONT],
     icon: FontFamilyNormalIcon,
-    text: t("labels.normal"),
-    testId: "font-family-normal",
-  },
-  {
-    value: FONT_FAMILY["Comic Shanns"],
-    icon: FontFamilyCodeIcon,
-    text: t("labels.code"),
-    testId: "font-family-code",
+    text: LXGW_WENKAI_FONT,
+    testId: "font-family-lxgw-wenkai",
   },
 ];
 

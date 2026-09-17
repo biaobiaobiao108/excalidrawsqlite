@@ -113,7 +113,7 @@ const addFrameLabelsAsTextElements = (
         newTextElement({
           x: element.x,
           y: element.y - FRAME_STYLE.nameOffsetY,
-          fontFamily: FONT_FAMILY.Helvetica,
+          fontFamily: FONT_FAMILY.Excalifont,
           fontSize: FRAME_STYLE.nameFontSize,
           lineHeight:
             FRAME_STYLE.nameLineHeight as ExcalidrawTextElement["lineHeight"],

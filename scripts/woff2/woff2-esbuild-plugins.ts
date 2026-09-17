@@ -100,10 +100,6 @@ export const woff2ServerPlugin = (options: { outdir?: string } = {}): Plugin => 
 
       const outputDir = path.resolve(outdir);
       await mkdir(outputDir, { recursive: true });
-      const xiaolaiPath = path.resolve(
-        import.meta.dir,
-        "./assets/Xiaolai-Regular.ttf",
-      );
       const emojiPath = path.resolve(
         import.meta.dir,
         "./assets/NotoEmoji-Regular.ttf",
@@ -112,25 +108,8 @@ export const woff2ServerPlugin = (options: { outdir?: string } = {}): Plugin => 
         import.meta.dir,
         "./assets/NotoEmoji-Regular-2048.ttf",
       );
-      const liberationPath = path.resolve(
-        import.meta.dir,
-        "./assets/LiberationSans-Regular.ttf",
-      );
-      const liberationPath2048 = path.resolve(
-        import.meta.dir,
-        "./assets/LiberationSans-Regular-2048.ttf",
-      );
-
-      const xiaolaiFont = Font.create(
-        await Bun.file(xiaolaiPath).arrayBuffer(),
-        { type: "ttf" },
-      );
       const emojiFont = Font.create(
         await Bun.file(emojiPath).arrayBuffer(),
-        { type: "ttf" },
-      );
-      const liberationFont = Font.create(
-        await Bun.file(liberationPath).arrayBuffer(),
         { type: "ttf" },
       );
 
@@ -139,7 +118,7 @@ export const woff2ServerPlugin = (options: { outdir?: string } = {}): Plugin => 
       );
       for (const [family, familyFonts] of sortedFonts) {
         const regularFonts = familyFonts.Regular;
-        if (!regularFonts?.length || family.includes("Xiaolai")) {
+        if (!regularFonts?.length) {
           continue;
         }
 
@@ -152,14 +131,11 @@ export const woff2ServerPlugin = (options: { outdir?: string } = {}): Plugin => 
         }
 
         const mergedFontPath = path.resolve(outputDir, `${family}.ttf`);
-        const fallbackFontsPaths = family.includes("Excalifont")
-          ? [xiaolaiPath]
-          : [];
-        if (baseFont.data.head.unitsPerEm === 2048) {
-          fallbackFontsPaths.push(emojiPath2048, liberationPath2048);
-        } else {
-          fallbackFontsPaths.push(emojiPath, liberationPath);
-        }
+        const fallbackFontsPaths = [
+          baseFont.data.head.unitsPerEm === 2048
+            ? emojiPath2048
+            : emojiPath,
+        ];
 
         const mergeResult = Bun.spawnSync({
           cmd: [
@@ -188,12 +164,8 @@ export const woff2ServerPlugin = (options: { outdir?: string } = {}): Plugin => 
         );
         const getNameField = (field: "copyright" | "licence") => {
           const base = baseFont.data.name[field];
-          const xiaolai = xiaolaiFont.data.name[field];
           const emoji = emojiFont.data.name[field];
-          const liberation = liberationFont.data.name[field];
-          return family.includes("Excalifont")
-            ? `${base} & ${xiaolai} & ${emoji} & ${liberation}`
-            : `${base} & ${emoji} & ${liberation}`;
+          return `${base} & ${emoji}`;
         };
         mergedFont.set({
           ...mergedFont.data,

@@ -74,7 +74,7 @@ export const renderRadarChart = (
     backgroundColor,
   );
 
-  const titleFontFamily = FONT_FAMILY["Lilita One"];
+  const titleFontFamily = FONT_FAMILY.Excalifont;
   const titleFontSize = FONT_SIZES.xl;
   const titleLineHeight = getLineHeight(titleFontFamily);
   const titleFontString = getFontString({

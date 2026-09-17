@@ -26,12 +26,12 @@ export async function buildFrontend(options: BuildOptions = {}) {
   fs.mkdirSync(outDir, { recursive: true });
 
   // 2. Copy static files from public/ directly to build/. The Bundler emits
-  // the local default Excalifont asset itself; other runtime fonts are loaded
-  // from versioned CDN stylesheets or remote descriptors.
+  // the local default Excalifont asset itself; LXGW WenKai is linked by the
+  // HTML entrypoint.
   if (fs.existsSync(publicDir)) {
     for (const entry of fs.readdirSync(publicDir, { withFileTypes: true })) {
-      // These legacy public copies are only needed by the canvas entrypoint
-      // and otherwise duplicate the local default asset or CDN resources.
+      // These legacy public copies duplicate the bundled Excalifont asset and
+      // are not needed because LXGW WenKai is loaded by its stylesheet link.
       if (
         entry.isFile() &&
         /\.(?:woff2?|ttf|otf)$/i.test(entry.name)

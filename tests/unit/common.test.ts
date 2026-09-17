@@ -40,15 +40,9 @@ describe("common primitives", () => {
     ).toBe("LXGW WenKai, sans-serif, Segoe UI Emoji");
   });
 
-  it("uses the CDN family name for Cascadia Code", () => {
-    expect(
-      getFontFamilyString({ fontFamily: FONT_FAMILY.Cascadia }),
-    ).toBe("Cascadia Code, monospace, Segoe UI Emoji");
-  });
-
-  it("uses the CDN family name for the Xiaolai fallback", () => {
+  it("uses system fallbacks for unsupported Excalifont glyphs", () => {
     expect(
       getFontFamilyString({ fontFamily: FONT_FAMILY.Excalifont }),
-    ).toContain(", Xiaolai SC, sans-serif, Segoe UI Emoji");
+    ).toBe("Excalifont, sans-serif, Segoe UI Emoji");
   });
 });

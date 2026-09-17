@@ -375,7 +375,7 @@ export const createSeriesLegend = (
     return [];
   }
 
-  const fontFamily = FONT_FAMILY["Lilita One"];
+  const fontFamily = FONT_FAMILY.Excalifont;
   const fontSize = FONT_SIZES.lg;
   const lineHeight = getLineHeight(fontFamily);
   const fontString = getFontString({ fontFamily, fontSize });
@@ -836,7 +836,7 @@ export const chartBaseElements = (
         roundness: null,
         textAlign: "center",
         fontSize: FONT_SIZES.xl,
-        fontFamily: FONT_FAMILY["Lilita One"],
+        fontFamily: FONT_FAMILY.Excalifont,
       })
     : null;
 

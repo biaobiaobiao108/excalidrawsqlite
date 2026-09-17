@@ -14,9 +14,6 @@ import type {
 
 import {
   DEFAULT_VERSION,
-  CJK_HAND_DRAWN_FALLBACK_CSS_FONT,
-  CJK_HAND_DRAWN_FALLBACK_FONT,
-  CASCADIA_CSS_FONT,
   ENV,
   FONT_FAMILY,
   getFontFamilyFallbacks,
@@ -133,9 +130,8 @@ export const getFontFamilyString = ({
   const getCSSFontFamilyName = (fontFamilyName: string) => {
     switch (fontFamilyName) {
       case "Cascadia":
-        return CASCADIA_CSS_FONT;
-      case CJK_HAND_DRAWN_FALLBACK_FONT:
-        return CJK_HAND_DRAWN_FALLBACK_CSS_FONT;
+        // Preserve the CSS name for legacy scenes without shipping the font.
+        return "Cascadia Code";
       case LXGW_WENKAI_FONT:
         return LXGW_WENKAI_CSS_FONT;
       default:

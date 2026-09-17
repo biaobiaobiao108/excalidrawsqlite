@@ -116,9 +116,6 @@ export const FONT_SIZES = {
   xl: 36,
 } as const;
 
-export const CJK_HAND_DRAWN_FALLBACK_FONT = "Xiaolai";
-export const CJK_HAND_DRAWN_FALLBACK_CSS_FONT = "Xiaolai SC";
-export const CASCADIA_CSS_FONT = "Cascadia Code";
 export const LXGW_WENKAI_FONT = "霞鹜文楷";
 export const LXGW_WENKAI_CSS_FONT = "LXGW WenKai";
 export const WINDOWS_EMOJI_FALLBACK_FONT = "Segoe UI Emoji";
@@ -132,6 +129,8 @@ export const WINDOWS_EMOJI_FALLBACK_FONT = "Segoe UI Emoji";
  * - https://learn.microsoft.com/en-us/typography/opentype/spec/ibmfc
  */
 export const FONT_FAMILY = {
+  // Keep these numeric IDs stable so legacy scenes can still be decoded. The
+  // corresponding font assets are no longer registered or offered by the UI.
   Virgil: 1,
   Helvetica: 2,
   Cascadia: 3,
@@ -156,7 +155,6 @@ export const FONT_FAMILY_GENERIC_FALLBACKS = {
 };
 
 export const FONT_FAMILY_FALLBACKS = {
-  [CJK_HAND_DRAWN_FALLBACK_FONT]: 100,
   ...FONT_FAMILY_GENERIC_FALLBACKS,
   [WINDOWS_EMOJI_FALLBACK_FONT]: 1000,
 };
@@ -178,17 +176,7 @@ export const getFontFamilyFallbacks = (
   fontFamily: number,
 ): Array<keyof typeof FONT_FAMILY_FALLBACKS> => {
   const genericFallbackFont = getGenericFontFamilyFallback(fontFamily);
-
-  switch (fontFamily) {
-    case FONT_FAMILY.Excalifont:
-      return [
-        CJK_HAND_DRAWN_FALLBACK_FONT,
-        genericFallbackFont,
-        WINDOWS_EMOJI_FALLBACK_FONT,
-      ];
-    default:
-      return [genericFallbackFont, WINDOWS_EMOJI_FALLBACK_FONT];
-  }
+  return [genericFallbackFont, WINDOWS_EMOJI_FALLBACK_FONT];
 };
 
 export const THEME = {

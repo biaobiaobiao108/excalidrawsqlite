@@ -32,7 +32,6 @@ import { EditorJotaiProvider, editorJotaiStore } from "./editor-jotai";
 
 import "./css/app.scss";
 import "./css/styles.scss";
-import "./fonts/fonts.css";
 
 import type {
   AppProps,

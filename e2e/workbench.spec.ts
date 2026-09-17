@@ -42,15 +42,11 @@ test.describe("Workbench & Scene Management", () => {
         ),
       )
       .toBe(true);
-    await expect
-      .poll(() =>
-        page.evaluate(() =>
-          Array.from(document.fonts).some(
-            (font) => font.family === "Xiaolai" && font.status === "loaded",
-          ),
-        ),
-      )
-      .toBe(true);
+    await expect(
+      page.locator(
+        'link[rel="stylesheet"][href*="lxgw-wenkai-webfont"]',
+      ),
+    ).toHaveCount(1);
 
     // Return to workbench using header button or direct navigation
     const backBtn = page.locator('button[title*="管理我的云端画板"]');

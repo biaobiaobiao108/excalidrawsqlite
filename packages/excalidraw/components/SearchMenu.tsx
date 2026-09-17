@@ -208,7 +208,7 @@ export const SearchMenu = () => {
             ? FRAME_STYLE.nameFontSize
             : match.element.fontSize,
           fontFamily: isFrameLikeElement(match.element)
-            ? FONT_FAMILY.Assistant
+            ? FONT_FAMILY.Excalifont
             : match.element.fontFamily,
         });
 
@@ -745,10 +745,10 @@ const getMatchInFrame = (
   const prefixText = text.slice(0, index);
   const font = getFontString({
     fontSize: FRAME_STYLE.nameFontSize,
-    fontFamily: FONT_FAMILY.Assistant,
+    fontFamily: FONT_FAMILY.Excalifont,
   });
 
-  const lineHeight = getLineHeight(FONT_FAMILY.Assistant);
+  const lineHeight = getLineHeight(FONT_FAMILY.Excalifont);
 
   const offset = measureText(prefixText, font, lineHeight);
 

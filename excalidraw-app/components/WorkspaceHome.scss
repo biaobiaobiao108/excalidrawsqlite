@@ -15,7 +15,7 @@
   scrollbar-gutter: stable;
   background: var(--workspace-bg);
   color: var(--workspace-text);
-  font-family: var(--ui-font, Assistant, system-ui, sans-serif);
+  font-family: var(--ui-font, system-ui, sans-serif);
   animation: workspace-page-enter 360ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 

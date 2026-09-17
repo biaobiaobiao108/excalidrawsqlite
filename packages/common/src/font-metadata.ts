@@ -123,15 +123,6 @@ export const FONT_METADATA: Record<number, FontMetadata> = {
       lineHeight: 1.25,
     },
   },
-  [FONT_FAMILY_FALLBACKS.Xiaolai]: {
-    metrics: {
-      unitsPerEm: 1000,
-      ascender: 880,
-      descender: -144,
-      lineHeight: 1.25,
-    },
-    fallback: true,
-  },
   [FONT_FAMILY_FALLBACKS["Segoe UI Emoji"]]: {
     metrics: {
       // reusing Excalifont metrics

@@ -112,9 +112,9 @@ import { exportToSvg } from "@excalidraw/excalidraw";
 
 ## Self-hosting fonts
 
-In this app, Excalifont remains bundled locally as the default drawing font. The other drawing fonts use versioned CDN stylesheets or font files, so they are fetched only when the selected family needs them.
+In this app, Excalifont remains bundled locally as the default drawing font. LXGW WenKai is the only external drawing font and is loaded from a versioned jsDelivr stylesheet.
 
-For self-hosting the package assets, copy the contents of `node_modules/@excalidraw/excalidraw/dist/prod/fonts` into the path where your app serves static assets, for example `public/`. Then set `window.EXCALIDRAW_ASSET_PATH` to that same path. The app's external font stylesheets must also be mirrored or replaced in the host page if the deployment cannot reach the CDN:
+For self-hosting the package assets, copy the contents of `node_modules/@excalidraw/excalidraw/dist/prod/fonts` into the path where your app serves static assets, for example `public/`. Then set `window.EXCALIDRAW_ASSET_PATH` to that same path. If the deployment cannot reach the CDN, mirror or replace the LXGW WenKai stylesheet link in the host page:
 
 ```html
 <script>

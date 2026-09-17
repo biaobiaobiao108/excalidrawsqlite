@@ -1,7 +1,6 @@
 import {
   FONT_FAMILY,
   FONT_FAMILY_FALLBACKS,
-  CJK_HAND_DRAWN_FALLBACK_FONT,
   LXGW_WENKAI_FONT,
   WINDOWS_EMOJI_FALLBACK_FONT,
   FONT_SIZES,
@@ -30,13 +29,9 @@ import type { ValueOf } from "@excalidraw/common/utility-types";
 
 import type { Scene } from "@excalidraw/element";
 
-import { ComicShannsFontFaces } from "./ComicShanns";
 import { EmojiFontFaces } from "./Emoji";
 import { ExcalidrawFontFace } from "./ExcalidrawFontFace";
 import { ExcalifontFontFaces } from "./Excalifont";
-import { HelveticaFontFaces } from "./Helvetica";
-import { LiberationFontFaces } from "./Liberation";
-import { VirgilFontFaces } from "./Virgil";
 
 export class Fonts {
   // it's ok to track fonts across multiple instances only once, so let's use
@@ -389,27 +384,13 @@ export class Fonts {
       Fonts.register.call(fonts, family, metadata, ...fontFacesDescriptors);
     };
 
-    // These families are registered by versioned CDN stylesheets linked from
-    // the app entrypoint. Keep their persisted IDs registered here so scenes
-    // continue to resolve the same font families.
-    init("Cascadia");
-    init("Comic Shanns", ...ComicShannsFontFaces);
+    // Excalifont is the only bundled drawing font.
     init("Excalifont", ...ExcalifontFontFaces);
-    // keeping for backwards compatibility reasons, uses system font (Helvetica on MacOS, Arial on Win)
-    init("Helvetica", ...HelveticaFontFaces);
-    // used for server-side pdf & png export instead of helvetica (technically does not need metrics, but kept in for consistency)
-    init("Liberation Sans", ...LiberationFontFaces);
-    init("Lilita One");
-    init("Nunito");
-    init("Virgil", ...VirgilFontFaces);
 
     // Keep the persisted family registered; its split @font-face rules come
     // from the CDN stylesheet linked by the app entrypoint.
     init(LXGW_WENKAI_FONT);
 
-    // CJK fallback font faces are registered by the versioned CDN stylesheet
-    // linked from the app entrypoint.
-    init(CJK_HAND_DRAWN_FALLBACK_FONT);
     init(WINDOWS_EMOJI_FALLBACK_FONT, ...EmojiFontFaces);
 
     Fonts._initialized = true;

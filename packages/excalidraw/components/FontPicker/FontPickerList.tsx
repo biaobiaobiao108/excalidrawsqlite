@@ -37,8 +37,6 @@ import {
 import MenuItemContent from "../dropdownMenu/DropdownMenuItemContent";
 import { getDropdownMenuItemClassName } from "../dropdownMenu/common";
 import {
-  FontFamilyCodeIcon,
-  FontFamilyHeadingIcon,
   FontFamilyNormalIcon,
   FreedrawIcon,
 } from "../icons";
@@ -72,16 +70,7 @@ interface FontPickerListProps {
 const getFontFamilyIcon = (fontFamily: FontFamilyValues): JSX.Element => {
   switch (fontFamily) {
     case FONT_FAMILY.Excalifont:
-    case FONT_FAMILY.Virgil:
       return FreedrawIcon;
-    case FONT_FAMILY.Nunito:
-    case FONT_FAMILY.Helvetica:
-      return FontFamilyNormalIcon;
-    case FONT_FAMILY["Lilita One"]:
-      return FontFamilyHeadingIcon;
-    case FONT_FAMILY["Comic Shanns"]:
-    case FONT_FAMILY.Cascadia:
-      return FontFamilyCodeIcon;
     default:
       return FontFamilyNormalIcon;
   }

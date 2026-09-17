@@ -38,7 +38,7 @@ body.excalidraw-cursor-resize * {
 }
 
 .excalidraw {
-  --ui-font: Assistant, system-ui, BlinkMacSystemFont, -apple-system, Segoe UI,
+  --ui-font: system-ui, BlinkMacSystemFont, -apple-system, Segoe UI,
     Roboto, Helvetica, Arial, sans-serif;
   --viewport-status-frame-border-width: 0px;
 
@@ -928,7 +928,7 @@ body.excalidraw-cursor-resize * {
     textarea {
       width: 100%;
       margin: 10px 0;
-      font-family: "Cascadia Code";
+      font-family: monospace;
       font-size: 0.8em;
     }
   }
@@ -957,7 +957,7 @@ body.excalidraw-cursor-resize * {
     background: rgba(0, 0, 0, 0.5);
     color: #fff;
     font-size: 0.875rem;
-    font-family: "Assistant";
+    font-family: var(--ui-font);
     pointer-events: none;
 
     .Spinner {
@@ -994,6 +994,6 @@ body.excalidraw-cursor-resize * {
     color: #fff;
     font-weight: 700;
     letter-spacing: 0.6px;
-    font-family: "Assistant";
+    font-family: var(--ui-font);
   }
 }

@@ -2282,7 +2282,7 @@ class App extends React.Component<AppProps, AppState> {
               padding: `${FRAME_NAME_EDIT_PADDING}px`,
               borderRadius: 4,
               boxShadow: "inset 0 0 0 1px var(--color-primary)",
-              fontFamily: "Assistant",
+              fontFamily: "var(--ui-font)",
               fontSize: `${FRAME_STYLE.nameFontSize}px`,
               transform: `translate(-${FRAME_NAME_EDIT_PADDING}px, ${FRAME_NAME_EDIT_PADDING}px)`,
               color: isDarkTheme

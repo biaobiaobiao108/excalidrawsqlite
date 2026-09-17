@@ -1,6 +1,0 @@
-/*
- * UI and scene font stylesheets are linked by excalidraw-app/index.html.
- * Keep this file as a harmless package import for existing consumers; CSS
- * URLs must remain <link> elements so the CDN stylesheet can register its
- * own unicode-range-split @font-face rules.
- */
