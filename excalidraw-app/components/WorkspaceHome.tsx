@@ -5,8 +5,6 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { restoreElements } from "@excalidraw/excalidraw/data/restore";
-
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { FileId } from "@excalidraw/element/types";
 
@@ -31,8 +29,6 @@ import {
   broadcastWorkspaceChanged,
   subscribeCloudTabSync,
 } from "../data/cloudSync";
-import { LocalData } from "../data/LocalData";
-import { importFromLocalStorage } from "../data/localStorage";
 
 import { AuthDialog } from "./AuthDialog";
 import { WorkspaceDialog } from "./WorkspaceDialog";
@@ -123,6 +119,12 @@ const sortScenes = (scenes: CloudSceneSummary[], sort: SortMode) =>
   });
 
 const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
+  const [{ restoreElements }, { LocalData }, { importFromLocalStorage }] =
+    await Promise.all([
+      import("@excalidraw/excalidraw/data/restore"),
+      import("../data/LocalData"),
+      import("../data/localStorage"),
+    ]);
   try {
     if (localStorage.getItem(LOCAL_SCENE_MIGRATION_KEY)) {
       return null;
