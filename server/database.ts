@@ -394,8 +394,107 @@ export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
 export const performDatabaseMaintenance = (runtime: ServerRuntime) => {
   try {
     runtime.db.run("PRAGMA wal_checkpoint(PASSIVE);");
-    runtime.db.run("PRAGMA incremental_vacuum(500);");
   } catch (error) {
-    console.error("[Database] Database maintenance failed", error);
+    console.error("[Database] WAL checkpoint failed", error);
   }
 };
+
+export type DatabaseStorageStatus = {
+  pageSize: number;
+  pageCount: number;
+  freelistCount: number;
+  autoVacuum: number;
+  fileSizeBytes: number;
+  estimatedFreeBytes: number;
+};
+
+export type StorageOptimizationResult = {
+  success: boolean;
+  mode: "incremental" | "full";
+  pageSize: number;
+  durationMs: number;
+  freelist: {
+    before: number;
+    after: number;
+  };
+  pageCount: {
+    before: number;
+    after: number;
+  };
+  fileBytes: {
+    before: number;
+    after: number;
+    reclaimed: number;
+  };
+};
+
+export const getDatabaseStorageStatus = async (
+  runtime: ServerRuntime,
+): Promise<DatabaseStorageStatus> => {
+  const pageSize = Number(
+    (runtime.db.query("PRAGMA page_size").get() as any)?.page_size || 4096,
+  );
+  const pageCount = Number(
+    (runtime.db.query("PRAGMA page_count").get() as any)?.page_count || 0,
+  );
+  const freelistCount = Number(
+    (runtime.db.query("PRAGMA freelist_count").get() as any)?.freelist_count || 0,
+  );
+  const autoVacuum = Number(
+    (runtime.db.query("PRAGMA auto_vacuum").get() as any)?.auto_vacuum ?? 0,
+  );
+  const stat = await fs.promises.stat(runtime.dbPath).catch(() => null);
+  const fileSizeBytes = stat ? stat.size : pageCount * pageSize;
+  return {
+    pageSize,
+    pageCount,
+    freelistCount,
+    autoVacuum,
+    fileSizeBytes,
+    estimatedFreeBytes: freelistCount * pageSize,
+  };
+};
+
+export const optimizeDatabaseStorage = async (
+  runtime: ServerRuntime,
+  mode: "incremental" | "full" = "incremental",
+): Promise<StorageOptimizationResult> => {
+  const start = performance.now();
+  const statusBefore = await getDatabaseStorageStatus(runtime);
+
+  if (mode === "full") {
+    runtime.db.run("VACUUM;");
+  } else {
+    runtime.db.run("PRAGMA incremental_vacuum;");
+  }
+
+  try {
+    runtime.db.run("PRAGMA wal_checkpoint(PASSIVE);");
+  } catch {
+    // Ignore checkpoint warning during manual maintenance
+  }
+
+  const statusAfter = await getDatabaseStorageStatus(runtime);
+  const durationMs = Math.round(performance.now() - start);
+
+  return {
+    success: true,
+    mode,
+    pageSize: statusBefore.pageSize,
+    durationMs,
+    freelist: {
+      before: statusBefore.freelistCount,
+      after: statusAfter.freelistCount,
+    },
+    pageCount: {
+      before: statusBefore.pageCount,
+      after: statusAfter.pageCount,
+    },
+    fileBytes: {
+      before: statusBefore.fileSizeBytes,
+      after: statusAfter.fileSizeBytes,
+      reclaimed: Math.max(0, statusBefore.fileSizeBytes - statusAfter.fileSizeBytes),
+    },
+  };
+};
+

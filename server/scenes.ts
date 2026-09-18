@@ -116,11 +116,6 @@ export const cleanupExpiredTrashScenes = (
   if (result.changes > 0) {
     console.info(`[Trash] 自动清理了 ${result.changes} 个过期回收站画板`);
     runtime.realtime?.publishWorkspaceChanged(Date.now());
-    try {
-      runtime.db.run("PRAGMA incremental_vacuum(500);");
-    } catch (error) {
-      console.warn("[Trash] 增量整理空间失败", error);
-    }
   }
   return result.changes;
 };

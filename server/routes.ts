@@ -26,6 +26,10 @@ import {
   withBackupLock,
 } from "./backup";
 import {
+  getDatabaseStorageStatus,
+  optimizeDatabaseStorage,
+} from "./database";
+import {
   assertReferencedFilesExist,
   decodeDataUrl,
   extractFileIds,
@@ -517,6 +521,46 @@ export const createRequestHandler = (
             `创建数据库热备失败: ${error?.message || "未知错误"}`,
           );
         }
+      }
+
+      if (pathname === "/api/maintenance/vacuum" && req.method === "GET") {
+        if (!isAuthorized(runtime, req)) {
+          return jsonResponse(
+            runtime,
+            req,
+            { error: "请先完成访问授权", code: "AUTH_REQUIRED" },
+            401,
+          );
+        }
+        const status = await getDatabaseStorageStatus(runtime);
+        return jsonResponse(runtime, req, status);
+      }
+
+      if (pathname === "/api/maintenance/vacuum" && req.method === "POST") {
+        if (!isAuthorized(runtime, req)) {
+          return jsonResponse(
+            runtime,
+            req,
+            { error: "请先完成访问授权", code: "AUTH_REQUIRED" },
+            401,
+          );
+        }
+        let mode: "incremental" | "full" = "incremental";
+        try {
+          const text = await req.text();
+          if (text.trim()) {
+            const body = JSON.parse(text);
+            if (body?.mode === "full" || body?.full === true) {
+              mode = "full";
+            }
+          }
+        } catch {
+          // Default to incremental
+        }
+        const result = await withBackupLock(runtime, () =>
+          optimizeDatabaseStorage(runtime, mode),
+        );
+        return jsonResponse(runtime, req, result);
       }
 
       if (pathname === "/api/auth/status" && req.method === "GET") {
@@ -1257,11 +1301,6 @@ export const createRequestHandler = (
         );
         if (result.changes > 0) {
           publishWorkspaceChanged(runtime, Date.now());
-          try {
-            runtime.db.run("PRAGMA incremental_vacuum(1000);");
-          } catch {
-            // Ignore vacuum failure
-          }
         }
         return jsonResponse(runtime, req, {
           success: true,
@@ -1290,11 +1329,6 @@ export const createRequestHandler = (
             runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
           });
           transaction();
-          try {
-            runtime.db.run("PRAGMA incremental_vacuum(500);");
-          } catch {
-            // Ignore vacuum failure
-          }
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: id,
