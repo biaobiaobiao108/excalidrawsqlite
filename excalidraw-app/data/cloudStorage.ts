@@ -4,8 +4,9 @@ import type { FileId } from "@excalidraw/element/types";
 const CLOUD_API_TIMEOUT_MS = 10_000;
 const CLOUD_READ_RETRIES = 2;
 
-const uploadedCloudFileData = new Map<string, string>();
+const uploadedCloudFileHashes = new Map<string, string>();
 const cloudFileEtags = new Map<string, string>();
+const MAX_CLOUD_FILE_METADATA = 512;
 const MAX_CACHED_CLOUD_SCENES = 2;
 const cloudSceneCache = new Map<
   string,
@@ -172,6 +173,30 @@ const sha256Hex = async (blob: Blob) => {
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+};
+
+const rememberCloudFileHash = (id: string, hash: string) => {
+  uploadedCloudFileHashes.delete(id);
+  uploadedCloudFileHashes.set(id, hash);
+  while (uploadedCloudFileHashes.size > MAX_CLOUD_FILE_METADATA) {
+    const oldestId = uploadedCloudFileHashes.keys().next().value;
+    if (oldestId === undefined) {
+      break;
+    }
+    uploadedCloudFileHashes.delete(oldestId);
+  }
+};
+
+const rememberCloudFileEtag = (id: string, etag: string) => {
+  cloudFileEtags.delete(id);
+  cloudFileEtags.set(id, etag);
+  while (cloudFileEtags.size > MAX_CLOUD_FILE_METADATA) {
+    const oldestId = cloudFileEtags.keys().next().value;
+    if (oldestId === undefined) {
+      break;
+    }
+    cloudFileEtags.delete(oldestId);
+  }
 };
 
 const blobToDataURL = (blob: Blob) =>
@@ -594,17 +619,15 @@ export async function clearCloudTrash(): Promise<{
 export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
   const entries = Object.values(files || {});
   await runWithConcurrency(entries, async (file) => {
-    if (uploadedCloudFileData.get(file.id) === file.dataURL) {
+    const blob = dataUrlToBlob(file.dataURL, file.mimeType);
+    const digest = await sha256Hex(blob);
+    if (uploadedCloudFileHashes.get(file.id) === digest) {
       return;
     }
-    const blob = dataUrlToBlob(file.dataURL, file.mimeType);
     const knownEtag = cloudFileEtags.get(file.id);
-    if (knownEtag) {
-      const digest = `"${await sha256Hex(blob)}"`;
-      if (digest === knownEtag) {
-        uploadedCloudFileData.set(file.id, file.dataURL);
-        return;
-      }
+    if (knownEtag === `"${digest}"`) {
+      rememberCloudFileHash(file.id, digest);
+      return;
     }
     const res = await fetchWithTimeout(
       `/api/files/${encodeURIComponent(file.id)}`,
@@ -621,9 +644,9 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
     await assertResponse(res, "保存云端图片失败");
     const etag = res.headers.get("etag");
     if (etag) {
-      cloudFileEtags.set(file.id, etag);
+      rememberCloudFileEtag(file.id, etag);
     }
-    uploadedCloudFileData.set(file.id, file.dataURL);
+    rememberCloudFileHash(file.id, digest);
   }, getCloudFileConcurrency());
 }
 
@@ -648,7 +671,7 @@ export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
       const dataURL = await blobToDataURL(await res.blob());
       const etag = res.headers.get("etag");
       if (etag) {
-        cloudFileEtags.set(id, etag);
+        rememberCloudFileEtag(id, etag);
       }
       loadedFiles.push({
         id,
