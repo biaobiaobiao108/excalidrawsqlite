@@ -6,6 +6,11 @@ const CLOUD_READ_RETRIES = 2;
 
 const uploadedCloudFileData = new Map<string, string>();
 const cloudFileEtags = new Map<string, string>();
+const MAX_CACHED_CLOUD_SCENES = 2;
+const cloudSceneCache = new Map<
+  string,
+  { data: CloudSceneData; etag: string | null }
+>();
 
 const getCloudFileConcurrency = () => {
   if (typeof navigator === "undefined") {
@@ -253,12 +258,46 @@ export async function fetchCloudScenes(): Promise<CloudSceneSummary[]> {
 }
 
 export async function fetchCloudScene(id: string): Promise<CloudSceneData> {
-  return fetchJson(
-    `/api/scenes/${encodeURIComponent(id)}`,
-    { headers: getHeaders() },
-    "获取云端画板失败",
-    CLOUD_READ_RETRIES,
-  );
+  const cached = cloudSceneCache.get(id);
+  const headers = cached?.etag
+    ? getHeaders({ "If-None-Match": cached.etag })
+    : getHeaders();
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetchWithTimeout(
+        `/api/scenes/${encodeURIComponent(id)}`,
+        { headers },
+        "获取云端画板失败",
+      );
+      if (res.status === 304 && cached) {
+        cloudSceneCache.delete(id);
+        cloudSceneCache.set(id, cached);
+        return cached.data;
+      }
+      await assertResponse(res, "获取云端画板失败");
+      const data = (await res.json()) as CloudSceneData;
+      const etag = res.headers.get("etag");
+      cloudSceneCache.delete(id);
+      cloudSceneCache.set(id, { data, etag });
+      while (cloudSceneCache.size > MAX_CACHED_CLOUD_SCENES) {
+        const oldestId = cloudSceneCache.keys().next().value;
+        if (oldestId === undefined) {
+          break;
+        }
+        cloudSceneCache.delete(oldestId);
+      }
+      return data;
+    } catch (error) {
+      const canRetry =
+        error instanceof CloudApiError &&
+        (error.status === 0 || error.status >= 500) &&
+        attempt < CLOUD_READ_RETRIES;
+      if (!canRetry) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+    }
+  }
 }
 
 export async function createCloudScene(data: {
