@@ -165,8 +165,16 @@ export const createDatabaseSnapshot = async (
     path.dirname(runtime.dbPath),
     `excalidraw-backup-${timestamp}-${randomHex(4)}.db`,
   );
-  const escapedPath = tempBackupFile.replace(/'/g, "''");
-  runtime.db.run(`VACUUM INTO '${escapedPath}'`);
+  const tempBackupPath = `${tempBackupFile}.${randomHex(8)}.tmp`;
+  try {
+    const escapedPath = tempBackupPath.replace(/'/g, "''");
+    runtime.db.run(`VACUUM INTO '${escapedPath}'`);
+    fs.renameSync(tempBackupPath, tempBackupFile);
+  } catch (error) {
+    fs.rmSync(tempBackupPath, { force: true });
+    fs.rmSync(tempBackupFile, { force: true });
+    throw error;
+  }
   return {
     tempBackupFile,
     cleanup: () => fs.promises.rm(tempBackupFile, { force: true }),
@@ -234,7 +242,8 @@ export const createFullBackup = async (
         path.dirname(runtime.dbPath),
         `excalidraw-full-backup-${timestamp}-${randomHex(4)}.tar`,
       );
-      const archiveWriter = Bun.file(archivePath).writer({
+      const tempArchivePath = `${archivePath}.${randomHex(8)}.tmp`;
+      const archiveWriter = Bun.file(tempArchivePath).writer({
         highWaterMark: 64 * 1024,
       });
       try {
@@ -263,8 +272,10 @@ export const createFullBackup = async (
         }
         await archiveWriter.write(new Uint8Array(TAR_BLOCK_SIZE * 2));
         await archiveWriter.end();
+        await fs.promises.rename(tempArchivePath, archivePath);
       } catch (error) {
         await Promise.resolve(archiveWriter.end()).catch(() => {});
+        await fs.promises.rm(tempArchivePath, { force: true }).catch(() => {});
         await fs.promises.rm(archivePath, { force: true }).catch(() => {});
         throw error;
       }
