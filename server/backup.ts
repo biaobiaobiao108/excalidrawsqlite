@@ -269,11 +269,12 @@ export const createFullBackup = async (
         throw error;
       }
 
-      try {
-        return await Bun.file(archivePath).arrayBuffer();
-      } finally {
-        await fs.promises.rm(archivePath, { force: true }).catch(() => {});
-      }
+      const archiveFile = Bun.file(archivePath);
+      return {
+        archivePath,
+        size: archiveFile.size,
+        cleanup: () => fs.promises.rm(archivePath, { force: true }),
+      };
     } finally {
       await snapshot.cleanup().catch(() => {});
     }
