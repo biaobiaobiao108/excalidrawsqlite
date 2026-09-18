@@ -7,6 +7,8 @@ import { getShortcutKey } from "../shortcut";
 
 import type { ActionName } from "./types";
 
+const getControlShortcutKey = (key: string) => `${t("keys.ctrl")}+${key}`;
+
 export type ShortcutName =
   | SubtypeOf<
       ActionName,
@@ -62,6 +64,7 @@ const shortcutMap: Record<ShortcutName, string[]> = {
   clearCanvas: [getShortcutKey("CtrlOrCmd+Delete")],
   imageExport: [getShortcutKey("CtrlOrCmd+Shift+E")],
   commandPalette: [
+    getControlShortcutKey("P"),
     getShortcutKey("CtrlOrCmd+/"),
     getShortcutKey("CtrlOrCmd+Shift+P"),
   ],

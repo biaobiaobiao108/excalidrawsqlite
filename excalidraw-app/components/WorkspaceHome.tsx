@@ -862,8 +862,13 @@ export const WorkspaceHome = ({
 
       if (
         !event.altKey &&
-        (event.key === "/" ||
-          (event.shiftKey && event.key.toLowerCase() === "p"))
+        ((event.ctrlKey &&
+          !event.metaKey &&
+          !event.shiftKey &&
+          event.key.toLowerCase() === "p") ||
+          (isCtrlOrCmd &&
+            (event.key === "/" ||
+              (event.shiftKey && event.key.toLowerCase() === "p"))))
       ) {
         event.preventDefault();
         event.stopPropagation();
