@@ -87,8 +87,8 @@ const ExcalidrawApp = () => {
         if (navigationRequestRef.current !== requestId) {
           return;
         }
-        const nextUrl = `${url.pathname}${url.search}`;
-        window.history.pushState(null, "", nextUrl);
+        const nextUrl = url.href;
+        window.history.pushState(null, "", `${url.pathname}${url.search}`);
         startTransition(() => {
           setEditorAppComponent(() => module.default);
           setCurrentUrl(nextUrl);
