@@ -1412,7 +1412,7 @@ describe("cloud persistence server", () => {
           user_version: number;
         }
       ).user_version,
-    ).toBe(4);
+    ).toBe(5);
 
     runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [
       "legacy_scene",
