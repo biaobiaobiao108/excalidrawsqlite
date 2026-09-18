@@ -13,7 +13,14 @@ import { Provider, appJotaiStore } from "./app-jotai";
 import { WorkspaceHome } from "./components/WorkspaceHome";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 
-const loadEditorApp = () => import("./EditorApp");
+let editorAppLoadPromise: Promise<typeof import("./EditorApp")> | null = null;
+
+const loadEditorApp = () => {
+  if (!editorAppLoadPromise) {
+    editorAppLoadPromise = import("./EditorApp");
+  }
+  return editorAppLoadPromise;
+};
 const LazyEditorApp = lazy(loadEditorApp);
 
 const preloadEditorApp = () => {
