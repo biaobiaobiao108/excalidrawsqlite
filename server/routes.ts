@@ -208,6 +208,14 @@ const hasScenePageParameters = (url: URL) =>
     url.searchParams.has(key),
   );
 
+const publishSceneChanged = (
+  runtime: ServerRuntime,
+  event: Parameters<NonNullable<ServerRuntime["realtime"]>["publishSceneChanged"]>[0],
+) => runtime.realtime?.publishSceneChanged(event);
+
+const publishWorkspaceChanged = (runtime: ServerRuntime, updatedAt?: number) =>
+  runtime.realtime?.publishWorkspaceChanged(updatedAt);
+
 const getFolderSummary = (runtime: ServerRuntime, id: string) =>
   runtime.db
     .query(
@@ -230,6 +238,7 @@ const preparedStatementsMap = new WeakMap<
     getSceneById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneRawById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneStateById: ReturnType<ServerRuntime["db"]["query"]>;
+    getSceneRevision: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneThumbnailById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneSummaryById: ReturnType<ServerRuntime["db"]["query"]>;
     touchSceneLastOpened: ReturnType<ServerRuntime["db"]["query"]>;
@@ -254,7 +263,10 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
         "SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL",
       ),
       getSceneStateById: runtime.db.query(
-        "SELECT id, deleted_at FROM scenes WHERE id = ?",
+        "SELECT id, deleted_at, revision FROM scenes WHERE id = ?",
+      ),
+      getSceneRevision: runtime.db.query(
+        "SELECT revision FROM scenes WHERE id = ?",
       ),
       getSceneThumbnailById: runtime.db.query(
         "SELECT id, thumbnail_file_id FROM scenes WHERE id = ? AND deleted_at IS NULL",
