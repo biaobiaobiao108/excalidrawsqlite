@@ -1599,66 +1599,6 @@ describe("cloud persistence server", () => {
     expect(updatedRow.element_count).toBe(2);
   });
 
-  it("provides manual database storage optimization API", async () => {
-    const { runtime, handler } = createTestRuntime({ NODE_ENV: "production" });
-    const unauthedGet = await request(handler, "/api/maintenance/vacuum");
-    expect(unauthedGet.status).toBe(401);
-    const unauthedPost = await request(handler, "/api/maintenance/vacuum", { method: "POST" });
-    expect(unauthedPost.status).toBe(401);
-
-    const cookie = await authenticate(handler);
-
-    const statusRes = await request(handler, "/api/maintenance/vacuum", {
-      headers: { Cookie: cookie },
-    });
-    expect(statusRes.status).toBe(200);
-    const status = await responseJson<{ autoVacuum: number; freelistCount: number }>(statusRes);
-    expect(status.autoVacuum).toBe(2);
-
-    const dummyElements = Array.from({ length: 50 }, (_, i) => ({
-      id: `element_${i}`,
-      type: "rectangle",
-      x: i * 10,
-      y: i * 10,
-      width: 100,
-      height: 100,
-      data: "x".repeat(1000),
-    }));
-    for (let i = 0; i < 10; i++) {
-      await jsonRequest(
-        handler,
-        "/api/scenes",
-        { name: `Bulk Scene ${i}`, elements: dummyElements },
-        { headers: { Cookie: cookie } },
-      );
-    }
-
-    runtime.db.run("DELETE FROM scene_files");
-    runtime.db.run("DELETE FROM scenes");
-
-    const statusWithFreelist = await responseJson<{ freelistCount: number }>(
-      await request(handler, "/api/maintenance/vacuum", { headers: { Cookie: cookie } }),
-    );
-    expect(statusWithFreelist.freelistCount).toBeGreaterThan(0);
-
-    const optimizeRes = await jsonRequest(
-      handler,
-      "/api/maintenance/vacuum",
-      { mode: "incremental" },
-      { headers: { Cookie: cookie } },
-    );
-    expect(optimizeRes.status).toBe(200);
-    const optimizeData = await responseJson<{
-      success: boolean;
-      freelist: { before: number; after: number };
-      pageCount: { before: number; after: number };
-    }>(optimizeRes);
-    expect(optimizeData.success).toBe(true);
-    expect(optimizeData.freelist.before).toBeGreaterThan(0);
-    expect(optimizeData.freelist.after).toBe(0);
-    expect(optimizeData.pageCount.after).toBeLessThan(optimizeData.pageCount.before);
-  });
-
   it("automatically cleans up expired trash scenes and publishes workspace update", async () => {
     const { runtime, handler } = createTestRuntime({ TRASH_RETENTION_DAYS: "15" });
     const cookie = await authenticate(handler);

@@ -26,10 +26,6 @@ import {
   withBackupLock,
 } from "./backup";
 import {
-  getDatabaseStorageStatus,
-  optimizeDatabaseStorage,
-} from "./database";
-import {
   assertReferencedFilesExist,
   decodeDataUrl,
   extractFileIds,
@@ -521,46 +517,6 @@ export const createRequestHandler = (
             `创建数据库热备失败: ${error?.message || "未知错误"}`,
           );
         }
-      }
-
-      if (pathname === "/api/maintenance/vacuum" && req.method === "GET") {
-        if (!isAuthorized(runtime, req)) {
-          return jsonResponse(
-            runtime,
-            req,
-            { error: "请先完成访问授权", code: "AUTH_REQUIRED" },
-            401,
-          );
-        }
-        const status = await getDatabaseStorageStatus(runtime);
-        return jsonResponse(runtime, req, status);
-      }
-
-      if (pathname === "/api/maintenance/vacuum" && req.method === "POST") {
-        if (!isAuthorized(runtime, req)) {
-          return jsonResponse(
-            runtime,
-            req,
-            { error: "请先完成访问授权", code: "AUTH_REQUIRED" },
-            401,
-          );
-        }
-        let mode: "incremental" | "full" = "incremental";
-        try {
-          const text = await req.text();
-          if (text.trim()) {
-            const body = JSON.parse(text);
-            if (body?.mode === "full" || body?.full === true) {
-              mode = "full";
-            }
-          }
-        } catch {
-          // Default to incremental
-        }
-        const result = await withBackupLock(runtime, () =>
-          optimizeDatabaseStorage(runtime, mode),
-        );
-        return jsonResponse(runtime, req, result);
       }
 
       if (pathname === "/api/auth/status" && req.method === "GET") {

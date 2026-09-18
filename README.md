@@ -40,7 +40,7 @@
 - **查询优化**：画板摘要列避免列表页扫描 `elements` JSON；有效画板、回收站、文件夹场景分别使用复合/部分索引，列表 API 支持 `limit`、`cursor`、`q`、`folder_id` 与 `favorite` 参数的 keyset 分页。
 - **自动防抖同步**：画布修改后防抖约 30 秒自动同步至云端，并使用 `revision` 乐观锁机制防止并发快照覆盖。
 - **纯净持久化与防膨胀**：前后端协同在持久化保存前自动过滤剔除已擦除/删除（`isDeleted`）图元，杜绝反复绘图擦除后场景 JSON 无节制膨胀。
-- **空闲页池化复用**：已删除画板释放的数据库页自动进入 SQLite Freelist，供后续新增/保存画板零开销直接复用，避免在写操作中频繁截断/扩容造成磁盘 IO 抖动与写放大；同时提供受鉴权保护的手动整理 API 按需平滑收缩文件。
+- **空闲页池化复用**：已删除画板释放的数据库页自动进入 SQLite 原生 Freelist，供后续新增或保存画板直接零开销池化复用，避免频繁申请分配与截断扩容导致的磁盘 IO 抖动与写放大。
 - **多端实时同步**：同源 `/api/realtime` 使用 Bun 原生 WebSocket；服务端只广播场景 ID、revision 和变更类型，客户端收到后按 ETag/revision 拉取内容，避免把大画板或附件推入 WebSocket。
 - **离开保护**：离开画板或返回工作台主页时，前端会主动等待队列保存完毕再跳转。
 - **附件独立存储**：图片/媒体文件存储于本地 `data/files/`，SQLite 仅保存文件元数据与 SHA-256 哈希，避免大文件膨胀数据库。
@@ -74,49 +74,6 @@
 ### 7. 📦 完整备份与一键归档
 
 - 支持一键导出包含 `excalidraw.db` 数据库、`manifest.json` 与 `files/` 图片附件的完整 `.tar` 归档包；归档先写临时文件并原子改名，再以流式响应返回，避免备份大小翻倍占用内存。
-
-### 8. 🧹 数据库空间维护与手动整理 API
-
-为兼顾极致的高性能写入与磁盘空间节约，本项目遵循 SQLite 原生设计哲学：
-1. **日常写入零开销复用**：画板删除后，释放的页面保留在 SQLite 内部的 Freelist（空闲页列表）中，后续新建画板或图元保存时会直接就地复用，无需频繁向操作系统申请磁盘分配或在每次删除时强行截断文件，彻底避免写放大与 IO 抖动；
-2. **手动优化 API**：当进行了大批量历史数据清理、需要将闲置磁盘空间释放给宿主机操作系统时，可通过受鉴权保护的维护 API 手动触发整理：
-
-- **查看当前数据库空间状态（只读）**：
-  ```bash
-  curl -b "excalidraw_session=your-token" http://localhost:8080/api/maintenance/vacuum
-  ```
-  返回示例：
-  ```json
-  {
-    "pageSize": 4096,
-    "pageCount": 128,
-    "freelistCount": 42,
-    "autoVacuum": 2,
-    "fileSizeBytes": 524288,
-    "estimatedFreeBytes": 172032
-  }
-  ```
-
-- **执行空间整理收缩**：
-  ```bash
-  # 增量整理 (推荐模式，平滑释放当前全部空闲页)
-  curl -X POST -b "excalidraw_session=your-token" http://localhost:8080/api/maintenance/vacuum
-
-  # 全量整理 (重写整个数据库，彻底去除所有碎片)
-  curl -X POST -b "excalidraw_session=your-token" -H "Content-Type: application/json" -d '{"mode":"full"}' http://localhost:8080/api/maintenance/vacuum
-  ```
-  返回示例：
-  ```json
-  {
-    "success": true,
-    "mode": "incremental",
-    "pageSize": 4096,
-    "durationMs": 8,
-    "freelist": { "before": 42, "after": 0 },
-    "pageCount": { "before": 128, "after": 86 },
-    "fileBytes": { "before": 524288, "after": 352256, "reclaimed": 172032 }
-  }
-  ```
 
 ---
 
