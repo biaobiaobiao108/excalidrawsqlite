@@ -95,6 +95,7 @@ import {
 import { AppSidebar } from "./components/AppSidebar";
 import {
   CloudSaveQueue,
+  subscribeCloudRealtime,
   subscribeCloudTabSync,
   type CloudSaveStatus,
 } from "./data/cloudSync";
@@ -779,6 +780,46 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   }, [
     cloudSaveQueue,
     excalidrawAPI,
+    handleSceneDeleted,
+    loadSelectedCloudScene,
+  ]);
+
+  useEffect(() => {
+    const sceneId = currentSceneId;
+    if (!sceneId) {
+      return;
+    }
+    return subscribeCloudRealtime(sceneId, (event) => {
+      if (event.type !== "scene_changed" || event.sceneId !== sceneId) {
+        return;
+      }
+      if (event.changeKind === "thumbnail") {
+        return;
+      }
+      if (event.changeKind === "deleted") {
+        void handleSceneDeleted(sceneId);
+        return;
+      }
+      if (cloudSaveQueue.hasPending(sceneId)) {
+        return;
+      }
+      const currentRevision = cloudSaveQueue.getRevision(sceneId) || 0;
+      if (event.revision <= currentRevision) {
+        return;
+      }
+      cloudSaveQueue.setRevision(sceneId, event.revision);
+      void loadSelectedCloudScene(sceneId, false).catch((error: any) => {
+        if (error?.status === 401) {
+          setIsAuthOpen(true);
+          setAuthSceneId(sceneId);
+        } else {
+          setErrorMessage(error?.message || "同步远端画板失败");
+        }
+      });
+    });
+  }, [
+    cloudSaveQueue,
+    currentSceneId,
     handleSceneDeleted,
     loadSelectedCloudScene,
   ]);
