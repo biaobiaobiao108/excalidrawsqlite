@@ -21,6 +21,8 @@ const loadEditorApp = () => {
   }
   return editorAppLoadPromise;
 };
+type EditorAppComponent = typeof import("./EditorApp").default;
+
 const LazyEditorApp = lazy(loadEditorApp);
 
 const preloadEditorApp = () => {
@@ -38,15 +40,32 @@ const EditorLoadingState = () => (
 
 const ExcalidrawApp = () => {
   const [currentUrl, setCurrentUrl] = useState(() => window.location.href);
+  const [editorAppComponent, setEditorAppComponent] =
+    useState<EditorAppComponent | null>(null);
   const navigationRequestRef = useRef(0);
 
   useEffect(() => {
     const handlePopState = () => {
       const nextUrl = window.location.href;
-      if (new URL(nextUrl).searchParams.has("id")) {
-        preloadEditorApp();
+      const requestId = ++navigationRequestRef.current;
+      if (!new URL(nextUrl).searchParams.has("id")) {
+        startTransition(() => setCurrentUrl(nextUrl));
+        return;
       }
-      startTransition(() => setCurrentUrl(nextUrl));
+
+      void loadEditorApp()
+        .then((module) => {
+          if (navigationRequestRef.current !== requestId) {
+            return;
+          }
+          startTransition(() => {
+            setEditorAppComponent(() => module.default);
+            setCurrentUrl(nextUrl);
+          });
+        })
+        .catch((error) => {
+          console.error("加载编辑器失败", error);
+        });
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -55,6 +74,7 @@ const ExcalidrawApp = () => {
   const location = new URL(currentUrl);
   const sceneId = location.searchParams.get("id");
   const shouldRenderWorkspaceHome = !sceneId;
+  const EditorApp = editorAppComponent || LazyEditorApp;
 
   const navigateToScene = useCallback((targetSceneId: string) => {
     const requestId = ++navigationRequestRef.current;
@@ -63,12 +83,16 @@ const ExcalidrawApp = () => {
     url.hash = "";
 
     void loadEditorApp()
-      .then(() => {
+      .then((module) => {
         if (navigationRequestRef.current !== requestId) {
           return;
         }
-        window.history.pushState(null, "", `${url.pathname}${url.search}`);
-        startTransition(() => setCurrentUrl(window.location.href));
+        const nextUrl = `${url.pathname}${url.search}`;
+        window.history.pushState(null, "", nextUrl);
+        startTransition(() => {
+          setEditorAppComponent(() => module.default);
+          setCurrentUrl(nextUrl);
+        });
       })
       .catch((error) => {
         console.error("加载编辑器失败", error);
@@ -76,6 +100,7 @@ const ExcalidrawApp = () => {
   }, []);
 
   const navigateToWorkspace = useCallback(() => {
+    navigationRequestRef.current += 1;
     const url = new URL(window.location.href);
     url.search = "";
     url.hash = "";
@@ -93,7 +118,7 @@ const ExcalidrawApp = () => {
           />
         ) : (
           <Suspense fallback={<EditorLoadingState />}>
-            <LazyEditorApp
+            <EditorApp
               key={sceneId || currentUrl}
               onNavigateHome={navigateToWorkspace}
             />
