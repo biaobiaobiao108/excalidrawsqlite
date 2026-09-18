@@ -162,6 +162,151 @@ export const subscribeCloudTabSync = (
   };
 };
 
+export type CloudRealtimeEvent =
+  | {
+      type: "scene_changed";
+      sceneId: string;
+      revision: number;
+      updatedAt: number;
+      changeKind:
+        | "created"
+        | "content"
+        | "metadata"
+        | "thumbnail"
+        | "deleted"
+        | "restored";
+    }
+  | { type: "workspace_changed"; updatedAt: number }
+  | { type: "ready" | "subscribed"; sceneId: string | null };
+
+const parseCloudRealtimeEvent = (value: unknown): CloudRealtimeEvent | null => {
+  if (!value || typeof value !== "object" || !("type" in value)) {
+    return null;
+  }
+  const event = value as Partial<CloudRealtimeEvent>;
+  if (event.type === "workspace_changed") {
+    return typeof event.updatedAt === "number" ? (event as CloudRealtimeEvent) : null;
+  }
+  if (event.type === "ready" || event.type === "subscribed") {
+    return event.sceneId === null || typeof event.sceneId === "string"
+      ? (event as CloudRealtimeEvent)
+      : null;
+  }
+  if (
+    event.type === "scene_changed" &&
+    typeof event.sceneId === "string" &&
+    typeof event.revision === "number" &&
+    typeof event.updatedAt === "number" &&
+    typeof event.changeKind === "string"
+  ) {
+    return event as CloudRealtimeEvent;
+  }
+  return null;
+};
+
+export const subscribeCloudRealtime = (
+  sceneId: string | null,
+  callback: (event: CloudRealtimeEvent) => void,
+) => {
+  if (
+    typeof window === "undefined" ||
+    typeof WebSocket === "undefined" ||
+    typeof window.location?.host !== "string"
+  ) {
+    return () => {};
+  }
+
+  let closed = false;
+  let socket: WebSocket | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectAttempt = 0;
+
+  const clearReconnectTimer = () => {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  };
+
+  const scheduleReconnect = (delay?: number) => {
+    if (
+      closed ||
+      reconnectTimer ||
+      document.visibilityState === "hidden"
+    ) {
+      return;
+    }
+    const backoff = Math.min(30_000, 500 * 2 ** Math.min(reconnectAttempt, 6));
+    reconnectAttempt += 1;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, delay ?? backoff + Math.floor(Math.random() * 250));
+  };
+
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === "visible") {
+      if (!socket || socket.readyState === WebSocket.CLOSED) {
+        scheduleReconnect(0);
+      }
+    }
+  };
+
+  const connect = () => {
+    if (closed || document.visibilityState === "hidden") {
+      return;
+    }
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const url = new URL(`${protocol}//${window.location.host}/api/realtime`);
+    if (sceneId) {
+      url.searchParams.set("scene_id", sceneId);
+    }
+    try {
+      const nextSocket = new WebSocket(url);
+      socket = nextSocket;
+      nextSocket.addEventListener("open", () => {
+        reconnectAttempt = 0;
+      });
+      nextSocket.addEventListener("message", (event) => {
+        if (typeof event.data !== "string") {
+          return;
+        }
+        try {
+          const parsed = parseCloudRealtimeEvent(JSON.parse(event.data));
+          if (parsed) {
+            callback(parsed);
+          }
+        } catch {
+          // Ignore malformed or non-JSON messages from a proxy.
+        }
+      });
+      nextSocket.addEventListener("close", () => {
+        if (socket === nextSocket) {
+          socket = null;
+        }
+        scheduleReconnect();
+      });
+      nextSocket.addEventListener("error", () => {
+        nextSocket.close();
+      });
+    } catch {
+      scheduleReconnect();
+    }
+  };
+
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+  connect();
+
+  return () => {
+    closed = true;
+    clearReconnectTimer();
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    const activeSocket = socket;
+    socket = null;
+    activeSocket?.close(1000, "client closed");
+  };
+};
+
 const sleep = (duration: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, duration));
 
