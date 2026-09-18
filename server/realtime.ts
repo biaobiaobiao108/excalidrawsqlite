@@ -192,8 +192,5 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
       }
       return undefined;
     },
-    setServer: (nextServer: Bun.Server<RealtimeSocketData>) => {
-      server = nextServer;
-    },
   };
 };
