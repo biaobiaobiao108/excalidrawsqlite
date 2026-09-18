@@ -564,6 +564,16 @@ export class CloudSaveQueue {
             baseRevision: snapshot.baseRevision,
           });
           this.revisions.set(sceneId, saved.revision);
+          const nextSnapshot = this.pending.get(sceneId);
+          if (
+            nextSnapshot &&
+            nextSnapshot.baseRevision === snapshot.baseRevision
+          ) {
+            this.pending.set(sceneId, {
+              ...nextSnapshot,
+              baseRevision: saved.revision,
+            });
+          }
           broadcastCloudSync({
             type: "scene_saved",
             sceneId,
