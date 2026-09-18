@@ -11,14 +11,15 @@
 | 对比维度 | 官方 / 社区原版 Excalidraw | 本项目 (Excalidraw Bun + SQLite 纯净版) |
 | :-- | :-- | :-- |
 | **运行时与架构** | Node.js + Yarn，微服务或多容器配置 | **100% 全栈 Bun (1.4.2+) 驱动**，单进程一体化极速托管，纯 TypeScript ESM 脚本工具链 |
-| **数据持久化** | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端 | **原生 SQLite WAL 高性能持久化**，Prepared Statements 预编译单例复用，单卷挂载 `./data:/app/data` |
+| **数据持久化** | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端 | **原生 SQLite WAL 高性能持久化**，Prepared Statements、摘要列、部分索引与 keyset 分页，单卷挂载 `./data:/app/data` |
 | **多画板管理** | 单画板模式，需手动导出/导入 `.excalidraw` 文件 | **内置画板工作台**：列表/网格浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达 |
-| **图元统计** | 无图元数量感知 | **内置图元数量统计**：基于 SQLite `json_array_length` 毫秒级统计并在卡片展示 |
-| **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存 | **本地文件系统独立归档 + ETag / 304 Not Modified 秒级增量协商缓存** |
+| **图元统计** | 无图元数量感知 | **内置图元数量统计**：保存时维护去 JSON 扫描的 `element_count` / `content_bytes` 摘要列并在卡片展示 |
+| **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存 | **本地文件系统独立归档 + SHA-256 ETag / 304 + 隔离式分批垃圾回收** |
 | **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据仍只访问本机/局域网服务，霞鹜文楷与思源黑体使用版本化 CDN |
 | **中文字体支持** | 默认依赖外部在线 Google Fonts 或英文字体 | **通过 jsDelivr 加载「霞鹜文楷」与「思源黑体」CJK 字体**（Unicode 子集化拆分按需加载） |
 | **身份认证安全** | 无或 Token 明文保存在浏览器本地存储 | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据 |
 | **浏览器与构建** | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置 | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
+| **多端同步** | 依赖手动刷新或高频轮询 | **Bun 原生 WebSocket topic 广播 + 自动重连 + revision 条件拉取** |
 | **前端现代体验** | 传统弹窗布局与全局媒体查询 | **原生 `<dialog>` 无障碍模型（`aria-modal`） + CSS `@container` 容器查询与 `:has()` 现代选择器** |
 | **代码工程质量** | 旧版 ESLint 8 与多份分散的编译器依赖 | **TypeScript 6.0+ 全 Monorepo 统一驱动 + ESLint 9 Flat Config** |
 | **全栈开发体验** | 需分别启动前端开发服务与后端 API，跨端口代理 | **`bun run dev` 一体化热重载**，单命令启动前后端，原生 SSE 毫秒级自动热刷新 |
@@ -36,9 +37,12 @@
 ### 2. 💾 SQLite WAL 云端自动持久化
 
 - **高性能写入**：基于 Bun 原生 `bun:sqlite`，开启 WAL (Write-Ahead Logging) 模式与高并发事务。
+- **查询优化**：画板摘要列避免列表页扫描 `elements` JSON；有效画板、回收站、文件夹场景分别使用复合/部分索引，列表 API 支持 `limit`、`cursor`、`q`、`folder_id` 与 `favorite` 参数的 keyset 分页。
 - **自动防抖同步**：画布修改后防抖约 30 秒自动同步至云端，并使用 `revision` 乐观锁机制防止并发快照覆盖。
+- **多端实时同步**：同源 `/api/realtime` 使用 Bun 原生 WebSocket；服务端只广播场景 ID、revision 和变更类型，客户端收到后按 ETag/revision 拉取内容，避免把大画板或附件推入 WebSocket。
 - **离开保护**：离开画板或返回工作台主页时，前端会主动等待队列保存完毕再跳转。
 - **附件独立存储**：图片/媒体文件存储于本地 `data/files/`，SQLite 仅保存文件元数据与 SHA-256 哈希，避免大文件膨胀数据库。
+- **附件生命周期**：上传采用流式写临时文件、增量 SHA-256、原子替换与同内容幂等更新；未引用附件按批次回收，删除前先移动到 `.gc` 隔离文件，启动/维护任务会清理过期临时产物。
 
 ### 3. 🗂️ 完善的多画板与工作台系统
 
@@ -67,7 +71,7 @@
 
 ### 7. 📦 完整备份与一键归档
 
-- 支持一键导出包含 `excalidraw.db` 数据库、`manifest.json` 与 `files/` 图片附件的完整 `.tar` 归档包，数据迁移安全无忧。
+- 支持一键导出包含 `excalidraw.db` 数据库、`manifest.json` 与 `files/` 图片附件的完整 `.tar` 归档包；归档先写临时文件并原子改名，再以流式响应返回，避免备份大小翻倍占用内存。
 
 ---
 
@@ -218,6 +222,7 @@ AUTH_PASSWORD=your-password bun run dev
 │   ├── scenes.ts           # 画板、文件夹与场景数据处理
 │   ├── files.ts            # 附件、缩略图与存储一致性维护
 │   ├── backup.ts           # SQLite 快照与完整备份
+│   ├── realtime.ts         # Bun 原生 WebSocket 鉴权、topic 与变更广播
 │   ├── static.ts           # 静态资源路径与 SPA fallback 辅助
 │   └── ...                  # 持久化、备份、并发与安全模块
 ├── scripts/
@@ -232,7 +237,7 @@ AUTH_PASSWORD=your-password bun run dev
 │   │   └── ...
 │   ├── data/
 │   │   ├── cloudStorage.ts # 云端 REST API 客户端与数据接口
-│   │   └── cloudSync.ts    # 30s 串行防抖自动保存队列与多标签同步
+│   │   └── cloudSync.ts    # 30s 防抖保存队列、分页读取与 WebSocket 自动重连同步
 │   └── index.html          # 前端 HTML 入口 (直接由 Bun.build 解析打包)
 ├── packages/               # Excalidraw 核心内部包 (Monorepo)
 │   ├── excalidraw/         # 核心渲染与画布引擎 (Excalifont 本地，霞鹜文楷与思源黑体由 CDN 加载)
@@ -262,14 +267,15 @@ AUTH_PASSWORD=your-password bun run dev
 | `GET` | `/api/auth/status` | 查询当前密码保护状态及当前客户端登录态 |
 | `POST` | `/api/auth/verify` | 提交密码进行验证，成功后下发 HttpOnly 会话 Cookie |
 | `POST` | `/api/auth/logout` | 注销登录并销毁服务端会话 |
-| `GET` | `/api/scenes` | 获取所有有效画板列表（包含名称、更新时间、图元数量 `element_count`） |
+| `GET` | `/api/scenes` | 获取有效画板列表；带 `limit/cursor/q/folder_id/favorite` 时返回 keyset 分页结果 |
 | `POST` | `/api/scenes` | 创建新画板 |
 | `GET` | `/api/scenes/:id` | 获取指定画板的图元数据与应用状态 |
+| `GET` | `/api/realtime` | 同源 Bun 原生 WebSocket；按 `scene_id` 订阅轻量场景/工作区变更事件 |
 | `PATCH` | `/api/scenes/:id` | 修改画板元数据（名称、文件夹、标签、收藏状态） |
 | `PUT` | `/api/scenes/:id` | 保存画板快照，携带 `baseRevision` 乐观锁校验 |
 | `PUT` | `/api/scenes/:id/thumbnail` | 保存画板缩略图预览 |
 | `DELETE` | `/api/scenes/:id` | 软删除画板至回收站 |
-| `GET` | `/api/scenes/trash` | 获取回收站中的画板列表 |
+| `GET` | `/api/scenes/trash` | 获取回收站中的画板列表，支持同样的 keyset 分页参数 |
 | `POST` | `/api/scenes/:id/restore` | 从回收站还原指定画板 |
 | `DELETE` | `/api/scenes/trash` | 彻底清空回收站 |
 | `GET` | `/api/folders` | 获取文件夹列表及各文件夹画板计数 |
