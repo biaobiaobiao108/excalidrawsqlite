@@ -493,16 +493,37 @@ export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
     }>;
 
     for (const row of rows) {
-      const deleted = runtime.db.run(
-        `DELETE FROM files
-         WHERE id = ?
-           AND updated_at = ?
-           AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)
-           AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)`,
-        [row.id, row.updated_at],
-      );
-      if (deleted.changes && row.storage_path) {
-        await fs.promises.rm(getFilePath(runtime, row.id), { force: true });
+      const filePath = getFilePath(runtime, row.id);
+      const quarantinePath = `${filePath}.${randomHex(8)}.gc`;
+      let quarantined = false;
+      try {
+        if (row.storage_path && (await fileExists(filePath))) {
+          await fs.promises.rename(filePath, quarantinePath);
+          quarantined = true;
+        }
+        const deleted = runtime.db.run(
+          `DELETE FROM files
+           WHERE id = ?
+             AND updated_at = ?
+             AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)
+             AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)`,
+          [row.id, row.updated_at],
+        );
+        if (deleted.changes && quarantined) {
+          await fs.promises.rm(quarantinePath, { force: true });
+        } else if (quarantined) {
+          await fs.promises.rename(quarantinePath, filePath);
+        }
+      } catch (error) {
+        if (quarantined) {
+          await fs.promises
+            .rename(quarantinePath, filePath)
+            .catch(() => undefined);
+        }
+        console.warn("[Files] 附件垃圾回收失败，保留原文件", {
+          id: row.id,
+          error,
+        });
       }
     }
   });
