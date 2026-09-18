@@ -817,7 +817,28 @@ export const createRequestHandler = (
         if (!row) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
-        return jsonResponse(runtime, req, parseStoredScene(row));
+        const sceneRevision = Number((row as any).revision) || 1;
+        const sceneUpdatedAt = Number((row as any).updated_at) || 0;
+        const etag = `"scene-${id}-${sceneRevision}-${sceneUpdatedAt}"`;
+        const ifNoneMatch = req.headers.get("if-none-match");
+        if (
+          ifNoneMatch
+            ?.split(",")
+            .map((value) => value.trim())
+            .some((value) => value === etag || value === "*")
+        ) {
+          return response(runtime, req, null, {
+            status: 304,
+            headers: {
+              ETag: etag,
+              "Cache-Control": "private, no-cache",
+            },
+          });
+        }
+        return jsonResponse(runtime, req, parseStoredScene(row), 200, {
+          ETag: etag,
+          "Cache-Control": "private, no-cache",
+        });
       }
 
       if (
