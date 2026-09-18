@@ -4,6 +4,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -30,6 +31,7 @@ const EditorLoadingState = () => (
 
 const ExcalidrawApp = () => {
   const [currentUrl, setCurrentUrl] = useState(() => window.location.href);
+  const navigationRequestRef = useRef(0);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -48,12 +50,22 @@ const ExcalidrawApp = () => {
   const shouldRenderWorkspaceHome = !sceneId;
 
   const navigateToScene = useCallback((targetSceneId: string) => {
-    preloadEditorApp();
+    const requestId = ++navigationRequestRef.current;
     const url = new URL(window.location.href);
     url.search = `?id=${encodeURIComponent(targetSceneId)}`;
     url.hash = "";
-    window.history.pushState(null, "", `${url.pathname}${url.search}`);
-    startTransition(() => setCurrentUrl(window.location.href));
+
+    void loadEditorApp()
+      .then(() => {
+        if (navigationRequestRef.current !== requestId) {
+          return;
+        }
+        window.history.pushState(null, "", `${url.pathname}${url.search}`);
+        startTransition(() => setCurrentUrl(window.location.href));
+      })
+      .catch((error) => {
+        console.error("加载编辑器失败", error);
+      });
   }, []);
 
   const navigateToWorkspace = useCallback(() => {
@@ -68,7 +80,10 @@ const ExcalidrawApp = () => {
     <TopErrorBoundary>
       <Provider store={appJotaiStore}>
         {shouldRenderWorkspaceHome ? (
-          <WorkspaceHome onSelectScene={navigateToScene} />
+          <WorkspaceHome
+            onSelectScene={navigateToScene}
+            onPreloadScene={preloadEditorApp}
+          />
         ) : (
           <Suspense fallback={<EditorLoadingState />}>
             <LazyEditorApp

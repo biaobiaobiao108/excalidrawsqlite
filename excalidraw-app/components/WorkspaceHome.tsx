@@ -313,6 +313,7 @@ const BoardThumbnail = ({
 const BoardCard = ({
   scene,
   onOpen,
+  onPreload,
   onToggleFavorite,
   onEdit,
   onDelete,
@@ -323,6 +324,7 @@ const BoardCard = ({
 }: {
   scene: CloudSceneSummary;
   onOpen: (scene: CloudSceneSummary, newTab?: boolean) => void;
+  onPreload?: () => void;
   onToggleFavorite: (scene: CloudSceneSummary) => void;
   onEdit: (scene: CloudSceneSummary) => void;
   onDelete: (scene: CloudSceneSummary) => void;
@@ -354,7 +356,11 @@ const BoardCard = ({
   };
 
   return (
-    <article className={`board-card ${isTrash ? "is-trash-card" : ""}`}>
+    <article
+      className={`board-card ${isTrash ? "is-trash-card" : ""}`}
+      onMouseEnter={onPreload}
+      onFocusCapture={onPreload}
+    >
       {isTrash ? (
         <div
           className="board-card-open is-disabled"
@@ -709,8 +715,10 @@ const ConfirmDialog = ({
 
 export const WorkspaceHome = ({
   onSelectScene,
+  onPreloadScene,
 }: {
   onSelectScene?: (sceneId: string) => void;
+  onPreloadScene?: () => void;
 }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -1478,6 +1486,7 @@ export const WorkspaceHome = ({
                         key={scene.id}
                         scene={scene}
                         onOpen={navigateToScene}
+                        onPreload={onPreloadScene}
                         onToggleFavorite={handleToggleFavorite}
                         onEdit={openMetadataDialog}
                         onDelete={handleDeleteScene}
@@ -1608,6 +1617,7 @@ export const WorkspaceHome = ({
                     scene={scene}
                     isTrash={view === "trash"}
                     onOpen={navigateToScene}
+                    onPreload={onPreloadScene}
                     onToggleFavorite={handleToggleFavorite}
                     onEdit={openMetadataDialog}
                     onDelete={handleDeleteScene}
