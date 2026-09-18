@@ -1,5 +1,6 @@
 import {
   lazy,
+  startTransition,
   Suspense,
   useCallback,
   useEffect,
@@ -11,16 +12,16 @@ import { Provider, appJotaiStore } from "./app-jotai";
 import { WorkspaceHome } from "./components/WorkspaceHome";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 
-const LazyEditorApp = lazy(() => import("./EditorApp"));
+const loadEditorApp = () => import("./EditorApp");
+const LazyEditorApp = lazy(loadEditorApp);
+
+const preloadEditorApp = () => {
+  void loadEditorApp();
+};
 
 const EditorLoadingState = () => (
   <div
-    style={{
-      alignItems: "center",
-      display: "flex",
-      height: "100%",
-      justifyContent: "center",
-    }}
+    className="editor-loading-state"
     role="status"
   >
     正在加载编辑器...
@@ -32,7 +33,11 @@ const ExcalidrawApp = () => {
 
   useEffect(() => {
     const handlePopState = () => {
-      setCurrentUrl(window.location.href);
+      const nextUrl = window.location.href;
+      if (new URL(nextUrl).searchParams.has("id")) {
+        preloadEditorApp();
+      }
+      startTransition(() => setCurrentUrl(nextUrl));
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -43,11 +48,12 @@ const ExcalidrawApp = () => {
   const shouldRenderWorkspaceHome = !sceneId;
 
   const navigateToScene = useCallback((targetSceneId: string) => {
+    preloadEditorApp();
     const url = new URL(window.location.href);
     url.search = `?id=${encodeURIComponent(targetSceneId)}`;
     url.hash = "";
     window.history.pushState(null, "", `${url.pathname}${url.search}`);
-    setCurrentUrl(window.location.href);
+    startTransition(() => setCurrentUrl(window.location.href));
   }, []);
 
   const navigateToWorkspace = useCallback(() => {
@@ -55,7 +61,7 @@ const ExcalidrawApp = () => {
     url.search = "";
     url.hash = "";
     window.history.pushState(null, "", `${url.pathname}`);
-    setCurrentUrl(window.location.href);
+    startTransition(() => setCurrentUrl(window.location.href));
   }, []);
 
   return (

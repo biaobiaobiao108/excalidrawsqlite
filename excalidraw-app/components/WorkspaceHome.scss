@@ -16,7 +16,6 @@
   background: var(--workspace-bg);
   color: var(--workspace-text);
   font-family: var(--ui-font, system-ui, sans-serif);
-  animation: workspace-page-enter 360ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
 .workspace-home button,
@@ -420,8 +419,6 @@
   gap: 1rem;
   max-inline-size: 1240px;
   margin-inline: auto;
-  animation: workspace-section-enter 420ms 40ms cubic-bezier(0.2, 0.8, 0.3, 1)
-    both;
 }
 
 .workspace-main-heading h1 {
@@ -486,14 +483,10 @@
 
 .recent-section {
   margin-block-start: 3.1rem;
-  animation: workspace-section-enter 420ms 100ms cubic-bezier(0.2, 0.8, 0.3, 1)
-    both;
 }
 
 .all-boards-section {
   margin-block-start: 3rem;
-  animation: workspace-section-enter 420ms 150ms cubic-bezier(0.2, 0.8, 0.3, 1)
-    both;
 }
 
 .section-heading {
@@ -565,7 +558,6 @@
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 2px 10px rgba(37, 32, 82, 0.03);
-  animation: workspace-card-enter 420ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
   transition: border-color 140ms ease, box-shadow 140ms ease,
     transform 140ms ease;
 }
@@ -1444,47 +1436,16 @@
   }
 }
 
-.excalidraw-app {
-  animation: editor-screen-enter 360ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .workspace-home,
-  .workspace-home .workspace-main-heading,
-  .workspace-home .recent-section,
-  .workspace-home .all-boards-section,
-  .workspace-home .board-card,
   .workspace-dialog,
   .workspace-dialog-content-shell,
-  .workspace-dialog::backdrop,
-  .excalidraw-app {
+  .workspace-dialog::backdrop {
     animation: none !important;
   }
 
   .workspace-home * {
     scroll-behavior: auto !important;
     transition: none !important;
-  }
-}
-
-@keyframes workspace-page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
-
-@keyframes workspace-section-enter {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-}
-
-@keyframes workspace-card-enter {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
   }
 }
 
@@ -1498,12 +1459,5 @@
   from {
     opacity: 0;
     transform: translateY(10px) scale(0.98);
-  }
-}
-
-@keyframes editor-screen-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
   }
 }
