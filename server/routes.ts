@@ -175,9 +175,8 @@ const listScenePage = (
   if (query.length > 120) {
     throw new HttpError(400, "INVALID_QUERY", "搜索关键词过长");
   }
-  const folderId = url.searchParams.has("folder_id")
-    ? url.searchParams.get("folder_id") || null
-    : undefined;
+  const hasFolderFilter = url.searchParams.has("folder_id");
+  const folderId = hasFolderFilter ? url.searchParams.get("folder_id") : undefined;
   const favorite = url.searchParams.has("favorite")
     ? url.searchParams.get("favorite")
     : undefined;
@@ -196,9 +195,11 @@ const listScenePage = (
     );
     params.push(pattern, pattern);
   }
-  if (folderId !== undefined && folderId !== null) {
+  if (folderId) {
     conditions.push("scenes.folder_id = ?");
     params.push(folderId);
+  } else if (hasFolderFilter) {
+    conditions.push("scenes.folder_id IS NULL");
   }
   if (favorite !== undefined) {
     conditions.push("scenes.is_favorite = ?");
