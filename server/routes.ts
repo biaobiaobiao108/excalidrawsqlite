@@ -1345,19 +1345,6 @@ export const createRequestHandler = (
 
         const etag = row.sha256 ? `"${row.sha256}"` : undefined;
         const ifNoneMatch = req.headers.get("if-none-match");
-
-        if (String(row.mime_type).toLowerCase() === "image/svg+xml") {
-          return response(runtime, req, Bun.file(filePath), {
-            headers: {
-              "Content-Type": "application/octet-stream",
-              "Content-Disposition": `attachment; filename="${id}"`,
-              "Content-Length": String(row.byte_size),
-              "X-File-Created-At": String(row.created_at),
-              "Cache-Control": "private, no-store",
-            },
-          });
-        }
-
         const cacheControl = id.startsWith("thumbnail_")
           ? "private, no-cache"
           : "private, max-age=31536000, immutable";
@@ -1367,15 +1354,27 @@ export const createRequestHandler = (
             .split(",")
             .map((item) => item.trim());
           if (clientEtags.includes(etag) || clientEtags.includes("*")) {
-            const notModifiedHeaders: Record<string, string> = {
-              ETag: etag,
-              "Cache-Control": cacheControl,
-            };
             return response(runtime, req, null, {
               status: 304,
-              headers: notModifiedHeaders,
+              headers: {
+                ETag: etag,
+                "Cache-Control": cacheControl,
+              },
             });
           }
+        }
+
+        if (String(row.mime_type).toLowerCase() === "image/svg+xml") {
+          return response(runtime, req, Bun.file(filePath), {
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "Content-Disposition": `attachment; filename="${id}"`,
+              "Content-Length": String(row.byte_size),
+              "X-File-Created-At": String(row.created_at),
+              "Cache-Control": "private, no-store",
+              ...(etag ? { ETag: etag } : {}),
+            },
+          });
         }
 
         const accept = req.headers.get("accept") || "";
