@@ -26,7 +26,7 @@ export const WRITE_RATE_WINDOW_MS = 60 * 1000;
 export const MAX_RATE_LIMIT_KEYS = 10_000;
 export const ORPHAN_FILE_GRACE_MS = 24 * 60 * 60 * 1000;
 export const STALE_FILE_ARTIFACT_MS = 60 * 60 * 1000;
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const parseBooleanEnv = (value: string | undefined) =>
   value?.toLowerCase() === "true";

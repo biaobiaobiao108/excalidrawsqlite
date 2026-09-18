@@ -43,7 +43,11 @@ export const initializeDatabase = (db: Database) => {
       is_favorite INTEGER NOT NULL DEFAULT 0,
       folder_id TEXT,
       last_opened_at INTEGER,
-      thumbnail_file_id TEXT
+      thumbnail_file_id TEXT,
+      deleted_at INTEGER,
+      element_count INTEGER NOT NULL DEFAULT 0,
+      content_bytes INTEGER NOT NULL DEFAULT 0,
+      content_sha256 TEXT NOT NULL DEFAULT ''
     );
   `);
 
@@ -86,6 +90,9 @@ export const initializeDatabase = (db: Database) => {
   ensureColumn(db, "scenes", "last_opened_at", "INTEGER");
   ensureColumn(db, "scenes", "thumbnail_file_id", "TEXT");
   ensureColumn(db, "scenes", "deleted_at", "INTEGER");
+  ensureColumn(db, "scenes", "element_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "scenes", "content_bytes", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "scenes", "content_sha256", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "files", "storage_path", "TEXT");
   ensureColumn(db, "files", "byte_size", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "files", "sha256", "TEXT NOT NULL DEFAULT ''");
@@ -115,10 +122,19 @@ export const initializeDatabase = (db: Database) => {
     "CREATE INDEX IF NOT EXISTS idx_scenes_active_updated_at ON scenes(updated_at DESC) WHERE deleted_at IS NULL",
   );
   db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_active_updated_id ON scenes(updated_at DESC, id DESC) WHERE deleted_at IS NULL",
+  );
+  db.run(
     "CREATE INDEX IF NOT EXISTS idx_scenes_trash_deleted_at ON scenes(deleted_at DESC) WHERE deleted_at IS NOT NULL",
   );
   db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_trash_deleted_id ON scenes(deleted_at DESC, id DESC) WHERE deleted_at IS NOT NULL",
+  );
+  db.run(
     "CREATE INDEX IF NOT EXISTS idx_scenes_active_folder_id ON scenes(folder_id) WHERE deleted_at IS NULL",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_active_folder_updated_id ON scenes(folder_id, updated_at DESC, id DESC) WHERE deleted_at IS NULL",
   );
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_scenes_thumbnail_file_id ON scenes(thumbnail_file_id)",
@@ -132,6 +148,42 @@ export const initializeDatabase = (db: Database) => {
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",
   );
+  db.run("PRAGMA optimize=0x10002;");
+};
+
+const backfillSceneSummaryColumns = (db: Database) => {
+  const rows = db
+    .query(
+      "SELECT id, elements FROM scenes WHERE content_bytes = 0 OR content_sha256 = ''",
+    )
+    .all() as Array<{ id: string; elements: string }>;
+  if (!rows.length) {
+    return;
+  }
+
+  const update = db.query(
+    `UPDATE scenes
+     SET element_count = ?, content_bytes = ?, content_sha256 = ?
+     WHERE id = ?`,
+  );
+  for (const row of rows) {
+    let elementCount = 0;
+    try {
+      const elements = JSON.parse(row.elements || "[]");
+      elementCount = Array.isArray(elements)
+        ? elements.filter((element) => element?.isDeleted !== true).length
+        : 0;
+    } catch {
+      // Keep corrupt scenes loadable; the normal scene parser reports them later.
+    }
+    const elementsText = row.elements || "[]";
+    update.run(
+      elementCount,
+      elementsText.length,
+      sha256Hex(elementsText),
+      row.id,
+    );
+  }
 };
 
 export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
@@ -153,6 +205,7 @@ export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
     db.run(
       "UPDATE scenes SET last_opened_at = COALESCE(last_opened_at, updated_at)",
     );
+    backfillSceneSummaryColumns(db);
     db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     return;
   }
@@ -254,6 +307,7 @@ export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
   db.run(
     "UPDATE scenes SET last_opened_at = COALESCE(last_opened_at, updated_at)",
   );
+  backfillSceneSummaryColumns(db);
   db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   console.info("[Migration] 数据库迁移完成", {
     fromVersion: version,
