@@ -66,7 +66,7 @@ export const shutdownServer = async (options: {
     closeRealtime,
     maintenanceTimer,
     backgroundTasks = new Set(),
-    timeoutMs = 5_000,
+    timeoutMs = 2_000,
   } = options;
 
   let gracefulError: unknown;
@@ -133,7 +133,7 @@ export const createShutdownSignalHandler = (
       return;
     }
     shutdownPromise = shutdown()
-      .then(({ forced }) => exit(forced ? 1 : 0))
+      .then(() => exit(0))
       .catch((error) => {
         console.error("[Server] 关闭失败", error);
         exit(1);

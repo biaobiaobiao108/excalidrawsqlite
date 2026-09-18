@@ -125,4 +125,36 @@ describe("server shutdown", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(exitCodes).toEqual([0]);
   });
+
+  it("exits cleanly with code 0 even when connection shutdown is forced", async () => {
+    let resolveShutdown!: (result: { forced: boolean }) => void;
+    const exitCodes: number[] = [];
+    const shutdown = () => {
+      return new Promise<{ forced: boolean }>((resolve) => {
+        resolveShutdown = resolve;
+      });
+    };
+    const handleShutdown = createShutdownSignalHandler(shutdown, (code) => {
+      exitCodes.push(code);
+    });
+
+    handleShutdown();
+    resolveShutdown({ forced: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(exitCodes).toEqual([0]);
+  });
+
+  it("exits with code 1 when shutdown throws an unhandled error", async () => {
+    const exitCodes: number[] = [];
+    const shutdown = async () => {
+      throw new Error("fatal shutdown error");
+    };
+    const handleShutdown = createShutdownSignalHandler(shutdown, (code) => {
+      exitCodes.push(code);
+    });
+
+    handleShutdown();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(exitCodes).toEqual([1]);
+  });
 });
