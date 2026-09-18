@@ -157,7 +157,7 @@ const listScenePage = (
     );
     params.push(pattern, pattern);
   }
-  if (folderId !== undefined) {
+  if (folderId !== undefined && folderId !== null) {
     conditions.push("scenes.folder_id = ?");
     params.push(folderId);
   }
