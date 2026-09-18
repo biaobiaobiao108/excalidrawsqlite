@@ -93,6 +93,31 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
       ws.subscribe(WORKSPACE_TOPIC);
       if (ws.data.sceneId) {
         ws.subscribe(sceneTopic(ws.data.sceneId));
+        const row = runtime.db
+          .query(
+            "SELECT revision, updated_at, deleted_at FROM scenes WHERE id = ?",
+          )
+          .get(ws.data.sceneId) as {
+          revision: number;
+          updated_at: number;
+          deleted_at: number | null;
+        } | null;
+        ws.sendText(
+          serializeEvent({
+            type: "scene_changed",
+            sceneId: ws.data.sceneId,
+            revision: Number(row?.revision) || 0,
+            updatedAt: Number(row?.updated_at) || Date.now(),
+            changeKind: row?.deleted_at ? "deleted" : "content",
+          }),
+        );
+      } else {
+        ws.sendText(
+          serializeEvent({
+            type: "workspace_changed",
+            updatedAt: Date.now(),
+          }),
+        );
       }
       ws.sendText(
         JSON.stringify({
