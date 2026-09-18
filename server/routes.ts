@@ -659,6 +659,13 @@ export const createRequestHandler = (
           }
           throw error;
         }
+        publishSceneChanged(runtime, {
+          type: "scene_changed",
+          sceneId: id,
+          revision: 1,
+          updatedAt: now,
+          changeKind: "created",
+        });
         return jsonResponse(
           runtime,
           req,
@@ -711,6 +718,7 @@ export const createRequestHandler = (
           }
           throw error;
         }
+        publishWorkspaceChanged(runtime, now);
         return jsonResponse(
           runtime,
           req,
@@ -738,6 +746,7 @@ export const createRequestHandler = (
         if (!updated) {
           throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
         }
+        publishWorkspaceChanged(runtime, now);
         return jsonResponse(runtime, req, {
           success: true,
           ...updated,
@@ -762,6 +771,7 @@ export const createRequestHandler = (
           runtime.db.run("DELETE FROM folders WHERE id = ?", [id]);
         });
         transaction();
+        publishWorkspaceChanged(runtime, Date.now());
         return jsonResponse(runtime, req, { success: true, id, deleted: true });
       }
 
@@ -778,6 +788,7 @@ export const createRequestHandler = (
         const existing = stmts.getSceneStateById.get(id) as {
           id: string;
           deleted_at: number | null;
+          revision: number;
         } | null;
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
@@ -785,6 +796,14 @@ export const createRequestHandler = (
         runtime.db.run("UPDATE scenes SET deleted_at = NULL WHERE id = ?", [
           id,
         ]);
+        const updatedAt = Date.now();
+        publishSceneChanged(runtime, {
+          type: "scene_changed",
+          sceneId: id,
+          revision: Number(existing.revision) || 1,
+          updatedAt,
+          changeKind: "restored",
+        });
         return jsonResponse(runtime, req, {
           success: true,
           id,
@@ -834,6 +853,10 @@ export const createRequestHandler = (
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
+        const sceneRevision = Number(
+          (stmts.getSceneRevision.get(id) as { revision: number } | null)
+            ?.revision,
+        ) || 1;
         const contentType = req.headers.get("content-type")?.toLowerCase();
         if (
           contentType !== "image/png" &&
@@ -890,6 +913,13 @@ export const createRequestHandler = (
             "UPDATE scenes SET thumbnail_file_id = ? WHERE id = ?",
             [thumbnailId, id],
           );
+          publishSceneChanged(runtime, {
+            type: "scene_changed",
+            sceneId: id,
+            revision: sceneRevision,
+            updatedAt: Date.now(),
+            changeKind: "thumbnail",
+          });
           return jsonResponse(runtime, req, {
             success: true,
             id,
@@ -915,6 +945,10 @@ export const createRequestHandler = (
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
+        const sceneRevision = Number(
+          (stmts.getSceneRevision.get(id) as { revision: number } | null)
+            ?.revision,
+        ) || 1;
         const thumbnailId = `thumbnail_${sha256Hex(id)}`;
         const thumbnailVersionHeader = req.headers.get("x-thumbnail-version");
         const thumbnailVersion = thumbnailVersionHeader
@@ -956,6 +990,13 @@ export const createRequestHandler = (
               thumbnailId,
             ]);
           }
+          publishSceneChanged(runtime, {
+            type: "scene_changed",
+            sceneId: id,
+            revision: sceneRevision,
+            updatedAt: Date.now(),
+            changeKind: "thumbnail",
+          });
           return jsonResponse(runtime, req, {
             success: true,
             id,
@@ -1025,6 +1066,13 @@ export const createRequestHandler = (
         });
         transaction.immediate();
         const updated = stmts.getSceneSummaryById.get(id);
+        publishSceneChanged(runtime, {
+          type: "scene_changed",
+          sceneId: id,
+          revision,
+          updatedAt: now,
+          changeKind: "metadata",
+        });
         return jsonResponse(runtime, req, getSceneSummary(updated));
       }
 
@@ -1122,6 +1170,13 @@ export const createRequestHandler = (
           syncSceneFileReferences(runtime, id, fileIds);
         });
         transaction.immediate();
+        publishSceneChanged(runtime, {
+          type: "scene_changed",
+          sceneId: id,
+          revision,
+          updatedAt: now,
+          changeKind: "content",
+        });
         return jsonResponse(runtime, req, {
           success: true,
           id,
@@ -1134,6 +1189,9 @@ export const createRequestHandler = (
         const result = runtime.db.run(
           "DELETE FROM scenes WHERE deleted_at IS NOT NULL",
         );
+        if (result.changes > 0) {
+          publishWorkspaceChanged(runtime, Date.now());
+        }
         return jsonResponse(runtime, req, {
           success: true,
           deletedCount: result.changes,
@@ -1145,6 +1203,7 @@ export const createRequestHandler = (
         const existing = stmts.getSceneStateById.get(id) as {
           id: string;
           deleted_at: number | null;
+          revision: number;
         } | null;
         if (!existing) {
           return jsonResponse(runtime, req, {
@@ -1160,6 +1219,13 @@ export const createRequestHandler = (
             runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
           });
           transaction();
+          publishSceneChanged(runtime, {
+            type: "scene_changed",
+            sceneId: id,
+            revision: Number(existing.revision) || 1,
+            updatedAt: Date.now(),
+            changeKind: "deleted",
+          });
           return jsonResponse(runtime, req, {
             success: true,
             id,
@@ -1172,6 +1238,13 @@ export const createRequestHandler = (
           now,
           id,
         ]);
+        publishSceneChanged(runtime, {
+          type: "scene_changed",
+          sceneId: id,
+          revision: Number(existing.revision) || 1,
+          updatedAt: now,
+          changeKind: "deleted",
+        });
         return jsonResponse(runtime, req, {
           success: true,
           id,
