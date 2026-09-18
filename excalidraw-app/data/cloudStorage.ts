@@ -167,6 +167,13 @@ const dataUrlToBlob = (dataURL: string, mimeType: string) => {
   return new Blob([bytes], { type: mimeType });
 };
 
+const sha256Hex = async (blob: Blob) => {
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+};
+
 const blobToDataURL = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -590,6 +597,15 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
     if (uploadedCloudFileData.get(file.id) === file.dataURL) {
       return;
     }
+    const blob = dataUrlToBlob(file.dataURL, file.mimeType);
+    const knownEtag = cloudFileEtags.get(file.id);
+    if (knownEtag) {
+      const digest = `"${await sha256Hex(blob)}"`;
+      if (digest === knownEtag) {
+        uploadedCloudFileData.set(file.id, file.dataURL);
+        return;
+      }
+    }
     const res = await fetchWithTimeout(
       `/api/files/${encodeURIComponent(file.id)}`,
       {
@@ -598,7 +614,7 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
           Accept: "application/json",
           "Content-Type": file.mimeType,
         },
-        body: dataUrlToBlob(file.dataURL, file.mimeType),
+        body: blob,
       },
       "保存云端图片失败",
     );
