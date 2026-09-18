@@ -560,18 +560,30 @@ export const cleanupUntrackedFiles = async (runtime: ServerRuntime) => {
 
 export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
   const cutoff = Date.now() - STALE_FILE_ARTIFACT_MS;
-  const entries = await fs.promises.readdir(runtime.filesDir, {
-    withFileTypes: true,
-  });
-  for (const entry of entries) {
-    if (!entry.isFile() || !/\.(?:tmp|bak|gc)$/.test(entry.name)) {
-      continue;
-    }
-    const filePath = path.join(runtime.filesDir, entry.name);
-    const stat = await fs.promises.stat(filePath).catch(() => null);
-    if (stat && stat.mtimeMs < cutoff) {
-      await fs.promises.rm(filePath, { force: true });
-      console.info("[Files] 清理过期临时附件", { filePath });
+  const directories = [
+    {
+      directory: runtime.filesDir,
+      pattern: /\.(?:tmp|bak|gc)$/,
+    },
+    {
+      directory: path.dirname(runtime.dbPath),
+      pattern: /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)\.[A-Za-z0-9]+\.tmp$/,
+    },
+  ];
+  for (const { directory, pattern } of directories) {
+    const entries = await fs.promises.readdir(directory, {
+      withFileTypes: true,
+    });
+    for (const entry of entries) {
+      if (!entry.isFile() || !pattern.test(entry.name)) {
+        continue;
+      }
+      const filePath = path.join(directory, entry.name);
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      if (stat && stat.mtimeMs < cutoff) {
+        await fs.promises.rm(filePath, { force: true });
+        console.info("[Files] 清理过期临时附件", { filePath });
+      }
     }
   }
 };
