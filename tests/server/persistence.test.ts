@@ -438,6 +438,74 @@ describe("cloud persistence server", () => {
     expect(["element-a", "element-b"]).toContain(scene.elements[0]?.id);
   });
 
+  it("paginates scene summaries and supports conditional scene reads", async () => {
+    const { handler } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    for (const [id, name] of [
+      ["scene_page_a", "分页 A"],
+      ["scene_page_b", "分页 B"],
+      ["scene_page_c", "分页 C"],
+    ]) {
+      const created = await jsonRequest(
+        handler,
+        "/api/scenes",
+        { id, name, elements: [], appState: {} },
+        { headers: { Cookie: cookie } },
+      );
+      expect(created.status).toBe(201);
+    }
+
+    const firstPage = await request(handler, "/api/scenes?limit=2", {
+      headers: { Cookie: cookie },
+    });
+    expect(firstPage.status).toBe(200);
+    const firstPageBody = await responseJson<{
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    }>(firstPage);
+    expect(firstPageBody.items).toHaveLength(2);
+    expect(firstPageBody.nextCursor).toBeTruthy();
+
+    const secondPage = await request(
+      handler,
+      `/api/scenes?limit=2&cursor=${encodeURIComponent(
+        firstPageBody.nextCursor!,
+      )}`,
+      { headers: { Cookie: cookie } },
+    );
+    const secondPageBody = await responseJson<{
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    }>(secondPage);
+    expect(secondPageBody.items).toHaveLength(1);
+    expect(
+      new Set([
+        ...firstPageBody.items.map((item) => item.id),
+        ...secondPageBody.items.map((item) => item.id),
+      ]),
+    ).toEqual(
+      new Set(["scene_page_a", "scene_page_b", "scene_page_c"]),
+    );
+
+    const filtered = await request(handler, "/api/scenes?q=%E5%88%86%E9%A1%B5%20B", {
+      headers: { Cookie: cookie },
+    });
+    expect(
+      (await responseJson<{ items: Array<{ id: string }> }>(filtered)).items,
+    ).toEqual([expect.objectContaining({ id: "scene_page_b" })]);
+
+    const sceneResponse = await request(handler, "/api/scenes/scene_page_a", {
+      headers: { Cookie: cookie },
+    });
+    const sceneEtag = sceneResponse.headers.get("etag");
+    expect(sceneEtag).toBeTruthy();
+    const notModified = await request(handler, "/api/scenes/scene_page_a", {
+      headers: { Cookie: cookie, "If-None-Match": sceneEtag! },
+    });
+    expect(notModified.status).toBe(304);
+    expect(notModified.headers.get("etag")).toBe(sceneEtag);
+  });
+
   it("stores files on disk and prevents deleted scenes from being recreated", async () => {
     const { handler, runtime, directory } = createTestRuntime();
     const cookie = await authenticate(handler);
