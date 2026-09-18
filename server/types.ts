@@ -115,6 +115,30 @@ export type ServerConfig = {
 };
 export type RequestAddressResolver = (req: Request) => string | undefined;
 
+export type SceneRealtimeEvent = {
+  type: "scene_changed";
+  sceneId: string;
+  revision: number;
+  updatedAt: number;
+  changeKind:
+    | "created"
+    | "content"
+    | "metadata"
+    | "thumbnail"
+    | "deleted"
+    | "restored";
+};
+
+export type WorkspaceRealtimeEvent = {
+  type: "workspace_changed";
+  updatedAt: number;
+};
+
+export type RealtimePublisher = {
+  publishSceneChanged: (event: SceneRealtimeEvent) => void;
+  publishWorkspaceChanged: (updatedAt?: number) => void;
+};
+
 export type ServerRuntime = {
   db: Database;
   dbPath: string;
@@ -125,4 +149,5 @@ export type ServerRuntime = {
   authAttempts: Map<string, { startedAt: number; count: number }>;
   writeAttempts: Map<string, { startedAt: number; count: number }>;
   bodyMemoryBudget: BodyMemoryBudget;
+  realtime?: RealtimePublisher;
 };
