@@ -69,6 +69,20 @@ describe("native websocket realtime", () => {
     const websocket = new WebSocket(
       `ws://127.0.0.1:${server.port}${REALTIME_PATH}?scene_id=scene_realtime`,
     );
+    const openPromise = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("WebSocket open timeout")),
+        2_000,
+      );
+      websocket.addEventListener("open", () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+      websocket.addEventListener("error", () => {
+        clearTimeout(timeout);
+        reject(new Error("WebSocket connection failed"));
+      });
+    });
     const eventPromise = new Promise<{
       type: string;
       sceneId?: string;
@@ -96,6 +110,7 @@ describe("native websocket realtime", () => {
     });
 
     try {
+      await openPromise;
       const response = await request(handler, "/api/scenes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
