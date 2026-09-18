@@ -14,6 +14,11 @@ import {
 } from "./files";
 import { closeDevReloadSubscribers } from "./dev-reload";
 import { createRequestHandler } from "./routes";
+import {
+  createRealtimeHub,
+  REALTIME_PATH,
+  type RealtimeSocketData,
+} from "./realtime";
 import { createRuntime } from "./runtime";
 import { resolveProjectPath } from "./paths";
 
@@ -143,6 +148,8 @@ export const startServer = async () => {
     "excalidraw-app/build",
   );
   const runtime = createRuntime({ dbPath, filesDir, staticDir });
+  const realtime = createRealtimeHub(runtime);
+  runtime.realtime = realtime.publisher;
   const serverRef: { current?: ReturnType<typeof Bun.serve> } = {};
   const handler = createRequestHandler(
     runtime,
@@ -203,8 +210,19 @@ export const startServer = async () => {
     );
   };
 
-  const server = Bun.serve({ hostname, port, fetch: handler });
+  const server = Bun.serve<RealtimeSocketData>({
+    hostname,
+    port,
+    fetch: (req, websocketServer) => {
+      if (new URL(req.url).pathname === REALTIME_PATH) {
+        return realtime.upgrade(req, websocketServer);
+      }
+      return handler(req);
+    },
+    websocket: realtime.websocket,
+  });
   serverRef.current = server;
+  realtime.attachServer(server);
   console.info("[Server] 已启动", {
     address: `http://${hostname}:${server.port}`,
     dbPath,
