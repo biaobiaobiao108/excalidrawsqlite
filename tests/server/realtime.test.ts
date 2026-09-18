@@ -98,7 +98,7 @@ describe("native websocket realtime", () => {
           sceneId?: string;
           revision?: number;
         };
-        if (payload.type === "scene_changed") {
+        if (payload.type === "scene_changed" && payload.revision === 1) {
           clearTimeout(timeout);
           resolve(payload);
         }
