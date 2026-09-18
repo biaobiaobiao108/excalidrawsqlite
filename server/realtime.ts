@@ -82,6 +82,8 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
     },
   };
 
+  const activeSockets = new Set<Bun.ServerWebSocket<RealtimeSocketData>>();
+
   const websocket: Bun.WebSocketHandler<RealtimeSocketData> = {
     data: {} as RealtimeSocketData,
     maxPayloadLength: MAX_CLIENT_MESSAGE_BYTES,
@@ -90,6 +92,7 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
     idleTimeout: 120,
     sendPings: true,
     open: (ws) => {
+      activeSockets.add(ws);
       ws.subscribe(WORKSPACE_TOPIC);
       if (ws.data.sceneId) {
         ws.subscribe(sceneTopic(ws.data.sceneId));
@@ -126,6 +129,9 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
         }),
       );
     },
+    close: (ws) => {
+      activeSockets.delete(ws);
+    },
     message: (ws, message) => {
       try {
         const nextSceneId = parseClientMessage(message);
@@ -156,6 +162,16 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
   return {
     publisher,
     websocket,
+    closeSockets: () => {
+      for (const ws of activeSockets) {
+        try {
+          ws.close(1001, "Server shutting down");
+        } catch {
+          // Socket might already be closed.
+        }
+      }
+      activeSockets.clear();
+    },
     attachServer: (nextServer: Bun.Server<RealtimeSocketData>) => {
       server = nextServer;
     },

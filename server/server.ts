@@ -53,6 +53,7 @@ export const shutdownServer = async (options: {
   runtime: ServerRuntime;
   closeDevWatcher?: (() => void) | null;
   closeDevReload?: () => Promise<void>;
+  closeRealtime?: () => void;
   maintenanceTimer?: ReturnType<typeof setInterval>;
   backgroundTasks?: ReadonlySet<Promise<unknown>>;
   timeoutMs?: number;
@@ -62,9 +63,10 @@ export const shutdownServer = async (options: {
     runtime,
     closeDevWatcher,
     closeDevReload = closeDevReloadSubscribers,
+    closeRealtime,
     maintenanceTimer,
     backgroundTasks = new Set(),
-    timeoutMs = 15_000,
+    timeoutMs = 5_000,
   } = options;
 
   let gracefulError: unknown;
@@ -76,6 +78,11 @@ export const shutdownServer = async (options: {
       closeDevWatcher?.();
     } catch {
       // Ignore watcher shutdown failures while closing the server.
+    }
+    try {
+      closeRealtime?.();
+    } catch {
+      // Ignore realtime shutdown failures while closing the server.
     }
     await closeDevReload();
     await Promise.all([Promise.resolve(server.stop()), ...backgroundTasks]);
@@ -269,6 +276,7 @@ export const startServer = async () => {
       server,
       runtime,
       closeDevWatcher,
+      closeRealtime: () => realtime.closeSockets(),
       maintenanceTimer,
       backgroundTasks,
     });

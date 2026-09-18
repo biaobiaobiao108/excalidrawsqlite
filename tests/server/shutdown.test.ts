@@ -41,6 +41,26 @@ describe("server shutdown", () => {
     expect(calls).toEqual(["PRAGMA wal_checkpoint(TRUNCATE);", "close"]);
   });
 
+  it("closes active realtime websocket connections during graceful stop", async () => {
+    const { calls, runtime } = createRuntimeStub();
+    let realtimeClosed = 0;
+
+    const result = await shutdownServer({
+      server: {
+        stop: async () => {},
+      },
+      runtime,
+      closeRealtime: () => {
+        realtimeClosed += 1;
+      },
+      timeoutMs: 50,
+    });
+
+    expect(result).toEqual({ forced: false });
+    expect(realtimeClosed).toBe(1);
+    expect(calls).toEqual(["PRAGMA wal_checkpoint(TRUNCATE);", "close"]);
+  });
+
   it("forces connection shutdown after the drain timeout without touching SQLite", async () => {
     const { calls, runtime } = createRuntimeStub();
     const stopCalls: boolean[] = [];

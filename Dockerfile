@@ -57,6 +57,8 @@ EXPOSE 8080
 
 VOLUME ["/app/data"]
 
+STOPSIGNAL SIGTERM
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD bun -e "fetch('http://127.0.0.1:8080/api/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
 
