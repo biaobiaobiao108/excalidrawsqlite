@@ -71,6 +71,45 @@ const MAX_SCENE_PAGE_SIZE = 100;
 const sceneCursorEncoder = new TextEncoder();
 const sceneCursorDecoder = new TextDecoder();
 
+const streamBackupArchive = (archive: {
+  archivePath: string;
+  cleanup: () => Promise<void>;
+}) => {
+  const source = Bun.file(archive.archivePath).stream();
+  let cleaned = false;
+  const cleanup = async () => {
+    if (cleaned) {
+      return;
+    }
+    cleaned = true;
+    await archive.cleanup().catch(() => {});
+  };
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const reader = source.getReader();
+      try {
+        while (true) {
+          const result = await reader.read();
+          if (result.done) {
+            controller.close();
+            break;
+          }
+          controller.enqueue(result.value);
+        }
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        reader.releaseLock();
+        await cleanup();
+      }
+    },
+    cancel: async () => {
+      await source.cancel().catch(() => {});
+      await cleanup();
+    },
+  });
+};
+
 const encodeSceneCursor = (row: {
   updated_at?: number;
   deleted_at?: number | null;
@@ -412,10 +451,11 @@ export const createRequestHandler = (
           const archive = await withBackupLock(runtime, () =>
             createFullBackup(runtime, timestamp),
           );
-          return response(runtime, req, archive, {
+          return response(runtime, req, streamBackupArchive(archive), {
             headers: {
               "Content-Type": "application/x-tar",
               "Content-Disposition": `attachment; filename="excalidraw-full-backup-${timestamp}.tar"`,
+              "Content-Length": String(archive.size),
               "Cache-Control": "no-store",
             },
           });
