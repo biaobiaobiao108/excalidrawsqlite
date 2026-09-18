@@ -4,8 +4,9 @@
 
 ## 1. 提交规范 (Mandatory Git Commit Rule)
 
-- **每次完成代码修改或功能调整后，必须立即执行 Git 提交（git commit）**，确保改动有清晰、原子化的版本记录。
-- 提交信息应简明扼要，使用 Conventional Commits 格式（如 `feat: ...`, `fix: ...`, `refactor: ...`, `chore: ...`）。
+- **每次完成代码、配置或文档修改后，必须立即执行 Git 提交（git commit）**，确保改动有清晰、原子化的版本记录。
+- 提交信息使用 Conventional Commits 类型前缀（如 `feat`、`fix`、`refactor`、`docs`、`test`、`chore`），冒号后的主题和正文必须使用中文；主题应简明扼要，例如 `chore: 更新代理规范与内存优化约束`。
+- 未经明确要求，不得通过 `reset --hard`、`checkout`、强制重写历史或合并无关提交来整理工作区。
 
 ## 2. 环境与包管理规范 (Bun Ecosystem & Pure Full-Stack)
 
@@ -16,7 +17,7 @@
 
 ## 3. 前端构建与现代浏览器性能规范 (Bun HTML Bundler)
 
-- **前端打包引擎**：前端构建统一由原生 **Bun HTML Bundler** 驱动（[`scripts/build-frontend.ts`](file:///D:/MyBuild/excalidrawsqlite/scripts/build-frontend.ts)），配合 Dart Sass 插件直接以 `excalidraw-app/index.html` 为入口进行极速打包，严禁重新引入 Vite、Rollup 或 Webpack。
+- **前端打包引擎**：前端构建统一由原生 **Bun HTML Bundler** 驱动（[`scripts/build-frontend.ts`](scripts/build-frontend.ts)），配合 Dart Sass 插件直接以 `excalidraw-app/index.html` 为入口进行极速打包，严禁重新引入 Vite、Rollup 或 Webpack。
 - **构建配置与环境注入**：
   - 构建产物配置 `publicPath: "/"`，确保深层路由与静态资源路径解析一致；
   - 在 `Bun.build` 的 `define` 中完备注入 `import.meta.env`、`PKG_NAME`、`PKG_VERSION` 及 `process.env.NODE_ENV`，避免浏览器端运行时因缺少环境对象而抛错；
@@ -31,9 +32,9 @@
 
 - **一键全栈开发指令**：统一使用 `bun run dev`（映射为 `bun server/server.ts --dev`），无需打开多个终端，无需配置复杂的跨端口反向代理。
 - **开发态架构设计**：
-  - 启动时由 [`server/dev-server.ts`](file:///D:/MyBuild/excalidrawsqlite/server/dev-server.ts) 自动检查产物并自举初始编译；
+  - 启动时由 [`server/dev-server.ts`](server/dev-server.ts) 自动检查产物并自举初始编译；
   - 内置基于 Bun 原生文件系统的防抖观察器，实时监控 `excalidraw-app` 与 `packages` 源码变动，变动时触发毫秒级增量重新构建；
-  - 构建完成后通过 [`server/dev-reload.ts`](file:///D:/MyBuild/excalidrawsqlite/server/dev-reload.ts) 原生 SSE 通道（`GET /__dev_reload`）向客户端广播重载事件；
+  - 构建完成后通过 [`server/dev-reload.ts`](server/dev-reload.ts) 原生 SSE 通道（`GET /__dev_reload`）向客户端广播重载事件；
   - 客户端通过独立外链脚本 [`public/dev-live-reload.js`](file:///D:/MyBuild/excalidrawsqlite/public/dev-live-reload.js) 接收信号并无感热刷新页面，严格满足 CSP 安全要求。
 
 ## 5. CSP 与运行时安全规范
@@ -69,18 +70,20 @@
 
 按改动范围选择验证：
 
-1. 文档或注释：免测，直接提交。
+1. 文档或注释：可跳过自动化测试，但必须检查链接、示例和格式，然后直接提交。
 2. `server/` 或持久化：运行 `bun run test:server`。
 3. 局部前端或算法：运行 `bun test` 或 `bun run test:typecheck`；涉及 UI 行为时运行 `bun run build` 并进行必要的手动冒烟检查。
 4. 依赖、构建配置、跨模块接口或发布级改动：运行 `bun run test:all`。
 
-每次代码或文档修改后立即执行一次 Conventional Commit。
+每次代码或文档修改后立即执行一次带中文主题的 Conventional Commit。
 
-## 9. 内存占用与生命周期规范
+## 9. 内存、缓存与生命周期规范（当前实现）
 
-- 总原则：以编辑体验和导出质量为先；所有新增历史、缓存、队列和临时数据都必须有明确上限及释放路径。不得修改数据库 schema、场景/图片/备份 API 或 `BinaryFileData` 类型来换取内存优化。
+- 总原则：以编辑体验和导出质量为先；所有新增历史、缓存、队列、WebSocket 重连计时器、上传/备份临时文件都必须有明确上限、释放/取消路径和失败回滚。不得为了省内存破坏场景、图片、备份 API 或 `BinaryFileData` 公共契约。允许向后兼容的数据库迁移（当前 schema version 为 5），但必须包含迁移、重试/回滚和旧库兼容测试，不能以丢弃业务数据换取内存或查询优化。
 - History：默认最多保留 200 条、估算上限 64 MiB；按点数组、字符串、数组和字段数量估算，不序列化完整对象。超限从最老记录淘汰，但最近的单个超大操作仍保留；撤销、重做和分支写入必须同步维护预算。`Store.clear()`、编辑器卸载时必须清理待执行动作、History、Store 和临时引用，但不能清掉云端保存队列仍持有的最新快照。
-- Canvas：`StaticCanvas`、`InteractiveCanvas`、`NewElementCanvas` 使用统一的自适应 `renderScale`。编辑画布总预算约为普通设备 32M、低内存设备 16M RGBA 像素；无预览按 2 层、有预览按 3 层计算，并随视口/DPR变化调整。CSS 尺寸和导出分辨率不得降低；分配失败时应降低比例重试。
-- 图片：`files` 只保存可重新解码的数据，`imageCache` 必须保持 Map 兼容并使用按解码像素计费的 LRU；默认预算为普通设备 128 MiB、低内存/移动设备 64 MiB。当前可见、选中、裁剪和交互中的图片固定保留；只有不再被场景、History、云端快照、缩略图任务或交互引用的文件才能回收，淘汰后必须能从 `files`/IndexedDB 重新解码。第一阶段不要把 `dataURL` 改为 Blob/Object URL。
-- 云端与服务端：云端图片加载使用 Blob/FileReader 路径，普通设备最多 4 路、低内存/移动设备最多 2 路并发。服务端使用 `MAX_IN_FLIGHT_BODY_BYTES`（默认 64 MiB）限制聚合请求体；已知 `Content-Length` 时按目标大小预分配。二进制上传必须流式写临时文件、增量计算 SHA-256/大小，成功后原子替换，超限或数据库失败时清理并回滚；批量 JSON 逐项处理并及时释放已消费的 data URL。备份格式和内容必须保持兼容。
-- 统计与验证：内存统计仅用于开发/测试，不进入生产日志；至少覆盖 History、`files`、解码图片、缓存条目、Canvas 像素、云端待保存快照和服务端 body 当前/峰值占用。内存相关改动运行 `bun test`、`bun run test:typecheck`、`bun run test:code`、`bun run test:server`；涉及渲染或交互时追加 `bun run build` 和手动冒烟检查，跨模块或发布级改动运行 `bun run test:all`。
+- Canvas：`StaticCanvas`、`InteractiveCanvas`、`NewElementCanvas` 使用统一的自适应 `renderScale`。编辑画布总预算约为普通设备 32M、低内存设备 16M RGBA 像素；无预览按 2 层、有预览按 3 层计算，并随视口/DPR 变化调整。CSS 尺寸和导出分辨率不得降低；分配失败时应降低比例重试，并释放上一次失败分配的引用。
+- 图片与前端文件：保持 `BinaryFileData`、`files` 和 IndexedDB 的兼容契约；`imageCache` 必须保持 Map 兼容并使用按解码像素计费的 LRU，默认预算为普通设备 128 MiB、低内存/移动设备 64 MiB。当前可见、选中、裁剪和交互中的图片固定保留；只有不再被场景、History、云端快照、缩略图任务或交互引用的文件才能回收，淘汰后必须能重新解码。云端网络加载可使用 Blob/FileReader 路径，普通设备最多 4 路、低内存/移动设备最多 2 路并发。当前云端场景缓存最多 2 个、文件元数据缓存最多 512 项，上传哈希缓存使用弱引用；新增缓存必须有容量上限或弱引用策略，不能长期保留重复的完整 data URL。若未来引入 Blob/Object URL，只能用于有明确生命周期的临时解码/渲染路径，并必须在卸载、淘汰或错误时 revoke，同时保留从 `files`/IndexedDB 恢复的路径。
+- 云端保存队列：同一场景只保留最新待保存快照，成功保存、取消、释放或冲突处理后及时清理已无引用的快照；不得静默丢弃最新未保存数据。保存队列应维持当前的版本/冲突语义，并在前一次保存成功后对仍待保存的快照重新基于最新版本合并，避免无意义的 409。若后续增加字节或场景数量上限，必须采用刷新、背压或显式错误处理，不能直接淘汰最新快照。开发/测试统计至少覆盖文件、元素、快照和队列引用。
+- 服务端请求、附件与备份：使用 `MAX_IN_FLIGHT_BODY_BYTES`（默认 64 MiB）限制聚合请求体；已知 `Content-Length` 只用于提前拒绝或安全预分配，不能为了计算哈希把二进制整体读入内存。二进制上传必须流式写临时文件、增量计算 SHA-256/大小，成功后原子替换；超限、校验失败或数据库失败时清理并回滚。批量 JSON 应逐项处理并及时释放已消费的 data URL。附件垃圾回收必须分批执行（当前默认每批 100 个），通过 `.gc` 隔离/删除临时产物并清理过期 `.tmp`、`.bak`、`.gc` 文件。完整备份应从磁盘流式打包；数据库快照接口如需返回 `ArrayBuffer`，必须先进行大小限制并在测试中覆盖失败清理。备份格式和内容保持兼容。
+- 原生 WebSocket：实时通道只传递轻量事件和版本信息，不发送完整场景或附件；客户端控制消息限制为 8 KiB，连接回压限制为 256 KiB，空闲连接超时为 120 秒。重连计时器、可见性监听和订阅必须在编辑器/页面卸载时清理；重连后使用当前场景版本进行增量对账，避免重复拉取大对象或无限重试。
+- 统计与验证：内存统计仅用于开发/测试，不进入生产日志；至少覆盖 History、`files`、解码图片、缓存条目、Canvas 像素、云端待保存快照和服务端 body 当前/峰值占用。内存相关改动运行 `bun test`、`bun run test:typecheck`、`bun run test:code`、`bun run test:server`；涉及渲染、实时同步或交互时追加 `bun run build` 和必要的浏览器冒烟检查，跨模块或发布级改动运行 `bun run test:all`。
