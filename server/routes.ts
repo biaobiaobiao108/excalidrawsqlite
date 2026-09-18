@@ -119,10 +119,8 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
       ),
       getSceneSummaryById: runtime.db.query(
         `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
-                scenes.revision, length(scenes.elements) AS size,
-                CASE WHEN json_valid(scenes.elements) = 1
-                     THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
-                     ELSE 0 END AS element_count,
+                scenes.revision, scenes.content_bytes AS size,
+                scenes.element_count,
                 scenes.tags_json, scenes.is_favorite, scenes.folder_id,
                 scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
                 folders.name AS folder_name
@@ -139,31 +137,27 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
       ),
       listScenes: runtime.db.query(
         `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
-                scenes.revision, length(scenes.elements) AS size,
-                CASE WHEN json_valid(scenes.elements) = 1
-                     THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
-                     ELSE 0 END AS element_count,
+                scenes.revision, scenes.content_bytes AS size,
+                scenes.element_count,
                 scenes.tags_json, scenes.is_favorite, scenes.folder_id,
                 scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
                 folders.name AS folder_name
          FROM scenes
          LEFT JOIN folders ON folders.id = scenes.folder_id
          WHERE scenes.deleted_at IS NULL
-         ORDER BY scenes.updated_at DESC`,
+         ORDER BY scenes.updated_at DESC, scenes.id DESC`,
       ),
       listTrashScenes: runtime.db.query(
         `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
-                scenes.revision, length(scenes.elements) AS size,
-                CASE WHEN json_valid(scenes.elements) = 1
-                     THEN (SELECT COUNT(*) FROM json_each(scenes.elements) WHERE COALESCE(json_extract(value, '$.isDeleted'), 0) NOT IN (1, 1=1, 'true'))
-                     ELSE 0 END AS element_count,
+                scenes.revision, scenes.content_bytes AS size,
+                scenes.element_count,
                 scenes.tags_json, scenes.is_favorite, scenes.folder_id,
                 scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
                 folders.name AS folder_name
          FROM scenes
          LEFT JOIN folders ON folders.id = scenes.folder_id
          WHERE scenes.deleted_at IS NOT NULL
-         ORDER BY scenes.deleted_at DESC`,
+         ORDER BY scenes.deleted_at DESC, scenes.id DESC`,
       ),
       listFolders: runtime.db.query(
         `SELECT folders.id, folders.name, folders.created_at, folders.updated_at,
@@ -464,24 +458,32 @@ export const createRequestHandler = (
         const { tags, favorite, folderId } = parseSceneMetadata(runtime, body);
         const fileIds = extractFileIds(elements);
         await assertReferencedFilesExist(runtime, fileIds);
+        const elementsJson = JSON.stringify(elements);
+        const appStateJson = JSON.stringify(appState);
+        const tagsJson = JSON.stringify(tags);
         const now = Date.now();
         try {
           const transaction = runtime.db.transaction(() => {
             runtime.db.run(
               `INSERT INTO scenes
                (id, name, elements, app_state, created_at, updated_at, revision,
-                tags_json, is_favorite, folder_id)
-               VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+                tags_json, is_favorite, folder_id, element_count, content_bytes,
+                content_sha256)
+               VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
               [
                 id,
                 name,
-                JSON.stringify(elements),
-                JSON.stringify(appState),
+                elementsJson,
+                appStateJson,
                 now,
                 now,
-                JSON.stringify(tags),
+                tagsJson,
                 favorite ? 1 : 0,
                 folderId,
+                elements.filter((element: any) => element?.isDeleted !== true)
+                  .length,
+                elementsJson.length,
+                sha256Hex(elementsJson),
               ],
             );
             syncSceneFileReferences(runtime, id, fileIds);
@@ -506,9 +508,9 @@ export const createRequestHandler = (
             created_at: now,
             updated_at: now,
             revision: 1,
-            size: JSON.stringify(elements).length,
+            size: elementsJson.length,
             element_count: elements.filter((el: any) => !el?.isDeleted).length,
-            tags_json: JSON.stringify(tags),
+            tags_json: tagsJson,
             is_favorite: favorite ? 1 : 0,
             folder_id: folderId,
             last_opened_at: null,
@@ -901,23 +903,51 @@ export const createRequestHandler = (
           : JSON.parse(existing.app_state || "{}");
         const fileIds = extractFileIds(elements);
         await assertReferencedFilesExist(runtime, fileIds);
+        const elementsJson = JSON.stringify(elements);
+        const appStateJson = JSON.stringify(appState);
+        const tagsJson = JSON.stringify(tags);
+        const elementCount = elements.filter(
+          (element: any) => element?.isDeleted !== true,
+        ).length;
+        const contentBytes = elementsJson.length;
+        const contentSha256 = sha256Hex(elementsJson);
+        const isUnchanged =
+          existing.name === name &&
+          existing.elements === elementsJson &&
+          existing.app_state === appStateJson &&
+          existing.tags_json === tagsJson &&
+          Boolean(existing.is_favorite) === favorite &&
+          (existing.folder_id || null) === folderId;
+        if (isUnchanged) {
+          return jsonResponse(runtime, req, {
+            success: true,
+            id,
+            updated_at: existing.updated_at,
+            revision: currentRevision,
+            unchanged: true,
+          });
+        }
         const now = Date.now();
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {
           const result = runtime.db.run(
             `UPDATE scenes
              SET name = ?, elements = ?, app_state = ?, tags_json = ?,
-                 is_favorite = ?, folder_id = ?, updated_at = ?, revision = ?
+                 is_favorite = ?, folder_id = ?, updated_at = ?, revision = ?,
+                 element_count = ?, content_bytes = ?, content_sha256 = ?
              WHERE id = ? AND deleted_at IS NULL AND revision = ?`,
             [
               name,
-              JSON.stringify(elements),
-              JSON.stringify(appState),
-              JSON.stringify(tags),
+              elementsJson,
+              appStateJson,
+              tagsJson,
               favorite ? 1 : 0,
               folderId,
               now,
               revision,
+              elementCount,
+              contentBytes,
+              contentSha256,
               id,
               currentRevision,
             ],
