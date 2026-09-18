@@ -3,8 +3,10 @@ import path from "node:path";
 
 import {
   FILE_ID_PATTERN,
+  ORPHAN_FILE_CLEANUP_BATCH_SIZE,
   ORPHAN_FILE_GRACE_MS,
   STALE_FILE_ARTIFACT_MS,
+  UNTRACKED_FILE_CLEANUP_BATCH_SIZE,
 } from "./config";
 import { randomHex, sha256Hex } from "./crypto";
 import { HttpError } from "./errors";
@@ -480,9 +482,11 @@ export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
         `SELECT id, storage_path, updated_at FROM files
          WHERE updated_at < ?
            AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)
-           AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)`,
+           AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)
+         ORDER BY updated_at ASC
+         LIMIT ?`,
       )
-      .all(cutoff) as Array<{
+      .all(cutoff, ORPHAN_FILE_CLEANUP_BATCH_SIZE) as Array<{
       id: string;
       storage_path: string | null;
       updated_at: number;
@@ -504,13 +508,42 @@ export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
   });
 };
 
+export const cleanupUntrackedFiles = async (runtime: ServerRuntime) => {
+  const knownFileIds = new Set(
+    (
+      runtime.db.query("SELECT id FROM files").all() as Array<{ id: string }>
+    ).map((row) => row.id),
+  );
+  const cutoff = Date.now() - ORPHAN_FILE_GRACE_MS;
+  let cleaned = 0;
+  for (const entry of await fs.promises.readdir(runtime.filesDir, {
+    withFileTypes: true,
+  })) {
+    if (
+      cleaned >= UNTRACKED_FILE_CLEANUP_BATCH_SIZE ||
+      !entry.isFile() ||
+      !FILE_ID_PATTERN.test(entry.name) ||
+      knownFileIds.has(entry.name)
+    ) {
+      continue;
+    }
+    const filePath = path.join(runtime.filesDir, entry.name);
+    const stat = await fs.promises.stat(filePath).catch(() => null);
+    if (stat && stat.mtimeMs < cutoff) {
+      await fs.promises.rm(filePath, { force: true });
+      cleaned += 1;
+      console.info("[Files] 清理未跟踪附件", { filePath });
+    }
+  }
+};
+
 export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
   const cutoff = Date.now() - STALE_FILE_ARTIFACT_MS;
   const entries = await fs.promises.readdir(runtime.filesDir, {
     withFileTypes: true,
   });
   for (const entry of entries) {
-    if (!entry.isFile() || !/\.(?:tmp|bak)$/.test(entry.name)) {
+    if (!entry.isFile() || !/\.(?:tmp|bak|gc)$/.test(entry.name)) {
       continue;
     }
     const filePath = path.join(runtime.filesDir, entry.name);
@@ -523,6 +556,12 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
 };
 
 export const inspectStorageConsistency = async (runtime: ServerRuntime) => {
+  const diskEntries = await fs.promises.readdir(runtime.filesDir, {
+    withFileTypes: true,
+  });
+  const diskFileNames = new Set(
+    diskEntries.filter((entry) => entry.isFile()).map((entry) => entry.name),
+  );
   const rows = runtime.db
     .query("SELECT id, storage_path FROM files")
     .all() as Array<{ id: string; storage_path: string | null }>;
@@ -530,14 +569,12 @@ export const inspectStorageConsistency = async (runtime: ServerRuntime) => {
   const knownFileIds = new Set<string>();
   for (const row of rows) {
     knownFileIds.add(row.id);
-    if (row.storage_path && !(await fileExists(getFilePath(runtime, row.id)))) {
+    if (row.storage_path && !diskFileNames.has(row.id)) {
       missingFiles.push(row.id);
     }
   }
   const untrackedFiles: string[] = [];
-  for (const entry of await fs.promises.readdir(runtime.filesDir, {
-    withFileTypes: true,
-  })) {
+  for (const entry of diskEntries) {
     if (
       entry.isFile() &&
       FILE_ID_PATTERN.test(entry.name) &&

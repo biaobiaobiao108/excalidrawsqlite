@@ -9,6 +9,7 @@ import { performDatabaseMaintenance } from "./database";
 import {
   cleanupOrphanedFiles,
   cleanupStaleFileArtifacts,
+  cleanupUntrackedFiles,
   inspectStorageConsistency,
 } from "./files";
 import { closeDevReloadSubscribers } from "./dev-reload";
@@ -185,6 +186,11 @@ export const startServer = async () => {
       }),
     );
     trackBackgroundTask(
+      cleanupUntrackedFiles(runtime).catch((error) => {
+        console.error("[Files] untracked file cleanup failed", error);
+      }),
+    );
+    trackBackgroundTask(
       inspectStorageConsistency(runtime).then((consistency) => {
         if (
           consistency.missingFiles.length ||
@@ -213,6 +219,11 @@ export const startServer = async () => {
   trackBackgroundTask(
     cleanupStaleFileArtifacts(runtime).catch((error) => {
       console.error("[Files] initial stale artifact cleanup failed", error);
+    }),
+  );
+  trackBackgroundTask(
+    cleanupUntrackedFiles(runtime).catch((error) => {
+      console.error("[Files] initial untracked file cleanup failed", error);
     }),
   );
   trackBackgroundTask(
