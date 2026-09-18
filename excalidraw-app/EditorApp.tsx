@@ -67,6 +67,8 @@ import {
   saveCloudSceneThumbnail,
 } from "./data/cloudStorage";
 
+import type { CloudSceneData } from "./data/cloudStorage";
+
 import { updateStaleImageStatuses } from "./data/FileManager";
 import { FileStatusStore } from "./data/fileStatusStore";
 import { importFromLocalStorage } from "./data/localStorage";
@@ -120,20 +122,36 @@ if (window.self !== window.top) {
 
 type InitializeSceneResult = {
   scene: ExcalidrawInitialDataState | null;
+  cloudScene?: CloudSceneData;
 };
 
-const initializeScene = async (): Promise<InitializeSceneResult> => {
+const restoreCloudScene = (
+  cloudScene: CloudSceneData,
+): ExcalidrawInitialDataState => ({
+  elements: restoreElements(cloudScene.elements, null, {
+    repairBindings: true,
+    deleteInvisibleElements: true,
+  }),
+  appState: restoreAppState(
+    { ...cloudScene.appState, name: cloudScene.name },
+    null,
+  ),
+});
+
+const initializeScene = async (
+  prefetchedCloudScene?: CloudSceneData | null,
+): Promise<InitializeSceneResult> => {
   const searchParams = new URLSearchParams(window.location.search);
   const id = searchParams.get("id");
 
   if (id) {
-    // Cloud scenes are fetched from the server. Start with a clean blank canvas
-    // so we never flash stale elements from another board stored in localStorage.
+    const cloudScene =
+      prefetchedCloudScene?.id === id
+        ? prefetchedCloudScene
+        : await fetchCloudScene(id);
     return {
-      scene: {
-        elements: [],
-        appState: null,
-      },
+      scene: restoreCloudScene(cloudScene),
+      cloudScene,
     };
   }
 
@@ -227,8 +245,11 @@ const waitForCloudFiles = async (
   }
 };
 
-const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
-  const { onNavigateHome } = props;
+const ExcalidrawWrapper = (props: {
+  onNavigateHome?: () => void;
+  initialCloudScene?: CloudSceneData | null;
+}) => {
+  const { initialCloudScene, onNavigateHome } = props;
   const excalidrawAPI = useExcalidrawAPI();
 
   const [errorMessage, setErrorMessage] = useState("");
@@ -454,10 +475,17 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   );
 
   const loadSelectedCloudScene = useCallback(
-    async (sceneId: string, updateUrl = true) => {
+    async (
+      sceneId: string,
+      updateUrl = true,
+      prefetchedCloudScene?: CloudSceneData,
+    ) => {
       const loadId = ++cloudSceneLoadIdRef.current;
       isApplyingCloudSceneRef.current = false;
-      const cloudData = await fetchCloudScene(sceneId);
+      const cloudData =
+        prefetchedCloudScene?.id === sceneId
+          ? prefetchedCloudScene
+          : await fetchCloudScene(sceneId);
       if (!excalidrawAPI || excalidrawAPI.isDestroyed) {
         throw new Error("编辑器尚未初始化");
       }
@@ -621,6 +649,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
       }
 
       setCloudBootstrapError("");
+      await initialStatePromiseRef.current.promise;
       const status = await checkAuthStatus();
       if (status.authRequired && !status.authenticated) {
         setIsAuthOpen(true);
@@ -630,7 +659,11 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
       const requestedId = new URLSearchParams(window.location.search).get("id");
       if (requestedId) {
         try {
-          await loadSelectedCloudScene(requestedId, false);
+          await loadSelectedCloudScene(
+            requestedId,
+            false,
+            initialSceneDataRef.current?.cloudScene,
+          );
           return;
         } catch (error: any) {
           if (error?.status !== 400 && error?.status !== 404) {
@@ -853,7 +886,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
   // ---------------------------------------------------------------------------
   const loadImages = useCallback(
     (data: ResolutionType<typeof initializeScene>, isInitialLoad = false) => {
-      if (!data.scene || !excalidrawAPI) {
+      if (!data.scene || !excalidrawAPI || data.cloudScene) {
         return;
       }
 
@@ -895,7 +928,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
     }
     initialSceneInitializedRef.current = true;
 
-    initializeScene()
+    initializeScene(initialCloudScene)
       .then((data) => {
         initialSceneDataRef.current = data;
         initialStatePromiseRef.current.promise.resolve(data.scene);
@@ -904,7 +937,7 @@ const ExcalidrawWrapper = (props: { onNavigateHome?: () => void }) => {
         console.error("Failed to initialize the local scene:", error);
         initialStatePromiseRef.current.promise.resolve(null);
       });
-  }, []);
+  }, [initialCloudScene]);
 
   useEffect(() => {
     if (
