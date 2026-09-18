@@ -249,13 +249,45 @@ export async function logoutCloudSession(): Promise<void> {
 }
 
 export async function fetchCloudScenes(): Promise<CloudSceneSummary[]> {
-  return fetchJson(
-    "/api/scenes",
-    { headers: getHeaders() },
-    "获取云端画板列表失败",
-    CLOUD_READ_RETRIES,
-  );
+  return fetchCloudScenePages(false, "获取云端画板列表失败");
 }
+
+type CloudScenePage = {
+  items: CloudSceneSummary[];
+  nextCursor: string | null;
+};
+
+const fetchCloudScenePages = async (
+  trash: boolean,
+  fallback: string,
+): Promise<CloudSceneSummary[]> => {
+  const items: CloudSceneSummary[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+  do {
+    const params = new URLSearchParams({ limit: "100" });
+    if (cursor) {
+      params.set("cursor", cursor);
+    }
+    const result = await fetchJson<CloudScenePage | CloudSceneSummary[]>(
+      `${trash ? "/api/scenes/trash" : "/api/scenes"}?${params.toString()}`,
+      { headers: getHeaders() },
+      fallback,
+      CLOUD_READ_RETRIES,
+    );
+    if (Array.isArray(result)) {
+      items.push(...result);
+      break;
+    }
+    items.push(...result.items);
+    if (!result.nextCursor || seenCursors.has(result.nextCursor)) {
+      break;
+    }
+    seenCursors.add(result.nextCursor);
+    cursor = result.nextCursor;
+  } while (cursor);
+  return items;
+};
 
 export async function fetchCloudScene(id: string): Promise<CloudSceneData> {
   const cached = cloudSceneCache.get(id);
@@ -503,12 +535,7 @@ export async function renameCloudScene(
 }
 
 export async function fetchCloudTrashScenes(): Promise<CloudSceneSummary[]> {
-  return fetchJson(
-    "/api/scenes/trash",
-    { headers: getHeaders() },
-    "获取回收站画板失败",
-    CLOUD_READ_RETRIES,
-  );
+  return fetchCloudScenePages(true, "获取回收站画板失败");
 }
 
 export async function restoreCloudScene(id: string): Promise<boolean> {
