@@ -21,6 +21,7 @@ import {
 } from "./realtime";
 import { createRuntime } from "./runtime";
 import { resolveProjectPath } from "./paths";
+import { cleanupExpiredTrashScenes } from "./scenes";
 
 import type { ServerRuntime } from "./types";
 
@@ -181,6 +182,7 @@ export const startServer = async () => {
   const runMaintenance = () => {
     cleanupExpiredSessions(runtime, Date.now());
     cleanupExpiredRateLimits(runtime, Date.now());
+    cleanupExpiredTrashScenes(runtime);
     performDatabaseMaintenance(runtime);
     trackBackgroundTask(
       cleanupOrphanedFiles(runtime).catch((error) => {
@@ -229,6 +231,7 @@ export const startServer = async () => {
     filesDir,
     staticDir,
   });
+  cleanupExpiredTrashScenes(runtime);
   trackBackgroundTask(
     cleanupOrphanedFiles(runtime).catch((error) => {
       console.error("[Files] initial cleanup failed", error);

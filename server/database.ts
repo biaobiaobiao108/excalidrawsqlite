@@ -24,6 +24,7 @@ const ensureColumn = (
 };
 
 export const initializeDatabase = (db: Database) => {
+  db.run("PRAGMA auto_vacuum = INCREMENTAL;");
   db.run("PRAGMA journal_mode = WAL;");
   db.run("PRAGMA foreign_keys = ON;");
   db.run("PRAGMA busy_timeout = 10000;");
@@ -186,6 +187,57 @@ const backfillSceneSummaryColumns = (db: Database) => {
   }
 };
 
+export const ensureAutoVacuumIncremental = (db: Database) => {
+  const row = db.query("PRAGMA auto_vacuum").get() as {
+    auto_vacuum?: number;
+  } | null;
+  if (Number(row?.auto_vacuum) !== 2) {
+    db.run("PRAGMA auto_vacuum = INCREMENTAL;");
+    db.run("VACUUM;");
+  }
+};
+
+export const purgeDeletedElementsFromScenes = (db: Database) => {
+  const rows = db
+    .query(
+      "SELECT id, elements FROM scenes WHERE elements LIKE '%\"isDeleted\":true%'",
+    )
+    .all() as Array<{ id: string; elements: string }>;
+  if (!rows.length) {
+    return 0;
+  }
+  const update = db.query(
+    `UPDATE scenes
+     SET elements = ?, element_count = ?, content_bytes = ?, content_sha256 = ?
+     WHERE id = ?`,
+  );
+  let cleanedCount = 0;
+  for (const row of rows) {
+    try {
+      const elements = JSON.parse(row.elements || "[]");
+      if (Array.isArray(elements)) {
+        const filtered = elements.filter(
+          (element) => element?.isDeleted !== true,
+        );
+        if (filtered.length !== elements.length) {
+          const filteredJson = JSON.stringify(filtered);
+          update.run(
+            filteredJson,
+            filtered.length,
+            filteredJson.length,
+            sha256Hex(filteredJson),
+            row.id,
+          );
+          cleanedCount += 1;
+        }
+      }
+    } catch {
+      // Keep corrupt scenes loadable
+    }
+  }
+  return cleanedCount;
+};
+
 export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
   const versionRow = db.query("PRAGMA user_version").get() as {
     user_version?: number;
@@ -206,7 +258,24 @@ export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
       "UPDATE scenes SET last_opened_at = COALESCE(last_opened_at, updated_at)",
     );
     backfillSceneSummaryColumns(db);
+    purgeDeletedElementsFromScenes(db);
+    ensureAutoVacuumIncremental(db);
     db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    return;
+  }
+  if (!hasLegacyDataUrl && version > 0 && version < SCHEMA_VERSION) {
+    db.run(
+      "UPDATE scenes SET last_opened_at = COALESCE(last_opened_at, updated_at)",
+    );
+    backfillSceneSummaryColumns(db);
+    const purged = purgeDeletedElementsFromScenes(db);
+    ensureAutoVacuumIncremental(db);
+    db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    console.info("[Migration] 数据库存储优化迁移完成", {
+      fromVersion: version,
+      toVersion: SCHEMA_VERSION,
+      purgedScenes: purged,
+    });
     return;
   }
 
@@ -308,6 +377,8 @@ export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
     "UPDATE scenes SET last_opened_at = COALESCE(last_opened_at, updated_at)",
   );
   backfillSceneSummaryColumns(db);
+  purgeDeletedElementsFromScenes(db);
+  ensureAutoVacuumIncremental(db);
   db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   console.info("[Migration] 数据库迁移完成", {
     fromVersion: version,
@@ -323,7 +394,8 @@ export const migrateLegacyDatabase = (db: Database, filesDir: string) => {
 export const performDatabaseMaintenance = (runtime: ServerRuntime) => {
   try {
     runtime.db.run("PRAGMA wal_checkpoint(PASSIVE);");
+    runtime.db.run("PRAGMA incremental_vacuum(500);");
   } catch (error) {
-    console.error("[Database] WAL checkpoint failed", error);
+    console.error("[Database] Database maintenance failed", error);
   }
 };

@@ -112,6 +112,7 @@ export type ServerConfig = {
   maxInFlightBodyBytes: number;
   maxBackupBytes: number;
   sessionTtlMs: number;
+  trashRetentionDays: number;
 };
 export type RequestAddressResolver = (req: Request) => string | undefined;
 

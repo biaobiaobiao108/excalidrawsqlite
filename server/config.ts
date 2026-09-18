@@ -28,7 +28,8 @@ export const ORPHAN_FILE_GRACE_MS = 24 * 60 * 60 * 1000;
 export const STALE_FILE_ARTIFACT_MS = 60 * 60 * 1000;
 export const ORPHAN_FILE_CLEANUP_BATCH_SIZE = 100;
 export const UNTRACKED_FILE_CLEANUP_BATCH_SIZE = 100;
-export const SCHEMA_VERSION = 5;
+export const DEFAULT_TRASH_RETENTION_DAYS = 30;
+export const SCHEMA_VERSION = 6;
 
 const parseBooleanEnv = (value: string | undefined) =>
   value?.toLowerCase() === "true";
@@ -39,6 +40,14 @@ const parsePositiveIntegerEnv = (
 ) => {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const parseNonNegativeIntegerEnv = (
+  value: string | undefined,
+  fallback: number,
+) => {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
 const splitOrigins = (value: string | undefined) =>
@@ -105,6 +114,10 @@ export const createServerConfig = (
     sessionTtlMs: parsePositiveIntegerEnv(
       env.AUTH_SESSION_TTL_MS,
       DEFAULT_SESSION_TTL_MS,
+    ),
+    trashRetentionDays: parseNonNegativeIntegerEnv(
+      env.TRASH_RETENTION_DAYS,
+      DEFAULT_TRASH_RETENTION_DAYS,
     ),
   };
 };

@@ -44,7 +44,12 @@ import {
   readJson,
   response,
 } from "./http";
-import { getSceneSummary, parseSceneMetadata, parseStoredScene } from "./scenes";
+import {
+  getSceneSummary,
+  parseSceneMetadata,
+  parseStoredScene,
+  sanitizeSceneElements,
+} from "./scenes";
 import {
   buildStaticPath,
   getStaticCacheControl,
@@ -650,9 +655,10 @@ export const createRequestHandler = (
         const name = hasOwn(body, "name")
           ? validateName(body.name)
           : "未命名白板";
-        const elements = hasOwn(body, "elements")
+        const rawElements = hasOwn(body, "elements")
           ? validateElements(body.elements)
           : [];
+        const elements = sanitizeSceneElements(rawElements);
         const appState = hasOwn(body, "appState")
           ? validateAppState(body.appState)
           : {};
@@ -681,8 +687,7 @@ export const createRequestHandler = (
                 tagsJson,
                 favorite ? 1 : 0,
                 folderId,
-                elements.filter((element: any) => element?.isDeleted !== true)
-                  .length,
+                elements.length,
                 elementsJson.length,
                 sha256Hex(elementsJson),
               ],
@@ -1165,9 +1170,10 @@ export const createRequestHandler = (
           body,
           existing,
         );
-        const elements = hasOwn(body, "elements")
+        const rawElements = hasOwn(body, "elements")
           ? validateElements(body.elements)
           : JSON.parse(existing.elements || "[]");
+        const elements = sanitizeSceneElements(rawElements);
         const appState = hasOwn(body, "appState")
           ? validateAppState(body.appState)
           : JSON.parse(existing.app_state || "{}");
@@ -1176,9 +1182,7 @@ export const createRequestHandler = (
         const elementsJson = JSON.stringify(elements);
         const appStateJson = JSON.stringify(appState);
         const tagsJson = JSON.stringify(tags);
-        const elementCount = elements.filter(
-          (element: any) => element?.isDeleted !== true,
-        ).length;
+        const elementCount = elements.length;
         const contentBytes = elementsJson.length;
         const contentSha256 = sha256Hex(elementsJson);
         const isUnchanged =
@@ -1253,6 +1257,11 @@ export const createRequestHandler = (
         );
         if (result.changes > 0) {
           publishWorkspaceChanged(runtime, Date.now());
+          try {
+            runtime.db.run("PRAGMA incremental_vacuum(1000);");
+          } catch {
+            // Ignore vacuum failure
+          }
         }
         return jsonResponse(runtime, req, {
           success: true,
@@ -1281,6 +1290,11 @@ export const createRequestHandler = (
             runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
           });
           transaction();
+          try {
+            runtime.db.run("PRAGMA incremental_vacuum(500);");
+          } catch {
+            // Ignore vacuum failure
+          }
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: id,

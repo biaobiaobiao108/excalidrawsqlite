@@ -88,3 +88,39 @@ export const parseSceneMetadata = (
   assertFolderExists(runtime, folderId);
   return { name, tags, favorite, folderId };
 };
+
+export const sanitizeSceneElements = (elements: unknown[]): unknown[] => {
+  if (!Array.isArray(elements)) {
+    return [];
+  }
+  return elements.filter((element) => {
+    if (!element || typeof element !== "object") {
+      return false;
+    }
+    return (element as Record<string, unknown>).isDeleted !== true;
+  });
+};
+
+export const cleanupExpiredTrashScenes = (
+  runtime: ServerRuntime,
+  retentionDays: number = runtime.config.trashRetentionDays,
+): number => {
+  if (retentionDays <= 0) {
+    return 0;
+  }
+  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  const result = runtime.db.run(
+    "DELETE FROM scenes WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+    [cutoff],
+  );
+  if (result.changes > 0) {
+    console.info(`[Trash] 自动清理了 ${result.changes} 个过期回收站画板`);
+    runtime.realtime?.publishWorkspaceChanged(Date.now());
+    try {
+      runtime.db.run("PRAGMA incremental_vacuum(500);");
+    } catch (error) {
+      console.warn("[Trash] 增量整理空间失败", error);
+    }
+  }
+  return result.changes;
+};

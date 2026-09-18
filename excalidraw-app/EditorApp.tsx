@@ -604,20 +604,27 @@ const ExcalidrawWrapper = (props: {
       // thumbnail remain independently best-effort, but a normal in-app
       // navigation must not race the preview debounce/upload.
       const pendingThumbnail = saveThumbnailDebounced.flush();
-      const fileIds = getCloudFileIds(snapshot.elements);
+      const persistedElements = snapshot.elements.filter(
+        (element: any) => element?.isDeleted !== true,
+      );
+      const persistedSnapshot = {
+        ...snapshot,
+        elements: persistedElements,
+      };
+      const fileIds = getCloudFileIds(persistedElements);
       await waitForCloudFiles(
         fileIds,
-        snapshot.files,
+        persistedSnapshot.files,
       );
       const signature = getCloudPersistenceSignature(
-        snapshot.name,
-        snapshot.elements,
-        snapshot.appState,
-        snapshot.files,
+        persistedSnapshot.name,
+        persistedElements,
+        persistedSnapshot.appState,
+        persistedSnapshot.files,
         fileIds,
       );
-      cloudSaveQueue.enqueue(snapshot);
-      const status = await cloudSaveQueue.flush(snapshot.sceneId);
+      cloudSaveQueue.enqueue(persistedSnapshot);
+      const status = await cloudSaveQueue.flush(persistedSnapshot.sceneId);
       if (status === "saved") {
         cloudPersistenceSignatureRef.current = signature;
         await pendingThumbnail;
@@ -1147,9 +1154,12 @@ const ExcalidrawWrapper = (props: {
         viewBackgroundColor: appState.viewBackgroundColor,
         gridSize: appState.gridSize,
       };
+      const persistedElements = elements.filter(
+        (element: any) => element?.isDeleted !== true,
+      );
       const signature = getCloudPersistenceSignature(
         name,
-        elements,
+        persistedElements,
         persistedAppState,
         referencedFiles,
         fileIds,
@@ -1159,7 +1169,7 @@ const ExcalidrawWrapper = (props: {
         cloudSaveQueue.enqueue({
           sceneId: activeSceneId,
           name,
-          elements,
+          elements: persistedElements,
           appState: persistedAppState,
           files: referencedFiles,
         });
@@ -1170,7 +1180,7 @@ const ExcalidrawWrapper = (props: {
         thumbnailVersionRef.current = thumbnailVersion;
         saveThumbnailDebounced({
           sceneId: activeSceneId,
-          elements,
+          elements: persistedElements,
           appState,
           files: referencedFiles,
           thumbnailVersion,

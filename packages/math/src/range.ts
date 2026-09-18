@@ -1,6 +1,6 @@
-import { toBrandedType } from "@excalidraw/common";
-
 import type { InclusiveRange } from "./types";
+
+const toBrandedType = <T>(value: unknown): T => value as T;
 
 /**
  * Create an inclusive range from the two numbers provided.

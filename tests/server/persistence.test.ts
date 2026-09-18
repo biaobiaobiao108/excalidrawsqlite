@@ -11,6 +11,7 @@ import {
   createServerConfig,
   type ServerRuntime,
 } from "../../server/server";
+import { cleanupExpiredTrashScenes } from "../../server/scenes";
 
 const runtimes: ServerRuntime[] = [];
 const testDirectories: string[] = [];
@@ -1480,7 +1481,7 @@ describe("cloud persistence server", () => {
           user_version: number;
         }
       ).user_version,
-    ).toBe(5);
+    ).toBe(6);
 
     runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [
       "legacy_scene",
@@ -1548,5 +1549,154 @@ describe("cloud persistence server", () => {
     });
     checkDb.close();
     testDirectories.push(directory);
+  });
+
+  it("sanitizes isDeleted elements on creation and update to reduce stored size", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const elementsWithDeleted = [
+      { id: "el_1", type: "rectangle", x: 10, y: 10, width: 100, height: 100 },
+      { id: "el_2", type: "text", x: 20, y: 20, isDeleted: true, text: "deleted element" },
+    ];
+    const created = await jsonRequest(
+      handler,
+      "/api/scenes",
+      { name: "Sanitized Board", elements: elementsWithDeleted },
+      { headers: { Cookie: cookie } },
+    );
+    expect(created.status).toBe(201);
+    const createdData = await responseJson<{ id: string; element_count: number }>(created);
+    expect(createdData.element_count).toBe(1);
+
+    const row = runtime.db
+      .query("SELECT elements, element_count FROM scenes WHERE id = ?")
+      .get(createdData.id) as { elements: string; element_count: number };
+    const savedElements = JSON.parse(row.elements);
+    expect(savedElements).toHaveLength(1);
+    expect(savedElements[0].id).toBe("el_1");
+    expect(row.element_count).toBe(1);
+
+    const update = await jsonRequest(
+      handler,
+      `/api/scenes/${createdData.id}`,
+      {
+        elements: [
+          ...savedElements,
+          { id: "el_3", type: "rectangle", isDeleted: true },
+          { id: "el_4", type: "ellipse", x: 50, y: 50, width: 50, height: 50 },
+        ],
+        baseRevision: 1,
+      },
+      { method: "PUT", headers: { Cookie: cookie } },
+    );
+    expect(update.status).toBe(200);
+    const updatedRow = runtime.db
+      .query("SELECT elements, element_count FROM scenes WHERE id = ?")
+      .get(createdData.id) as { elements: string; element_count: number };
+    const updatedElements = JSON.parse(updatedRow.elements);
+    expect(updatedElements).toHaveLength(2);
+    expect(updatedElements.map((el: any) => el.id)).toEqual(["el_1", "el_4"]);
+    expect(updatedRow.element_count).toBe(2);
+  });
+
+  it("initializes SQLite with incremental auto-vacuum mode", async () => {
+    const { runtime } = createTestRuntime();
+    const autoVacuum = runtime.db.query("PRAGMA auto_vacuum").get() as {
+      auto_vacuum: number;
+    };
+    expect(autoVacuum.auto_vacuum).toBe(2);
+  });
+
+  it("automatically cleans up expired trash scenes and publishes workspace update", async () => {
+    const { runtime, handler } = createTestRuntime({ TRASH_RETENTION_DAYS: "15" });
+    const cookie = await authenticate(handler);
+    const created = await jsonRequest(
+      handler,
+      "/api/scenes",
+      { name: "Expired Trash Board" },
+      { headers: { Cookie: cookie } },
+    );
+    const { id } = await responseJson<{ id: string }>(created);
+
+    await request(handler, `/api/scenes/${id}`, {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+
+    const expiredTime = Date.now() - 20 * 24 * 60 * 60 * 1000;
+    runtime.db.run("UPDATE scenes SET deleted_at = ? WHERE id = ?", [expiredTime, id]);
+
+    let workspaceChanged = false;
+    runtime.realtime = {
+      publishSceneChanged: () => {},
+      publishWorkspaceChanged: () => {
+        workspaceChanged = true;
+      },
+    };
+
+    const cleanedCount = cleanupExpiredTrashScenes(runtime);
+    expect(cleanedCount).toBe(1);
+    expect(workspaceChanged).toBe(true);
+    expect(runtime.db.query("SELECT id FROM scenes WHERE id = ?").get(id)).toBeNull();
+  });
+
+  it("purges tombstoned elements during legacy database migration", async () => {
+    const root = Bun.env.TEMP || Bun.env.TMP || ".";
+    const directory = `${root}/excalidraw-server-legacy-purge-${crypto.randomUUID()}`;
+    const dbPath = path.join(directory, "excalidraw.db");
+    const filesDir = path.join(directory, "files");
+    await fs.mkdir(filesDir, { recursive: true });
+    const legacyDb = new Database(dbPath);
+    legacyDb.run(
+      `CREATE TABLE scenes (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, elements TEXT NOT NULL,
+        app_state TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1, tags_json TEXT NOT NULL DEFAULT '[]',
+        is_favorite INTEGER NOT NULL DEFAULT 0, folder_id TEXT, last_opened_at INTEGER,
+        thumbnail_file_id TEXT, deleted_at INTEGER, element_count INTEGER NOT NULL DEFAULT 0,
+        content_bytes INTEGER NOT NULL DEFAULT 0, content_sha256 TEXT NOT NULL DEFAULT ''
+      )`,
+    );
+    legacyDb.run(
+      `CREATE TABLE files (
+        id TEXT PRIMARY KEY, storage_path TEXT, mime_type TEXT NOT NULL,
+        byte_size INTEGER NOT NULL DEFAULT 0, sha256 TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      )`,
+    );
+    legacyDb.run(
+      `CREATE TABLE scene_files (
+        scene_id TEXT NOT NULL, file_id TEXT NOT NULL,
+        PRIMARY KEY (scene_id, file_id)
+      )`,
+    );
+    const elementsWithTombstone = JSON.stringify([
+      { id: "active_1", type: "rectangle" },
+      { id: "deleted_1", type: "line", isDeleted: true },
+    ]);
+    legacyDb.run(
+      `INSERT INTO scenes (id, name, elements, app_state, created_at, updated_at, revision)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      ["legacy_dirty_scene", "Dirty Scene", elementsWithTombstone, "{}", 1000, 1000],
+    );
+    legacyDb.run("PRAGMA user_version = 5");
+    legacyDb.close();
+
+    const config = createServerConfig({
+      NODE_ENV: "test",
+      AUTH_PASSWORD: "test-password",
+      ALLOW_ANONYMOUS: "true",
+    });
+    const runtime = createRuntime({ dbPath, filesDir, config });
+    runtimes.push(runtime);
+    testDirectories.push(directory);
+
+    const row = runtime.db
+      .query("SELECT elements, element_count FROM scenes WHERE id = ?")
+      .get("legacy_dirty_scene") as { elements: string; element_count: number };
+    const elements = JSON.parse(row.elements);
+    expect(elements).toHaveLength(1);
+    expect(elements[0].id).toBe("active_1");
+    expect(row.element_count).toBe(1);
   });
 });
