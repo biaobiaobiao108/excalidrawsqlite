@@ -66,6 +66,148 @@ import {
 
 import type { RequestAddressResolver, ServerRuntime } from "./types";
 
+const DEFAULT_SCENE_PAGE_SIZE = 50;
+const MAX_SCENE_PAGE_SIZE = 100;
+const sceneCursorEncoder = new TextEncoder();
+const sceneCursorDecoder = new TextDecoder();
+
+const encodeSceneCursor = (row: {
+  updated_at?: number;
+  deleted_at?: number | null;
+  id: string;
+}) => {
+  const timestamp = row.deleted_at ?? row.updated_at;
+  return sceneCursorEncoder
+    .encode(`${timestamp}:${row.id}`)
+    .toBase64({ alphabet: "base64url", omitPadding: true });
+};
+
+const decodeSceneCursor = (value: string | null) => {
+  if (!value) {
+    return null;
+  }
+  try {
+    const decoded = sceneCursorDecoder.decode(
+      Uint8Array.fromBase64(value, { alphabet: "base64url" }),
+    );
+    const separator = decoded.indexOf(":");
+    const timestamp = Number(decoded.slice(0, separator));
+    const id = decoded.slice(separator + 1);
+    if (
+      separator <= 0 ||
+      !Number.isSafeInteger(timestamp) ||
+      timestamp < 0 ||
+      !id
+    ) {
+      throw new Error("invalid cursor");
+    }
+    return { timestamp, id };
+  } catch {
+    throw new HttpError(400, "INVALID_CURSOR", "分页游标无效");
+  }
+};
+
+const parseScenePageSize = (value: string | null) => {
+  if (!value) {
+    return DEFAULT_SCENE_PAGE_SIZE;
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > MAX_SCENE_PAGE_SIZE) {
+    throw new HttpError(
+      400,
+      "INVALID_LIMIT",
+      `分页大小必须是 1-${MAX_SCENE_PAGE_SIZE} 之间的整数`,
+    );
+  }
+  return parsed;
+};
+
+const escapeLikePattern = (value: string) =>
+  value.replace(/[\\%_]/g, (character) => `\\${character}`);
+
+const listScenePage = (
+  runtime: ServerRuntime,
+  url: URL,
+  trashed: boolean,
+) => {
+  const limit = parseScenePageSize(url.searchParams.get("limit"));
+  const cursor = decodeSceneCursor(url.searchParams.get("cursor"));
+  const query = url.searchParams.get("q")?.trim() || "";
+  if (query.length > 120) {
+    throw new HttpError(400, "INVALID_QUERY", "搜索关键词过长");
+  }
+  const folderId = url.searchParams.has("folder_id")
+    ? url.searchParams.get("folder_id") || null
+    : undefined;
+  const favorite = url.searchParams.has("favorite")
+    ? url.searchParams.get("favorite")
+    : undefined;
+  if (favorite !== undefined && favorite !== "true" && favorite !== "false") {
+    throw new HttpError(400, "INVALID_FAVORITE", "favorite 参数无效");
+  }
+
+  const conditions = [
+    trashed ? "scenes.deleted_at IS NOT NULL" : "scenes.deleted_at IS NULL",
+  ];
+  const params: Array<string | number> = [];
+  if (query) {
+    const pattern = `%${escapeLikePattern(query)}%`;
+    conditions.push(
+      "(scenes.name LIKE ? ESCAPE '\\' OR scenes.tags_json LIKE ? ESCAPE '\\')",
+    );
+    params.push(pattern, pattern);
+  }
+  if (folderId !== undefined) {
+    conditions.push("scenes.folder_id = ?");
+    params.push(folderId);
+  }
+  if (favorite !== undefined) {
+    conditions.push("scenes.is_favorite = ?");
+    params.push(favorite === "true" ? 1 : 0);
+  }
+  if (cursor) {
+    const column = trashed ? "scenes.deleted_at" : "scenes.updated_at";
+    conditions.push(
+      `(${column} < ? OR (${column} = ? AND scenes.id < ?))`,
+    );
+    params.push(cursor.timestamp, cursor.timestamp, cursor.id);
+  }
+
+  const orderColumn = trashed ? "scenes.deleted_at" : "scenes.updated_at";
+  const rows = runtime.db
+    .query(
+      `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
+              scenes.revision, scenes.content_bytes AS size,
+              scenes.element_count,
+              scenes.tags_json, scenes.is_favorite, scenes.folder_id,
+              scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
+              folders.name AS folder_name
+       FROM scenes
+       LEFT JOIN folders ON folders.id = scenes.folder_id
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY ${orderColumn} DESC, scenes.id DESC
+       LIMIT ?`,
+    )
+    .all(...params, limit + 1) as Array<{
+    id: string;
+    updated_at: number;
+    deleted_at: number | null;
+  }>;
+  const hasMore = rows.length > limit;
+  const items = rows.slice(0, limit).map(getSceneSummary);
+  return {
+    items,
+    nextCursor: hasMore
+      ? encodeSceneCursor(rows[limit - 1])
+      : null,
+  };
+};
+
+const hasScenePageParameters = (url: URL) =>
+  ["limit", "cursor", "q", "folder_id", "favorite"].some((key) =>
+    url.searchParams.has(key),
+  );
+
 const getFolderSummary = (runtime: ServerRuntime, id: string) =>
   runtime.db
     .query(
@@ -422,6 +564,9 @@ export const createRequestHandler = (
       }
 
       if (pathname === "/api/scenes" && req.method === "GET") {
+        if (hasScenePageParameters(url)) {
+          return jsonResponse(runtime, req, listScenePage(runtime, url, false));
+        }
         const rows = stmts
           .listScenes.all()
           .map(getSceneSummary);
@@ -429,6 +574,9 @@ export const createRequestHandler = (
       }
 
       if (pathname === "/api/scenes/trash" && req.method === "GET") {
+        if (hasScenePageParameters(url)) {
+          return jsonResponse(runtime, req, listScenePage(runtime, url, true));
+        }
         const rows = stmts
           .listTrashScenes.all()
           .map(getSceneSummary);
