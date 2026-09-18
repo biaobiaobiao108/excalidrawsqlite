@@ -69,7 +69,10 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
   const publisher: RealtimePublisher = {
     publishSceneChanged: (event) => {
       publish(sceneTopic(event.sceneId), event);
-      publish(WORKSPACE_TOPIC, event);
+      publish(WORKSPACE_TOPIC, {
+        type: "workspace_changed",
+        updatedAt: event.updatedAt,
+      });
     },
     publishWorkspaceChanged: (updatedAt = Date.now()) => {
       publish(WORKSPACE_TOPIC, {
