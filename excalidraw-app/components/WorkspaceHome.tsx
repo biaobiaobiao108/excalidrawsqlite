@@ -27,6 +27,7 @@ import {
 } from "../data/cloudStorage";
 import {
   broadcastWorkspaceChanged,
+  subscribeCloudRealtime,
   subscribeCloudTabSync,
 } from "../data/cloudSync";
 
@@ -790,6 +791,30 @@ export const WorkspaceHome = ({
     () => subscribeCloudTabSync(() => void loadWorkspace()),
     [loadWorkspace],
   );
+
+  useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void loadWorkspace();
+      }, 250);
+    };
+    const unsubscribe = subscribeCloudRealtime(null, (event) => {
+      if (event.type === "scene_changed" || event.type === "workspace_changed") {
+        scheduleRefresh();
+      }
+    });
+    return () => {
+      unsubscribe();
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+    };
+  }, [loadWorkspace]);
 
   useEffect(() => {
     const ownerWindow = getOwnerWindow(rootRef.current);
