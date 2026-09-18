@@ -16,5 +16,6 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-false}
       AUTH_PASSWORD: ${AUTH_PASSWORD:?Set AUTH_PASSWORD before starting the container}
       ALLOW_ANONYMOUS: ${ALLOW_ANONYMOUS:-false}
+      TRASH_RETENTION_DAYS: ${TRASH_RETENTION_DAYS:-30}
     volumes:
       - ./data:/app/data:Z
