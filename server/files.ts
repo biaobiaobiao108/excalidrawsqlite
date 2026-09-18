@@ -246,6 +246,7 @@ const upsertPreparedFile = async (
       id,
       mimeType,
       byteSize: prepared.byteLength,
+      sha256: prepared.sha256,
       createdAt: previous?.created_at || createdAt || now,
       updatedAt: now,
     };

@@ -4,6 +4,9 @@ import type { FileId } from "@excalidraw/element/types";
 const CLOUD_API_TIMEOUT_MS = 10_000;
 const CLOUD_READ_RETRIES = 2;
 
+const uploadedCloudFileData = new Map<string, string>();
+const cloudFileEtags = new Map<string, string>();
+
 const getCloudFileConcurrency = () => {
   if (typeof navigator === "undefined") {
     return 4;
@@ -518,6 +521,9 @@ export async function clearCloudTrash(): Promise<{
 export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
   const entries = Object.values(files || {});
   await runWithConcurrency(entries, async (file) => {
+    if (uploadedCloudFileData.get(file.id) === file.dataURL) {
+      return;
+    }
     const res = await fetchWithTimeout(
       `/api/files/${encodeURIComponent(file.id)}`,
       {
@@ -531,6 +537,11 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
       "保存云端图片失败",
     );
     await assertResponse(res, "保存云端图片失败");
+    const etag = res.headers.get("etag");
+    if (etag) {
+      cloudFileEtags.set(file.id, etag);
+    }
+    uploadedCloudFileData.set(file.id, file.dataURL);
   }, getCloudFileConcurrency());
 }
 
@@ -553,6 +564,10 @@ export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
         res.headers.get("content-type")?.split(";")[0].trim() ||
         "application/octet-stream";
       const dataURL = await blobToDataURL(await res.blob());
+      const etag = res.headers.get("etag");
+      if (etag) {
+        cloudFileEtags.set(id, etag);
+      }
       loadedFiles.push({
         id,
         mimeType: contentType as BinaryFileData["mimeType"],

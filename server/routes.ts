@@ -1073,7 +1073,9 @@ export const createRequestHandler = (
         const mimeType = validateMimeType(contentType);
         const prepared = await stageRequestBodyToFile(runtime, id, req);
         const file = await upsertStagedFile(runtime, id, mimeType, prepared);
-        return jsonResponse(runtime, req, { success: true, file }, 201);
+        return jsonResponse(runtime, req, { success: true, file }, 201, {
+          ETag: `"${file.sha256}"`,
+        });
       }
 
       if (pathname.startsWith("/api/files/") && req.method === "GET") {
