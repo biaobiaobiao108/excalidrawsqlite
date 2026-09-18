@@ -189,8 +189,33 @@ const upsertPreparedFile = async (
     const filePath = getFilePath(runtime, id);
     const now = Number.isFinite(updatedAt) ? Number(updatedAt) : Date.now();
     const previous = runtime.db
-      .query("SELECT created_at FROM files WHERE id = ?")
-      .get(id) as { created_at: number } | null;
+      .query(
+        "SELECT created_at, updated_at, byte_size, sha256, mime_type FROM files WHERE id = ?",
+      )
+      .get(id) as {
+      created_at: number;
+      updated_at: number;
+      byte_size: number;
+      sha256: string;
+      mime_type: string;
+    } | null;
+
+    if (
+      previous &&
+      previous.byte_size === prepared.byteLength &&
+      previous.sha256 === prepared.sha256 &&
+      previous.mime_type.toLowerCase() === mimeType.toLowerCase() &&
+      (await fileExists(filePath))
+    ) {
+      return {
+        id,
+        mimeType,
+        byteSize: previous.byte_size,
+        sha256: previous.sha256,
+        createdAt: previous.created_at,
+        updatedAt: previous.updated_at,
+      };
+    }
 
     const atomicWrite = prepared.tempPath
       ? await finalizeAtomicFileWrite(filePath, prepared.tempPath)
