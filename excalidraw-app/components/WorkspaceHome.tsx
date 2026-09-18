@@ -44,6 +44,14 @@ type LayoutMode = "grid" | "list";
 
 const LOCAL_SCENE_MIGRATION_KEY = "excalidraw-cloud-scene-migration-v1";
 
+type WorkspaceSnapshot = {
+  scenes: CloudSceneSummary[];
+  trashScenes: CloudSceneSummary[];
+  folders: CloudFolder[];
+};
+
+let workspaceSnapshot: WorkspaceSnapshot | null = null;
+
 type SceneMetadataDialogState = {
   scene: CloudSceneSummary;
   title: string;
@@ -706,16 +714,22 @@ export const WorkspaceHome = ({
 }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [scenes, setScenes] = useState<CloudSceneSummary[]>([]);
-  const [trashScenes, setTrashScenes] = useState<CloudSceneSummary[]>([]);
-  const [folders, setFolders] = useState<CloudFolder[]>([]);
+  const [scenes, setScenes] = useState<CloudSceneSummary[]>(
+    () => workspaceSnapshot?.scenes || [],
+  );
+  const [trashScenes, setTrashScenes] = useState<CloudSceneSummary[]>(
+    () => workspaceSnapshot?.trashScenes || [],
+  );
+  const [folders, setFolders] = useState<CloudFolder[]>(
+    () => workspaceSnapshot?.folders || [],
+  );
   const [view, setView] = useState<BoardView>("all");
   const [sort, setSort] = useState<SortMode>("updated");
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !workspaceSnapshot);
   const [error, setError] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
   const [metadataDialog, setMetadataDialog] =
@@ -733,7 +747,9 @@ export const WorkspaceHome = ({
   const loadWorkspace = useCallback(async () => {
     const requestId = ++loadRequestRef.current;
     const isCurrent = () => loadRequestRef.current === requestId;
-    setLoading(true);
+    if (!workspaceSnapshot) {
+      setLoading(true);
+    }
     setError("");
     try {
       const auth = await checkAuthStatus();
@@ -760,9 +776,15 @@ export const WorkspaceHome = ({
           console.warn("迁移本地画板失败", migrationError);
         }
       }
-      setScenes(migratedScene ? [migratedScene] : sceneList);
-      setFolders(folderList);
-      setTrashScenes(trashList);
+      const nextSnapshot = {
+        scenes: migratedScene ? [migratedScene] : sceneList,
+        folders: folderList,
+        trashScenes: trashList,
+      };
+      workspaceSnapshot = nextSnapshot;
+      setScenes(nextSnapshot.scenes);
+      setFolders(nextSnapshot.folders);
+      setTrashScenes(nextSnapshot.trashScenes);
     } catch (requestError: any) {
       if (
         requestError?.status === 401 ||
@@ -786,6 +808,12 @@ export const WorkspaceHome = ({
       loadRequestRef.current += 1;
     };
   }, [loadWorkspace]);
+
+  useEffect(() => {
+    if (workspaceSnapshot) {
+      workspaceSnapshot = { scenes, folders, trashScenes };
+    }
+  }, [folders, loading, scenes, trashScenes]);
 
   useEffect(
     () => subscribeCloudTabSync(() => void loadWorkspace()),
