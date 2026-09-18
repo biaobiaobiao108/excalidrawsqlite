@@ -4,7 +4,7 @@ import type { FileId } from "@excalidraw/element/types";
 const CLOUD_API_TIMEOUT_MS = 10_000;
 const CLOUD_READ_RETRIES = 2;
 
-const uploadedCloudFileHashes = new Map<string, string>();
+const uploadedCloudFileHashes = new WeakMap<object, string>();
 const cloudFileEtags = new Map<string, string>();
 const MAX_CLOUD_FILE_METADATA = 512;
 const MAX_CACHED_CLOUD_SCENES = 2;
@@ -175,16 +175,8 @@ const sha256Hex = async (blob: Blob) => {
     .join("");
 };
 
-const rememberCloudFileHash = (id: string, hash: string) => {
-  uploadedCloudFileHashes.delete(id);
-  uploadedCloudFileHashes.set(id, hash);
-  while (uploadedCloudFileHashes.size > MAX_CLOUD_FILE_METADATA) {
-    const oldestId = uploadedCloudFileHashes.keys().next().value;
-    if (oldestId === undefined) {
-      break;
-    }
-    uploadedCloudFileHashes.delete(oldestId);
-  }
+const rememberCloudFileHash = (file: object, hash: string) => {
+  uploadedCloudFileHashes.set(file, hash);
 };
 
 const rememberCloudFileEtag = (id: string, etag: string) => {
@@ -621,12 +613,12 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
   await runWithConcurrency(entries, async (file) => {
     const blob = dataUrlToBlob(file.dataURL, file.mimeType);
     const digest = await sha256Hex(blob);
-    if (uploadedCloudFileHashes.get(file.id) === digest) {
+    if (uploadedCloudFileHashes.get(file) === digest) {
       return;
     }
     const knownEtag = cloudFileEtags.get(file.id);
     if (knownEtag === `"${digest}"`) {
-      rememberCloudFileHash(file.id, digest);
+      rememberCloudFileHash(file, digest);
       return;
     }
     const res = await fetchWithTimeout(
@@ -646,7 +638,7 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
     if (etag) {
       rememberCloudFileEtag(file.id, etag);
     }
-    rememberCloudFileHash(file.id, digest);
+    rememberCloudFileHash(file, digest);
   }, getCloudFileConcurrency());
 }
 
