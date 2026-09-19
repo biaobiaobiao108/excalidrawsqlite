@@ -13,32 +13,29 @@ import type { FontFamilyValues } from "@excalidraw/element/types";
 import { t } from "../../i18n";
 import { RadioSelection } from "../RadioSelection";
 import { ButtonSeparator } from "../ButtonSeparator";
-import {
-  FontFamilyNormalIcon,
-  FreedrawIcon,
-} from "../icons";
 
 import { FontPickerList } from "./FontPickerList";
 import { FontPickerTrigger } from "./FontPickerTrigger";
+import { getFontFamilyIcon } from "./fontFamilyIcons";
 
 import "./FontPicker.scss";
 
 export const DEFAULT_FONTS = [
   {
     value: FONT_FAMILY.Excalifont,
-    icon: FreedrawIcon,
+    icon: getFontFamilyIcon(FONT_FAMILY.Excalifont),
     text: t("labels.handDrawn"),
     testId: "font-family-hand-drawn",
   },
   {
     value: FONT_FAMILY[LXGW_WENKAI_FONT],
-    icon: FontFamilyNormalIcon,
+    icon: getFontFamilyIcon(FONT_FAMILY[LXGW_WENKAI_FONT]),
     text: LXGW_WENKAI_FONT,
     testId: "font-family-lxgw-wenkai",
   },
   {
     value: FONT_FAMILY[SYSTEM_FONT],
-    icon: FontFamilyNormalIcon,
+    icon: getFontFamilyIcon(FONT_FAMILY[SYSTEM_FONT]),
     text: SYSTEM_FONT,
     testId: "font-family-system",
   },

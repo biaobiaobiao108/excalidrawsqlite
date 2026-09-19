@@ -398,6 +398,19 @@ export const FreedrawIcon = createIcon(
   modifiedTablerIconProps,
 );
 
+// modified tabler-icons: feather
+export const FeatherIcon = createIcon(
+  <g strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 20c4.5-1.4 8.6-4.3 11.8-8.4L21 5.5c-4.8-.3-8.6 1.1-11.4 4.2C7.5 12.1 6.4 15 6 18" />
+    <path d="M4 20c4.8-1.6 8.9-4.6 12.1-8.9" />
+    <path d="M4 20 2.5 21.5" />
+    <path d="M10.1 9.4 14.3 13.6" />
+    <path d="M13.2 7.3 16.2 10.3" />
+    <path d="M16.5 5.9 18.6 8" />
+  </g>,
+  modifiedTablerIconProps,
+);
+
 // tabler-icons: typography
 export const TextIcon = createIcon(
   <g strokeWidth="1.5">

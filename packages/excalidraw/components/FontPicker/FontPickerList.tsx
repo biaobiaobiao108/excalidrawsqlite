@@ -36,12 +36,9 @@ import {
 } from "../dropdownMenu/DropdownMenuItem";
 import MenuItemContent from "../dropdownMenu/DropdownMenuItemContent";
 import { getDropdownMenuItemClassName } from "../dropdownMenu/common";
-import {
-  FontFamilyNormalIcon,
-  FreedrawIcon,
-} from "../icons";
 
 import { fontPickerKeyHandler } from "./keyboardNavHandlers";
+import { getFontFamilyIcon } from "./fontFamilyIcons";
 
 import type { JSX } from "react";
 import type { ExcalidrawFontFace } from "../../fonts/ExcalidrawFontFace";
@@ -66,15 +63,6 @@ interface FontPickerListProps {
   onOpen: () => void;
   onClose: () => void;
 }
-
-const getFontFamilyIcon = (fontFamily: FontFamilyValues): JSX.Element => {
-  switch (fontFamily) {
-    case FONT_FAMILY.Excalifont:
-      return FreedrawIcon;
-    default:
-      return FontFamilyNormalIcon;
-  }
-};
 
 const getFontFamilyLabel = (
   fontFamily: FontFamilyValues,
