@@ -466,7 +466,6 @@ export const distributeLibraryItemsOnSquareGrid = (
     const offsetCenterX = (maxWidthCurrCol - width) / 2;
     const offsetCenterY = (maxHeightCurrRow - height) / 2;
     resElements.push(
-      // eslint-disable-next-line no-loop-func
       ...item.elements.map((element) => {
         const positionedElement = {
           ...element,

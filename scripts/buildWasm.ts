@@ -37,7 +37,6 @@ for (const { pkg, src, dest } of wasmModules) {
     await Bun.file(sourcePath).arrayBuffer(),
   ).toBase64();
   const content = `// GENERATED CODE -- DO NOT EDIT!
-/* eslint-disable */
 // @ts-nocheck
 
 /**

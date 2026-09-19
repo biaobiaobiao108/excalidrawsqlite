@@ -67,13 +67,6 @@
      bun run test:all
      ```
 
-5. **代码风格与规范检查**：
-   ```bash
-   bun run test:code
-   # 自动修复
-   bun run fix
-   ```
-
 ---
 
 ## 📝 提交规范 (Git Commit Convention)

@@ -558,7 +558,6 @@ const bindingStrategyForSimpleArrowEndpointDragging_complex = (
         return { current, other: isMultiPoint ? { mode: undefined } : other };
       }
       // The opposite binding is inside the same element
-      // eslint-disable-next-line no-else-return
       else {
         current = { element: hit, mode: "inside", focusPoint: point };
 
@@ -566,7 +565,6 @@ const bindingStrategyForSimpleArrowEndpointDragging_complex = (
       }
     }
     // The opposite binding is on a different element (or nested)
-    // eslint-disable-next-line no-else-return
     else {
       // Handle the nested element case
       if (isOverlapping && oppositeElement && !otherIsTransparent) {

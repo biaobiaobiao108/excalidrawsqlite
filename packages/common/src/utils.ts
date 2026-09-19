@@ -1197,13 +1197,11 @@ export const normalizeEOL = (str: string) => {
 
 // -----------------------------------------------------------------------------
 export type HasBrand<T> = {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   [K in keyof T]: K extends `~brand${infer _}` | "_brand" ? true : never;
 }[keyof T];
 
 type RemoveAllBrands<T> = HasBrand<T> extends true
   ? {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       [K in keyof T as K extends `~brand~${infer _}` | "_brand"
         ? never
         : K]: T[K];

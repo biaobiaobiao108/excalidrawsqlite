@@ -1359,7 +1359,6 @@ export const actionChangeFontFamily = register<{
         setBatchedData({});
       }
       // call update only on internal state changes
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [batchedData]);
 
     useEffect(() => {

@@ -550,7 +550,6 @@ export const useTopPicksDnD = ({
       begin,
       destroy: () => cancelDrag(false),
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // cancel a drag in flight if the picker unmounts mid-drag

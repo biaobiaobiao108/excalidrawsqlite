@@ -1,4 +1,3 @@
-/* eslint-disable */
 // @ts-nocheck
 
 /**
@@ -4046,4 +4045,3 @@ const Module = (function () {
 })();
 
 export default Module;
-

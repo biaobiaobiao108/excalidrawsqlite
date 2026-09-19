@@ -84,7 +84,7 @@ export default function LibraryMenuItems({
     if (scrollPosition > 0) {
       libraryContainerRef.current?.scrollTo(0, scrollPosition);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const { svgCache } = useLibraryCache();
   const [lastSelectedItem, setLastSelectedItem] = useState<

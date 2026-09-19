@@ -21,7 +21,7 @@
 | **浏览器与构建** | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置 | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
 | **多端同步** | 依赖手动刷新或高频轮询 | **Bun 原生 WebSocket topic 广播 + 自动重连 + revision 条件拉取** |
 | **前端现代体验** | 传统弹窗布局与全局媒体查询 | **原生 `<dialog>` 无障碍模型（`aria-modal`） + CSS `@container` 容器查询与 `:has()` 现代选择器** |
-| **代码工程质量** | 旧版 ESLint 8 与多份分散的编译器依赖 | **TypeScript 6.0+ 全 Monorepo 统一驱动 + ESLint 9 Flat Config** |
+| **代码工程质量** | 多套分散的编译器依赖 | **TypeScript 6.0+ 全 Monorepo 统一驱动** |
 | **全栈开发体验** | 需分别启动前端开发服务与后端 API，跨端口代理 | **`bun run dev` 一体化热重载**，单命令启动前后端，原生 SSE 毫秒级自动热刷新 |
 | **资源消耗** | 内存占用 500MB+，冷启动较慢 | **毫秒级冷启动，内存占用低至约 50~80MB** |
 
@@ -322,9 +322,6 @@ bun run test:server
 # 全局 TypeScript 类型检查
 bun run test:typecheck
 
-# 运行代码规范与 ESLint 检查
-bun run test:code
-
 # 运行生产构建
 bun run build
 
@@ -332,7 +329,7 @@ bun run build
 # 首屏 JS 512 KiB、CSS 220 KiB；懒加载 JS 1 MiB、CSS 220 KiB
 bun run test:size
 
-# 一键运行全量质量测试 (单元、服务端、类型、语法、构建与体积)
+# 一键运行全量质量测试 (单元、服务端、类型、构建与体积)
 bun run test:all
 ```
 

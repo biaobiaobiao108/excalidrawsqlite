@@ -763,7 +763,6 @@ const convertLineToElbow = (line: ExcalidrawLinearElement): LocalPoint[] => {
           }
         } else {
           // … absorb leg 1 – slide the whole first leg onto *b-c* axis
-          // eslint-disable-next-line no-lonely-if
           if (v2) {
             for (
               let k = clean.length - 1;

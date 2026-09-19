@@ -7,21 +7,12 @@
     "packages/*"
   ],
   "devDependencies": {
-    "@eslint/compat": "2.1.1",
-    "@eslint/js": "10.0.1",
     "@types/bun": "1.4.2",
     "@types/node": "26.6.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "eslint": "10.11.0",
-    "eslint-plugin-import": "2.32.0",
-    "eslint-plugin-jsx-a11y": "6.10.2",
-    "eslint-plugin-react": "7.37.5",
-    "eslint-plugin-react-hooks": "7.1.1",
-    "globals": "17.12.0",
     "sass": "^1.104.1",
-    "typescript": "6.0.3",
-    "typescript-eslint": "8.70.0"
+    "typescript": "6.0.3"
   },
   "overrides": {
     "@babel/runtime": "7.28.4",
@@ -49,10 +40,8 @@
     "test:unit": "bun test --max-concurrency=1",
     "test:server": "bun test --max-concurrency=1 ./tests/server",
     "test:size": "bun run build && bun scripts/check-bundle-size.ts",
-    "test:all": "bun run test:unit && bun run test:server && bun run test:typecheck && bun run test:code && bun run test:size",
+    "test:all": "bun run test:unit && bun run test:server && bun run test:typecheck && bun run test:size",
     "test:typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.tests.json",
-    "test:code": "eslint . --max-warnings=0",
-    "fix": "eslint . --max-warnings=0 --fix",
     "build:packages": "bun run --cwd packages/common build:esm && bun run --cwd packages/fractional-indexing build:esm && bun run --cwd packages/laser-pointer build:esm && bun run --cwd packages/math build:esm && bun run --cwd packages/element build:esm && bun run --cwd packages/excalidraw build:esm"
   }
 }

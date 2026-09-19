@@ -228,7 +228,6 @@ const CodeMirrorEditor = ({
       view.destroy();
       viewRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Swap theme dynamically via compartment

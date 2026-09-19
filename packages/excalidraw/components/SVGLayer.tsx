@@ -23,7 +23,6 @@ export const SVGLayer = ({ trails }: SVGLayerProps) => {
         trail.stop();
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, trails);
 
   return (

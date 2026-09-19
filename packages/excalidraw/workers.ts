@@ -116,7 +116,6 @@ export class WorkerPool<T, R> {
       if (this.idleWorkers.has(worker)) {
         this.idleWorkers.delete(worker);
 
-        // eslint-disable-next-line no-console
         console.debug(
           "Job finished! Idle worker has been released from the pool.",
         );
