@@ -55,6 +55,7 @@ export const shutdownServer = async (options: {
   closeDevReload?: () => Promise<void>;
   closeRealtime?: () => void;
   maintenanceTimer?: ReturnType<typeof setInterval>;
+  maintenanceTimers?: ReadonlyArray<ReturnType<typeof setInterval>>;
   backgroundTasks?: ReadonlySet<Promise<unknown>>;
   timeoutMs?: number;
 }): Promise<ShutdownResult> => {
@@ -65,14 +66,18 @@ export const shutdownServer = async (options: {
     closeDevReload = closeDevReloadSubscribers,
     closeRealtime,
     maintenanceTimer,
+    maintenanceTimers = [],
     backgroundTasks = new Set(),
     timeoutMs = 2_000,
   } = options;
 
   let gracefulError: unknown;
   const gracefulStop = (async () => {
-    if (maintenanceTimer) {
-      clearInterval(maintenanceTimer);
+    const timers = maintenanceTimer
+      ? [maintenanceTimer, ...maintenanceTimers]
+      : maintenanceTimers;
+    for (const timer of timers) {
+      clearInterval(timer);
     }
     try {
       closeDevWatcher?.();
@@ -201,6 +206,9 @@ export const startServer = async () => {
         console.error("[Files] stale artifact cleanup failed", error);
       }),
     );
+  };
+
+  const runStorageScanMaintenance = () => {
     trackBackgroundTask(
       cleanupUntrackedFiles(runtime).catch((error) => {
         console.error("[Files] untracked file cleanup failed", error);
@@ -269,6 +277,10 @@ export const startServer = async () => {
     }),
   );
   const maintenanceTimer = setInterval(runMaintenance, 60 * 60 * 1000);
+  const storageScanTimer = setInterval(
+    runStorageScanMaintenance,
+    6 * 60 * 60 * 1000,
+  );
 
   const handleShutdown = createShutdownSignalHandler(() => {
     console.log("\n[Server] 正在优雅关闭...");
@@ -277,7 +289,7 @@ export const startServer = async () => {
       runtime,
       closeDevWatcher,
       closeRealtime: () => realtime.closeSockets(),
-      maintenanceTimer,
+      maintenanceTimers: [maintenanceTimer, storageScanTimer],
       backgroundTasks,
     });
   });
