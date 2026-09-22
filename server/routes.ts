@@ -282,6 +282,8 @@ const preparedStatementsMap = new WeakMap<
     getFileById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneRawById: ReturnType<ServerRuntime["db"]["query"]>;
+    getSceneVersionById: ReturnType<ServerRuntime["db"]["query"]>;
+    getSceneMetadataById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneStateById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneRevision: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneThumbnailById: ReturnType<ServerRuntime["db"]["query"]>;
@@ -306,6 +308,16 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
       ),
       getSceneRawById: runtime.db.query(
         "SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL",
+      ),
+      getSceneVersionById: runtime.db.query(
+        `SELECT id, revision, updated_at
+         FROM scenes
+         WHERE id = ? AND deleted_at IS NULL`,
+      ),
+      getSceneMetadataById: runtime.db.query(
+        `SELECT id, name, tags_json, is_favorite, folder_id, revision
+         FROM scenes
+         WHERE id = ? AND deleted_at IS NULL`,
       ),
       getSceneStateById: runtime.db.query(
         "SELECT id, deleted_at, revision FROM scenes WHERE id = ?",
@@ -488,22 +500,24 @@ export const createRequestHandler = (
         }
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
         try {
-          const backupBytes = await withBackupLock(runtime, async () => {
+          const snapshot = await withBackupLock(runtime, async () => {
             const snapshot = await createDatabaseSnapshot(runtime, timestamp);
-            try {
-              const backupFile = Bun.file(snapshot.tempBackupFile);
-              if (backupFile.size > runtime.config.maxBackupBytes) {
-                throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
-              }
-              return await backupFile.arrayBuffer();
-            } finally {
+            const backupFile = Bun.file(snapshot.tempBackupFile);
+            if (backupFile.size > runtime.config.maxBackupBytes) {
               await snapshot.cleanup().catch(() => {});
+              throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
             }
+            return {
+              archivePath: snapshot.tempBackupFile,
+              cleanup: snapshot.cleanup,
+              size: backupFile.size,
+            };
           });
-          return response(runtime, req, backupBytes, {
+          return response(runtime, req, streamBackupArchive(snapshot), {
             headers: {
               "Content-Type": "application/x-sqlite3",
               "Content-Disposition": `attachment; filename="excalidraw-backup-${timestamp}.db"`,
+              "Content-Length": String(snapshot.size),
               "Cache-Control": "no-store",
             },
           });
@@ -859,12 +873,16 @@ export const createRequestHandler = (
 
       if (pathname.startsWith("/api/scenes/") && req.method === "GET") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
-        const row = stmts.getSceneRawById.get(id);
-        if (!row) {
+        const versionRow = stmts.getSceneVersionById.get(id) as {
+          id: string;
+          revision: number;
+          updated_at: number;
+        } | null;
+        if (!versionRow) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
-        const sceneRevision = Number((row as any).revision) || 1;
-        const sceneUpdatedAt = Number((row as any).updated_at) || 0;
+        const sceneRevision = Number(versionRow.revision) || 1;
+        const sceneUpdatedAt = Number(versionRow.updated_at) || 0;
         const etag = `"scene-${id}-${sceneRevision}-${sceneUpdatedAt}"`;
         const ifNoneMatch = req.headers.get("if-none-match");
         if (
@@ -880,6 +898,10 @@ export const createRequestHandler = (
               "Cache-Control": "private, no-cache",
             },
           });
+        }
+        const row = stmts.getSceneRawById.get(id);
+        if (!row) {
+          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
         return jsonResponse(runtime, req, parseStoredScene(row), 200, {
           ETag: etag,
@@ -1085,7 +1107,11 @@ export const createRequestHandler = (
           throw new HttpError(400, "INVALID_METADATA", "没有可更新的画板信息");
         }
         const baseRevision = requireRevision(body.baseRevision);
-        const existing = stmts.getSceneRawById.get(id) as {
+        const existing = stmts.getSceneMetadataById.get(id) as {
+          name: string;
+          tags_json: string;
+          is_favorite: number;
+          folder_id: string | null;
           revision: number;
         } | null;
         if (!existing) {

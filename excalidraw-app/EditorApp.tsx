@@ -308,6 +308,7 @@ const ExcalidrawWrapper = (props: {
     useState<CloudSaveStatus>("idle");
   const currentSceneIdRef = useRef<string | null>(null);
   const cloudPersistenceSignatureRef = useRef<string | null>(null);
+  const cloudPersistenceDirtyRef = useRef(true);
   const savedStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -331,6 +332,7 @@ const ExcalidrawWrapper = (props: {
     currentSceneIdRef.current = sceneId;
     if (changed) {
       cloudPersistenceSignatureRef.current = null;
+      cloudPersistenceDirtyRef.current = true;
       if (savedStatusTimerRef.current) {
         clearTimeout(savedStatusTimerRef.current);
         savedStatusTimerRef.current = null;
@@ -557,6 +559,7 @@ const ExcalidrawWrapper = (props: {
         },
         excalidrawAPI.getFiles(),
       );
+      cloudPersistenceDirtyRef.current = false;
       return cloudData;
     },
     [
@@ -627,6 +630,7 @@ const ExcalidrawWrapper = (props: {
       const status = await cloudSaveQueue.flush(persistedSnapshot.sceneId);
       if (status === "saved") {
         cloudPersistenceSignatureRef.current = signature;
+        cloudPersistenceDirtyRef.current = false;
         await pendingThumbnail;
         await thumbnailSaveQueue.flush();
         return true;
@@ -1097,6 +1101,12 @@ const ExcalidrawWrapper = (props: {
     };
   }, [excalidrawAPI, cloudSaveQueue]);
 
+  const onIncrement: ExcalidrawProps["onIncrement"] = useCallback((event) => {
+    if (event.type === "durable") {
+      cloudPersistenceDirtyRef.current = true;
+    }
+  }, []);
+
   const onChange = (
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
@@ -1140,7 +1150,11 @@ const ExcalidrawWrapper = (props: {
     }
 
     const activeSceneId = currentSceneIdRef.current;
-    if (activeSceneId && !isApplyingCloudSceneRef.current) {
+    if (
+      activeSceneId &&
+      !isApplyingCloudSceneRef.current &&
+      cloudPersistenceDirtyRef.current
+    ) {
       const referencedFiles: BinaryFiles = {};
       const fileIds = getCloudFileIds(elements);
       for (const fileId of fileIds) {
@@ -1166,6 +1180,7 @@ const ExcalidrawWrapper = (props: {
       );
       if (signature !== cloudPersistenceSignatureRef.current) {
         cloudPersistenceSignatureRef.current = signature;
+        cloudPersistenceDirtyRef.current = false;
         cloudSaveQueue.enqueue({
           sceneId: activeSceneId,
           name,
@@ -1306,6 +1321,7 @@ const ExcalidrawWrapper = (props: {
     <div style={{ height: "100%" }} className="excalidraw-app">
       <Excalidraw
         onChange={onChange}
+        onIncrement={onIncrement}
         onExport={onExport}
         initialData={initialStatePromiseRef.current.promise}
         UIOptions={{

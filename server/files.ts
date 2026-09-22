@@ -460,17 +460,56 @@ export const assertReferencedFilesExist = async (
   }
 };
 
+const sceneFileReferenceStatements = new WeakMap<
+  ServerRuntime,
+  {
+    list: ReturnType<ServerRuntime["db"]["query"]>;
+    remove: ReturnType<ServerRuntime["db"]["query"]>;
+    insert: ReturnType<ServerRuntime["db"]["query"]>;
+  }
+>();
+
+const getSceneFileReferenceStatements = (runtime: ServerRuntime) => {
+  let statements = sceneFileReferenceStatements.get(runtime);
+  if (!statements) {
+    statements = {
+      list: runtime.db.query(
+        "SELECT file_id FROM scene_files WHERE scene_id = ?",
+      ),
+      remove: runtime.db.query(
+        "DELETE FROM scene_files WHERE scene_id = ? AND file_id = ?",
+      ),
+      insert: runtime.db.query(
+        "INSERT OR IGNORE INTO scene_files (scene_id, file_id) VALUES (?, ?)",
+      ),
+    };
+    sceneFileReferenceStatements.set(runtime, statements);
+  }
+  return statements;
+};
+
 export const syncSceneFileReferences = (
   runtime: ServerRuntime,
   sceneId: string,
   fileIds: string[],
 ) => {
-  runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [sceneId]);
-  const insertReference = runtime.db.query(
-    "INSERT INTO scene_files (scene_id, file_id) VALUES (?, ?)",
+  const statements = getSceneFileReferenceStatements(runtime);
+  const existingFileIds = new Set(
+    (
+      statements.list.all(sceneId) as Array<{ file_id: string }>
+    ).map((row) => row.file_id),
   );
-  for (const fileId of fileIds) {
-    insertReference.run(sceneId, fileId);
+  const nextFileIds = new Set(fileIds);
+
+  for (const fileId of existingFileIds) {
+    if (!nextFileIds.has(fileId)) {
+      statements.remove.run(sceneId, fileId);
+    }
+  }
+  for (const fileId of nextFileIds) {
+    if (!existingFileIds.has(fileId)) {
+      statements.insert.run(sceneId, fileId);
+    }
   }
 };
 
