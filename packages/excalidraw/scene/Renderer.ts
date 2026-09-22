@@ -1,10 +1,15 @@
 import {
   getCommonFrameId,
   getFrameChildrenInsertionIndex,
-  isElementInViewport,
+  getElementBounds,
 } from "@excalidraw/element";
 
-import { arrayToMap, memoize, toBrandedType } from "@excalidraw/common";
+import {
+  arrayToMap,
+  memoize,
+  toBrandedType,
+  viewportCoordsToSceneCoords,
+} from "@excalidraw/common";
 
 import type {
   ExcalidrawElement,
@@ -37,8 +42,33 @@ type GetRenderableElementsOpts = {
   frameToHighlight: AppState["frameToHighlight"];
 };
 
+type ElementBounds = readonly [number, number, number, number];
+
+type VisibleElementIndex = {
+  elementsMap: NonDeletedElementsMap;
+  buckets: Map<string, NonDeletedExcalidrawElement[]>;
+  largeElements: NonDeletedExcalidrawElement[];
+  order: Map<string, number>;
+  bounds: Map<string, ElementBounds>;
+};
+
+const VISIBLE_INDEX_MIN_ELEMENTS = 300;
+const VISIBLE_INDEX_CELL_SIZE = 1024;
+const VISIBLE_INDEX_MAX_QUERY_CELLS = 256;
+const VISIBLE_INDEX_MAX_ELEMENT_CELLS = 256;
+
+const getCellKey = (x: number, y: number) => `${x}:${y}`;
+
+const getCellRange = (x1: number, y1: number, x2: number, y2: number) => ({
+  minX: Math.floor(x1 / VISIBLE_INDEX_CELL_SIZE),
+  minY: Math.floor(y1 / VISIBLE_INDEX_CELL_SIZE),
+  maxX: Math.floor(x2 / VISIBLE_INDEX_CELL_SIZE),
+  maxY: Math.floor(y2 / VISIBLE_INDEX_CELL_SIZE),
+});
+
 export class Renderer {
   private scene: Scene;
+  private visibleElementIndex: VisibleElementIndex | null = null;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -63,28 +93,121 @@ export class Renderer {
     height: AppState["height"];
     width: AppState["width"];
   }): readonly NonDeletedExcalidrawElement[] {
+    const viewTransformations = {
+      zoom,
+      offsetLeft,
+      offsetTop,
+      scrollX,
+      scrollY,
+    };
+    const topLeftSceneCoords = viewportCoordsToSceneCoords(
+      { clientX: offsetLeft, clientY: offsetTop },
+      viewTransformations,
+    );
+    const bottomRightSceneCoords = viewportCoordsToSceneCoords(
+      { clientX: offsetLeft + width, clientY: offsetTop + height },
+      viewTransformations,
+    );
+    const visibleBounds = [
+      topLeftSceneCoords.x,
+      topLeftSceneCoords.y,
+      bottomRightSceneCoords.x,
+      bottomRightSceneCoords.y,
+    ] as const;
+
+    const candidates: Iterable<NonDeletedExcalidrawElement> =
+      elementsMap.size >= VISIBLE_INDEX_MIN_ELEMENTS
+        ? this.getVisibleElementCandidates(elementsMap, visibleBounds)
+        : elementsMap.values();
+
     const visibleElements: NonDeletedExcalidrawElement[] = [];
-    for (const element of elementsMap.values()) {
+    const indexedBounds = this.visibleElementIndex?.elementsMap === elementsMap
+      ? this.visibleElementIndex.bounds
+      : null;
+    for (const element of candidates) {
+      const [x1, y1, x2, y2] =
+        indexedBounds?.get(element.id) || getElementBounds(element, elementsMap);
       if (
-        isElementInViewport(
-          element,
-          width,
-          height,
-          {
-            zoom,
-            offsetLeft,
-            offsetTop,
-            scrollX,
-            scrollY,
-          },
-          elementsMap,
-        )
+        topLeftSceneCoords.x <= x2 &&
+        topLeftSceneCoords.y <= y2 &&
+        bottomRightSceneCoords.x >= x1 &&
+        bottomRightSceneCoords.y >= y1
       ) {
         visibleElements.push(element);
       }
     }
     return visibleElements;
   }
+
+  private getVisibleElementCandidates = (
+    elementsMap: NonDeletedElementsMap,
+    visibleBounds: readonly [number, number, number, number],
+  ): readonly NonDeletedExcalidrawElement[] => {
+    if (this.visibleElementIndex?.elementsMap !== elementsMap) {
+      const buckets = new Map<string, NonDeletedExcalidrawElement[]>();
+      const largeElements: NonDeletedExcalidrawElement[] = [];
+      const order = new Map<string, number>();
+      const bounds = new Map<string, ElementBounds>();
+
+      let elementIndex = 0;
+      for (const element of elementsMap.values()) {
+        const elementBounds = getElementBounds(element, elementsMap);
+        bounds.set(element.id, elementBounds);
+        order.set(element.id, elementIndex++);
+        const range = getCellRange(...elementBounds);
+        const cellCount =
+          (range.maxX - range.minX + 1) * (range.maxY - range.minY + 1);
+        if (cellCount > VISIBLE_INDEX_MAX_ELEMENT_CELLS) {
+          largeElements.push(element);
+          continue;
+        }
+        for (let x = range.minX; x <= range.maxX; x += 1) {
+          for (let y = range.minY; y <= range.maxY; y += 1) {
+            const key = getCellKey(x, y);
+            const bucket = buckets.get(key);
+            if (bucket) {
+              bucket.push(element);
+            } else {
+              buckets.set(key, [element]);
+            }
+          }
+        }
+      }
+
+      this.visibleElementIndex = {
+        elementsMap,
+        buckets,
+        largeElements,
+        order,
+        bounds,
+      };
+    }
+
+    const index = this.visibleElementIndex;
+    if (!index) {
+      return [...elementsMap.values()];
+    }
+    const range = getCellRange(...visibleBounds);
+    const queryCellCount =
+      (range.maxX - range.minX + 1) * (range.maxY - range.minY + 1);
+    if (queryCellCount > VISIBLE_INDEX_MAX_QUERY_CELLS) {
+      return [...elementsMap.values()];
+    }
+
+    const candidates = new Set<NonDeletedExcalidrawElement>(
+      index.largeElements,
+    );
+    for (let x = range.minX; x <= range.maxX; x += 1) {
+      for (let y = range.minY; y <= range.maxY; y += 1) {
+        for (const element of index.buckets.get(getCellKey(x, y)) || []) {
+          candidates.add(element);
+        }
+      }
+    }
+    return [...candidates].sort(
+      (left, right) => index.order.get(left.id)! - index.order.get(right.id)!,
+    );
+  };
 
   private getRenderableElementsMap({
     elements,
@@ -115,6 +238,25 @@ export class Renderer {
     }
     return { elementsMap, newElementCanvasElement };
   }
+
+  private _getRenderableElementsMap = memoize(
+    ({
+      canvasNonce,
+      editingTextElement,
+      newElement,
+    }: {
+      canvasNonce: string;
+      editingTextElement: AppState["editingTextElement"];
+      newElement: AppState["newElement"];
+    }) => {
+      void canvasNonce;
+      return this.getRenderableElementsMap({
+        elements: this.scene.getNonDeletedElements(),
+        editingTextElement,
+        newElement,
+      });
+    },
+  );
 
   private sortSelectedElementsIntoHighlightedFrame<
     T extends ExcalidrawElement,
@@ -176,11 +318,9 @@ export class Renderer {
     > & {
       canvasNonce: string;
     }) => {
-      const elements = this.scene.getNonDeletedElements();
-
       const { elementsMap, newElementCanvasElement } =
-        this.getRenderableElementsMap({
-          elements,
+        this._getRenderableElementsMap({
+          canvasNonce,
           editingTextElement,
           newElement,
         });
@@ -258,5 +398,7 @@ export class Renderer {
   public destroy() {
     renderStaticSceneThrottled.cancel();
     this._getRenderableElements.clear();
+    this._getRenderableElementsMap.clear();
+    this.visibleElementIndex = null;
   }
 }
