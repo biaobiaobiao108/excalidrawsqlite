@@ -871,6 +871,23 @@ export const createRequestHandler = (
         });
       }
 
+      if (
+        pathname.startsWith("/api/scenes/") &&
+        pathname.endsWith("/summary") &&
+        req.method === "GET"
+      ) {
+        const id = getPathId(
+          pathname.slice(0, -"/summary".length),
+          "/api/scenes/",
+          "scene",
+        );
+        const row = stmts.getSceneSummaryById.get(id);
+        if (!row) {
+          throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+        }
+        return jsonResponse(runtime, req, getSceneSummary(row));
+      }
+
       if (pathname.startsWith("/api/scenes/") && req.method === "GET") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
         const versionRow = stmts.getSceneVersionById.get(id) as {

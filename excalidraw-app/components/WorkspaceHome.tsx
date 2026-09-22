@@ -16,8 +16,8 @@ import {
   deleteCloudFolder,
   deleteCloudScene,
   fetchCloudFolders,
-  fetchCloudScenes,
-  fetchCloudTrashScenes,
+  fetchCloudScenePage,
+  fetchCloudSceneSummary,
   renameCloudFolder,
   restoreCloudScene,
   saveFilesToCloud,
@@ -310,7 +310,7 @@ const BoardThumbnail = ({
   );
 };
 
-const BoardCard = ({
+const BoardCard = React.memo(({
   scene,
   onOpen,
   onPreload,
@@ -533,7 +533,12 @@ const BoardCard = ({
       </div>
     </article>
   );
-};
+}, (previous, next) =>
+  previous.scene === next.scene &&
+  previous.isTrash === next.isTrash &&
+  previous.actionPending === next.actionPending &&
+  previous.eager === next.eager,
+);
 
 const WorkspaceModal = WorkspaceDialog;
 
@@ -750,6 +755,11 @@ export const WorkspaceHome = ({
   );
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [sceneCursor, setSceneCursor] = useState<string | null>(null);
+  const [trashSceneCursor, setTrashSceneCursor] = useState<string | null>(
+    null,
+  );
+  const [loadingMore, setLoadingMore] = useState(false);
   const loadRequestRef = useRef(0);
 
   const loadWorkspace = useCallback(async () => {
@@ -768,16 +778,24 @@ export const WorkspaceHome = ({
         setAuthOpen(true);
         return;
       }
-      const [sceneList, folderList, trashList] = await Promise.all([
-        fetchCloudScenes(),
+      const [scenePage, folderList, trashPage] = await Promise.all([
+        fetchCloudScenePage(),
         fetchCloudFolders(),
-        fetchCloudTrashScenes().catch(() => []),
+        fetchCloudScenePage({ trash: true }).catch(() => ({
+          items: [],
+          nextCursor: null,
+        })),
       ]);
       if (!isCurrent()) {
         return;
       }
       let migratedScene: CloudSceneSummary | null = null;
-      if (sceneList.length === 0 && trashList.length === 0) {
+      if (
+        scenePage.items.length === 0 &&
+        trashPage.items.length === 0 &&
+        !scenePage.nextCursor &&
+        !trashPage.nextCursor
+      ) {
         try {
           migratedScene = await migrateLocalScene();
         } catch (migrationError) {
@@ -785,14 +803,16 @@ export const WorkspaceHome = ({
         }
       }
       const nextSnapshot = {
-        scenes: migratedScene ? [migratedScene] : sceneList,
+        scenes: migratedScene ? [migratedScene] : scenePage.items,
         folders: folderList,
-        trashScenes: trashList,
+        trashScenes: trashPage.items,
       };
       workspaceSnapshot = nextSnapshot;
       setScenes(nextSnapshot.scenes);
       setFolders(nextSnapshot.folders);
       setTrashScenes(nextSnapshot.trashScenes);
+      setSceneCursor(migratedScene ? null : scenePage.nextCursor);
+      setTrashSceneCursor(trashPage.nextCursor);
     } catch (requestError: any) {
       if (
         requestError?.status === 401 ||
@@ -809,6 +829,36 @@ export const WorkspaceHome = ({
       setLoading(false);
     }
   }, []);
+
+  const loadMoreScenes = useCallback(async () => {
+    const isTrash = view === "trash";
+    const cursor = isTrash ? trashSceneCursor : sceneCursor;
+    if (!cursor || loadingMore) {
+      return;
+    }
+    setLoadingMore(true);
+    try {
+      const page = await fetchCloudScenePage({ trash: isTrash, cursor });
+      const mergeScenes = (current: CloudSceneSummary[]) => {
+        const existingIds = new Set(current.map((scene) => scene.id));
+        return [
+          ...current,
+          ...page.items.filter((scene) => !existingIds.has(scene.id)),
+        ];
+      };
+      if (isTrash) {
+        setTrashScenes(mergeScenes);
+        setTrashSceneCursor(page.nextCursor);
+      } else {
+        setScenes(mergeScenes);
+        setSceneCursor(page.nextCursor);
+      }
+    } catch (requestError: any) {
+      setError(requestError?.message || "加载更多画板失败");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, sceneCursor, trashSceneCursor, view]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -830,7 +880,10 @@ export const WorkspaceHome = ({
 
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleRefresh = () => {
+    let summaryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const pendingSceneIds = new Set<string>();
+
+    const scheduleWorkspaceRefresh = () => {
       if (refreshTimer) {
         clearTimeout(refreshTimer);
       }
@@ -839,9 +892,75 @@ export const WorkspaceHome = ({
         void loadWorkspace();
       }, 250);
     };
+
+    const refreshSceneSummaries = async () => {
+      summaryRefreshTimer = null;
+      const sceneIds = [...pendingSceneIds];
+      pendingSceneIds.clear();
+      if (!sceneIds.length) {
+        return;
+      }
+      const results = await Promise.all(
+        sceneIds.map(async (sceneId) => {
+          try {
+            return { sceneId, summary: await fetchCloudSceneSummary(sceneId) };
+          } catch (error: any) {
+            return { sceneId, summary: null, error };
+          }
+        }),
+      );
+      for (const { sceneId, summary, error } of results) {
+        if (summary) {
+          if (summary.deleted_at) {
+            setScenes((current) =>
+              current.filter((scene) => scene.id !== sceneId),
+            );
+            setTrashScenes((current) => [
+              summary,
+              ...current.filter((scene) => scene.id !== sceneId),
+            ]);
+          } else {
+            setTrashScenes((current) =>
+              current.filter((scene) => scene.id !== sceneId),
+            );
+            setScenes((current) => {
+              const index = current.findIndex((scene) => scene.id === sceneId);
+              if (index < 0) {
+                return [summary, ...current];
+              }
+              const next = [...current];
+              next[index] = summary;
+              return next;
+            });
+          }
+        } else if (error?.status === 404) {
+          setScenes((current) =>
+            current.filter((scene) => scene.id !== sceneId),
+          );
+          setTrashScenes((current) =>
+            current.filter((scene) => scene.id !== sceneId),
+          );
+        } else if (error?.status === 401) {
+          setAuthOpen(true);
+        }
+      }
+    };
+
+    const scheduleSceneSummaryRefresh = (sceneId: string) => {
+      pendingSceneIds.add(sceneId);
+      if (summaryRefreshTimer) {
+        return;
+      }
+      summaryRefreshTimer = setTimeout(() => {
+        void refreshSceneSummaries();
+      }, 250);
+    };
+
     const unsubscribe = subscribeCloudRealtime(null, (event) => {
-      if (event.type === "scene_changed" || event.type === "workspace_changed") {
-        scheduleRefresh();
+      if (event.type === "scene_changed") {
+        scheduleSceneSummaryRefresh(event.sceneId);
+      } else if (event.type === "workspace_changed") {
+        scheduleWorkspaceRefresh();
       }
     });
     return () => {
@@ -849,6 +968,10 @@ export const WorkspaceHome = ({
       if (refreshTimer) {
         clearTimeout(refreshTimer);
       }
+      if (summaryRefreshTimer) {
+        clearTimeout(summaryRefreshTimer);
+      }
+      pendingSceneIds.clear();
     };
   }, [loadWorkspace]);
 
@@ -944,6 +1067,10 @@ export const WorkspaceHome = ({
         "opened",
       ).slice(0, 4),
     [scenes],
+  );
+
+  const hasMoreScenes = Boolean(
+    view === "trash" ? trashSceneCursor : sceneCursor,
   );
 
   const navigateToScene = (scene: CloudSceneSummary, newTab = false) => {
@@ -1626,6 +1753,18 @@ export const WorkspaceHome = ({
                     actionPending={!!pendingAction}
                   />
                 ))}
+              </div>
+            )}
+            {hasMoreScenes && (
+              <div className="workspace-load-more">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void loadMoreScenes()}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? "加载中..." : "加载更多画板"}
+                </button>
               </div>
             )}
           </section>
