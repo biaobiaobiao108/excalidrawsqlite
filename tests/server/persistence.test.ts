@@ -505,6 +505,27 @@ describe("cloud persistence server", () => {
     });
     expect(notModified.status).toBe(304);
     expect(notModified.headers.get("etag")).toBe(sceneEtag);
+
+    const summaryResponse = await request(
+      handler,
+      "/api/scenes/scene_page_a/summary",
+      { headers: { Cookie: cookie } },
+    );
+    expect(summaryResponse.status).toBe(200);
+    const summary = await responseJson<{
+      id: string;
+      name: string;
+      element_count: number;
+      elements?: unknown;
+    }>(summaryResponse);
+    expect(summary).toEqual(
+      expect.objectContaining({
+        id: "scene_page_a",
+        name: "分页 A",
+        element_count: 0,
+      }),
+    );
+    expect(summary.elements).toBeUndefined();
   });
 
   it("stores files on disk and prevents deleted scenes from being recreated", async () => {
