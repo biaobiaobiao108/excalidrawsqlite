@@ -201,9 +201,9 @@ const listScenePage = (
   if (query) {
     const pattern = `%${escapeLikePattern(query)}%`;
     conditions.push(
-      "(scenes.name LIKE ? ESCAPE '\\' OR scenes.tags_json LIKE ? ESCAPE '\\')",
+      "(scenes.name LIKE ? ESCAPE '\\' OR scenes.tags_json LIKE ? ESCAPE '\\' OR folders.name LIKE ? ESCAPE '\\')",
     );
-    params.push(pattern, pattern);
+    params.push(pattern, pattern, pattern);
   }
   if (folderId) {
     conditions.push("scenes.folder_id = ?");

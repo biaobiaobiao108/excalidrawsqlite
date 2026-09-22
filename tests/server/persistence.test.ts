@@ -526,6 +526,23 @@ describe("cloud persistence server", () => {
       }),
     );
     expect(summary.elements).toBeUndefined();
+
+    const openedPage = await request(
+      handler,
+      "/api/scenes?limit=2&sort=opened",
+      { headers: { Cookie: cookie } },
+    );
+    expect(openedPage.status).toBe(200);
+    expect(
+      (await responseJson<{ items: Array<{ id: string }> }>(openedPage)).items,
+    ).toHaveLength(2);
+
+    const invalidSort = await request(
+      handler,
+      "/api/scenes?sort=unsupported",
+      { headers: { Cookie: cookie } },
+    );
+    expect(invalidSort.status).toBe(400);
   });
 
   it("stores files on disk and prevents deleted scenes from being recreated", async () => {
