@@ -881,6 +881,7 @@ export const WorkspaceHome = ({
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     let summaryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
     const pendingSceneIds = new Set<string>();
 
     const scheduleWorkspaceRefresh = () => {
@@ -909,6 +910,9 @@ export const WorkspaceHome = ({
           }
         }),
       );
+      if (disposed) {
+        return;
+      }
       for (const { sceneId, summary, error } of results) {
         if (summary) {
           if (summary.deleted_at) {
@@ -964,6 +968,7 @@ export const WorkspaceHome = ({
       }
     });
     return () => {
+      disposed = true;
       unsubscribe();
       if (refreshTimer) {
         clearTimeout(refreshTimer);
