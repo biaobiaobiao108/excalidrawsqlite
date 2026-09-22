@@ -71,6 +71,7 @@ import {
 
 import * as defaultItems from "./defaultCommandPaletteItems";
 import "./CommandPalette.scss";
+import { DEFAULT_CATEGORIES } from "./constants";
 
 import type { CommandPaletteItem } from "./types";
 import type { ToolbarToolType } from "../Tools";
@@ -81,15 +82,7 @@ import type { Action } from "../../actions/types";
 
 const lastUsedPaletteItem = atom<CommandPaletteItem | null>(null);
 
-export const DEFAULT_CATEGORIES = {
-  app: "App",
-  export: "Export",
-  tools: "Tools",
-  editor: "Editor",
-  elements: "Elements",
-  links: "Links",
-  library: "Library",
-};
+export { DEFAULT_CATEGORIES } from "./constants";
 
 const getCategoryOrder = (category: string) => {
   switch (category) {

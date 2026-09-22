@@ -4,12 +4,8 @@ import {
   ExcalidrawAPIProvider,
   useExcalidrawAPI,
 } from "@excalidraw/excalidraw";
-import {
-  CommandPalette,
-  DEFAULT_CATEGORIES,
-} from "@excalidraw/excalidraw/components/CommandPalette/CommandPalette";
 import { ErrorDialog } from "@excalidraw/excalidraw/components/ErrorDialog";
-import { OverwriteConfirmDialog } from "@excalidraw/excalidraw/components/OverwriteConfirm/OverwriteConfirm";
+import { DEFAULT_CATEGORIES } from "@excalidraw/excalidraw/components/CommandPalette/constants";
 import {
   EVENT,
   debounce,
@@ -18,7 +14,15 @@ import {
   resolvablePromise,
   isDevEnv,
 } from "@excalidraw/common";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { t } from "@excalidraw/excalidraw/i18n";
 
 import { isElementLink } from "@excalidraw/element";
@@ -95,6 +99,7 @@ import {
 } from "./data/thumbnailSaveQueue";
 
 import { AppSidebar } from "./components/AppSidebar";
+import { LazyOverwriteConfirmDialog } from "./components/LazyOverwriteConfirmDialog";
 import {
   CloudSaveQueue,
   subscribeCloudRealtime,
@@ -103,6 +108,25 @@ import {
 } from "./data/cloudSync";
 
 import type { CloudSaveSnapshot } from "./data/cloudSync";
+
+const LazyCommandPalette = lazy(async () => {
+  const { CommandPalette } = await import(
+    "@excalidraw/excalidraw/components/CommandPalette/CommandPalette"
+  );
+  return { default: CommandPalette };
+});
+
+const LazyAuthDialog = lazy(async () => {
+  const { AuthDialog } = await import("./components/AuthDialog");
+  return { default: AuthDialog };
+});
+
+const LazyCloudConflictDialog = lazy(async () => {
+  const { CloudConflictDialog } = await import(
+    "./components/CloudConflictDialog"
+  );
+  return { default: CloudConflictDialog };
+});
 
 window.EXCALIDRAW_THROTTLE_RENDER = true;
 
@@ -1450,36 +1474,37 @@ const ExcalidrawWrapper = (props: {
           onOpenCloudScenes={() => void navigateHomeAfterSave()}
         />
         <AppWelcomeScreen />
-        <OverwriteConfirmDialog>
-          <OverwriteConfirmDialog.Actions.ExportToImage />
-          <OverwriteConfirmDialog.Actions.SaveToDisk />
-        </OverwriteConfirmDialog>
-        <AuthDialog
-          isOpen={isAuthOpen}
-          onSuccess={() => {
-            setIsAuthOpen(false);
-            const authWaiters = authWaitersRef.current.splice(0);
-            authWaiters.forEach((resolve) => resolve(true));
-            if (authSceneId) {
-              cloudSaveQueue.resumeAfterAuth(authSceneId);
+        <LazyOverwriteConfirmDialog />
+        <Suspense fallback={null}>
+          <LazyAuthDialog
+            isOpen={isAuthOpen}
+            onSuccess={() => {
+              setIsAuthOpen(false);
+              const authWaiters = authWaitersRef.current.splice(0);
+              authWaiters.forEach((resolve) => resolve(true));
+              if (authSceneId) {
+                cloudSaveQueue.resumeAfterAuth(authSceneId);
+                setAuthSceneId(null);
+              }
+              if (!authWaiters.length) {
+                void bootstrapCloud();
+              }
+            }}
+            onClose={() => {
+              setIsAuthOpen(false);
+              const authWaiters = authWaitersRef.current.splice(0);
+              authWaiters.forEach((resolve) => resolve(false));
               setAuthSceneId(null);
-            }
-            if (!authWaiters.length) {
-              void bootstrapCloud();
-            }
-          }}
-          onClose={() => {
-            setIsAuthOpen(false);
-            const authWaiters = authWaitersRef.current.splice(0);
-            authWaiters.forEach((resolve) => resolve(false));
-            setAuthSceneId(null);
-          }}
-        />
-        <CloudConflictDialog
-          isOpen={!!cloudConflict}
-          onReload={() => resolveCloudConflict(false)}
-          onOverwrite={() => resolveCloudConflict(true)}
-        />
+            }}
+          />
+        </Suspense>
+        <Suspense fallback={null}>
+          <LazyCloudConflictDialog
+            isOpen={!!cloudConflict}
+            onReload={() => resolveCloudConflict(false)}
+            onOverwrite={() => resolveCloudConflict(true)}
+          />
+        </Suspense>
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
         {!currentSceneId && localStorageQuotaExceeded && (
           <div className="alert alert--danger">
@@ -1509,8 +1534,9 @@ const ExcalidrawWrapper = (props: {
           </ErrorDialog>
         )}
 
-        <CommandPalette
-          customCommandPaletteItems={[
+        <Suspense fallback={null}>
+          <LazyCommandPalette
+            customCommandPaletteItems={[
             {
               label: "返回至主页",
               category: DEFAULT_CATEGORIES.app,
@@ -1564,8 +1590,9 @@ const ExcalidrawWrapper = (props: {
                 }
               },
             },
-          ]}
-        />
+            ]}
+          />
+        </Suspense>
         {isVisualDebuggerEnabled() && excalidrawAPI && (
           <DebugCanvas
             appState={excalidrawAPI.getAppState()}
