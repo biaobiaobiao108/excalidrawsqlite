@@ -13,18 +13,25 @@ const cloudSceneCache = new Map<
   { data: CloudSceneData; etag: string | null }
 >();
 
-const getCloudFileConcurrency = () => {
+const getCloudFileConcurrency = (estimatedBytes = 0) => {
   if (typeof navigator === "undefined") {
-    return 4;
+    return estimatedBytes >= 32 * 1024 * 1024 ? 1 : 4;
   }
   const deviceMemory = (navigator as Navigator & { deviceMemory?: number })
     .deviceMemory;
-  return (
+  const deviceConcurrency = (
     (typeof deviceMemory === "number" && deviceMemory <= 4) ||
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
   )
     ? 2
     : 4;
+  if (estimatedBytes >= 32 * 1024 * 1024) {
+    return 1;
+  }
+  if (estimatedBytes >= 8 * 1024 * 1024) {
+    return Math.min(2, deviceConcurrency);
+  }
+  return deviceConcurrency;
 };
 
 export interface CloudSceneSummary {
@@ -160,11 +167,21 @@ const dataUrlToBlob = (dataURL: string, mimeType: string) => {
     throw new CloudApiError("图片数据格式无效", 0, "INVALID_FILE_DATA");
   }
   const encoded = dataURL.slice(commaIndex + 1);
-  const binary = atob(encoded);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index++) {
-    bytes[index] = binary.charCodeAt(index);
-  }
+  const typedArrayFromBase64 = (
+    Uint8Array as typeof Uint8Array & {
+      fromBase64?: (value: string) => Uint8Array;
+    }
+  ).fromBase64;
+  const bytes = typedArrayFromBase64
+    ? typedArrayFromBase64(encoded)
+    : (() => {
+        const binary = atob(encoded);
+        const fallbackBytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) {
+          fallbackBytes[index] = binary.charCodeAt(index);
+        }
+        return fallbackBytes;
+      })();
   return new Blob([bytes], { type: mimeType });
 };
 
@@ -650,6 +667,10 @@ export async function clearCloudTrash(): Promise<{
 
 export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
   const entries = Object.values(files || {});
+  const estimatedBytes = entries.reduce(
+    (total, file) => total + Math.ceil(file.dataURL.length * 0.75),
+    0,
+  );
   await runWithConcurrency(entries, async (file) => {
     const blob = dataUrlToBlob(file.dataURL, file.mimeType);
     const digest = await sha256Hex(blob);
@@ -679,7 +700,7 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
       rememberCloudFileEtag(file.id, etag);
     }
     rememberCloudFileHash(file, digest);
-  }, getCloudFileConcurrency());
+  }, getCloudFileConcurrency(estimatedBytes));
 }
 
 export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
