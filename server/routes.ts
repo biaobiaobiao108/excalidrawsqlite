@@ -116,11 +116,12 @@ const streamBackupArchive = (archive: {
 };
 
 const encodeSceneCursor = (row: {
+  cursor_value?: number;
   updated_at?: number;
   deleted_at?: number | null;
   id: string;
 }) => {
-  const timestamp = row.deleted_at ?? row.updated_at;
+  const timestamp = row.cursor_value ?? row.deleted_at ?? row.updated_at;
   return sceneCursorEncoder
     .encode(`${timestamp}:${row.id}`)
     .toBase64({ alphabet: "base64url", omitPadding: true });
@@ -188,6 +189,10 @@ const listScenePage = (
   if (favorite !== undefined && favorite !== "true" && favorite !== "false") {
     throw new HttpError(400, "INVALID_FAVORITE", "favorite 参数无效");
   }
+  const requestedSort = url.searchParams.get("sort") || "updated";
+  if (!trashed && !["updated", "opened", "created"].includes(requestedSort)) {
+    throw new HttpError(400, "INVALID_SORT", "sort 参数无效");
+  }
 
   const conditions = [
     trashed ? "scenes.deleted_at IS NOT NULL" : "scenes.deleted_at IS NULL",
@@ -211,14 +216,26 @@ const listScenePage = (
     params.push(favorite === "true" ? 1 : 0);
   }
   if (cursor) {
-    const column = trashed ? "scenes.deleted_at" : "scenes.updated_at";
+    const column = trashed
+      ? "scenes.deleted_at"
+      : requestedSort === "opened"
+      ? "COALESCE(scenes.last_opened_at, 0)"
+      : requestedSort === "created"
+      ? "scenes.created_at"
+      : "scenes.updated_at";
     conditions.push(
       `(${column} < ? OR (${column} = ? AND scenes.id < ?))`,
     );
     params.push(cursor.timestamp, cursor.timestamp, cursor.id);
   }
 
-  const orderColumn = trashed ? "scenes.deleted_at" : "scenes.updated_at";
+  const orderColumn = trashed
+    ? "scenes.deleted_at"
+    : requestedSort === "opened"
+    ? "COALESCE(scenes.last_opened_at, 0)"
+    : requestedSort === "created"
+    ? "scenes.created_at"
+    : "scenes.updated_at";
   const rows = runtime.db
     .query(
       `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
@@ -226,6 +243,7 @@ const listScenePage = (
               scenes.element_count,
               scenes.tags_json, scenes.is_favorite, scenes.folder_id,
               scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
+              ${orderColumn} AS cursor_value,
               folders.name AS folder_name
        FROM scenes
        LEFT JOIN folders ON folders.id = scenes.folder_id
@@ -237,6 +255,7 @@ const listScenePage = (
     id: string;
     updated_at: number;
     deleted_at: number | null;
+    cursor_value: number;
   }>;
   const hasMore = rows.length > limit;
   const items = rows.slice(0, limit).map(getSceneSummary);
@@ -249,7 +268,7 @@ const listScenePage = (
 };
 
 const hasScenePageParameters = (url: URL) =>
-  ["limit", "cursor", "q", "folder_id", "favorite"].some((key) =>
+  ["limit", "cursor", "q", "folder_id", "favorite", "sort"].some((key) =>
     url.searchParams.has(key),
   );
 

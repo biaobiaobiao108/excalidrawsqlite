@@ -761,6 +761,7 @@ export const WorkspaceHome = ({
   );
   const [loadingMore, setLoadingMore] = useState(false);
   const loadRequestRef = useRef(0);
+  const workspaceLoadedRef = useRef(false);
 
   const loadWorkspace = useCallback(async () => {
     const requestId = ++loadRequestRef.current;
@@ -826,9 +827,57 @@ export const WorkspaceHome = ({
       if (!isCurrent()) {
         return;
       }
+      workspaceLoadedRef.current = true;
       setLoading(false);
     }
   }, []);
+
+  const getCurrentPageOptions = useCallback(
+    (cursor: string | null = null) => ({
+      trash: view === "trash",
+      cursor,
+      query: searchQuery.trim() || selectedTag || undefined,
+      folderId: view === "trash" ? undefined : selectedFolderId,
+      favorite: view === "favorites",
+      sort: view === "recent" ? "opened" : sort,
+    }),
+    [searchQuery, selectedFolderId, selectedTag, sort, view],
+  );
+
+  const reloadCurrentPage = useCallback(async () => {
+    if (!workspaceLoadedRef.current) {
+      return;
+    }
+    const requestId = ++loadRequestRef.current;
+    setLoading(true);
+    setError("");
+    try {
+      const page = await fetchCloudScenePage(getCurrentPageOptions());
+      if (loadRequestRef.current !== requestId) {
+        return;
+      }
+      if (view === "trash") {
+        setTrashScenes(page.items);
+        setTrashSceneCursor(page.nextCursor);
+      } else {
+        setScenes(page.items);
+        setSceneCursor(page.nextCursor);
+      }
+    } catch (requestError: any) {
+      if (
+        requestError?.status === 401 ||
+        requestError?.code === "AUTH_REQUIRED"
+      ) {
+        setAuthOpen(true);
+      } else {
+        setError(requestError?.message || "加载画板列表失败");
+      }
+    } finally {
+      if (loadRequestRef.current === requestId) {
+        setLoading(false);
+      }
+    }
+  }, [getCurrentPageOptions, view]);
 
   const loadMoreScenes = useCallback(async () => {
     const isTrash = view === "trash";
@@ -838,7 +887,7 @@ export const WorkspaceHome = ({
     }
     setLoadingMore(true);
     try {
-      const page = await fetchCloudScenePage({ trash: isTrash, cursor });
+      const page = await fetchCloudScenePage(getCurrentPageOptions(cursor));
       const mergeScenes = (current: CloudSceneSummary[]) => {
         const existingIds = new Set(current.map((scene) => scene.id));
         return [
@@ -858,7 +907,7 @@ export const WorkspaceHome = ({
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, sceneCursor, trashSceneCursor, view]);
+  }, [getCurrentPageOptions, loadingMore, sceneCursor, trashSceneCursor, view]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -866,6 +915,24 @@ export const WorkspaceHome = ({
       loadRequestRef.current += 1;
     };
   }, [loadWorkspace]);
+
+  const pageQueryKey = [
+    view,
+    sort,
+    searchQuery.trim(),
+    selectedFolderId || "",
+    selectedTag || "",
+  ].join("|");
+
+  useEffect(() => {
+    if (!workspaceLoadedRef.current) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      void reloadCurrentPage();
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [pageQueryKey, reloadCurrentPage]);
 
   useEffect(() => {
     if (workspaceSnapshot) {

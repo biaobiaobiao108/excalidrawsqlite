@@ -305,6 +305,7 @@ export type CloudScenePageOptions = {
   query?: string;
   folderId?: string | null;
   favorite?: boolean;
+  sort?: "updated" | "opened" | "created";
 };
 
 export async function fetchCloudScenePage(
@@ -325,6 +326,9 @@ export async function fetchCloudScenePage(
   }
   if (options.favorite) {
     params.set("favorite", "true");
+  }
+  if (options.sort && options.sort !== "updated") {
+    params.set("sort", options.sort);
   }
   const result = await fetchJson<CloudScenePage | CloudSceneSummary[]>(
     `${options.trash ? "/api/scenes/trash" : "/api/scenes"}?${params.toString()}`,
