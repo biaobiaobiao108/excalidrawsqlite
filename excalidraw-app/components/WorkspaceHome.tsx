@@ -124,7 +124,10 @@ const sortScenes = (scenes: CloudSceneSummary[], sort: SortMode) =>
         : sort === "created"
         ? right.created_at
         : right.updated_at;
-    return rightValue - leftValue;
+    if (rightValue !== leftValue) {
+      return rightValue - leftValue;
+    }
+    return right.id.localeCompare(left.id);
   });
 
 const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
