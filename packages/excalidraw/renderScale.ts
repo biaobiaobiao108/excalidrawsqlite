@@ -1,4 +1,7 @@
+import { getDeviceMemoryTier } from "@excalidraw/common";
+
 const DEFAULT_EDITOR_PIXEL_BUDGET = 32_000_000;
+const UNKNOWN_MEMORY_EDITOR_PIXEL_BUDGET = 24_000_000;
 const LOW_MEMORY_EDITOR_PIXEL_BUDGET = 16_000_000;
 
 type RenderScaleOptions = {
@@ -20,12 +23,13 @@ export const getEditorRenderScale = ({
 }: RenderScaleOptions) => {
   const cssPixelCount = Math.max(1, width * height);
   const activeCanvasCount = Math.max(1, canvasCount);
-  const isLowMemory =
-    (typeof deviceMemory === "number" && deviceMemory <= 4) ||
-    /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
-  const pixelBudget = isLowMemory
-    ? LOW_MEMORY_EDITOR_PIXEL_BUDGET
-    : DEFAULT_EDITOR_PIXEL_BUDGET;
+  const memoryTier = getDeviceMemoryTier(deviceMemory, userAgent);
+  const pixelBudget =
+    memoryTier === "low"
+      ? LOW_MEMORY_EDITOR_PIXEL_BUDGET
+      : memoryTier === "unknown"
+        ? UNKNOWN_MEMORY_EDITOR_PIXEL_BUDGET
+        : DEFAULT_EDITOR_PIXEL_BUDGET;
   const budgetedScale = Math.sqrt(
     pixelBudget / (cssPixelCount * activeCanvasCount),
   );
@@ -36,7 +40,14 @@ export const getEditorRenderScale = ({
   return Math.min(requestedScale, Math.max(0.5, budgetedScale));
 };
 
-export const getEditorCanvasPixelBudget = (deviceMemory?: number) =>
-  typeof deviceMemory === "number" && deviceMemory <= 4
+export const getEditorCanvasPixelBudget = (
+  deviceMemory?: number,
+  userAgent = "",
+) => {
+  const memoryTier = getDeviceMemoryTier(deviceMemory, userAgent);
+  return memoryTier === "low"
     ? LOW_MEMORY_EDITOR_PIXEL_BUDGET
-    : DEFAULT_EDITOR_PIXEL_BUDGET;
+    : memoryTier === "unknown"
+      ? UNKNOWN_MEMORY_EDITOR_PIXEL_BUDGET
+      : DEFAULT_EDITOR_PIXEL_BUDGET;
+};

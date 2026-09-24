@@ -4,13 +4,17 @@ import { AppStateDelta, ElementsDelta, Delta } from "../../packages/element/src/
 import { StoreDelta } from "../../packages/element/src/store";
 import type { Store } from "../../packages/element/src/store";
 import type { FileId } from "../../packages/element/src/types";
+import { getDeviceMemoryTier } from "../../packages/common/src/deviceMemory";
 import {
   HISTORY_MAX_BYTES,
   HISTORY_MAX_ENTRIES,
   History,
 } from "../../packages/excalidraw/history";
 import { ImageCache } from "../../packages/excalidraw/imageCache";
-import { getEditorRenderScale } from "../../packages/excalidraw/renderScale";
+import {
+  getEditorCanvasPixelBudget,
+  getEditorRenderScale,
+} from "../../packages/excalidraw/renderScale";
 import { BodyMemoryBudget } from "../../server/types";
 
 const observedAppState = (name: string) => ({
@@ -48,6 +52,40 @@ const imageEntry = (width: number, height: number) =>
 const fileId = (value: string) => value as FileId;
 
 describe("memory budgets", () => {
+  it("uses a bounded middle tier when the browser hides device memory", () => {
+    expect(getDeviceMemoryTier(undefined, "Mozilla/5.0 Macintosh Safari/627.1"))
+      .toBe("unknown");
+    expect(getEditorCanvasPixelBudget(undefined, "Mozilla/5.0 Macintosh Safari/627.1"))
+      .toBe(24_000_000);
+    expect(getDeviceMemoryTier(8, "Mozilla/5.0 Macintosh Safari/627.1"))
+      .toBe("standard");
+    expect(getDeviceMemoryTier(4, "Mozilla/5.0 Macintosh Safari/627.1"))
+      .toBe("low");
+    expect(getDeviceMemoryTier(undefined, "Mozilla/5.0 iPhone Mobile"))
+      .toBe("low");
+  });
+
+  it("uses the middle editor scale for desktop browsers without memory data", () => {
+    const unknownMemoryScale = getEditorRenderScale({
+      width: 3840,
+      height: 2160,
+      devicePixelRatio: 2,
+      canvasCount: 3,
+      userAgent: "Mozilla/5.0 Macintosh Safari/627.1",
+    });
+    const standardScale = getEditorRenderScale({
+      width: 3840,
+      height: 2160,
+      devicePixelRatio: 2,
+      canvasCount: 3,
+      deviceMemory: 8,
+      userAgent: "Mozilla/5.0 Macintosh Safari/627.1",
+    });
+
+    expect(unknownMemoryScale).toBeLessThan(standardScale);
+    expect(unknownMemoryScale).toBeGreaterThan(0.5);
+  });
+
   it("bounds history by entry count and tracks estimated bytes", () => {
     const history = new History({} as Store, { maxEntries: 2 });
 

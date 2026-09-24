@@ -1,4 +1,4 @@
-import { IMAGE_MIME_TYPES } from "@excalidraw/common";
+import { getDeviceMemoryTier, IMAGE_MIME_TYPES } from "@excalidraw/common";
 
 import type { ValueOf } from "@excalidraw/common/utility-types";
 import type { FileId } from "@excalidraw/element/types";
@@ -10,6 +10,7 @@ export type ImageCacheEntry = {
 
 const BYTES_PER_DECODED_PIXEL = 4;
 const DEFAULT_IMAGE_CACHE_BYTES = 128 * 1024 * 1024;
+const UNKNOWN_MEMORY_IMAGE_CACHE_BYTES = 96 * 1024 * 1024;
 const LOW_MEMORY_IMAGE_CACHE_BYTES = 64 * 1024 * 1024;
 
 const getDeviceMemory = () =>
@@ -21,16 +22,20 @@ export const isLowMemoryDevice = () => {
   const deviceMemory = getDeviceMemory();
   const userAgent =
     typeof navigator === "undefined" ? "" : navigator.userAgent;
-  return (
-    (typeof deviceMemory === "number" && deviceMemory <= 4) ||
-    /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent)
-  );
+  return getDeviceMemoryTier(deviceMemory, userAgent) === "low";
 };
 
-export const getDefaultImageCacheBytes = () =>
-  isLowMemoryDevice()
+export const getDefaultImageCacheBytes = () => {
+  const deviceMemory = getDeviceMemory();
+  const userAgent =
+    typeof navigator === "undefined" ? "" : navigator.userAgent;
+  const memoryTier = getDeviceMemoryTier(deviceMemory, userAgent);
+  return memoryTier === "low"
     ? LOW_MEMORY_IMAGE_CACHE_BYTES
-    : DEFAULT_IMAGE_CACHE_BYTES;
+    : memoryTier === "unknown"
+      ? UNKNOWN_MEMORY_IMAGE_CACHE_BYTES
+      : DEFAULT_IMAGE_CACHE_BYTES;
+};
 
 const getDecodedImageBytes = (entry: ImageCacheEntry) => {
   if (entry.image instanceof Promise) {

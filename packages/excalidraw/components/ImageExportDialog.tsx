@@ -346,6 +346,14 @@ const ImageExportModal = ({
             </FilledButton>
           )}
         </div>
+        {!window.isSecureContext && !isFirefox && (
+          <p
+            className="ImageExportModal__settings__clipboardNotice"
+            role="note"
+          >
+            {t("imageExportDialog.clipboardSecureContext")}
+          </p>
+        )}
       </div>
     </div>
   );

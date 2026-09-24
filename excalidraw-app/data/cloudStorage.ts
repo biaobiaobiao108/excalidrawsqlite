@@ -1,10 +1,12 @@
 import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { FileId } from "@excalidraw/element/types";
+import { getDeviceMemoryTier } from "@excalidraw/common";
 
 const CLOUD_API_TIMEOUT_MS = 10_000;
 const CLOUD_READ_RETRIES = 2;
 
 const uploadedCloudFileHashes = new WeakMap<object, string>();
+const uploadedCloudFileDataUrls = new WeakMap<object, string>();
 const cloudFileEtags = new Map<string, string>();
 const MAX_CLOUD_FILE_METADATA = 512;
 const MAX_CACHED_CLOUD_SCENES = 2;
@@ -14,17 +16,14 @@ const cloudSceneCache = new Map<
 >();
 
 const getCloudFileConcurrency = (estimatedBytes = 0) => {
-  if (typeof navigator === "undefined") {
-    return estimatedBytes >= 32 * 1024 * 1024 ? 1 : 4;
-  }
-  const deviceMemory = (navigator as Navigator & { deviceMemory?: number })
-    .deviceMemory;
-  const deviceConcurrency = (
-    (typeof deviceMemory === "number" && deviceMemory <= 4) ||
-    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-  )
-    ? 2
-    : 4;
+  const deviceMemory =
+    typeof navigator === "undefined"
+      ? undefined
+      : (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  const userAgent =
+    typeof navigator === "undefined" ? "" : navigator.userAgent;
+  const deviceConcurrency =
+    getDeviceMemoryTier(deviceMemory, userAgent) === "standard" ? 4 : 2;
   if (estimatedBytes >= 32 * 1024 * 1024) {
     return 1;
   }
@@ -185,11 +184,21 @@ const dataUrlToBlob = (dataURL: string, mimeType: string) => {
   return new Blob([bytes], { type: mimeType });
 };
 
-const sha256Hex = async (blob: Blob) => {
-  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+const sha256Hex = async (blob: Blob): Promise<string | null> => {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    return null;
+  }
+  try {
+    const digest = await subtle.digest("SHA-256", await blob.arrayBuffer());
+    return [...new Uint8Array(digest)]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    // The digest is only an upload de-duplication optimization. In insecure
+    // contexts WebCrypto may be unavailable, but the file upload can proceed.
+    return null;
+  }
 };
 
 const rememberCloudFileHash = (file: object, hash: string) => {
@@ -678,12 +687,16 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
   await runWithConcurrency(entries, async (file) => {
     const blob = dataUrlToBlob(file.dataURL, file.mimeType);
     const digest = await sha256Hex(blob);
-    if (uploadedCloudFileHashes.get(file) === digest) {
+    if (
+      (digest && uploadedCloudFileHashes.get(file) === digest) ||
+      (!digest && uploadedCloudFileDataUrls.get(file) === file.dataURL)
+    ) {
       return;
     }
     const knownEtag = cloudFileEtags.get(file.id);
-    if (knownEtag === `"${digest}"`) {
+    if (digest && knownEtag === `"${digest}"`) {
       rememberCloudFileHash(file, digest);
+      uploadedCloudFileDataUrls.set(file, file.dataURL);
       return;
     }
     const res = await fetchWithTimeout(
@@ -703,7 +716,10 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
     if (etag) {
       rememberCloudFileEtag(file.id, etag);
     }
-    rememberCloudFileHash(file, digest);
+    if (digest) {
+      rememberCloudFileHash(file, digest);
+    }
+    uploadedCloudFileDataUrls.set(file, file.dataURL);
   }, getCloudFileConcurrency(estimatedBytes));
 }
 

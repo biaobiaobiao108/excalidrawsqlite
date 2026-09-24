@@ -27,6 +27,12 @@
   - Excalifont 是唯一保留的本地默认字体，必须从 `packages/excalidraw/fonts/Excalifont` 加载；霞鹜文楷与思源黑体是外部字体，必须分别通过版本化 jsDelivr `<link rel="stylesheet">` 加载。样式表内部注册分片 `@font-face` 时，编辑器必须使用样式表声明的 CSS 字体名，不得把 CSS URL 写入 `@font-face src`，并同步在 CSP 中放行 `cdn.jsdelivr.net` 的样式与字体来源；
   - `encode`/`decode` 及图片、SVG 元数据编码接口是异步的，调用方必须 `await`。
 
+### Safari 优先适配
+
+- 最新 macOS Safari 是本项目的首要浏览器目标；新增或调整的前端体验先按 Safari 验证，再保证其他受支持浏览器正常。
+- 优先使用能力检测，不假设 `navigator.deviceMemory`、剪贴板或文件系统 API 存在；受 HTTPS/localhost 安全上下文限制的能力必须提供回退或清楚提示。
+- UI 与画布改动需关注 Safari 的触控板手势、DPR/Canvas、动态视口、字体加载、剪贴板、文件导入导出和键盘焦点；交互改动使用 Codex 内置浏览器做必要的 Safari 冒烟检查。
+
 ## 4. 全栈开发与热重载规范 (Unified Dev Server)
 
 - **一键全栈开发指令**：统一使用 `bun run dev`（映射为 `bun server/server.ts --dev`），无需打开多个终端，无需配置复杂的跨端口反向代理。

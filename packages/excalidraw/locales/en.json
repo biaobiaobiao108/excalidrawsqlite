@@ -517,6 +517,7 @@
   },
   "imageExportDialog": {
     "header": "Export image",
+    "clipboardSecureContext": "Image clipboard access requires HTTPS or localhost. Open this app through HTTPS to copy PNGs.",
     "label": {
       "withBackground": "Background",
       "onlySelected": "Only selected",

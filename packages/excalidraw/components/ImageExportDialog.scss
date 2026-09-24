@@ -172,6 +172,21 @@
           justify-content: center;
         }
       }
+
+      &__clipboardNotice {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0.625rem 0.75rem;
+        border: 1px solid var(--dialog-border-color);
+        border-radius: 0.5rem;
+        color: var(--text-primary-color);
+        font-size: 0.8125rem;
+        line-height: 1.4;
+
+        @include isMobile {
+          flex-basis: 100%;
+        }
+      }
     }
   }
 }

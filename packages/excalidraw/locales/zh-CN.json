@@ -517,6 +517,7 @@
   },
   "imageExportDialog": {
     "header": "导出图片",
+    "clipboardSecureContext": "图片剪贴板需要 HTTPS 或 localhost。请通过 HTTPS 打开本项目以复制 PNG。",
     "label": {
       "withBackground": "背景",
       "onlySelected": "仅选中",
