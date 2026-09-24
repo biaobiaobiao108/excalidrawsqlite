@@ -3,7 +3,6 @@ import type { ServerConfig } from "./types";
 export const DEFAULT_PORT = 8080;
 export const DEFAULT_MAX_FILE_BYTES = 4 * 1024 * 1024;
 export const DEFAULT_MAX_SCENE_BODY_BYTES = 16 * 1024 * 1024;
-export const DEFAULT_MAX_FILES_BODY_BYTES = 32 * 1024 * 1024;
 export const DEFAULT_MAX_IN_FLIGHT_BODY_BYTES = 64 * 1024 * 1024;
 export const DEFAULT_MAX_BACKUP_BYTES = 128 * 1024 * 1024;
 export const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -18,7 +17,6 @@ export const MAX_FOLDER_NAME_LENGTH = 80;
 export const MAX_TAGS = 12;
 export const MAX_TAG_LENGTH = 32;
 export const MAX_AUTH_PASSWORD_LENGTH = 256;
-export const MAX_BATCH_FILES = 64;
 export const AUTH_ATTEMPTS_PER_WINDOW = 5;
 export const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000;
 export const WRITE_REQUESTS_PER_WINDOW = 120;
@@ -29,7 +27,6 @@ export const STALE_FILE_ARTIFACT_MS = 60 * 60 * 1000;
 export const ORPHAN_FILE_CLEANUP_BATCH_SIZE = 100;
 export const UNTRACKED_FILE_CLEANUP_BATCH_SIZE = 100;
 export const DEFAULT_TRASH_RETENTION_DAYS = 30;
-export const SCHEMA_VERSION = 6;
 
 const parseBooleanEnv = (value: string | undefined) =>
   value?.toLowerCase() === "true";
@@ -89,10 +86,6 @@ export const createServerConfig = (
       env.MAX_SCENE_BODY_BYTES,
       DEFAULT_MAX_SCENE_BODY_BYTES,
     ),
-    maxFilesBodyBytes: parsePositiveIntegerEnv(
-      env.MAX_FILES_BODY_BYTES,
-      DEFAULT_MAX_FILES_BODY_BYTES,
-    ),
     maxInFlightBodyBytes: Math.max(
       parsePositiveIntegerEnv(
         env.MAX_IN_FLIGHT_BODY_BYTES,
@@ -103,8 +96,8 @@ export const createServerConfig = (
         DEFAULT_MAX_SCENE_BODY_BYTES,
       ),
       parsePositiveIntegerEnv(
-        env.MAX_FILES_BODY_BYTES,
-        DEFAULT_MAX_FILES_BODY_BYTES,
+        env.MAX_FILE_BYTES,
+        DEFAULT_MAX_FILE_BYTES,
       ),
     ),
     maxBackupBytes: parsePositiveIntegerEnv(

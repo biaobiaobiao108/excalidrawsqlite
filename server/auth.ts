@@ -123,24 +123,14 @@ export const isAuthorized = (runtime: ServerRuntime, req: Request) => {
     try {
       const row = runtime.db
         .query(
-          "SELECT token, expires_at FROM sessions WHERE token = ? OR token = ? LIMIT 1",
+          "SELECT expires_at FROM sessions WHERE token = ? LIMIT 1",
         )
-        .get(hashSessionToken(runtime, token), token) as {
-        token: string;
+        .get(hashSessionToken(runtime, token)) as {
         expires_at: number;
       } | null;
       if (row) {
         expiresAt = row.expires_at;
         runtime.sessions.set(token, expiresAt);
-        // Upgrade legacy plaintext rows when they are next used. This keeps
-        // existing cookies valid while preventing new bearer tokens from
-        // being exposed in SQLite backups.
-        if (row.token === token) {
-          runtime.db.run("UPDATE sessions SET token = ? WHERE token = ?", [
-            hashSessionToken(runtime, token),
-            token,
-          ]);
-        }
       }
     } catch (error) {
       console.error("[Sessions] query failed", error);
@@ -149,9 +139,8 @@ export const isAuthorized = (runtime: ServerRuntime, req: Request) => {
   if (!expiresAt || expiresAt <= Date.now()) {
     runtime.sessions.delete(token);
     try {
-      runtime.db.run("DELETE FROM sessions WHERE token = ? OR token = ?", [
+      runtime.db.run("DELETE FROM sessions WHERE token = ?", [
         hashSessionToken(runtime, token),
-        token,
       ]);
     } catch {
       // ignore

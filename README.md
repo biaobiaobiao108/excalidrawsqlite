@@ -200,7 +200,6 @@ AUTH_PASSWORD=your-password bun run dev
 | `TRASH_RETENTION_DAYS` | `30` (30 天) | 否 | 回收站画板保留天数。设为 `0` 禁用自动清理；超期后自动物理删除并回收 SQLite 空间与关联孤立附件。 |
 | `MAX_FILE_BYTES` | `4194304` (4MB) | 否 | 单个图片/附件上传大小限制（字节）。 |
 | `MAX_SCENE_BODY_BYTES` | `16777216` (16MB) | 否 | 单个画板 JSON 数据最大请求体大小。 |
-| `MAX_FILES_BODY_BYTES` | `33554432` (32MB) | 否 | 批量图片 JSON 请求体大小上限。 |
 | `MAX_IN_FLIGHT_BODY_BYTES` | `67108864` (64MB) | 否 | 所有并发请求体的聚合内存预算；若配置低于单请求上限，会自动提升到安全下限。 |
 | `MAX_BACKUP_BYTES` | `134217728` (128MB) | 否 | 单次数据库快照或完整备份的原始内容大小上限。 |
 
@@ -220,7 +219,7 @@ AUTH_PASSWORD=your-password bun run dev
 │   ├── http.ts             # 请求体、响应、安全头与 CORS/CSP
 │   ├── validation.ts       # 请求参数与资源 ID 校验
 │   ├── auth.ts             # 密码会话、Cookie 与限流
-│   ├── database.ts         # SQLite 初始化、WAL 与数据库迁移
+│   ├── database.ts         # 当前 SQLite schema 初始化与 WAL 配置
 │   ├── runtime.ts          # 运行时与持久化目录初始化
 │   ├── scenes.ts           # 画板、文件夹与场景数据处理
 │   ├── files.ts            # 附件、缩略图与存储一致性维护
@@ -259,7 +258,7 @@ AUTH_PASSWORD=your-password bun run dev
 
 后端仍由 Bun 单进程提供 API、静态资源和 SQLite 持久化。`server/server.ts` 是启动入口，同时保留现有公共导出，便于测试和外部调用继续使用原有导入路径。新增后端逻辑应放入对应职责模块，不要把业务逻辑重新集中到入口文件。
 
-模块依赖遵循“共享类型与基础能力 → 数据和业务模块 → 路由 → 启动入口”的方向。路由继续使用原生 `Request`/`Response` 和手工路径匹配，不额外引入 HTTP 框架或路由依赖。修改 API、鉴权、数据库迁移或附件存储时，必须保持现有响应格式、数据兼容性和安全边界，并运行后端测试。
+模块依赖遵循“共享类型与基础能力 → 数据和业务模块 → 路由 → 启动入口”的方向。路由继续使用原生 `Request`/`Response` 和手工路径匹配，不额外引入 HTTP 框架或路由依赖。SQLite 只初始化当前 schema，不维护版本号或旧库迁移；修改 API、鉴权、schema 或附件存储时，保持当前契约和安全边界，并运行后端测试。
 
 ---
 

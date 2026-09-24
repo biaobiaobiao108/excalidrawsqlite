@@ -4,7 +4,7 @@ import path from "node:path";
 import { Database } from "bun:sqlite";
 
 import { createServerConfig } from "./config";
-import { initializeDatabase, migrateLegacyDatabase } from "./database";
+import { initializeDatabase } from "./database";
 import { BodyMemoryBudget } from "./types";
 
 import type { ServerConfig, ServerRuntime } from "./types";
@@ -27,7 +27,6 @@ export const createRuntime = (options: {
     fs.accessSync(filesDir, fs.constants.W_OK);
     db = new Database(dbPath, { create: true });
     initializeDatabase(db);
-    migrateLegacyDatabase(db, filesDir);
 
     return {
       db,

@@ -27,13 +27,11 @@ import {
 } from "./backup";
 import {
   assertReferencedFilesExist,
-  decodeDataUrl,
   extractFileIds,
   fileExists,
   getFilePath,
   stageRequestBodyToFile,
   syncSceneFileReferences,
-  upsertFile,
   upsertStagedFile,
   withThumbnailWriteLock,
 } from "./files";
@@ -57,7 +55,6 @@ import {
 } from "./static";
 import {
   hasOwn,
-  parseFileUploadEntries,
   requireJsonObject,
   requireRevision,
   validateAppState,
@@ -605,8 +602,8 @@ export const createRequestHandler = (
           runtime.sessions.delete(token);
           try {
             runtime.db.run(
-              "DELETE FROM sessions WHERE token = ? OR token = ?",
-              [hashSessionToken(runtime, token), token],
+              "DELETE FROM sessions WHERE token = ?",
+              [hashSessionToken(runtime, token)],
             );
           } catch {
             // ignore
@@ -1382,45 +1379,6 @@ export const createRequestHandler = (
         });
       }
 
-      if (pathname === "/api/files" && req.method === "POST") {
-        const body = requireJsonObject(
-          await readJson(
-            req,
-            runtime.config.maxFilesBodyBytes,
-            runtime.bodyMemoryBudget,
-          ),
-        );
-        const uploaded = [];
-        for (const [fileId, value] of parseFileUploadEntries(body)) {
-          const id = validateId(fileId, "file");
-          const data = requireJsonObject(value);
-          const mimeType = validateMimeType(data.mimeType || "image/png");
-          const bytes = decodeDataUrl(data.dataURL, mimeType);
-          uploaded.push(
-            await upsertFile(
-              runtime,
-              id,
-              mimeType,
-              bytes,
-              Number(data.created),
-            ),
-          );
-          if (hasOwn(body, fileId)) {
-            delete body[fileId];
-          } else {
-            delete body.dataURL;
-            delete body.mimeType;
-            delete body.created;
-          }
-        }
-        return jsonResponse(
-          runtime,
-          req,
-          { success: true, files: uploaded },
-          201,
-        );
-      }
-
       if (pathname.startsWith("/api/files/") && req.method === "PUT") {
         const id = getPathId(pathname, "/api/files/", "file");
         const contentType = req.headers.get("content-type");
@@ -1482,32 +1440,6 @@ export const createRequestHandler = (
               ...(etag ? { ETag: etag } : {}),
             },
           });
-        }
-
-        const accept = req.headers.get("accept") || "";
-        const wantsBinary =
-          accept.includes("application/octet-stream") ||
-          accept.includes("image/");
-        if (!wantsBinary) {
-          const bytes = await Bun.file(filePath).arrayBuffer();
-          const jsonHeaders: Record<string, string> = {};
-          if (etag) {
-            jsonHeaders.ETag = etag;
-          }
-          return jsonResponse(
-            runtime,
-            req,
-            {
-              id,
-              dataURL: `data:${row.mime_type};base64,${new Uint8Array(
-                bytes,
-              ).toBase64()}`,
-              mimeType: row.mime_type,
-              created_at: row.created_at,
-            },
-            200,
-            jsonHeaders,
-          );
         }
 
         const responseHeaders: Record<string, string> = {

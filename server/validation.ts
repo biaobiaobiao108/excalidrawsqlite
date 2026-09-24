@@ -1,7 +1,6 @@
 import {
   FILE_ID_PATTERN,
   MIME_TYPE_PATTERN,
-  MAX_BATCH_FILES,
   MAX_FOLDER_NAME_LENGTH,
   MAX_SCENE_NAME_LENGTH,
   MAX_TAG_LENGTH,
@@ -170,18 +169,4 @@ export const requireRevision = (value: unknown) => {
     throw new HttpError(400, "INVALID_REVISION", "revision 必须是正整数");
   }
   return value as number;
-};
-
-export const parseFileUploadEntries = (body: Record<string, unknown>) => {
-  if (hasOwn(body, "id") || hasOwn(body, "dataURL")) {
-    if (typeof body.id !== "string") {
-      throw new HttpError(400, "INVALID_ID", "无效的文件 ID");
-    }
-    return [[body.id, body]] as Array<[string, unknown]>;
-  }
-  const entries = Object.entries(body);
-  if (entries.length > MAX_BATCH_FILES) {
-    throw new HttpError(413, "TOO_MANY_FILES", "单次上传的文件数量过多");
-  }
-  return entries;
 };

@@ -3,7 +3,6 @@ import fs, { rm } from "node:fs/promises";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "bun:test";
-import { Database } from "bun:sqlite";
 
 import {
   createRequestHandler,
@@ -129,6 +128,31 @@ describe("cloud persistence server", () => {
       createServerConfig({ NODE_ENV: "production", ALLOW_ANONYMOUS: "true" })
         .allowAnonymous,
     ).toBe(true);
+  });
+
+  it("initializes the current SQLite schema without versioned migrations", () => {
+    const { runtime } = createTestRuntime();
+    expect(runtime.db.query("PRAGMA user_version").get()).toEqual({
+      user_version: 0,
+    });
+    expect(
+      (runtime.db.query("PRAGMA table_info(files)").all() as Array<{
+        name: string;
+      }>).map((column) => column.name),
+    ).toEqual([
+      "id",
+      "storage_path",
+      "mime_type",
+      "byte_size",
+      "sha256",
+      "created_at",
+      "updated_at",
+    ]);
+    expect(
+      (runtime.db.query("PRAGMA table_info(scenes)").all() as Array<{
+        name: string;
+      }>).map((column) => column.name),
+    ).toContain("content_sha256");
   });
 
   it("surfaces configuration errors before opening persistent storage", () => {
@@ -287,45 +311,6 @@ describe("cloud persistence server", () => {
     );
     expect(response.status).toBe(201);
     expect(response.headers.get("cache-control")).toBe("no-store");
-  });
-
-  it("migrates legacy scene databases with a default revision", async () => {
-    const root = Bun.env.TEMP || Bun.env.TMP || ".";
-    const directory = `${root}/excalidraw-server-test-${crypto.randomUUID()}`;
-    const dbPath = path.join(directory, "excalidraw.db");
-    await fs.mkdir(directory, { recursive: true });
-    const legacyDb = new Database(dbPath, { create: true });
-    legacyDb.run(`
-      CREATE TABLE scenes (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        elements TEXT NOT NULL,
-        app_state TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
-    `);
-    legacyDb.run(
-      `INSERT INTO scenes
-       (id, name, elements, app_state, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      ["legacy_scene", "旧画板", "[]", "{}", 1, 1],
-    );
-    legacyDb.close();
-
-    const runtime = createRuntime({
-      dbPath,
-      filesDir: path.join(directory, "files"),
-      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true" }),
-    });
-    runtimes.push(runtime);
-    testDirectories.push(directory);
-
-    expect(
-      runtime.db
-        .query("SELECT revision FROM scenes WHERE id = ?")
-        .get("legacy_scene"),
-    ).toEqual({ revision: 1 });
   });
 
   it("uses a session cookie and preserves scene data while renaming", async () => {
@@ -570,13 +555,6 @@ describe("cloud persistence server", () => {
     };
     expect(metadata.storage_path).toBe("file_test");
     expect(metadata.byte_size).toBe(4);
-    expect(
-      (
-        runtime.db.query("PRAGMA table_info(files)").all() as Array<{
-          name: string;
-        }>
-      ).some((column) => column.name === "data_url"),
-    ).toBe(false);
 
     const download = await request(handler, "/api/files/file_test", {
       headers: { Cookie: cookie, Accept: "application/octet-stream" },
@@ -587,6 +565,12 @@ describe("cloud persistence server", () => {
     expect(download.headers.get("cache-control")).toContain("immutable");
     const fileEtag = download.headers.get("etag");
     expect(fileEtag).toBeTruthy();
+
+    const defaultDownload = await request(handler, "/api/files/file_test", {
+      headers: { Cookie: cookie },
+    });
+    expect(defaultDownload.headers.get("content-type")).toContain("image/png");
+    expect(new Uint8Array(await defaultDownload.arrayBuffer())).toEqual(bytes);
 
     const notModifiedDownload = await request(handler, "/api/files/file_test", {
       headers: {
@@ -1140,7 +1124,7 @@ describe("cloud persistence server", () => {
     expect(traversal.status).toBe(400);
   });
 
-  it("returns a client error for malformed Base64 batch uploads", async () => {
+  it("rejects the removed Base64 batch upload endpoint", async () => {
     const { handler } = createTestRuntime();
     const cookie = await authenticate(handler);
     const response = await jsonRequest(
@@ -1153,13 +1137,10 @@ describe("cloud persistence server", () => {
       },
       { headers: { Cookie: cookie } },
     );
-    expect(response.status).toBe(400);
-    expect(await responseJson<{ code: string }>(response)).toMatchObject({
-      code: "INVALID_FILE_DATA",
-    });
+    expect(response.status).toBe(404);
   });
 
-  it("rejects SVG uploads and serves legacy SVGs as safe downloads", async () => {
+  it("rejects SVG uploads and serves stored SVGs as safe downloads", async () => {
     const { handler, runtime, directory } = createTestRuntime();
     const cookie = await authenticate(handler);
     const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script /></svg>';
@@ -1174,41 +1155,24 @@ describe("cloud persistence server", () => {
       runtime.db.query("SELECT id FROM files WHERE id = ?").get("svg_direct"),
     ).toBeNull();
 
-    const batchUpload = await jsonRequest(
-      handler,
-      "/api/files",
-      {
-        id: "svg_batch",
-        mimeType: "IMAGE/SVG+XML",
-        dataURL: `data:image/svg+xml;base64,${Buffer.from(svg).toString(
-          "base64",
-        )}`,
-      },
-      { headers: { Cookie: cookie } },
-    );
-    expect(batchUpload.status).toBe(415);
-    expect(
-      runtime.db.query("SELECT id FROM files WHERE id = ?").get("svg_batch"),
-    ).toBeNull();
-
-    const legacyPath = path.join(directory, "files", "legacy_svg");
-    await fs.writeFile(legacyPath, svg);
+    const storedPath = path.join(directory, "files", "stored_svg");
+    await fs.writeFile(storedPath, svg);
     runtime.db.run(
       `INSERT INTO files
        (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
-        "legacy_svg",
-        "legacy_svg",
+        "stored_svg",
+        "stored_svg",
         "image/svg+xml",
         Buffer.byteLength(svg),
-        "legacy",
+        "stored-svg-sha256",
         1,
         1,
       ],
     );
 
-    const download = await request(handler, "/api/files/legacy_svg", {
+    const download = await request(handler, "/api/files/stored_svg", {
       headers: { Cookie: cookie, Accept: "image/svg+xml" },
     });
     expect(download.status).toBe(200);
@@ -1441,154 +1405,6 @@ describe("cloud persistence server", () => {
     );
   });
 
-  it("migrates legacy data URLs and rebuilds scene file references", async () => {
-    const root = Bun.env.TEMP || Bun.env.TMP || ".";
-    const directory = `${root}/excalidraw-server-legacy-${crypto.randomUUID()}`;
-    const dbPath = path.join(directory, "excalidraw.db");
-    const filesDir = path.join(directory, "files");
-    await fs.mkdir(filesDir, { recursive: true });
-    const legacyDb = new Database(dbPath);
-    legacyDb.run(
-      `CREATE TABLE scenes (
-        id TEXT PRIMARY KEY, name TEXT NOT NULL, elements TEXT NOT NULL,
-        app_state TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
-      )`,
-    );
-    legacyDb.run(
-      `CREATE TABLE files (
-        id TEXT PRIMARY KEY, data_url TEXT NOT NULL, mime_type TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      )`,
-    );
-    legacyDb.run(
-      `CREATE TABLE scene_files (
-        scene_id TEXT NOT NULL, file_id TEXT NOT NULL,
-        PRIMARY KEY (scene_id, file_id)
-      )`,
-    );
-    legacyDb.run(
-      "INSERT INTO files (id, data_url, mime_type, created_at) VALUES (?, ?, ?, ?)",
-      ["legacy_image", "data:image/png;base64,AQID", "image/png", 1],
-    );
-    legacyDb.run(
-      "INSERT INTO scenes (id, name, elements, app_state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-      [
-        "legacy_scene",
-        "旧画板",
-        JSON.stringify([
-          { id: "image-1", type: "image", fileId: "legacy_image" },
-        ]),
-        "{}",
-        1,
-        1,
-      ],
-    );
-    legacyDb.close();
-
-    const config = createServerConfig({
-      NODE_ENV: "test",
-      AUTH_PASSWORD: "test-password",
-      ALLOW_ANONYMOUS: "true",
-    });
-    const runtime = createRuntime({ dbPath, filesDir, config });
-    runtimes.push(runtime);
-    testDirectories.push(directory);
-    const migrated = runtime.db
-      .query("SELECT storage_path, byte_size, data_url FROM files WHERE id = ?")
-      .get("legacy_image") as {
-      storage_path: string;
-      byte_size: number;
-      data_url: string;
-    };
-    expect(migrated).toMatchObject({
-      storage_path: "legacy_image",
-      byte_size: 3,
-      data_url: "",
-    });
-    expect(await fs.readFile(path.join(filesDir, "legacy_image"))).toEqual(
-      Buffer.from([1, 2, 3]),
-    );
-    expect(
-      runtime.db
-        .query("SELECT COUNT(*) AS count FROM scene_files WHERE scene_id = ?")
-        .get("legacy_scene"),
-    ).toEqual({ count: 1 });
-    expect(
-      (
-        runtime.db.query("PRAGMA user_version").get() as {
-          user_version: number;
-        }
-      ).user_version,
-    ).toBe(6);
-
-    runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [
-      "legacy_scene",
-    ]);
-    runtimes.pop();
-    runtime.db.close();
-    const restarted = createRuntime({ dbPath, filesDir, config });
-    runtimes.push(restarted);
-    expect(
-      restarted.db
-        .query("SELECT COUNT(*) AS count FROM scene_files WHERE scene_id = ?")
-        .get("legacy_scene"),
-    ).toEqual({ count: 0 });
-  });
-
-  it("fails startup when a legacy attachment cannot be migrated", async () => {
-    const root = Bun.env.TEMP || Bun.env.TMP || ".";
-    const directory = `${root}/excalidraw-server-legacy-invalid-${crypto.randomUUID()}`;
-    const dbPath = path.join(directory, "excalidraw.db");
-    const filesDir = path.join(directory, "files");
-    await fs.mkdir(filesDir, { recursive: true });
-    const legacyDb = new Database(dbPath);
-    legacyDb.run(
-      `CREATE TABLE scenes (
-        id TEXT PRIMARY KEY, name TEXT NOT NULL, elements TEXT NOT NULL,
-        app_state TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
-      )`,
-    );
-    legacyDb.run(
-      `CREATE TABLE files (
-        id TEXT PRIMARY KEY, data_url TEXT NOT NULL, mime_type TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      )`,
-    );
-    legacyDb.run(
-      `CREATE TABLE scene_files (
-        scene_id TEXT NOT NULL, file_id TEXT NOT NULL,
-        PRIMARY KEY (scene_id, file_id)
-      )`,
-    );
-    legacyDb.run(
-      "INSERT INTO files (id, data_url, mime_type, created_at) VALUES (?, ?, ?, ?)",
-      ["legacy_invalid", "not-a-data-url", "image/png", 1],
-    );
-    legacyDb.close();
-
-    const config = createServerConfig({
-      NODE_ENV: "test",
-      AUTH_PASSWORD: "test-password",
-      ALLOW_ANONYMOUS: "true",
-    });
-    let initializationError: unknown;
-    try {
-      createRuntime({ dbPath, filesDir, config });
-    } catch (error) {
-      initializationError = error;
-    }
-    expect(initializationError).toBeInstanceOf(Error);
-    expect((initializationError as Error).cause).toMatchObject({
-      message: expect.stringContaining("旧附件迁移失败"),
-    });
-    const checkDb = new Database(dbPath);
-    expect(checkDb.query("PRAGMA user_version").get()).toEqual({
-      user_version: 0,
-    });
-    checkDb.close();
-    testDirectories.push(directory);
-  });
-
   it("sanitizes isDeleted elements on creation and update to reduce stored size", async () => {
     const { handler, runtime } = createTestRuntime();
     const cookie = await authenticate(handler);
@@ -1670,63 +1486,4 @@ describe("cloud persistence server", () => {
     expect(runtime.db.query("SELECT id FROM scenes WHERE id = ?").get(id)).toBeNull();
   });
 
-  it("purges tombstoned elements during legacy database migration", async () => {
-    const root = Bun.env.TEMP || Bun.env.TMP || ".";
-    const directory = `${root}/excalidraw-server-legacy-purge-${crypto.randomUUID()}`;
-    const dbPath = path.join(directory, "excalidraw.db");
-    const filesDir = path.join(directory, "files");
-    await fs.mkdir(filesDir, { recursive: true });
-    const legacyDb = new Database(dbPath);
-    legacyDb.run(
-      `CREATE TABLE scenes (
-        id TEXT PRIMARY KEY, name TEXT NOT NULL, elements TEXT NOT NULL,
-        app_state TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-        revision INTEGER NOT NULL DEFAULT 1, tags_json TEXT NOT NULL DEFAULT '[]',
-        is_favorite INTEGER NOT NULL DEFAULT 0, folder_id TEXT, last_opened_at INTEGER,
-        thumbnail_file_id TEXT, deleted_at INTEGER, element_count INTEGER NOT NULL DEFAULT 0,
-        content_bytes INTEGER NOT NULL DEFAULT 0, content_sha256 TEXT NOT NULL DEFAULT ''
-      )`,
-    );
-    legacyDb.run(
-      `CREATE TABLE files (
-        id TEXT PRIMARY KEY, storage_path TEXT, mime_type TEXT NOT NULL,
-        byte_size INTEGER NOT NULL DEFAULT 0, sha256 TEXT NOT NULL DEFAULT '',
-        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
-      )`,
-    );
-    legacyDb.run(
-      `CREATE TABLE scene_files (
-        scene_id TEXT NOT NULL, file_id TEXT NOT NULL,
-        PRIMARY KEY (scene_id, file_id)
-      )`,
-    );
-    const elementsWithTombstone = JSON.stringify([
-      { id: "active_1", type: "rectangle" },
-      { id: "deleted_1", type: "line", isDeleted: true },
-    ]);
-    legacyDb.run(
-      `INSERT INTO scenes (id, name, elements, app_state, created_at, updated_at, revision)
-       VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      ["legacy_dirty_scene", "Dirty Scene", elementsWithTombstone, "{}", 1000, 1000],
-    );
-    legacyDb.run("PRAGMA user_version = 5");
-    legacyDb.close();
-
-    const config = createServerConfig({
-      NODE_ENV: "test",
-      AUTH_PASSWORD: "test-password",
-      ALLOW_ANONYMOUS: "true",
-    });
-    const runtime = createRuntime({ dbPath, filesDir, config });
-    runtimes.push(runtime);
-    testDirectories.push(directory);
-
-    const row = runtime.db
-      .query("SELECT elements, element_count FROM scenes WHERE id = ?")
-      .get("legacy_dirty_scene") as { elements: string; element_count: number };
-    const elements = JSON.parse(row.elements);
-    expect(elements).toHaveLength(1);
-    expect(elements[0].id).toBe("active_1");
-    expect(row.element_count).toBe(1);
-  });
 });

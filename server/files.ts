@@ -8,7 +8,7 @@ import {
   STALE_FILE_ARTIFACT_MS,
   UNTRACKED_FILE_CLEANUP_BATCH_SIZE,
 } from "./config";
-import { randomHex, sha256Hex } from "./crypto";
+import { randomHex } from "./crypto";
 import { HttpError } from "./errors";
 import { isRecord, validateId } from "./validation";
 
@@ -16,21 +16,6 @@ import type { ServerRuntime } from "./types";
 
 const thumbnailWriteLocks = new Map<string, Promise<void>>();
 const storageMutationLocks = new WeakMap<ServerRuntime, Promise<void>>();
-const legacyDataUrlColumnCache = new WeakMap<ServerRuntime, boolean>();
-
-const hasLegacyDataUrlColumn = (runtime: ServerRuntime) => {
-  const cached = legacyDataUrlColumnCache.get(runtime);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const hasColumn = (
-    runtime.db.query("PRAGMA table_info(files)").all() as Array<{
-      name: string;
-    }>
-  ).some((column) => column.name === "data_url");
-  legacyDataUrlColumnCache.set(runtime, hasColumn);
-  return hasColumn;
-};
 
 export const withStorageMutationLock = async <T>(
   runtime: ServerRuntime,
@@ -223,16 +208,10 @@ const upsertPreparedFile = async (
       ? await finalizeAtomicFileWrite(filePath, prepared.tempPath)
       : await writeFileAtomically(filePath, prepared.data!);
     try {
-      const hasLegacyDataUrl = hasLegacyDataUrlColumn(runtime);
-      const columns = hasLegacyDataUrl
-        ? "id, storage_path, data_url, mime_type, byte_size, sha256, created_at, updated_at"
-        : "id, storage_path, mime_type, byte_size, sha256, created_at, updated_at";
-      const values = hasLegacyDataUrl
-        ? "?, ?, '', ?, ?, ?, ?, ?"
-        : "?, ?, ?, ?, ?, ?, ?";
       runtime.db.run(
-        `INSERT INTO files (${columns})
-         VALUES (${values})
+        `INSERT INTO files
+           (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            storage_path = excluded.storage_path,
            mime_type = excluded.mime_type,
@@ -278,28 +257,6 @@ const upsertPreparedFile = async (
       updatedAt: now,
     };
   });
-};
-
-export const upsertFile = async (
-  runtime: ServerRuntime,
-  id: string,
-  mimeType: string,
-  data: Uint8Array,
-  createdAt?: number,
-  updatedAt?: number,
-) => {
-  return upsertPreparedFile(
-    runtime,
-    id,
-    mimeType,
-    {
-      data,
-      byteLength: data.byteLength,
-      sha256: sha256Hex(data),
-    },
-    createdAt,
-    updatedAt,
-  );
 };
 
 export const stageRequestBodyToFile = async (
@@ -382,31 +339,6 @@ export const upsertStagedFile = async (
       await fs.promises.rm(prepared.tempPath, { force: true });
     }
   }
-};
-
-export const decodeDataUrl = (value: unknown, expectedMimeType: string) => {
-  if (typeof value !== "string") {
-    throw new HttpError(400, "INVALID_FILE_DATA", "文件数据格式无效");
-  }
-  const match = value.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=_-]+)$/);
-  if (!match || match[1].toLowerCase() !== expectedMimeType.toLowerCase()) {
-    throw new HttpError(
-      400,
-      "INVALID_FILE_DATA",
-      "文件必须是有效的 Base64 data URL",
-    );
-  }
-  const normalizedBase64 = match[2].replace(/-/g, "+").replace(/_/g, "/");
-  let data: Uint8Array;
-  try {
-    data = Uint8Array.fromBase64(normalizedBase64);
-  } catch {
-    throw new HttpError(400, "INVALID_FILE_DATA", "文件必须是有效的 Base64 data URL");
-  }
-  if (!data.byteLength) {
-    throw new HttpError(400, "INVALID_FILE_DATA", "文件内容不能为空");
-  }
-  return new Uint8Array(data);
 };
 
 export const extractFileIds = (elements: unknown[]) => {

@@ -108,7 +108,6 @@ export type ServerConfig = {
   authAttemptsPerWindow: number;
   maxFileBytes: number;
   maxSceneBodyBytes: number;
-  maxFilesBodyBytes: number;
   maxInFlightBodyBytes: number;
   maxBackupBytes: number;
   sessionTtlMs: number;
