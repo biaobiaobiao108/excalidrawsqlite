@@ -29,9 +29,8 @@
 
 ### Safari 优先适配
 
-- 最新 macOS Safari 是本项目的首要浏览器目标；新增或调整的前端体验先按 Safari 验证，再保证其他受支持浏览器正常。
-- 优先使用能力检测，不假设 `navigator.deviceMemory`、剪贴板或文件系统 API 存在；受 HTTPS/localhost 安全上下文限制的能力必须提供回退或清楚提示。
-- UI 与画布改动需关注 Safari 的触控板手势、DPR/Canvas、动态视口、字体加载、剪贴板、文件导入导出和键盘焦点；交互改动使用 Codex 内置浏览器做必要的 Safari 冒烟检查。
+- 最新 macOS Safari 是本项目的首要浏览器目标。
+- UI 与画布改动需关注 Safari 的触控板手势、DPR/Canvas、动态视口、字体加载、剪贴板、文件导入导出和键盘焦点。
 
 ## 4. 全栈开发与热重载规范 (Unified Dev Server)
 
