@@ -491,6 +491,67 @@ describe("cloud persistence server", () => {
     expect(notModified.status).toBe(304);
     expect(notModified.headers.get("etag")).toBe(sceneEtag);
 
+    const opened = await request(handler, "/api/scenes/scene_page_a/open", {
+      method: "POST",
+      headers: { Cookie: cookie },
+    });
+    expect(opened.status).toBe(200);
+    const afterOpen = await request(handler, "/api/scenes/scene_page_a", {
+      headers: { Cookie: cookie, "If-None-Match": sceneEtag! },
+    });
+    expect(afterOpen.status).toBe(200);
+    expect(
+      (await responseJson<{ last_opened_at: number }>(afterOpen))
+        .last_opened_at,
+    ).toBeGreaterThan(0);
+
+    const openedEtag = afterOpen.headers.get("etag");
+    const thumbnail = await request(
+      handler,
+      "/api/scenes/scene_page_a/thumbnail",
+      {
+        method: "PUT",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "image/jpeg",
+          "X-Thumbnail-Version": "100",
+        },
+        body: new Uint8Array([255, 216, 255, 217]),
+      },
+    );
+    expect(thumbnail.status).toBe(200);
+    const afterThumbnail = await request(handler, "/api/scenes/scene_page_a", {
+      headers: { Cookie: cookie, "If-None-Match": openedEtag! },
+    });
+    expect(afterThumbnail.status).toBe(200);
+    expect(
+      (await responseJson<{ thumbnail_file_id: string | null }>(
+        afterThumbnail,
+      )).thumbnail_file_id,
+    ).toMatch(/^thumbnail_/);
+
+    const thumbnailEtag = afterThumbnail.headers.get("etag");
+    const thumbnailDeleted = await request(
+      handler,
+      "/api/scenes/scene_page_a/thumbnail",
+      {
+        method: "DELETE",
+        headers: { Cookie: cookie, "X-Thumbnail-Version": "101" },
+      },
+    );
+    expect(thumbnailDeleted.status).toBe(200);
+    const afterThumbnailDelete = await request(
+      handler,
+      "/api/scenes/scene_page_a",
+      { headers: { Cookie: cookie, "If-None-Match": thumbnailEtag! } },
+    );
+    expect(afterThumbnailDelete.status).toBe(200);
+    expect(
+      (await responseJson<{ thumbnail_file_id: string | null }>(
+        afterThumbnailDelete,
+      )).thumbnail_file_id,
+    ).toBe(null);
+
     const summaryResponse = await request(
       handler,
       "/api/scenes/scene_page_a/summary",
@@ -1010,6 +1071,50 @@ describe("cloud persistence server", () => {
     expect(
       (await responseJson<{ folder_id: string | null }>(scene)).folder_id,
     ).toBe(null);
+  });
+
+  it("advances thumbnail versions even when the image bytes are unchanged", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const created = await jsonRequest(
+      handler,
+      "/api/scenes",
+      { id: "scene_thumb_order", name: "缩略图顺序", elements: [], appState: {} },
+      { headers: { Cookie: cookie } },
+    );
+    expect(created.status).toBe(201);
+
+    const upload = (version: number, bytes: number[]) =>
+      request(handler, "/api/scenes/scene_thumb_order/thumbnail", {
+        method: "PUT",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "image/jpeg",
+          "X-Thumbnail-Version": String(version),
+        },
+        body: new Uint8Array(bytes),
+      });
+    const originalBytes = [255, 216, 255, 217];
+    expect((await upload(100, originalBytes)).status).toBe(200);
+    expect((await upload(200, originalBytes)).status).toBe(200);
+
+    const olderUpload = await upload(150, [255, 216, 1, 217]);
+    expect(olderUpload.status).toBe(200);
+    expect(await responseJson<{ stale?: boolean }>(olderUpload)).toMatchObject({
+      stale: true,
+    });
+
+    const thumbnailId = (
+      runtime.db
+        .query("SELECT thumbnail_file_id FROM scenes WHERE id = ?")
+        .get("scene_thumb_order") as { thumbnail_file_id: string }
+    ).thumbnail_file_id;
+    const file = await request(handler, `/api/files/${thumbnailId}`, {
+      headers: { Cookie: cookie },
+    });
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(
+      new Uint8Array(originalBytes),
+    );
   });
 
   it("returns complete folder summaries and excludes trashed scenes", async () => {

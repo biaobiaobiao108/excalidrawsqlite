@@ -583,7 +583,9 @@ export class CloudSaveQueue {
           break;
         } catch (error) {
           if (error instanceof CloudApiError && error.status === 401) {
-            this.pending.set(sceneId, snapshot);
+            if (!this.pending.has(sceneId)) {
+              this.pending.set(sceneId, snapshot);
+            }
             this.blocked.set(sceneId, "auth");
             this.setStatus(sceneId, "auth");
             this.callbacks.onAuthRequired(sceneId);
@@ -597,7 +599,9 @@ export class CloudSaveQueue {
             return;
           }
           if (attempt === RETRY_DELAYS_MS.length - 1) {
-            this.pending.set(sceneId, snapshot);
+            if (!this.pending.has(sceneId)) {
+              this.pending.set(sceneId, snapshot);
+            }
             this.setStatus(sceneId, "error");
             this.callbacks.onError(
               error instanceof Error ? error : new Error("云端保存失败"),

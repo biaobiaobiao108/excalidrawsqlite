@@ -326,7 +326,7 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
         "SELECT * FROM scenes WHERE id = ? AND deleted_at IS NULL",
       ),
       getSceneVersionById: runtime.db.query(
-        `SELECT id, revision, updated_at
+        `SELECT id, revision, updated_at, thumbnail_file_id, last_opened_at
          FROM scenes
          WHERE id = ? AND deleted_at IS NULL`,
       ),
@@ -910,13 +910,23 @@ export const createRequestHandler = (
           id: string;
           revision: number;
           updated_at: number;
+          thumbnail_file_id: string | null;
+          last_opened_at: number | null;
         } | null;
         if (!versionRow) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
         const sceneRevision = Number(versionRow.revision) || 1;
         const sceneUpdatedAt = Number(versionRow.updated_at) || 0;
-        const etag = `"scene-${id}-${sceneRevision}-${sceneUpdatedAt}"`;
+        const etag = `"scene-${sha256Hex(
+          JSON.stringify([
+            id,
+            sceneRevision,
+            sceneUpdatedAt,
+            versionRow.thumbnail_file_id,
+            versionRow.last_opened_at,
+          ]),
+        )}"`;
         const ifNoneMatch = req.headers.get("if-none-match");
         if (
           ifNoneMatch

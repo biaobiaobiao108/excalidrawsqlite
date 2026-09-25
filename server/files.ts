@@ -194,13 +194,23 @@ const upsertPreparedFile = async (
       previous.mime_type.toLowerCase() === mimeType.toLowerCase() &&
       (await fileExists(filePath))
     ) {
+      const nextUpdatedAt =
+        Number.isFinite(updatedAt) && Number(updatedAt) > previous.updated_at
+          ? Number(updatedAt)
+          : previous.updated_at;
+      if (nextUpdatedAt !== previous.updated_at) {
+        runtime.db.run("UPDATE files SET updated_at = ? WHERE id = ?", [
+          nextUpdatedAt,
+          id,
+        ]);
+      }
       return {
         id,
         mimeType,
         byteSize: previous.byte_size,
         sha256: previous.sha256,
         createdAt: previous.created_at,
-        updatedAt: previous.updated_at,
+        updatedAt: nextUpdatedAt,
       };
     }
 
