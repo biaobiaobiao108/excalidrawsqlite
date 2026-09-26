@@ -18,7 +18,9 @@ COPY packages/utils/package.json ./packages/utils/
 COPY packages/excalidraw/package.json ./packages/excalidraw/
 COPY excalidraw-app/package.json ./excalidraw-app/
 
-# Install dependencies with frozen lockfile and cache mount for accelerated rebuilds
+# The disposable build stage needs devDependencies such as Sass.
+# The frozen lockfile keeps the build reproducible; these dependencies stay out
+# of the runtime image because only the compiled outputs are copied below.
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
 
 # Copy source files
@@ -46,9 +48,10 @@ ENV DB_PATH=/app/data/excalidraw.db
 ENV FILES_DIR=/app/data/files
 ENV STATIC_DIR=/app/excalidraw-app/build
 
-# Copy the production backend bundle and built frontend static assets
+# Copy only the production backend bundle and built frontend static assets.
 # The server creates the database and files directories on startup. Keeping the
-# runtime stage free of RUN steps avoids target-platform emulation in Buildx.
+# runtime stage free of dependency installs and RUN steps avoids shipping
+# node_modules and target-platform emulation in Buildx.
 COPY server ./server
 COPY --from=builder /app/server-build ./server-build
 COPY --from=builder /app/excalidraw-app/build ./excalidraw-app/build
