@@ -16,7 +16,10 @@ const runFrontendBuild = async (): Promise<boolean> => {
 
 export const startDevWatcher = async (): Promise<() => void> => {
   console.log("[Dev] 📦 正在生成开发前端构建...");
-  await runFrontendBuild();
+  const initialBuildSucceeded = await runFrontendBuild();
+  if (!initialBuildSucceeded) {
+    throw new Error("[Dev] 初始前端构建失败，开发服务器无法启动");
+  }
 
   const watchTargets = [
     { path: path.join(PROJECT_ROOT, "excalidraw-app"), recursive: true },

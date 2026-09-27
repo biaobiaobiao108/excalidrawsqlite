@@ -41,7 +41,7 @@
   - Backend/persistence changes: run `bun run test:server` (< 1.5s)
   - Frontend component/logic changes: run `bun test` / `bun run test:unit` or `bun run test:typecheck`
   - Document/markdown changes: exempt from testing (commit directly)
-  - Static code checking: run `bun run test:code` / `bun run fix`
+  - Static type checking: run `bun run test:typecheck`. This repository does not currently define separate lint or formatter scripts; `bun run test:all` runs the available unit, server, type, production build, and bundle-size checks.
 
 ## Types
 

@@ -70,14 +70,14 @@
 
 - `bun test` / `bun run test:unit`：运行 `tests/unit` 中基于 `bun:test` 的纯逻辑测试；不得依赖 JSDOM、React 全局 setup 或大规模快照。
 - `bun run test:server`：运行 `tests/server` 中基于 Bun 原生 SQLite/API 的集成测试；测试必须清理临时数据库、附件和锁文件。
-- `bun run test:all`：依次执行单元、服务端、类型、代码规范、构建与体积门禁。
+- `bun run test:all`：依次执行单元、服务端、类型检查，以及生产构建和体积门禁（`test:size`）。仓库目前没有配置独立的 lint/格式化脚本。
 
 按改动范围选择验证：
 
 1. 文档或注释：可跳过自动化测试，但必须检查链接、示例和格式，然后直接提交。
 2. `server/` 或持久化：运行 `bun run test:server`。
 3. 局部前端或算法：运行 `bun test` 或 `bun run test:typecheck`；涉及 UI 行为时运行 `bun run build` 并进行必要的手动冒烟检查。
-4. 依赖、构建配置、跨模块接口或发布级改动：运行 `bun run test:all`。
+4. 依赖、构建配置、跨模块接口或发布级改动：运行 `bun run test:all`；其中生产构建由 `test:size` 执行。
 
 每次代码或文档修改后立即执行一次带中文主题的 Conventional Commit。
 

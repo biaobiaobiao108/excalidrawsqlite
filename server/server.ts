@@ -175,8 +175,22 @@ export const startServer = async () => {
 
   let closeDevWatcher: (() => void) | null = null;
   if (isDev) {
-    const { startDevWatcher } = await import("./dev-server");
-    closeDevWatcher = await startDevWatcher();
+    try {
+      const { startDevWatcher } = await import("./dev-server");
+      closeDevWatcher = await startDevWatcher();
+    } catch (error) {
+      try {
+        realtime.closeSockets();
+      } catch (cleanupError) {
+        console.info("[Realtime] 开发服务器启动失败后的清理失败", cleanupError);
+      }
+      try {
+        runtime.db.close();
+      } catch (cleanupError) {
+        console.info("[Database] 开发服务器启动失败后的清理失败", cleanupError);
+      }
+      throw error;
+    }
   }
 
   const backgroundTasks = new Set<Promise<unknown>>();

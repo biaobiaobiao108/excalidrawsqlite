@@ -16,8 +16,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  quality:
+    name: Quality checks for this ref
+    uses: ./.github/workflows/quality.yml
+    permissions:
+      contents: read
+
   release:
     name: Build, Publish & Release
+    needs: quality
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
@@ -82,15 +89,17 @@ jobs:
       - name: Generate Release Body
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
         id: release_body
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
-          TAG_NAME="${{ github.ref_name }}"
-          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          cat << 'EOF' > release_notes.md
+          export REPO_LOWER="${RELEASE_REPOSITORY,,}"
+          cat <<'EOF' | python3 -c 'import os, re, sys; template = sys.stdin.read(); result = re.sub(r"__(REPO_LOWER|RELEASE_TAG)__", lambda match: os.environ[match.group(1)], template); open("release_notes.md", "w", encoding="utf-8").write(result)'
           ## 📦 容器镜像已发布 (Container Images)
 
           本版本的多架构容器镜像（`linux/amd64` 与 `linux/arm64`）已成功构建并发布至 GitHub Packages。
 
-          - **GHCR 镜像地址**: `ghcr.io/$REPO_LOWER:$TAG_NAME` / `ghcr.io/$REPO_LOWER:latest`
+          - **GHCR 镜像地址**: `ghcr.io/__REPO_LOWER__:__RELEASE_TAG__` / `ghcr.io/__REPO_LOWER__:latest`
           - **全栈轻量架构**: Bun 1.4+ + 原生 SQLite 持久化 + 纯净无广告 UI (镜像体积仅 ~130MB)
 
           ---
@@ -115,7 +124,7 @@ jobs:
             -e DB_PATH=/app/data/excalidraw.db \
             -e FILES_DIR=/app/data/files \
             -e STATIC_DIR=/app/excalidraw-app/build \
-            ghcr.io/$REPO_LOWER:$TAG_NAME
+            ghcr.io/__REPO_LOWER__:__RELEASE_TAG__
           ```
 
           > 生产环境必须设置非空 `AUTH_PASSWORD`；仅可信局域网免密时才显式设置 `ALLOW_ANONYMOUS=true`。
@@ -129,7 +138,7 @@ jobs:
           ```yaml
           services:
             excalidraw:
-              image: ghcr.io/$REPO_LOWER:$TAG_NAME
+              image: ghcr.io/__REPO_LOWER__:__RELEASE_TAG__
               container_name: excalidraw
               restart: unless-stopped
               ports:
@@ -160,9 +169,6 @@ jobs:
           - 备份前先停止容器，再整体复制 `./data` 文件夹，避免复制 WAL 状态下的不一致数据库。
           - `:Z` 用于 SELinux 主机；Docker Desktop 若不接受该后缀可删除它。公网部署必须使用 HTTPS，反向代理场景只有显式设置 `TRUST_PROXY=true` 才会信任 `X-Forwarded-Proto`。
           EOF
-
-          sed -i "s|\$REPO_LOWER|$REPO_LOWER|g" release_notes.md
-          sed -i "s|\$TAG_NAME|$TAG_NAME|g" release_notes.md
 
       - name: Create or Update GitHub Release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
