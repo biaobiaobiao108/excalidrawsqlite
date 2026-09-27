@@ -86,4 +86,52 @@ describe("cloud save queue", () => {
     expect(savedNames).toEqual(["older", "older", "older", "newer"]);
     queue.cancel("scene");
   });
+
+  it("does not restore or report a snapshot when a scene is cancelled in flight", async () => {
+    for (const failure of [
+      new CloudApiError("session expired", 401, "AUTH_REQUIRED"),
+      new CloudApiError("scene changed", 409, "REVISION_CONFLICT"),
+      new Error("network unavailable"),
+    ]) {
+      let signalSaveStarted!: () => void;
+      let rejectSave!: (reason: Error) => void;
+      const saveStarted = new Promise<void>((resolve) => {
+        signalSaveStarted = resolve;
+      });
+      const callbacksSeen = { auth: 0, conflict: 0, error: 0 };
+      const queue = new CloudSaveQueue(
+        {
+          onAuthRequired: () => callbacksSeen.auth++,
+          onConflict: () => callbacksSeen.conflict++,
+          onError: () => callbacksSeen.error++,
+        },
+        {
+          saveFilesToCloud: async () => {},
+          saveCloudScene: async () => {
+            signalSaveStarted();
+            await new Promise<never>((_, reject) => {
+              rejectSave = reject;
+            });
+            return {
+              success: true,
+              id: "scene",
+              updated_at: Date.now(),
+              revision: 2,
+            };
+          },
+        },
+      );
+
+      queue.enqueue(snapshot("cancelled"));
+      const flush = queue.flush("scene");
+      await saveStarted;
+      queue.cancel("scene");
+      rejectSave(failure);
+
+      expect(await flush).toBe("idle");
+      expect(queue.hasPending("scene")).toBe(false);
+      expect(queue.getMemoryStats().snapshotCount).toBe(0);
+      expect(callbacksSeen).toEqual({ auth: 0, conflict: 0, error: 0 });
+    }
+  });
 });

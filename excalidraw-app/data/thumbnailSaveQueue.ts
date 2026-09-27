@@ -11,12 +11,18 @@ export type ThumbnailSnapshot = {
 };
 
 /**
- * Serializes thumbnail writes while dropping snapshots that were superseded
- * before their render/upload started. An upload already in flight is allowed
- * to finish, then the newest snapshot is written afterwards.
+ * Serializes thumbnail writes with at most one active and one pending snapshot.
+ * Replacing the pending snapshot releases the older one immediately. An upload
+ * already in flight is allowed to finish, then the newest snapshot is written.
  */
 export class LatestThumbnailSaveQueue<Snapshot extends { sceneId: string }> {
-  private chain: Promise<void> = Promise.resolve();
+  private active: { promise: Promise<void> } | null = null;
+  private pending: {
+    generation: number;
+    run: () => Promise<void>;
+    resolve: () => void;
+    onError: (error: unknown) => void;
+  } | null = null;
   private generation = 0;
 
   schedule<Output>(
@@ -26,26 +32,84 @@ export class LatestThumbnailSaveQueue<Snapshot extends { sceneId: string }> {
     onError: (error: unknown) => void,
   ): Promise<void> {
     const generation = ++this.generation;
-    const task = this.chain.then(async () => {
-      if (generation !== this.generation) {
-        return;
-      }
-      const output = await create(snapshot);
-      if (generation !== this.generation) {
-        return;
-      }
-      await save(snapshot.sceneId, output);
+    let resolveTask!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      resolveTask = resolve;
     });
-    this.chain = task.catch(() => undefined);
-    void task.catch(onError);
-    return this.chain;
+    const task = {
+      generation,
+      run: async () => {
+        const output = await create(snapshot);
+        if (generation !== this.generation) {
+          return;
+        }
+        await save(snapshot.sceneId, output);
+      },
+      resolve: resolveTask,
+      onError,
+    };
+
+    if (this.active) {
+      this.pending?.resolve();
+      this.pending = task;
+    } else {
+      this.start(task);
+    }
+    return completion;
   }
 
   cancel() {
     this.generation += 1;
+    this.pending?.resolve();
+    this.pending = null;
   }
 
-  flush() {
-    return this.chain;
+  async flush() {
+    while (this.active || this.pending) {
+      if (!this.active && this.pending) {
+        const pending = this.pending;
+        this.pending = null;
+        this.start(pending);
+      }
+      const active = this.active;
+      if (active) {
+        await active.promise;
+      }
+    }
+  }
+
+  private start(
+    task: {
+      generation: number;
+      run: () => Promise<void>;
+      resolve: () => void;
+      onError: (error: unknown) => void;
+    },
+  ) {
+    const promise = Promise.resolve().then(async () => {
+      try {
+        if (task.generation !== this.generation) {
+          return;
+        }
+        await task.run();
+      } catch (error) {
+        try {
+          task.onError(error);
+        } catch {
+          // Error reporting must not strand the queue or its pending snapshot.
+        }
+      } finally {
+        task.resolve();
+        if (this.active?.promise === promise) {
+          this.active = null;
+        }
+        const next = this.pending;
+        this.pending = null;
+        if (next) {
+          this.start(next);
+        }
+      }
+    });
+    this.active = { promise };
   }
 }

@@ -460,9 +460,7 @@ const ExcalidrawWrapper = (props: {
       if (!fileIds.length) {
         return;
       }
-      FileStatusStore.updateStatuses(
-        fileIds.map((id) => [id, "loading"] as [FileId, "loading"]),
-      );
+      const loadToken = FileStatusStore.beginLoading(fileIds);
       try {
         const { loadedFiles, erroredFiles } = await fetchCloudFiles(fileIds);
         if (
@@ -471,6 +469,7 @@ const ExcalidrawWrapper = (props: {
             currentSceneIdRef.current !== sceneId) ||
           loadId !== cloudSceneLoadIdRef.current
         ) {
+          FileStatusStore.cancelLoading(loadToken);
           return;
         }
         excalidrawAPI.addFiles(loadedFiles);
@@ -479,7 +478,7 @@ const ExcalidrawWrapper = (props: {
           erroredFiles,
           elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
         });
-        FileStatusStore.updateStatuses([
+        FileStatusStore.finishLoading(loadToken, [
           ...loadedFiles.map(
             (file) => [file.id, "loaded"] as [FileId, "loaded"],
           ),
@@ -488,13 +487,24 @@ const ExcalidrawWrapper = (props: {
           ),
         ]);
       } catch (error: any) {
-        if (error?.status === 401) {
+        const isStale = Boolean(
+          (sceneId &&
+            currentSceneIdRef.current &&
+            currentSceneIdRef.current !== sceneId) ||
+            loadId !== cloudSceneLoadIdRef.current,
+        );
+        if (!isStale && error?.status === 401) {
           setIsAuthOpen(true);
           setAuthSceneId(sceneId || currentSceneIdRef.current);
         }
-        FileStatusStore.updateStatuses(
-          fileIds.map((id) => [id, "error"] as [FileId, "error"]),
-        );
+        if (isStale) {
+          FileStatusStore.cancelLoading(loadToken);
+        } else {
+          FileStatusStore.finishLoading(
+            loadToken,
+            fileIds.map((id) => [id, "error"] as [FileId, "error"]),
+          );
+        }
       }
     },
     [excalidrawAPI],

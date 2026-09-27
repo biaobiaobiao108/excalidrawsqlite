@@ -418,6 +418,9 @@ export class CloudSaveQueue {
   }
 
   resolveConflict(sceneId: string, revision: number, keepLocal: boolean) {
+    if (this.disposed.has(sceneId)) {
+      return;
+    }
     const snapshot = this.pending.get(sceneId) || this.conflicts.get(sceneId);
     this.pending.delete(sceneId);
     this.conflicts.delete(sceneId);
@@ -552,6 +555,9 @@ export class CloudSaveQueue {
     try {
       for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt++) {
         try {
+          if (this.disposed.has(sceneId)) {
+            return;
+          }
           await this.dependencies.saveFilesToCloud(snapshot.files);
           if (this.disposed.has(sceneId)) {
             return;
@@ -563,6 +569,9 @@ export class CloudSaveQueue {
             appState: snapshot.appState,
             baseRevision: snapshot.baseRevision,
           });
+          if (this.disposed.has(sceneId)) {
+            return;
+          }
           this.revisions.set(sceneId, saved.revision);
           const nextSnapshot = this.pending.get(sceneId);
           if (
@@ -582,6 +591,9 @@ export class CloudSaveQueue {
           this.setStatus(sceneId, "saved");
           break;
         } catch (error) {
+          if (this.disposed.has(sceneId)) {
+            return;
+          }
           if (error instanceof CloudApiError && error.status === 401) {
             if (!this.pending.has(sceneId)) {
               this.pending.set(sceneId, snapshot);
