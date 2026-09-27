@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { isDarwin } from "@excalidraw/common";
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { FileId } from "@excalidraw/element/types";
 
@@ -1053,24 +1054,23 @@ export const WorkspaceHome = ({
   useEffect(() => {
     const ownerWindow = getOwnerWindow(rootRef.current);
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
-      const isCtrlOrCmd = event.metaKey || event.ctrlKey;
-      if (!isCtrlOrCmd) {
-        return;
-      }
-
-      if (
-        !event.altKey &&
-        event.ctrlKey &&
-        !event.metaKey &&
-        event.key === "/"
-      ) {
+      const isCommandPaletteShortcut =
+        event.key === "/" &&
+        (isDarwin
+          ? event.metaKey && !event.ctrlKey && !event.altKey
+          : event.altKey && !event.ctrlKey && !event.metaKey);
+      if (isCommandPaletteShortcut) {
         event.preventDefault();
         event.stopPropagation();
         setCommandPaletteOpen((prev) => !prev);
         return;
       }
 
-      if (event.key.toLowerCase() === "k") {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        event.key.toLowerCase() === "k"
+      ) {
         event.preventDefault();
         searchInputRef.current?.focus();
         searchInputRef.current?.select();

@@ -6,6 +6,8 @@ import React, {
   useState,
 } from "react";
 
+import { getShortcutFromShortcutName } from "@excalidraw/excalidraw/actions/shortcuts";
+
 import type { CloudFolder, CloudSceneSummary } from "../data/cloudStorage";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 
@@ -891,6 +893,11 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
             新标签打开
           </CommandShortcutHint>
           <CommandShortcutHint shortcut="Esc">关闭</CommandShortcutHint>
+          <CommandShortcutHint
+            shortcut={getShortcutFromShortcutName("commandPalette")}
+          >
+            开关菜单
+          </CommandShortcutHint>
         </div>
 
         <div className="commands" role="listbox">

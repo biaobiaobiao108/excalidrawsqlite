@@ -7,8 +7,6 @@ import { getShortcutKey } from "../shortcut";
 
 import type { ActionName } from "./types";
 
-const getControlShortcutKey = (key: string) => `${t("keys.ctrl")}+${key}`;
-
 export type ShortcutName =
   | SubtypeOf<
       ActionName,
@@ -63,7 +61,7 @@ const shortcutMap: Record<ShortcutName, string[]> = {
   loadScene: [getShortcutKey("CtrlOrCmd+O")],
   clearCanvas: [getShortcutKey("CtrlOrCmd+Delete")],
   imageExport: [getShortcutKey("CtrlOrCmd+Shift+E")],
-  commandPalette: [getControlShortcutKey("/")],
+  commandPalette: [getShortcutKey(isDarwin ? "Command+/" : "Alt+/")],
   cut: [getShortcutKey("CtrlOrCmd+X")],
   copy: [getShortcutKey("CtrlOrCmd+C")],
   paste: [getShortcutKey("CtrlOrCmd+V")],
@@ -93,7 +91,7 @@ const shortcutMap: Record<ShortcutName, string[]> = {
   gridMode: [getShortcutKey("CtrlOrCmd+'")],
   zenMode: [getShortcutKey("Alt+Z")],
   objectsSnapMode: [getShortcutKey("Alt+S")],
-  stats: [getShortcutKey("Alt+/")],
+  stats: [getShortcutKey("CtrlOrCmd+Alt+/")],
   addToLibrary: [],
   flipHorizontal: [getShortcutKey("Shift+H")],
   flipVertical: [getShortcutKey("Shift+V")],

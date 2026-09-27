@@ -6,6 +6,7 @@ import {
   DEFAULT_SIDEBAR,
   EVENT,
   KEYS,
+  isDarwin,
   isWritableElement,
 } from "@excalidraw/common";
 
@@ -130,10 +131,10 @@ const CommandShortcutHint = ({
 
 const isCommandPaletteToggleShortcut = (event: KeyboardEvent) => {
   return (
-    !event.altKey &&
-    event.ctrlKey &&
-    !event.metaKey &&
-    event.key === KEYS.SLASH
+    event.key === KEYS.SLASH &&
+    (isDarwin
+      ? event.metaKey && !event.ctrlKey && !event.altKey
+      : event.altKey && !event.ctrlKey && !event.metaKey)
   );
 };
 
