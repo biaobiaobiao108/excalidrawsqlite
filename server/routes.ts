@@ -21,9 +21,9 @@ import {
   verifyPassword,
 } from "./auth";
 import {
+  acquireBackupLock,
   createDatabaseSnapshot,
   createFullBackup,
-  withBackupLock,
 } from "./backup";
 import {
   assertReferencedFilesExist,
@@ -51,7 +51,9 @@ import {
 import {
   buildStaticPath,
   getStaticCacheControl,
+  getStaticETag,
   getStaticDir,
+  staticIfNoneMatchMatches,
 } from "./static";
 import {
   hasOwn,
@@ -73,43 +75,95 @@ const MAX_SCENE_PAGE_SIZE = 100;
 const sceneCursorEncoder = new TextEncoder();
 const sceneCursorDecoder = new TextDecoder();
 
+const writeRateLimitResponse = (
+  runtime: ServerRuntime,
+  req: Request,
+  requestAddressResolver?: RequestAddressResolver,
+) => {
+  const rate = consumeRateLimit(
+    runtime.writeAttempts,
+    getClientKey(runtime, req, requestAddressResolver),
+    WRITE_REQUESTS_PER_WINDOW,
+    WRITE_RATE_WINDOW_MS,
+  );
+  if (rate.allowed) {
+    return null;
+  }
+  return jsonResponse(
+    runtime,
+    req,
+    { error: "请求过于频繁，请稍后再试", code: "RATE_LIMITED" },
+    429,
+    { "Retry-After": String(rate.retryAfter) },
+  );
+};
+
 const streamBackupArchive = (archive: {
   archivePath: string;
   cleanup: () => Promise<void>;
-}) => {
+}, releaseBackupLock: () => void) => {
   const source = Bun.file(archive.archivePath).stream();
-  let cleaned = false;
+  const reader = source.getReader();
+  let cleanupTask: Promise<void> | undefined;
   const cleanup = async () => {
-    if (cleaned) {
-      return;
-    }
-    cleaned = true;
-    await archive.cleanup().catch(() => {});
+    cleanupTask ??= (async () => {
+      try {
+        await archive.cleanup().catch(() => {});
+      } finally {
+        releaseBackupLock();
+      }
+    })();
+    await cleanupTask;
   };
   return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const reader = source.getReader();
+    async pull(controller) {
       try {
-        while (true) {
-          const result = await reader.read();
-          if (result.done) {
-            controller.close();
-            break;
-          }
-          controller.enqueue(result.value);
+        const result = await reader.read();
+        if (result.done) {
+          reader.releaseLock();
+          controller.close();
+          await cleanup();
+          return;
         }
+        // Read only when the consumer requests more data. The stream's default
+        // one-chunk queue bounds read-ahead when a client applies backpressure.
+        controller.enqueue(result.value);
       } catch (error) {
         controller.error(error);
+        await reader.cancel(error).catch(() => {});
+        reader.releaseLock();
+        await cleanup();
+      }
+    },
+    cancel: async (reason) => {
+      try {
+        await reader.cancel(reason);
       } finally {
         reader.releaseLock();
         await cleanup();
       }
     },
-    cancel: async () => {
-      await source.cancel().catch(() => {});
-      await cleanup();
-    },
   });
+};
+
+const staticFileResponse = async (
+  runtime: ServerRuntime,
+  req: Request,
+  file: ReturnType<typeof Bun.file>,
+  pathname: string,
+  contentType?: string,
+) => {
+  const etag = await getStaticETag(file);
+  const cacheControl = getStaticCacheControl(pathname);
+  const headers = {
+    "Cache-Control": cacheControl,
+    ETag: etag,
+    ...(contentType ? { "Content-Type": contentType } : {}),
+  };
+  if (staticIfNoneMatchMatches(req.headers.get("if-none-match"), etag)) {
+    return response(runtime, req, null, { status: 304, headers });
+  }
+  return response(runtime, req, file, { headers });
 };
 
 const encodeSceneCursor = (row: {
@@ -480,20 +534,37 @@ export const createRequestHandler = (
             401,
           );
         }
+        const rateLimited = writeRateLimitResponse(
+          runtime,
+          req,
+          requestAddressResolver,
+        );
+        if (rateLimited) {
+          return rateLimited;
+        }
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const releaseBackupLock = acquireBackupLock(runtime);
+        let archive:
+          | { archivePath: string; cleanup: () => Promise<void>; size: number }
+          | undefined;
         try {
-          const archive = await withBackupLock(runtime, () =>
-            createFullBackup(runtime, timestamp),
-          );
-          return response(runtime, req, streamBackupArchive(archive), {
-            headers: {
-              "Content-Type": "application/x-tar",
-              "Content-Disposition": `attachment; filename="excalidraw-full-backup-${timestamp}.tar"`,
-              "Content-Length": String(archive.size),
-              "Cache-Control": "no-store",
+          archive = await createFullBackup(runtime, timestamp);
+          return response(
+            runtime,
+            req,
+            streamBackupArchive(archive, releaseBackupLock),
+            {
+              headers: {
+                "Content-Type": "application/x-tar",
+                "Content-Disposition": `attachment; filename="excalidraw-full-backup-${timestamp}.tar"`,
+                "Content-Length": String(archive.size),
+                "Cache-Control": "no-store",
+              },
             },
-          });
+          );
         } catch (error: any) {
+          await archive?.cleanup().catch(() => {});
+          releaseBackupLock();
           if (error instanceof HttpError) {
             throw error;
           }
@@ -514,30 +585,53 @@ export const createRequestHandler = (
             401,
           );
         }
+        const rateLimited = writeRateLimitResponse(
+          runtime,
+          req,
+          requestAddressResolver,
+        );
+        if (rateLimited) {
+          return rateLimited;
+        }
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        try {
-          const snapshot = await withBackupLock(runtime, async () => {
-            const snapshot = await createDatabaseSnapshot(runtime, timestamp);
-            const backupFile = Bun.file(snapshot.tempBackupFile);
-            if (backupFile.size > runtime.config.maxBackupBytes) {
-              await snapshot.cleanup().catch(() => {});
-              throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+        const releaseBackupLock = acquireBackupLock(runtime);
+        let snapshot:
+          | {
+              archivePath: string;
+              cleanup: () => Promise<void>;
+              size: number;
             }
-            return {
-              archivePath: snapshot.tempBackupFile,
-              cleanup: snapshot.cleanup,
-              size: backupFile.size,
-            };
-          });
-          return response(runtime, req, streamBackupArchive(snapshot), {
-            headers: {
-              "Content-Type": "application/x-sqlite3",
-              "Content-Disposition": `attachment; filename="excalidraw-backup-${timestamp}.db"`,
-              "Content-Length": String(snapshot.size),
-              "Cache-Control": "no-store",
+          | undefined;
+        try {
+          const databaseSnapshot = await createDatabaseSnapshot(
+            runtime,
+            timestamp,
+          );
+          const backupFile = Bun.file(databaseSnapshot.tempBackupFile);
+          snapshot = {
+            archivePath: databaseSnapshot.tempBackupFile,
+            cleanup: databaseSnapshot.cleanup,
+            size: backupFile.size,
+          };
+          if (backupFile.size > runtime.config.maxBackupBytes) {
+            throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+          }
+          return response(
+            runtime,
+            req,
+            streamBackupArchive(snapshot, releaseBackupLock),
+            {
+              headers: {
+                "Content-Type": "application/x-sqlite3",
+                "Content-Disposition": `attachment; filename="excalidraw-backup-${timestamp}.db"`,
+                "Content-Length": String(snapshot.size),
+                "Cache-Control": "no-store",
+              },
             },
-          });
+          );
         } catch (error: any) {
+          await snapshot?.cleanup().catch(() => {});
+          releaseBackupLock();
           if (error instanceof HttpError) {
             throw error;
           }
@@ -634,20 +728,13 @@ export const createRequestHandler = (
         pathname.startsWith("/api/") &&
         ["POST", "PUT", "PATCH", "DELETE"].includes(req.method)
       ) {
-        const rate = consumeRateLimit(
-          runtime.writeAttempts,
-          getClientKey(runtime, req, requestAddressResolver),
-          WRITE_REQUESTS_PER_WINDOW,
-          WRITE_RATE_WINDOW_MS,
+        const rateLimited = writeRateLimitResponse(
+          runtime,
+          req,
+          requestAddressResolver,
         );
-        if (!rate.allowed) {
-          return jsonResponse(
-            runtime,
-            req,
-            { error: "请求过于频繁，请稍后再试", code: "RATE_LIMITED" },
-            429,
-            { "Retry-After": String(rate.retryAfter) },
-          );
+        if (rateLimited) {
+          return rateLimited;
         }
       }
 
@@ -1478,9 +1565,7 @@ export const createRequestHandler = (
       }
       const staticFile = Bun.file(staticPath);
       if (await staticFile.exists()) {
-        return response(runtime, req, staticFile, {
-          headers: { "Cache-Control": getStaticCacheControl(pathname) },
-        });
+        return staticFileResponse(runtime, req, staticFile, pathname);
       }
       const acceptsHtml = (req.headers.get("accept") || "")
         .toLowerCase()
@@ -1489,12 +1574,13 @@ export const createRequestHandler = (
         const indexPath = path.join(staticDir, "index.html");
         const indexFile = Bun.file(indexPath);
         if (await indexFile.exists()) {
-          return response(runtime, req, indexFile, {
-            headers: {
-              "Content-Type": "text/html; charset=utf-8",
-              "Cache-Control": "no-cache",
-            },
-          });
+          return staticFileResponse(
+            runtime,
+            req,
+            indexFile,
+            "/index.html",
+            "text/html; charset=utf-8",
+          );
         }
       }
       if (pathname !== "/") {

@@ -231,6 +231,43 @@ const readBodyBytes = async (req: Request, maxBytes: number) => {
   return body;
 };
 
+const readBodyText = async (req: Request, maxBytes: number) => {
+  const contentLengthHeader = req.headers.get("content-length");
+  const contentLength =
+    contentLengthHeader === null ? Number.NaN : Number(contentLengthHeader);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new HttpError(413, "BODY_TOO_LARGE", "请求内容超过大小限制");
+  }
+  if (!req.body) {
+    return "";
+  }
+
+  const reader = req.body.getReader();
+  const decoder = new TextDecoder();
+  const parts: string[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) {
+        break;
+      }
+      total += result.value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new HttpError(413, "BODY_TOO_LARGE", "请求内容超过大小限制");
+      }
+      // Decode each transport chunk as it arrives so unknown-length JSON does
+      // not retain every raw chunk while allocating a second contiguous body.
+      parts.push(decoder.decode(result.value, { stream: true }));
+    }
+    parts.push(decoder.decode());
+  } finally {
+    reader.releaseLock();
+  }
+  return parts.join("");
+};
+
 export const readBody = async (
   req: Request,
   maxBytes: number,
@@ -263,9 +300,9 @@ export const readJson = async (
     ? await bodyMemoryBudget.acquire(maxBytes, req.signal)
     : 0;
   try {
-    const body = await readBodyBytes(req, maxBytes);
+    const text = await readBodyText(req, maxBytes);
     try {
-      return JSON.parse(new TextDecoder().decode(body)) as unknown;
+      return JSON.parse(text) as unknown;
     } catch {
       throw new HttpError(400, "INVALID_JSON", "无效的请求格式");
     }

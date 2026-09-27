@@ -545,13 +545,19 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
     {
       directory: runtime.filesDir,
       pattern: /\.(?:tmp|bak|gc)$/,
+      staleOnly: true,
     },
     {
       directory: path.dirname(runtime.dbPath),
-      pattern: /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)\.[A-Za-z0-9]+\.tmp$/,
+      pattern:
+        /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)(?:\.[A-Za-z0-9]+\.tmp)?$/,
+      // Backup paths are registered before opening/writing and stay registered
+      // until their response is complete. Any matching unregistered file came
+      // from an interrupted process and can be removed immediately at startup.
+      staleOnly: false,
     },
   ];
-  for (const { directory, pattern } of directories) {
+  for (const { directory, pattern, staleOnly } of directories) {
     const entries = await fs.promises.readdir(directory, {
       withFileTypes: true,
     });
@@ -560,8 +566,11 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
         continue;
       }
       const filePath = path.join(directory, entry.name);
+      if (runtime.activeBackupArtifacts.has(path.resolve(filePath))) {
+        continue;
+      }
       const stat = await fs.promises.stat(filePath).catch(() => null);
-      if (stat && stat.mtimeMs < cutoff) {
+      if (stat && (!staleOnly || stat.mtimeMs < cutoff)) {
         await fs.promises.rm(filePath, { force: true });
         console.info("[Files] 清理过期临时附件", { filePath });
       }

@@ -193,7 +193,7 @@ AUTH_PASSWORD=your-password bun run dev
 | :-- | :-- | :-: | :-- |
 | `AUTH_PASSWORD` | _无_ | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。 |
 | `ALLOW_ANONYMOUS` | `false` | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。 |
-| `TRUST_PROXY` | `false` | **反代必填** | 信任反向代理。在 Nginx/Caddy/Traefik 等反代后必须开启，用于正确识别协议并下发 Secure Cookie。 |
+| `TRUST_PROXY` | `false` | **反代必填** | 信任反向代理。在 Nginx/Caddy/Traefik 等反代后必须开启，用于正确识别协议并下发 Secure Cookie；代理必须覆盖或追加实际客户端地址到 `X-Forwarded-For`，服务端使用最右侧地址进行限流。 |
 | `PORT` | `8080` | 否 | 服务端监听端口。 |
 | `DATA_DIR` | `./data` | 否 | SQLite 数据库文件与图片附件存储目录。 |
 | `AUTH_SESSION_TTL_MS` | `604800000` (7 天) | 否 | 登录会话在服务端与浏览器 Cookie 中的有效期（毫秒）。 |

@@ -143,6 +143,7 @@ export type ServerRuntime = {
   db: Database;
   dbPath: string;
   filesDir: string;
+  activeBackupArtifacts: Set<string>;
   staticDir?: string;
   config: ServerConfig;
   sessions: Map<string, number>;

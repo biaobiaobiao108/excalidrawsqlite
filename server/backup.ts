@@ -127,18 +127,47 @@ const writeTarBytes = async (
   await writePadding(writer, bytes.byteLength);
 };
 
-export const withBackupLock = async <T>(
-  runtime: ServerRuntime,
-  task: () => Promise<T>,
-) => {
+export const acquireBackupLock = (runtime: ServerRuntime) => {
   if (activeBackups.has(runtime)) {
     throw new HttpError(429, "BACKUP_BUSY", "已有备份任务正在进行，请稍后重试");
   }
   activeBackups.add(runtime);
+  let released = false;
+  return () => {
+    if (!released) {
+      released = true;
+      activeBackups.delete(runtime);
+    }
+  };
+};
+
+export const withBackupLock = async <T>(
+  runtime: ServerRuntime,
+  task: () => Promise<T>,
+) => {
+  const release = acquireBackupLock(runtime);
   try {
     return await task();
   } finally {
-    activeBackups.delete(runtime);
+    release();
+  }
+};
+
+const registerBackupArtifact = (runtime: ServerRuntime, filePath: string) => {
+  const resolved = path.resolve(filePath);
+  runtime.activeBackupArtifacts.add(resolved);
+  return () => runtime.activeBackupArtifacts.delete(resolved);
+};
+
+const removeBackupArtifact = async (
+  runtime: ServerRuntime,
+  filePath: string,
+) => {
+  const resolved = path.resolve(filePath);
+  try {
+    await fs.promises.rm(resolved, { force: true });
+  } finally {
+    runtime.activeBackupArtifacts.delete(resolved);
   }
 };
 
@@ -166,19 +195,24 @@ export const createDatabaseSnapshot = async (
     `excalidraw-backup-${timestamp}-${randomHex(4)}.db`,
   );
   const tempBackupPath = `${tempBackupFile}.${randomHex(8)}.tmp`;
+  const unregisterTemp = registerBackupArtifact(runtime, tempBackupPath);
+  const unregisterFinal = registerBackupArtifact(runtime, tempBackupFile);
   try {
     const escapedPath = tempBackupPath.replace(/'/g, "''");
     runtime.db.run(`VACUUM INTO '${escapedPath}'`);
-    fs.renameSync(tempBackupPath, tempBackupFile);
+    await fs.promises.rename(tempBackupPath, tempBackupFile);
+    unregisterTemp();
+    return {
+      tempBackupFile,
+      cleanup: () => removeBackupArtifact(runtime, tempBackupFile),
+    };
   } catch (error) {
-    fs.rmSync(tempBackupPath, { force: true });
-    fs.rmSync(tempBackupFile, { force: true });
+    await fs.promises.rm(tempBackupPath, { force: true }).catch(() => {});
+    await fs.promises.rm(tempBackupFile, { force: true }).catch(() => {});
+    unregisterTemp();
+    unregisterFinal();
     throw error;
   }
-  return {
-    tempBackupFile,
-    cleanup: () => fs.promises.rm(tempBackupFile, { force: true }),
-  };
 };
 
 export const createFullBackup = async (
@@ -243,17 +277,23 @@ export const createFullBackup = async (
         `excalidraw-full-backup-${timestamp}-${randomHex(4)}.tar`,
       );
       const tempArchivePath = `${archivePath}.${randomHex(8)}.tmp`;
-      const archiveWriter = Bun.file(tempArchivePath).writer({
-        highWaterMark: 64 * 1024,
-      });
+      const unregisterTemp = registerBackupArtifact(runtime, tempArchivePath);
+      const unregisterFinal = registerBackupArtifact(runtime, archivePath);
+      let archiveWriter:
+        | ReturnType<ReturnType<typeof Bun.file>["writer"]>
+        | undefined;
       try {
+        const writer = Bun.file(tempArchivePath).writer({
+          highWaterMark: 64 * 1024,
+        });
+        archiveWriter = writer;
         await writeTarFile(
-          archiveWriter,
+          writer,
           "excalidraw.db",
           snapshot.tempBackupFile,
           databaseFile.size,
         );
-        await writeTarBytes(archiveWriter, "manifest.json", manifestBytes);
+        await writeTarBytes(writer, "manifest.json", manifestBytes);
 
         for (const row of fileRows) {
           if (!row.storage_path) {
@@ -268,15 +308,18 @@ export const createFullBackup = async (
           if (totalBytes > runtime.config.maxBackupBytes) {
             throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
           }
-          await writeTarFile(archiveWriter, `files/${row.id}`, filePath, file.size);
+          await writeTarFile(writer, `files/${row.id}`, filePath, file.size);
         }
-        await archiveWriter.write(new Uint8Array(TAR_BLOCK_SIZE * 2));
-        await archiveWriter.end();
+        await writer.write(new Uint8Array(TAR_BLOCK_SIZE * 2));
+        await writer.end();
         await fs.promises.rename(tempArchivePath, archivePath);
+        unregisterTemp();
       } catch (error) {
-        await Promise.resolve(archiveWriter.end()).catch(() => {});
+        await Promise.resolve(archiveWriter?.end()).catch(() => {});
         await fs.promises.rm(tempArchivePath, { force: true }).catch(() => {});
         await fs.promises.rm(archivePath, { force: true }).catch(() => {});
+        unregisterTemp();
+        unregisterFinal();
         throw error;
       }
 
@@ -284,7 +327,7 @@ export const createFullBackup = async (
       return {
         archivePath,
         size: archiveFile.size,
-        cleanup: () => fs.promises.rm(archivePath, { force: true }),
+        cleanup: () => removeBackupArtifact(runtime, archivePath),
       };
     } finally {
       await snapshot.cleanup().catch(() => {});

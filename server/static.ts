@@ -4,6 +4,39 @@ import path from "node:path";
 import type { ServerRuntime } from "./types";
 import { PROJECT_ROOT } from "./paths";
 
+export const getStaticETag = async (file: ReturnType<typeof Bun.file>) => {
+  const hasher = new Bun.CryptoHasher("sha256");
+  const reader = file.stream().getReader();
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) {
+        break;
+      }
+      hasher.update(result.value);
+    }
+  } catch (error) {
+    await reader.cancel(error).catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  return `"${hasher.digest("hex")}"`;
+};
+
+export const staticIfNoneMatchMatches = (
+  header: string | null,
+  etag: string,
+) =>
+  Boolean(
+    header
+      ?.split(",")
+      .some((candidate) => {
+        const value = candidate.trim();
+        return value === "*" || value.replace(/^W\//, "") === etag;
+      }),
+  );
+
 export const buildStaticPath = (staticDir: string, pathname: string) => {
   let decoded = pathname;
   try {

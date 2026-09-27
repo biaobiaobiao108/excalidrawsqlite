@@ -50,9 +50,14 @@ export const getClientKey = (
   requestAddressResolver?: RequestAddressResolver,
 ) => {
   if (runtime.config.trustProxy) {
-    return (
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
-    );
+    const forwardedAddresses = req.headers
+      .get("x-forwarded-for")
+      ?.split(",")
+      .map((address) => address.trim())
+      .filter(Boolean);
+    // Trusted proxies commonly append the address they observed. The leftmost
+    // value can be supplied by the client when a proxy preserves X-Forwarded-For.
+    return forwardedAddresses?.at(-1) || "unknown";
   }
   return requestAddressResolver?.(req) || "unknown";
 };

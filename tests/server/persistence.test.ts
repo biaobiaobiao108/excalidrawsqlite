@@ -8,8 +8,11 @@ import {
   createRequestHandler,
   createRuntime,
   createServerConfig,
+  cleanupStaleFileArtifacts,
   type ServerRuntime,
 } from "../../server/server";
+import { readJson } from "../../server/http";
+import { BodyMemoryBudget } from "../../server/types";
 import { cleanupExpiredTrashScenes } from "../../server/scenes";
 
 const runtimes: ServerRuntime[] = [];
@@ -280,6 +283,76 @@ describe("cloud persistence server", () => {
       "__Host-excalidraw_session=",
     );
     expect(response.headers.get("set-cookie")).toContain("Secure");
+  });
+
+  it("uses the rightmost forwarded address for trusted-proxy rate limits", async () => {
+    const { handler } = createTestRuntime({
+      TRUST_PROXY: "true",
+      AUTH_ATTEMPTS_PER_WINDOW: "5",
+    });
+    const responses: Response[] = [];
+    for (let index = 0; index < 6; index += 1) {
+      responses.push(
+        await handler(
+          new Request("http://localhost/api/auth/verify", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Forwarded-For": `attacker-${index}, 198.51.100.42`,
+            },
+            body: JSON.stringify({ password: "wrong-password" }),
+          }),
+        ),
+      );
+    }
+    expect(responses.slice(0, 5).map((response) => response.status)).toEqual(
+      [401, 401, 401, 401, 401],
+    );
+    expect(responses[5].status).toBe(429);
+  });
+
+  it("decodes unknown-length JSON across split UTF-8 chunks", async () => {
+    const encoded = new TextEncoder().encode('{"ok":true,"name":"白板"}');
+    const splitAt = encoded.findIndex((byte) => byte >= 0xe0) + 1;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoded.subarray(0, splitAt));
+        controller.enqueue(encoded.subarray(splitAt));
+        controller.close();
+      },
+    });
+    const req = new Request("http://localhost/api/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      duplex: "half",
+    } as RequestInit);
+    expect(req.headers.has("content-length")).toBe(false);
+    const budget = new BodyMemoryBudget(128);
+
+    await expect(readJson(req, 128, budget)).resolves.toEqual({
+      ok: true,
+      name: "白板",
+    });
+    expect(budget.getStats().currentBytes).toBe(0);
+    expect(budget.getStats().peakBytes).toBe(128);
+  });
+
+  it("rejects unknown-length JSON once its byte limit is exceeded", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"too":"large"}'));
+        controller.close();
+      },
+    });
+    const req = new Request("http://localhost/api/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      duplex: "half",
+    } as RequestInit);
+
+    await expect(readJson(req, 8)).rejects.toMatchObject({ status: 413 });
   });
 
   it("uses the configured session TTL for the browser cookie", async () => {
@@ -1352,6 +1425,16 @@ describe("cloud persistence server", () => {
     });
     expect(asset.status).toBe(200);
     expect(asset.headers.get("cache-control")).toContain("immutable");
+    const assetEtag = asset.headers.get("etag");
+    expect(assetEtag).toMatch(/^"[a-f0-9]{64}"$/);
+    const expectedHasher = new Bun.CryptoHasher("sha256");
+    expectedHasher.update("export {};");
+    expect(assetEtag).toBe(`"${expectedHasher.digest("hex")}"`);
+    const revalidatedAsset = await request(handler, "/assets/valid.js", {
+      headers: { "If-None-Match": `W/${assetEtag}` },
+    });
+    expect(revalidatedAsset.status).toBe(304);
+    expect(revalidatedAsset.headers.get("etag")).toBe(assetEtag);
 
     await fs.mkdir(path.join(staticDir, "locales"), { recursive: true });
     await fs.writeFile(
@@ -1369,6 +1452,23 @@ describe("cloud persistence server", () => {
 
     const legacyWorker = await request(handler, "/service-worker.js");
     expect(legacyWorker.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("cleans abandoned final backup files while preserving active downloads", async () => {
+    const { runtime, directory } = createTestRuntime();
+    const staleBackup = path.join(directory, "excalidraw-backup-expired.db");
+    const activeBackup = path.join(
+      directory,
+      "excalidraw-full-backup-active.tar",
+    );
+    await fs.writeFile(staleBackup, "stale");
+    await fs.writeFile(activeBackup, "active");
+    runtime.activeBackupArtifacts.add(path.resolve(activeBackup));
+
+    await cleanupStaleFileArtifacts(runtime);
+
+    expect(existsSync(staleBackup)).toBe(false);
+    expect(existsSync(activeBackup)).toBe(true);
   });
 
   it("reports an unhealthy storage directory", async () => {
@@ -1435,6 +1535,55 @@ describe("cloud persistence server", () => {
     // Header for sqlite database starts with "SQLite format 3\0"
     const header = new TextDecoder().decode(buffer.slice(0, 15));
     expect(header).toBe("SQLite format 3");
+  });
+
+  it("holds the backup lock until the response is consumed or canceled", async () => {
+    const { handler, directory } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const firstBackup = await request(handler, "/api/backup/full", {
+      headers: { Cookie: cookie },
+    });
+    expect(firstBackup.status).toBe(200);
+
+    const rejectedBackup = await request(handler, "/api/backup/snapshot", {
+      headers: { Cookie: cookie },
+    });
+    expect(rejectedBackup.status).toBe(429);
+    expect(await responseJson<{ code: string }>(rejectedBackup)).toMatchObject({
+      code: "BACKUP_BUSY",
+    });
+
+    await firstBackup.body?.cancel();
+    const remainingArtifacts = (await fs.readdir(directory)).filter((name) =>
+      /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)/.test(name),
+    );
+    expect(remainingArtifacts).toHaveLength(0);
+
+    const retry = await request(handler, "/api/backup/snapshot", {
+      headers: { Cookie: cookie },
+    });
+    expect(retry.status).toBe(200);
+    await retry.body?.cancel();
+  });
+
+  it("applies write rate limits to backup downloads before creating artifacts", async () => {
+    const { handler, runtime, directory } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    runtime.writeAttempts.set("unknown", {
+      startedAt: Date.now(),
+      count: 120,
+    });
+
+    const response = await request(handler, "/api/backup/full", {
+      headers: { Cookie: cookie },
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBeTruthy();
+    const artifacts = (await fs.readdir(directory)).filter((name) =>
+      /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)/.test(name),
+    );
+    expect(artifacts).toHaveLength(0);
   });
 
   it("rejects a database snapshot before creating an oversized temp file", async () => {

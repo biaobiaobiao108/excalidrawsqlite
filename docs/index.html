@@ -1915,7 +1915,7 @@ bun run dev</code></pre>
                   <tr>
                     <td><code>TRUST_PROXY</code></td>
                     <td><code>false</code></td>
-                    <td>反向代理或 HTTPS 环境下必须设为 <code>true</code>。</td>
+                    <td>反向代理或 HTTPS 环境下必须设为 <code>true</code>。代理必须覆盖或追加实际客户端地址到 <code>X-Forwarded-For</code>，服务端使用最右侧地址进行限流。</td>
                   </tr>
                   <tr>
                     <td><code>PORT</code></td>
