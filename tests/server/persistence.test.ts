@@ -823,10 +823,28 @@ describe("cloud persistence server", () => {
       headers: { Cookie: cookie },
     });
     expect(softDelete.status).toBe(200);
-    const softDeleteBody = await responseJson<{ permanent: boolean }>(
-      softDelete,
-    );
+    const softDeleteBody = await responseJson<{
+      permanent: boolean;
+      deleted_at: number;
+    }>(softDelete);
     expect(softDeleteBody.permanent).toBe(false);
+    expect(softDeleteBody.deleted_at).toBeGreaterThan(0);
+
+    // 1.1 Repeat soft delete should be idempotent and preserve deleted_at
+    const repeatSoftDelete = await request(
+      handler,
+      "/api/scenes/scene_trash_test",
+      {
+        method: "DELETE",
+        headers: { Cookie: cookie },
+      },
+    );
+    expect(repeatSoftDelete.status).toBe(200);
+    const repeatDeleteBody = await responseJson<{
+      deleted: boolean;
+      deleted_at: number;
+    }>(repeatSoftDelete);
+    expect(repeatDeleteBody.deleted_at).toBe(softDeleteBody.deleted_at);
 
     // 2. Normal /api/scenes should not contain it
     const activeList = await request(handler, "/api/scenes", {
@@ -855,6 +873,25 @@ describe("cloud persistence server", () => {
       },
     );
     expect(restoreRes.status).toBe(200);
+    expect(await responseJson<{ restored: boolean }>(restoreRes)).toMatchObject({
+      restored: true,
+    });
+
+    // 4.1 Repeat restore on an active scene should be idempotent and return restored: false
+    const repeatRestoreRes = await request(
+      handler,
+      "/api/scenes/scene_trash_test/restore",
+      {
+        method: "POST",
+        headers: { Cookie: cookie },
+      },
+    );
+    expect(repeatRestoreRes.status).toBe(200);
+    expect(await responseJson<{ restored: boolean }>(repeatRestoreRes)).toEqual({
+      success: true,
+      id: "scene_trash_test",
+      restored: false,
+    });
 
     // 5. Normal /api/scenes should contain it again
     const activeAfterRestore = await request(handler, "/api/scenes", {
@@ -983,9 +1020,23 @@ describe("cloud persistence server", () => {
       },
     );
     expect(thumbnail.status).toBe(200);
+    const thumbnailWithParam = await request(
+      handler,
+      "/api/scenes/scene_metadata/thumbnail",
+      {
+        method: "PUT",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "image/jpeg; charset=utf-8",
+          "X-Thumbnail-Version": "101",
+        },
+        body: new Uint8Array([255, 216, 255, 217]),
+      },
+    );
+    expect(thumbnailWithParam.status).toBe(200);
     const thumbnailResult = await responseJson<{
       thumbnail_file_id: string;
-    }>(thumbnail);
+    }>(thumbnailWithParam);
     expect(thumbnailResult.thumbnail_file_id).toMatch(
       /^thumbnail_[a-f0-9]{64}$/,
     );

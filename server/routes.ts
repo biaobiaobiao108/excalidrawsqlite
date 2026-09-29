@@ -811,7 +811,7 @@ export const createRequestHandler = (
             );
             syncSceneFileReferences(runtime, id, fileIds);
           });
-          transaction();
+          transaction.immediate();
         } catch (error: any) {
           if (
             String(error?.message || "")
@@ -933,7 +933,7 @@ export const createRequestHandler = (
           );
           runtime.db.run("DELETE FROM folders WHERE id = ?", [id]);
         });
-        transaction();
+        transaction.immediate();
         publishWorkspaceChanged(runtime, Date.now());
         return jsonResponse(runtime, req, { success: true, id, deleted: true });
       }
@@ -956,9 +956,17 @@ export const createRequestHandler = (
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
         }
-        runtime.db.run("UPDATE scenes SET deleted_at = NULL WHERE id = ?", [
-          id,
-        ]);
+        if (existing.deleted_at === null) {
+          return jsonResponse(runtime, req, {
+            success: true,
+            id,
+            restored: false,
+          });
+        }
+        runtime.db.run(
+          "UPDATE scenes SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL",
+          [id],
+        );
         const updatedAt = Date.now();
         publishSceneChanged(runtime, {
           type: "scene_changed",
@@ -1076,7 +1084,8 @@ export const createRequestHandler = (
           (stmts.getSceneRevision.get(id) as { revision: number } | null)
             ?.revision,
         ) || 1;
-        const contentType = req.headers.get("content-type")?.toLowerCase();
+        const rawContentType = req.headers.get("content-type") || "";
+        const contentType = rawContentType.split(";")[0].trim().toLowerCase();
         if (
           contentType !== "image/png" &&
           contentType !== "image/jpeg" &&
@@ -1440,7 +1449,7 @@ export const createRequestHandler = (
             runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [id]);
             runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
           });
-          transaction();
+          transaction.immediate();
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: id,
@@ -1455,11 +1464,20 @@ export const createRequestHandler = (
             permanent: true,
           });
         }
+        if (existing.deleted_at !== null) {
+          return jsonResponse(runtime, req, {
+            success: true,
+            id,
+            deleted: true,
+            permanent: false,
+            deleted_at: Number(existing.deleted_at),
+          });
+        }
         const now = Date.now();
-        runtime.db.run("UPDATE scenes SET deleted_at = ? WHERE id = ?", [
-          now,
-          id,
-        ]);
+        runtime.db.run(
+          "UPDATE scenes SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+          [now, id],
+        );
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
