@@ -24,7 +24,7 @@
   - 生产构建使用 Bun 1.4 支持的现代浏览器目标（当前为 `target: "browser"`；Bun 1.4 不接受 `esnext` 作为构建目标），仅支持最新 Chrome、Edge、Firefox、Safari 和 iOS Safari。严禁引入过时浏览器兼容降级包。
 - **按需动态加载**：
   - AI、Mermaid、CJK 字体、CodeMirror、pako 回退和字体子集化能力必须保持按需加载。新增大型依赖前先确认不会被静态 import 拉入主入口，优先使用动态 `import()`；
-  - Excalifont 是唯一保留的本地默认字体，必须从 `packages/excalidraw/fonts/Excalifont` 加载；霞鹜文楷与思源黑体是外部字体，必须分别通过版本化 jsDelivr `<link rel="stylesheet">` 加载。样式表内部注册分片 `@font-face` 时，编辑器必须使用样式表声明的 CSS 字体名，不得把 CSS URL 写入 `@font-face src`，并同步在 CSP 中放行 `cdn.jsdelivr.net` 的样式与字体来源；
+  - Excalifont 是唯一保留的本地默认字体，必须从 `packages/excalidraw/fonts/Excalifont` 加载；霞鹜文楷与小赖字体通过版本化 jsDelivr `<link rel="stylesheet">` 加载，常规无衬线字体直接使用原生系统字体（`system-ui, sans-serif`）以优化加载性能与首屏体积。样式表内部注册分片 `@font-face` 时，编辑器必须使用样式表声明的 CSS 字体名，不得把 CSS URL 写入 `@font-face src`，并同步在 CSP 中放行 `cdn.jsdelivr.net` 的样式与字体来源；
   - `encode`/`decode` 及图片、SVG 元数据编码接口是异步的，调用方必须 `await`。
 
 ### Safari 优先适配
@@ -39,7 +39,7 @@
   - 启动时由 [`server/dev-server.ts`](server/dev-server.ts) 自动检查产物并自举初始编译；
   - 内置基于 Bun 原生文件系统的防抖观察器，实时监控 `excalidraw-app` 与 `packages` 源码变动，变动时触发毫秒级增量重新构建；
   - 构建完成后通过 [`server/dev-reload.ts`](server/dev-reload.ts) 原生 SSE 通道（`GET /__dev_reload`）向客户端广播重载事件；
-  - 客户端通过独立外链脚本 [`public/dev-live-reload.js`](file:///D:/MyBuild/excalidrawsqlite/public/dev-live-reload.js) 接收信号并无感热刷新页面，严格满足 CSP 安全要求。
+  - 客户端通过独立外链脚本 [`public/dev-live-reload.js`](public/dev-live-reload.js) 接收信号并无感热刷新页面，严格满足 CSP 安全要求。
 
 ## 5. CSP 与运行时安全规范
 

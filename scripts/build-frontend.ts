@@ -159,6 +159,8 @@ export async function buildFrontend(options: BuildOptions = {}) {
     define: {
       "process.env.NODE_ENV": JSON.stringify(mode),
       "process.env.VITE_APP_GIT_SHA": JSON.stringify(gitSha),
+      PKG_NAME: JSON.stringify(clientEnv.PKG_NAME),
+      PKG_VERSION: JSON.stringify(clientEnv.PKG_VERSION),
       ...envDefines,
       "import.meta.env": JSON.stringify(clientEnv),
     },

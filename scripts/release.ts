@@ -176,7 +176,11 @@ const buildPackages = () => {
   runCommand(["bun", "install", "--frozen-lockfile"], { inherit: true });
 
   console.info("Removing existing build artifacts...");
-  runCommand(["bun", "run", "rm:build"], { inherit: true });
+  for (const packageName of PACKAGES) {
+    const pkgDir = path.resolve(PACKAGES_DIR, packageName);
+    fs.rmSync(path.join(pkgDir, "dist"), { recursive: true, force: true });
+    fs.rmSync(path.join(pkgDir, "types"), { recursive: true, force: true });
+  }
 
   for (const packageName of PACKAGES) {
     console.info(`Building "@excalidraw/${packageName}"...`);

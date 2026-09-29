@@ -2,8 +2,9 @@
 import path from "node:path";
 import { spawnSync } from "bun";
 
-const versionFile = path.join("build", "version.json");
-const indexFile = path.join("build", "index.html");
+const appBuildDir = path.resolve(__dirname, "../excalidraw-app/build");
+const versionFile = path.join(appBuildDir, "version.json");
+const indexFile = path.join(appBuildDir, "index.html");
 
 const versionDate = (date: Date) => date.toISOString().replace(".000", "");
 
