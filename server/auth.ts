@@ -115,6 +115,26 @@ export const clearSessionCookies = (runtime: ServerRuntime, req: Request) => {
   );
 };
 
+const sessionQueryCache = new WeakMap<
+  ServerRuntime,
+  {
+    getExpiresAt: ReturnType<ServerRuntime["db"]["query"]>;
+  }
+>();
+
+const getSessionStatements = (runtime: ServerRuntime) => {
+  let cached = sessionQueryCache.get(runtime);
+  if (!cached) {
+    cached = {
+      getExpiresAt: runtime.db.query(
+        "SELECT expires_at FROM sessions WHERE token = ? LIMIT 1",
+      ),
+    };
+    sessionQueryCache.set(runtime, cached);
+  }
+  return cached;
+};
+
 export const isAuthorized = (runtime: ServerRuntime, req: Request) => {
   if (runtime.config.allowAnonymous || !runtime.config.authPassword) {
     return true;
@@ -126,11 +146,8 @@ export const isAuthorized = (runtime: ServerRuntime, req: Request) => {
   let expiresAt = runtime.sessions.get(token);
   if (expiresAt === undefined) {
     try {
-      const row = runtime.db
-        .query(
-          "SELECT expires_at FROM sessions WHERE token = ? LIMIT 1",
-        )
-        .get(hashSessionToken(runtime, token)) as {
+      const row = getSessionStatements(runtime)
+        .getExpiresAt.get(hashSessionToken(runtime, token)) as {
         expires_at: number;
       } | null;
       if (row) {
@@ -191,10 +208,11 @@ export const verifyPassword = (input: unknown, expected: string) => {
   if (typeof input !== "string" || input.length > MAX_AUTH_PASSWORD_LENGTH) {
     return false;
   }
-  const inputBuffer = new TextEncoder().encode(input);
-  const expectedBuffer = new TextEncoder().encode(expected);
-  return (
-    inputBuffer.length === expectedBuffer.length &&
-    timingSafeEqual(inputBuffer, expectedBuffer)
+  const inputHash = new Uint8Array(
+    new Bun.CryptoHasher("sha256").update(input).digest(),
   );
+  const expectedHash = new Uint8Array(
+    new Bun.CryptoHasher("sha256").update(expected).digest(),
+  );
+  return timingSafeEqual(inputHash, expectedHash) && input === expected;
 };

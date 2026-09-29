@@ -887,7 +887,13 @@ describe("cloud persistence server", () => {
       },
     );
     expect(repeatRestoreRes.status).toBe(200);
-    expect(await responseJson<{ restored: boolean }>(repeatRestoreRes)).toEqual({
+    expect(
+      await responseJson<{
+        success: boolean;
+        id: string;
+        restored: boolean;
+      }>(repeatRestoreRes),
+    ).toEqual({
       success: true,
       id: "scene_trash_test",
       restored: false,

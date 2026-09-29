@@ -56,13 +56,31 @@ export const getSceneSummary = (row: any) => ({
   deleted_at: row.deleted_at || null,
 });
 
+const sceneFolderQueryCache = new WeakMap<
+  ServerRuntime,
+  {
+    getFolderId: ReturnType<ServerRuntime["db"]["query"]>;
+  }
+>();
+
+const getFolderQuery = (runtime: ServerRuntime) => {
+  let cached = sceneFolderQueryCache.get(runtime);
+  if (!cached) {
+    cached = {
+      getFolderId: runtime.db.query("SELECT id FROM folders WHERE id = ?"),
+    };
+    sceneFolderQueryCache.set(runtime, cached);
+  }
+  return cached;
+};
+
 const assertFolderExists = (
   runtime: ServerRuntime,
   folderId: string | null,
 ) => {
   if (
     folderId &&
-    !runtime.db.query("SELECT id FROM folders WHERE id = ?").get(folderId)
+    !getFolderQuery(runtime).getFolderId.get(folderId)
   ) {
     throw new HttpError(400, "FOLDER_NOT_FOUND", "文件夹不存在");
   }

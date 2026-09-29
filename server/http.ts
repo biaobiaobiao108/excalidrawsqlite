@@ -68,7 +68,7 @@ const CSP_DIRECTIVES = [
   "style-src-attr 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://cdn.jsdelivr.net",
-  "connect-src 'self' data: blob: https: wss:",
+  "connect-src 'self' data: blob: https: ws: wss:",
   "worker-src 'self' blob:",
   "frame-src 'self' https: blob:",
   "object-src 'none'",

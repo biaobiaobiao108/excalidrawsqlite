@@ -50,6 +50,26 @@ const parseClientMessage = (message: string | Buffer) => {
   return validateId(requestedSceneId, "scene");
 };
 
+const realtimeQueryCache = new WeakMap<
+  ServerRuntime,
+  {
+    getSceneMeta: ReturnType<ServerRuntime["db"]["query"]>;
+  }
+>();
+
+const getRealtimeStatements = (runtime: ServerRuntime) => {
+  let cached = realtimeQueryCache.get(runtime);
+  if (!cached) {
+    cached = {
+      getSceneMeta: runtime.db.query(
+        "SELECT revision, updated_at, deleted_at FROM scenes WHERE id = ?",
+      ),
+    };
+    realtimeQueryCache.set(runtime, cached);
+  }
+  return cached;
+};
+
 export const createRealtimeHub = (runtime: ServerRuntime) => {
   let server: Bun.Server<RealtimeSocketData> | null = null;
 
@@ -96,11 +116,9 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
       ws.subscribe(WORKSPACE_TOPIC);
       if (ws.data.sceneId) {
         ws.subscribe(sceneTopic(ws.data.sceneId));
-        const row = runtime.db
-          .query(
-            "SELECT revision, updated_at, deleted_at FROM scenes WHERE id = ?",
-          )
-          .get(ws.data.sceneId) as {
+        const row = getRealtimeStatements(runtime).getSceneMeta.get(
+          ws.data.sceneId,
+        ) as {
           revision: number;
           updated_at: number;
           deleted_at: number | null;
