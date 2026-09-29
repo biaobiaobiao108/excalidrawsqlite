@@ -429,6 +429,10 @@ const ExcalidrawWrapper = (props: {
 
   useEffect(
     () => () => {
+      if (savedStatusTimerRef.current) {
+        clearTimeout(savedStatusTimerRef.current);
+        savedStatusTimerRef.current = null;
+      }
       cloudSaveQueue.dispose();
       saveThumbnailDebounced.cancel();
       thumbnailSaveQueue.cancel();

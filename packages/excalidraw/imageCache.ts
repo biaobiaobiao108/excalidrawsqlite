@@ -82,6 +82,7 @@ export class ImageCache extends Map<FileId, ImageCacheEntry> {
     this.entryBytes.set(fileId, getDecodedImageBytes(entry));
     this.decodedBytes += this.entryBytes.get(fileId)!;
     this.lastUsed.set(fileId, ++this.accessCounter);
+    this.trim();
     return this;
   }
 

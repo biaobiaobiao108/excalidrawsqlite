@@ -175,22 +175,26 @@ const InteractiveCanvas = (props: InteractiveCanvasProps) => {
       AnimationController.start<InteractiveSceneRenderAnimationState>(
         INTERACTIVE_SCENE_ANIMATION_KEY,
         ({ deltaTime, state }) => {
-          const nextAnimationState = renderInteractiveScene({
-            ...rendererParams.current!,
-            deltaTime,
-            animationState: state,
-          }).animationState;
+          try {
+            const nextAnimationState = renderInteractiveScene({
+              ...rendererParams.current!,
+              deltaTime,
+              animationState: state,
+            }).animationState;
 
-          if (nextAnimationState) {
-            for (const key in nextAnimationState) {
-              if (
-                nextAnimationState[
-                  key as keyof InteractiveSceneRenderAnimationState
-                ] !== undefined
-              ) {
-                return nextAnimationState;
+            if (nextAnimationState) {
+              for (const key in nextAnimationState) {
+                if (
+                  nextAnimationState[
+                    key as keyof InteractiveSceneRenderAnimationState
+                  ] !== undefined
+                ) {
+                  return nextAnimationState;
+                }
               }
             }
+          } catch (error) {
+            console.warn("Interactive scene rendering failed", error);
           }
 
           return undefined;

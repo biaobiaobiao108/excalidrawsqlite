@@ -186,6 +186,7 @@ export class History {
     this.redoStack.length = 0;
     this.undoEstimatedBytes = 0;
     this.redoEstimatedBytes = 0;
+    this.onHistoryChangedEmitter.clear();
   }
 
   public getMemoryStats() {

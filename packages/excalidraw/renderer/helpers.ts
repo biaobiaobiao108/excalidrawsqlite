@@ -46,7 +46,10 @@ export const bootstrapCanvas = ({
   isExporting?: StaticCanvasRenderConfig["isExporting"];
   viewBackgroundColor?: StaticCanvasAppState["viewBackgroundColor"];
 }): CanvasRenderingContext2D => {
-  const context = canvas.getContext("2d")!;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Failed to acquire 2D rendering context for canvas");
+  }
 
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.scale(scale, scale);

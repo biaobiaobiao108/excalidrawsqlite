@@ -35,10 +35,14 @@ const StaticCanvas = (props: StaticCanvasProps) => {
   const isComponentMounted = useRef(false);
 
   useEffect(() => {
-    props.canvas.style.width = `${props.appState.width}px`;
-    props.canvas.style.height = `${props.appState.height}px`;
-    props.canvas.width = props.appState.width * props.scale;
-    props.canvas.height = props.appState.height * props.scale;
+    try {
+      props.canvas.style.width = `${props.appState.width}px`;
+      props.canvas.style.height = `${props.appState.height}px`;
+      props.canvas.width = props.appState.width * props.scale;
+      props.canvas.height = props.appState.height * props.scale;
+    } catch (error) {
+      console.warn("Failed to set static canvas dimensions", error);
+    }
   }, [props.appState.height, props.appState.width, props.canvas, props.scale]);
 
   useEffect(() => {
@@ -56,19 +60,23 @@ const StaticCanvas = (props: StaticCanvasProps) => {
       canvas.classList.add("excalidraw__canvas", "static");
     }
 
-    renderStaticScene(
-      {
-        canvas,
-        rc: props.rc,
-        scale: props.scale,
-        elementsMap: props.elementsMap,
-        allElementsMap: props.allElementsMap,
-        visibleElements: props.visibleElements,
-        appState: props.appState,
-        renderConfig: props.renderConfig,
-      },
-      isRenderThrottlingEnabled(),
-    );
+    try {
+      renderStaticScene(
+        {
+          canvas,
+          rc: props.rc,
+          scale: props.scale,
+          elementsMap: props.elementsMap,
+          allElementsMap: props.allElementsMap,
+          visibleElements: props.visibleElements,
+          appState: props.appState,
+          renderConfig: props.renderConfig,
+        },
+        isRenderThrottlingEnabled(),
+      );
+    } catch (error) {
+      console.warn("Static scene rendering failed", error);
+    }
   });
 
   return <div className="excalidraw__canvas-wrapper" ref={wrapperRef} />;
