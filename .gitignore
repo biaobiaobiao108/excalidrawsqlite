@@ -29,3 +29,4 @@ server-build
 *.db-journal
 *.db-wal
 *.db-shm
+excalidraw-*-test-*

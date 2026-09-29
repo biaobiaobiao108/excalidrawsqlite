@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import fs, { rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "bun:test";
@@ -19,7 +20,7 @@ const runtimes: ServerRuntime[] = [];
 const testDirectories: string[] = [];
 
 const createTestRuntime = (env: Record<string, string | undefined> = {}) => {
-  const root = Bun.env.TEMP || Bun.env.TMP || ".";
+  const root = os.tmpdir();
   const directory = `${root}/excalidraw-server-test-${crypto.randomUUID()}`;
   const config = createServerConfig({
     NODE_ENV: "test",
@@ -159,7 +160,7 @@ describe("cloud persistence server", () => {
   });
 
   it("surfaces configuration errors before opening persistent storage", () => {
-    const root = Bun.env.TEMP || Bun.env.TMP || ".";
+    const root = os.tmpdir();
     const directory = `${root}/excalidraw-server-config-${crypto.randomUUID()}`;
     const previousEnvironment = {
       NODE_ENV: process.env.NODE_ENV,

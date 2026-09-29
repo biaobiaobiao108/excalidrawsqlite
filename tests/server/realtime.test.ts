@@ -1,4 +1,5 @@
 import { rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "bun:test";
@@ -35,7 +36,7 @@ afterEach(async () => {
 
 describe("native websocket realtime", () => {
   it("publishes scene changes to the subscribed scene topic", async () => {
-    const root = Bun.env.TEMP || Bun.env.TMP || ".";
+    const root = os.tmpdir();
     const directory = path.join(
       root,
       `excalidraw-realtime-test-${crypto.randomUUID()}`,
