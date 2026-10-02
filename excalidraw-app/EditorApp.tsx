@@ -538,7 +538,6 @@ const ExcalidrawWrapper = (props: {
         deleteInvisibleElements: true,
       });
 
-      cloudSaveQueue.setRevision(sceneId, cloudData.revision);
       setCloudBootstrapError("");
       if (updateUrl) {
         if (loadId !== cloudSceneLoadIdRef.current) {
@@ -581,6 +580,10 @@ const ExcalidrawWrapper = (props: {
           isApplyingCloudSceneRef.current = false;
         }
       }
+      if (loadId !== cloudSceneLoadIdRef.current) {
+        return cloudData;
+      }
+      cloudSaveQueue.setRevision(sceneId, cloudData.revision);
       // Do not mark the scene active until the remote snapshot has replaced
       // the editor state. Initialization onChange events must never enqueue
       // the local browser cache back to the cloud scene.
@@ -889,7 +892,6 @@ const ExcalidrawWrapper = (props: {
       if (event.revision <= currentRevision) {
         return;
       }
-      cloudSaveQueue.setRevision(sceneId, event.revision);
       void loadSelectedCloudScene(sceneId, false).catch((error: any) => {
         if (error?.status === 401) {
           setIsAuthOpen(true);

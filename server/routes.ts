@@ -32,6 +32,7 @@ import {
   getFilePath,
   stageRequestBodyToFile,
   syncSceneFileReferences,
+  withStorageMutationLock,
   upsertStagedFile,
   withThumbnailWriteLock,
 } from "./files";
@@ -72,8 +73,29 @@ import type { RequestAddressResolver, ServerRuntime } from "./types";
 
 const DEFAULT_SCENE_PAGE_SIZE = 50;
 const MAX_SCENE_PAGE_SIZE = 100;
+const MAX_THUMBNAIL_VERSION_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const sceneCursorEncoder = new TextEncoder();
 const sceneCursorDecoder = new TextDecoder();
+
+const parseThumbnailVersion = (req: Request) => {
+  const header = req.headers.get("x-thumbnail-version");
+  if (!header) {
+    return undefined;
+  }
+  const version = Number(header);
+  if (
+    !Number.isSafeInteger(version) ||
+    version <= 0 ||
+    version > Date.now() + MAX_THUMBNAIL_VERSION_FUTURE_SKEW_MS
+  ) {
+    throw new HttpError(
+      400,
+      "INVALID_THUMBNAIL_VERSION",
+      "画板缩略图版本无效",
+    );
+  }
+  return version;
+};
 
 const writeRateLimitResponse = (
   runtime: ServerRuntime,
@@ -121,8 +143,8 @@ const streamBackupArchive = (archive: {
         const result = await reader.read();
         if (result.done) {
           reader.releaseLock();
-          controller.close();
           await cleanup();
+          controller.close();
           return;
         }
         // Read only when the consumer requests more data. The stream's default
@@ -781,47 +803,49 @@ export const createRequestHandler = (
           : {};
         const { tags, favorite, folderId } = parseSceneMetadata(runtime, body);
         const fileIds = extractFileIds(elements);
-        await assertReferencedFilesExist(runtime, fileIds);
         const elementsJson = JSON.stringify(elements);
         const appStateJson = JSON.stringify(appState);
         const tagsJson = JSON.stringify(tags);
         const now = Date.now();
-        try {
-          const transaction = runtime.db.transaction(() => {
-            runtime.db.run(
-              `INSERT INTO scenes
-               (id, name, elements, app_state, created_at, updated_at, revision,
-                tags_json, is_favorite, folder_id, element_count, content_bytes,
-                content_sha256)
-               VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
-              [
-                id,
-                name,
-                elementsJson,
-                appStateJson,
-                now,
-                now,
-                tagsJson,
-                favorite ? 1 : 0,
-                folderId,
-                elements.length,
-                elementsJson.length,
-                sha256Hex(elementsJson),
-              ],
-            );
-            syncSceneFileReferences(runtime, id, fileIds);
-          });
-          transaction.immediate();
-        } catch (error: any) {
-          if (
-            String(error?.message || "")
-              .toLowerCase()
-              .includes("unique")
-          ) {
-            throw new HttpError(409, "SCENE_EXISTS", "画板 ID 已存在");
+        await withStorageMutationLock(runtime, async () => {
+          await assertReferencedFilesExist(runtime, fileIds);
+          try {
+            const transaction = runtime.db.transaction(() => {
+              runtime.db.run(
+                `INSERT INTO scenes
+                 (id, name, elements, app_state, created_at, updated_at, revision,
+                  tags_json, is_favorite, folder_id, element_count, content_bytes,
+                  content_sha256)
+                 VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
+                [
+                  id,
+                  name,
+                  elementsJson,
+                  appStateJson,
+                  now,
+                  now,
+                  tagsJson,
+                  favorite ? 1 : 0,
+                  folderId,
+                  elements.length,
+                  elementsJson.length,
+                  sha256Hex(elementsJson),
+                ],
+              );
+              syncSceneFileReferences(runtime, id, fileIds);
+            });
+            transaction.immediate();
+          } catch (error: any) {
+            if (
+              String(error?.message || "")
+                .toLowerCase()
+                .includes("unique")
+            ) {
+              throw new HttpError(409, "SCENE_EXISTS", "画板 ID 已存在");
+            }
+            throw error;
           }
-          throw error;
-        }
+        });
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
@@ -1098,20 +1122,7 @@ export const createRequestHandler = (
           );
         }
         const thumbnailId = `thumbnail_${sha256Hex(id)}`;
-        const thumbnailVersionHeader = req.headers.get("x-thumbnail-version");
-        const thumbnailVersion = thumbnailVersionHeader
-          ? Number(thumbnailVersionHeader)
-          : undefined;
-        if (
-          thumbnailVersion !== undefined &&
-          (!Number.isSafeInteger(thumbnailVersion) || thumbnailVersion <= 0)
-        ) {
-          throw new HttpError(
-            400,
-            "INVALID_THUMBNAIL_VERSION",
-            "画板缩略图版本无效",
-          );
-        }
+        const thumbnailVersion = parseThumbnailVersion(req);
         return withThumbnailWriteLock(thumbnailId, async () => {
           const currentThumbnail = stmts.getFileUpdatedAt.get(thumbnailId) as
             | { updated_at: number }
@@ -1178,20 +1189,7 @@ export const createRequestHandler = (
             ?.revision,
         ) || 1;
         const thumbnailId = `thumbnail_${sha256Hex(id)}`;
-        const thumbnailVersionHeader = req.headers.get("x-thumbnail-version");
-        const thumbnailVersion = thumbnailVersionHeader
-          ? Number(thumbnailVersionHeader)
-          : undefined;
-        if (
-          thumbnailVersion !== undefined &&
-          (!Number.isSafeInteger(thumbnailVersion) || thumbnailVersion <= 0)
-        ) {
-          throw new HttpError(
-            400,
-            "INVALID_THUMBNAIL_VERSION",
-            "画板缩略图版本无效",
-          );
-        }
+        const thumbnailVersion = parseThumbnailVersion(req);
         return withThumbnailWriteLock(thumbnailId, async () => {
           const currentThumbnail = stmts.getFileUpdatedAt.get(thumbnailId) as
             | { updated_at: number }
@@ -1343,7 +1341,6 @@ export const createRequestHandler = (
           ? validateAppState(body.appState)
           : JSON.parse(existing.app_state || "{}");
         const fileIds = extractFileIds(elements);
-        await assertReferencedFilesExist(runtime, fileIds);
         const elementsJson = JSON.stringify(elements);
         const appStateJson = JSON.stringify(appState);
         const tagsJson = JSON.stringify(tags);
@@ -1400,7 +1397,10 @@ export const createRequestHandler = (
           }
           syncSceneFileReferences(runtime, id, fileIds);
         });
-        transaction.immediate();
+        await withStorageMutationLock(runtime, async () => {
+          await assertReferencedFilesExist(runtime, fileIds);
+          transaction.immediate();
+        });
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,

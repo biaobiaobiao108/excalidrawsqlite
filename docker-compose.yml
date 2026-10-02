@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VITE_APP_DISABLE_PREVENT_UNLOAD: ${VITE_APP_DISABLE_PREVENT_UNLOAD:-}
     container_name: excalidraw
     restart: unless-stopped
     stop_grace_period: 15s
@@ -15,7 +17,8 @@ services:
       FILES_DIR: /app/data/files
       STATIC_DIR: /app/excalidraw-app/build
       TRUST_PROXY: ${TRUST_PROXY:-false}
-      AUTH_PASSWORD: ${AUTH_PASSWORD:?Set AUTH_PASSWORD before starting the container}
+      # 留空时可与 ALLOW_ANONYMOUS=true 配合使用；服务端负责校验生产配置。
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
       ALLOW_ANONYMOUS: ${ALLOW_ANONYMOUS:-false}
       TRASH_RETENTION_DAYS: ${TRASH_RETENTION_DAYS:-30}
     volumes:

@@ -69,6 +69,24 @@ const createPaxPath = (pathValue: string) => {
   return textEncoder.encode(`${recordLength} ${body}`);
 };
 
+const paddedTarSize = (size: number) =>
+  Math.ceil(size / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
+
+const tarEntrySize = (name: string, size: number) => {
+  const paxSize = name.length > 100 ? createPaxPath(name).byteLength : 0;
+  return (
+    TAR_BLOCK_SIZE +
+    (paxSize ? TAR_BLOCK_SIZE + paddedTarSize(paxSize) : 0) +
+    paddedTarSize(size)
+  );
+};
+
+const ensureBackupWithinLimit = (size: number, maxBytes: number) => {
+  if (!Number.isSafeInteger(size) || size > maxBytes) {
+    throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+  }
+};
+
 const writePadding = async (
   writer: ReturnType<ReturnType<typeof Bun.file>["writer"]>,
   size: number,
@@ -262,15 +280,13 @@ export const createFullBackup = async (
         2,
       );
       const databaseFile = Bun.file(snapshot.tempBackupFile);
-      let totalBytes = databaseFile.size;
-      if (totalBytes > runtime.config.maxBackupBytes) {
-        throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
-      }
       const manifestBytes = new TextEncoder().encode(manifest);
-      totalBytes += manifestBytes.byteLength;
-      if (totalBytes > runtime.config.maxBackupBytes) {
-        throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
-      }
+      // TAR has two trailing zero blocks. Count every header and payload pad
+      // before writing so the configured limit bounds the actual archive.
+      let archiveBytes = TAR_BLOCK_SIZE * 2;
+      archiveBytes += tarEntrySize("excalidraw.db", databaseFile.size);
+      archiveBytes += tarEntrySize("manifest.json", manifestBytes.byteLength);
+      ensureBackupWithinLimit(archiveBytes, runtime.config.maxBackupBytes);
 
       const archivePath = path.join(
         path.dirname(runtime.dbPath),
@@ -304,10 +320,8 @@ export const createFullBackup = async (
             throw new Error(`附件文件缺失：${row.id}`);
           }
           const file = Bun.file(filePath);
-          totalBytes += file.size;
-          if (totalBytes > runtime.config.maxBackupBytes) {
-            throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
-          }
+          archiveBytes += tarEntrySize(`files/${row.id}`, file.size);
+          ensureBackupWithinLimit(archiveBytes, runtime.config.maxBackupBytes);
           await writeTarFile(writer, `files/${row.id}`, filePath, file.size);
         }
         await writer.write(new Uint8Array(TAR_BLOCK_SIZE * 2));

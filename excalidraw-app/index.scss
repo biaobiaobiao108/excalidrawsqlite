@@ -1,3 +1,9 @@
+// Remove the browser's default focus ring across the app. Components that need
+// a designed keyboard-focus treatment provide their own :focus-visible style.
+:focus {
+  outline: none;
+}
+
 html.dark {
   background-color: #121212;
   color: #fff;

@@ -175,14 +175,19 @@ const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
   const files: BinaryFiles = {};
   if (fileIds.length) {
     const { loadedFiles } = await LocalData.fileStorage.getFiles(fileIds);
+    const loadedFileIds = new Set(loadedFiles.map((file) => file.id));
+    const missingFileIds = fileIds.filter((fileId) => !loadedFileIds.has(fileId));
+    if (missingFileIds.length) {
+      throw new Error(
+        `本地画板迁移失败：${missingFileIds.length} 张图片无法从本地存储读取`,
+      );
+    }
     for (const file of loadedFiles) {
       files[file.id] = file;
     }
-    try {
-      await saveFilesToCloud(files);
-    } catch (error) {
-      console.warn("迁移本地图片到云端失败，将在后续保存时重试", error);
-    }
+    // Do not create or mark the scene as migrated unless every referenced file
+    // has been accepted by the cloud. A later workspace load can retry safely.
+    await saveFilesToCloud(files);
   }
 
   const scene = await createCloudScene({
@@ -765,7 +770,18 @@ export const WorkspaceHome = ({
   );
   const [loadingMore, setLoadingMore] = useState(false);
   const loadRequestRef = useRef(0);
+  const pageRequestRef = useRef(0);
+  const loadMoreRequestRef = useRef(0);
   const workspaceLoadedRef = useRef(false);
+  const pageQueryKey = [
+    view,
+    sort,
+    searchQuery.trim(),
+    selectedFolderId || "",
+    selectedTag || "",
+  ].join("|");
+  const pageQueryKeyRef = useRef(pageQueryKey);
+  pageQueryKeyRef.current = pageQueryKey;
 
   const loadWorkspace = useCallback(async () => {
     const requestId = ++loadRequestRef.current;
@@ -889,9 +905,19 @@ export const WorkspaceHome = ({
     if (!cursor || loadingMore) {
       return;
     }
+    const queryKey = pageQueryKey;
+    const requestId = ++loadMoreRequestRef.current;
+    const pageRequestId = ++pageRequestRef.current;
     setLoadingMore(true);
     try {
       const page = await fetchCloudScenePage(getCurrentPageOptions(cursor));
+      if (
+        requestId !== loadMoreRequestRef.current ||
+        pageRequestId !== pageRequestRef.current ||
+        queryKey !== pageQueryKeyRef.current
+      ) {
+        return;
+      }
       const mergeScenes = (current: CloudSceneSummary[]) => {
         const existingIds = new Set(current.map((scene) => scene.id));
         return [
@@ -907,11 +933,26 @@ export const WorkspaceHome = ({
         setSceneCursor(page.nextCursor);
       }
     } catch (requestError: any) {
-      setError(requestError?.message || "加载更多画板失败");
+      if (
+        requestId === loadMoreRequestRef.current &&
+        pageRequestId === pageRequestRef.current &&
+        queryKey === pageQueryKeyRef.current
+      ) {
+        setError(requestError?.message || "加载更多画板失败");
+      }
     } finally {
-      setLoadingMore(false);
+      if (requestId === loadMoreRequestRef.current) {
+        setLoadingMore(false);
+      }
     }
-  }, [getCurrentPageOptions, loadingMore, sceneCursor, trashSceneCursor, view]);
+  }, [
+    getCurrentPageOptions,
+    loadingMore,
+    pageQueryKey,
+    sceneCursor,
+    trashSceneCursor,
+    view,
+  ]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -920,20 +961,15 @@ export const WorkspaceHome = ({
     };
   }, [loadWorkspace]);
 
-  const pageQueryKey = [
-    view,
-    sort,
-    searchQuery.trim(),
-    selectedFolderId || "",
-    selectedTag || "",
-  ].join("|");
-
   useEffect(() => {
     if (!workspaceLoadedRef.current) {
       return;
     }
     const timer = setTimeout(() => {
+      pageRequestRef.current += 1;
+      loadMoreRequestRef.current += 1;
       void reloadCurrentPage();
+      setLoadingMore(false);
     }, 180);
     return () => clearTimeout(timer);
   }, [pageQueryKey, reloadCurrentPage]);

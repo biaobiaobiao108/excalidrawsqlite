@@ -1225,9 +1225,34 @@ describe("cloud persistence server", () => {
         },
         body: new Uint8Array(bytes),
       });
+    const farFutureVersion = await request(
+      handler,
+      "/api/scenes/scene_thumb_order/thumbnail",
+      {
+        method: "PUT",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "image/jpeg",
+          "X-Thumbnail-Version": "9999999999999",
+        },
+        body: new Uint8Array([255, 216, 255, 217]),
+      },
+    );
+    expect(farFutureVersion.status).toBe(400);
+
     const originalBytes = [255, 216, 255, 217];
     expect((await upload(100, originalBytes)).status).toBe(200);
     expect((await upload(200, originalBytes)).status).toBe(200);
+
+    const farFutureDelete = await request(
+      handler,
+      "/api/scenes/scene_thumb_order/thumbnail",
+      {
+        method: "DELETE",
+        headers: { Cookie: cookie, "X-Thumbnail-Version": "9999999999999" },
+      },
+    );
+    expect(farFutureDelete.status).toBe(400);
 
     const olderUpload = await upload(150, [255, 216, 1, 217]);
     expect(olderUpload.status).toBe(200);
@@ -1657,7 +1682,7 @@ describe("cloud persistence server", () => {
   });
 
   it("exports a complete backup containing the database, manifest and attachments", async () => {
-    const { handler } = createTestRuntime();
+    const { handler, runtime } = createTestRuntime();
     const cookie = await authenticate(handler);
     const upload = await request(handler, "/api/files/file_full_backup", {
       method: "PUT",
@@ -1685,7 +1710,8 @@ describe("cloud persistence server", () => {
     });
     expect(backup.status).toBe(200);
     expect(backup.headers.get("content-type")).toContain("application/x-tar");
-    const archive = new Bun.Archive(await backup.blob());
+    const archiveBlob = await backup.blob();
+    const archive = new Bun.Archive(archiveBlob);
     const files = await archive.files();
     expect([...files.keys()]).toEqual(
       expect.arrayContaining([
@@ -1715,6 +1741,18 @@ describe("cloud persistence server", () => {
         }),
       ]),
     );
+
+    const rawPayloadBytes =
+      database.size +
+      (await files.get("manifest.json")!.arrayBuffer()).byteLength +
+      (await files.get("files/file_full_backup")!.arrayBuffer()).byteLength;
+    expect(archiveBlob.size).toBeGreaterThan(rawPayloadBytes);
+    runtime.config.maxBackupBytes = rawPayloadBytes;
+    runtime.writeAttempts.clear();
+    const tooLargeArchive = await request(handler, "/api/backup/full", {
+      headers: { Cookie: cookie },
+    });
+    expect(tooLargeArchive.status).toBe(413);
   });
 
   it("sanitizes isDeleted elements on creation and update to reduce stored size", async () => {

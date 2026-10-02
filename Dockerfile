@@ -31,6 +31,11 @@ COPY . .
 ARG BUILD_SHA=local
 ENV BUILD_SHA=$BUILD_SHA
 ENV VITE_APP_GIT_SHA=$BUILD_SHA
+# This is the only other VITE option currently used by the app. Keep public
+# client configuration explicit instead of copying local .env files into the
+# Docker build context.
+ARG VITE_APP_DISABLE_PREVENT_UNLOAD
+ENV VITE_APP_DISABLE_PREVENT_UNLOAD=$VITE_APP_DISABLE_PREVENT_UNLOAD
 
 # Build the production backend bundle and frontend assets needed by the runtime image.
 RUN bun run build:server

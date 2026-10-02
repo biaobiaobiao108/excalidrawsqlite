@@ -93,10 +93,10 @@ services:
     image: ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
     restart: unless-stopped
     ports:
-      - '8080:8080'
+      - '127.0.0.1:8080:8080'
     environment:
       - AUTH_PASSWORD=your-strong-password  # 访问密码
-      - TRUST_PROXY=true                    # 信任反向代理 (HTTPS/反代环境必填)
+      - TRUST_PROXY=false                   # 直连或仅本机反代时保持 false
     volumes:
       - ./data:/app/data
 EOF
@@ -108,7 +108,11 @@ EOF
 docker compose up -d
 ```
 
-打开浏览器访问：`http://localhost:8080` 即可开始绘制！
+本机访问 `http://localhost:8080` 即可开始绘制。此示例只绑定本机地址；若需要局域网直连，可将端口改为 `8080:8080`，并保持 `TRUST_PROXY=false`。
+
+若通过 Nginx、Caddy 或 Traefik 提供 HTTPS，应让代理转发到本机 `127.0.0.1:8080`，并将 `TRUST_PROXY` 设为 `true`。此时必须确保只有可信代理能连接应用端口，且代理覆盖客户端传入的 `X-Forwarded-For`，写入实际客户端 IP；不要把启用 `TRUST_PROXY=true` 的应用端口直接暴露到公网，否则客户端可伪造转发地址并绕过登录限流。
+
+Docker 构建上下文会排除本地 `.env.development` 和 `.env.production`。当前唯一的其他公开前端构建选项 `VITE_APP_DISABLE_PREVENT_UNLOAD` 可通过 Compose `.env` 文件或 shell 环境变量传入；不要在 `VITE_*` 配置中放秘密，因为其值会编译到浏览器资源。
 
 ---
 
@@ -120,9 +124,9 @@ docker compose up -d
 mkdir -p ./data
 docker run -d \
   --name excalidraw \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   -e AUTH_PASSWORD=your-strong-password \
-  -e TRUST_PROXY=true \
+  -e TRUST_PROXY=false \
   -v ./data:/app/data \
   --restart unless-stopped \
   ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
@@ -134,9 +138,9 @@ docker run -d \
 mkdir -p ./data
 podman run -d \
   --name excalidraw \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   -e AUTH_PASSWORD=your-strong-password \
-  -e TRUST_PROXY=true \
+  -e TRUST_PROXY=false \
   -v ./data:/app/data:Z \
   --userns=keep-id \
   --restart unless-stopped \
@@ -193,7 +197,7 @@ AUTH_PASSWORD=your-password bun run dev
 | :-- | :-- | :-: | :-- |
 | `AUTH_PASSWORD` | _无_ | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。 |
 | `ALLOW_ANONYMOUS` | `false` | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。 |
-| `TRUST_PROXY` | `false` | **反代必填** | 信任反向代理。在 Nginx/Caddy/Traefik 等反代后必须开启，用于正确识别协议并下发 Secure Cookie；代理必须覆盖或追加实际客户端地址到 `X-Forwarded-For`，服务端使用最右侧地址进行限流。 |
+| `TRUST_PROXY` | `false` | 否 | 仅在应用端口被可信反向代理隔离保护时设为 `true`，用于识别 HTTPS 并下发 Secure Cookie。代理需覆盖 `X-Forwarded-For` 为实际客户端 IP，且应用端口不得允许不可信客户端直连；直连部署应保持 `false`，以防伪造转发头绕过登录限流。 |
 | `PORT` | `8080` | 否 | 服务端监听端口。 |
 | `DATA_DIR` | `./data` | 否 | SQLite 数据库文件与图片附件存储目录。 |
 | `AUTH_SESSION_TTL_MS` | `604800000` (7 天) | 否 | 登录会话在服务端与浏览器 Cookie 中的有效期（毫秒）。 |

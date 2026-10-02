@@ -1,6 +1,5 @@
 *
-!.env.development
-!.env.production
+.env*
 !excalidraw-app/
 !package.json
 !public/
