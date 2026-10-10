@@ -181,8 +181,8 @@ describe("cloud persistence server", () => {
     ).toBe(true);
   });
 
-  it("binds development servers to localhost and preserves explicit host overrides", () => {
-    expect(resolveServerHostname(true, "")).toBe("127.0.0.1");
+  it("binds development servers to all interfaces and preserves explicit host overrides", () => {
+    expect(resolveServerHostname(true, "")).toBe("0.0.0.0");
     expect(resolveServerHostname(false, "")).toBe("0.0.0.0");
     expect(resolveServerHostname(true, "192.0.2.10")).toBe("192.0.2.10");
   });
@@ -821,7 +821,7 @@ describe("cloud persistence server", () => {
     expect(invalidSort.status).toBe(400);
   });
 
-  it("requires pagination before legacy scene lists can exceed their memory cap", async () => {
+  it("always returns a bounded page for scene and trash lists", async () => {
     const { handler, runtime } = createTestRuntime();
     const cookie = await authenticate(handler);
     const insert = runtime.db.query(
@@ -852,18 +852,24 @@ describe("cloud persistence server", () => {
     const active = await request(handler, "/api/scenes", {
       headers: { Cookie: cookie },
     });
-    expect(active.status).toBe(400);
-    expect(await responseJson<{ code: string }>(active)).toMatchObject({
-      code: "PAGINATION_REQUIRED",
-    });
+    expect(active.status).toBe(200);
+    const activePage = await responseJson<{
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    }>(active);
+    expect(activePage.items).toHaveLength(50);
+    expect(activePage.nextCursor).toBeTruthy();
 
     const trash = await request(handler, "/api/scenes/trash", {
       headers: { Cookie: cookie },
     });
-    expect(trash.status).toBe(400);
-    expect(await responseJson<{ code: string }>(trash)).toMatchObject({
-      code: "PAGINATION_REQUIRED",
-    });
+    expect(trash.status).toBe(200);
+    const trashPage = await responseJson<{
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    }>(trash);
+    expect(trashPage.items).toHaveLength(50);
+    expect(trashPage.nextCursor).toBeTruthy();
   });
 
   it("stores files on disk and prevents deleted scenes from being recreated", async () => {
@@ -1100,18 +1106,22 @@ describe("cloud persistence server", () => {
     expect(repeatDeleteBody.deleted_at).toBe(softDeleteBody.deleted_at);
 
     // 2. Normal /api/scenes should not contain it
-    const activeList = await request(handler, "/api/scenes", {
+    const activeList = await request(handler, "/api/scenes?limit=100", {
       headers: { Cookie: cookie },
     });
-    expect(await responseJson<Array<{ id: string }>>(activeList)).toEqual([]);
+    expect(
+      (await responseJson<{ items: Array<{ id: string }> }>(activeList)).items,
+    ).toEqual([]);
 
     // 3. /api/scenes/trash should contain it
-    const trashList = await request(handler, "/api/scenes/trash", {
+    const trashList = await request(handler, "/api/scenes/trash?limit=100", {
       headers: { Cookie: cookie },
     });
-    const trashItems = await responseJson<
-      Array<{ id: string; name: string; deleted_at: number | null }>
-    >(trashList);
+    const trashItems = (
+      await responseJson<{
+        items: Array<{ id: string; name: string; deleted_at: number | null }>;
+      }>(trashList)
+    ).items;
     expect(trashItems.length).toBe(1);
     expect(trashItems[0].id).toBe("scene_trash_test");
     expect(trashItems[0].deleted_at).toBeTruthy();
@@ -1153,12 +1163,16 @@ describe("cloud persistence server", () => {
     });
 
     // 5. Normal /api/scenes should contain it again
-    const activeAfterRestore = await request(handler, "/api/scenes", {
-      headers: { Cookie: cookie },
-    });
-    const activeItems = await responseJson<Array<{ id: string }>>(
-      activeAfterRestore,
+    const activeAfterRestore = await request(
+      handler,
+      "/api/scenes?limit=100",
+      {
+        headers: { Cookie: cookie },
+      },
     );
+    const activeItems = (
+      await responseJson<{ items: Array<{ id: string }> }>(activeAfterRestore)
+    ).items;
     expect(activeItems.length).toBe(1);
     expect(activeItems[0].id).toBe("scene_trash_test");
 
@@ -1177,10 +1191,16 @@ describe("cloud persistence server", () => {
     ).toBe(true);
 
     // 7. Should be absent from both active and trash
-    const trashAfterPerm = await request(handler, "/api/scenes/trash", {
-      headers: { Cookie: cookie },
-    });
-    expect(await responseJson<Array<unknown>>(trashAfterPerm)).toEqual([]);
+    const trashAfterPerm = await request(
+      handler,
+      "/api/scenes/trash?limit=100",
+      {
+        headers: { Cookie: cookie },
+      },
+    );
+    expect(
+      (await responseJson<{ items: Array<unknown> }>(trashAfterPerm)).items,
+    ).toEqual([]);
 
     // 8. Test emptying trash via DELETE /api/scenes/trash
     await jsonRequest(
@@ -1216,10 +1236,16 @@ describe("cloud persistence server", () => {
       success: true,
       deletedCount: 2,
     });
-    const trashAfterClear = await request(handler, "/api/scenes/trash", {
+    const trashAfterClear = await request(
+      handler,
+      "/api/scenes/trash?limit=100",
+      {
       headers: { Cookie: cookie },
-    });
-    expect(await responseJson<Array<unknown>>(trashAfterClear)).toEqual([]);
+      },
+    );
+    expect(
+      (await responseJson<{ items: Array<unknown> }>(trashAfterClear)).items,
+    ).toEqual([]);
   });
 
   it("persists board metadata, folders, recent opens and thumbnails", async () => {
@@ -1375,18 +1401,20 @@ describe("cloud persistence server", () => {
     );
     expect(updated.status).toBe(200);
 
-    const list = await request(handler, "/api/scenes", {
+    const list = await request(handler, "/api/scenes?limit=100", {
       headers: { Cookie: cookie },
     });
-    const scenes = await responseJson<
-      Array<{
-        tags: string[];
-        favorite: boolean;
-        folder_id: string;
-        last_opened_at: number;
-        thumbnail_file_id: string;
-      }>
-    >(list);
+    const scenes = (
+      await responseJson<{
+        items: Array<{
+          tags: string[];
+          favorite: boolean;
+          folder_id: string;
+          last_opened_at: number;
+          thumbnail_file_id: string;
+        }>;
+      }>(list)
+    ).items;
     expect(scenes[0]).toMatchObject({
       tags: ["交付"],
       favorite: false,
@@ -1459,16 +1487,22 @@ describe("cloud persistence server", () => {
     );
     expect(updateWithDeletedElements.status).toBe(200);
 
-    const listAfterDeleteAll = await request(handler, "/api/scenes", {
-      headers: { Cookie: cookie },
-    });
-    const scenesAfterDeleteAll = await responseJson<
-      Array<{
-        id: string;
-        element_count: number;
-        thumbnail_file_id: string | null;
-      }>
-    >(listAfterDeleteAll);
+    const listAfterDeleteAll = await request(
+      handler,
+      "/api/scenes?limit=100",
+      {
+        headers: { Cookie: cookie },
+      },
+    );
+    const scenesAfterDeleteAll = (
+      await responseJson<{
+        items: Array<{
+          id: string;
+          element_count: number;
+          thumbnail_file_id: string | null;
+        }>;
+      }>(listAfterDeleteAll)
+    ).items;
     const targetScene = scenesAfterDeleteAll.find(
       (s) => s.id === "scene_metadata",
     );

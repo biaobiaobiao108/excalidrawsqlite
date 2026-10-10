@@ -43,9 +43,9 @@ export { createRequestHandler } from "./routes";
 export type { RequestAddressResolver, ServerConfig, ServerRuntime } from "./types";
 
 export const resolveServerHostname = (
-  isDev: boolean,
+  _isDev: boolean,
   configuredHost = process.env.HOST,
-) => configuredHost || (isDev ? "127.0.0.1" : "0.0.0.0");
+) => configuredHost || "0.0.0.0";
 
 type StoppableServer = {
   stop: (closeActiveConnections?: boolean) => Promise<void> | void;

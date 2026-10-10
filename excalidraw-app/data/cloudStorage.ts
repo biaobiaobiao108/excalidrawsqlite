@@ -381,10 +381,6 @@ export async function logoutCloudSession(): Promise<void> {
   await assertResponse(res, "退出授权失败");
 }
 
-export async function fetchCloudScenes(): Promise<CloudSceneSummary[]> {
-  return fetchCloudScenePages(false, "获取云端画板列表失败");
-}
-
 export type CloudScenePage = {
   items: CloudSceneSummary[];
   nextCursor: string | null;
@@ -422,37 +418,12 @@ export async function fetchCloudScenePage(
   if (options.sort && options.sort !== "updated") {
     params.set("sort", options.sort);
   }
-  const result = await fetchJson<CloudScenePage | CloudSceneSummary[]>(
+  return fetchJson<CloudScenePage>(
     `${options.trash ? "/api/scenes/trash" : "/api/scenes"}?${params.toString()}`,
     { headers: getHeaders() },
     fallback,
     CLOUD_READ_RETRIES,
   );
-  return Array.isArray(result)
-    ? { items: result, nextCursor: null }
-    : result;
-}
-
-const fetchCloudScenePages = async (
-  trash: boolean,
-  fallback: string,
-): Promise<CloudSceneSummary[]> => {
-  const items: CloudSceneSummary[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | null = null;
-  do {
-    const result = await fetchCloudScenePage(
-      { trash, cursor, limit: 100 },
-      fallback,
-    );
-    items.push(...result.items);
-    if (!result.nextCursor || seenCursors.has(result.nextCursor)) {
-      break;
-    }
-    seenCursors.add(result.nextCursor);
-    cursor = result.nextCursor;
-  } while (cursor);
-  return items;
 };
 
 export async function fetchCloudScene(
@@ -719,10 +690,6 @@ export async function renameCloudScene(
     },
     "重命名云端画板失败",
   );
-}
-
-export async function fetchCloudTrashScenes(): Promise<CloudSceneSummary[]> {
-  return fetchCloudScenePages(true, "获取回收站画板失败");
 }
 
 export async function restoreCloudScene(id: string): Promise<boolean> {

@@ -199,7 +199,7 @@ AUTH_PASSWORD=your-password bun run dev
 | `ALLOW_ANONYMOUS` | `false` | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。 |
 | `TRUST_PROXY` | `false` | 否 | 仅在应用端口被可信反向代理隔离保护时设为 `true`，用于识别 HTTPS 并下发 Secure Cookie。代理需覆盖 `X-Forwarded-For` 为实际客户端 IP，且应用端口不得允许不可信客户端直连；直连部署应保持 `false`，以防伪造转发头绕过登录限流。 |
 | `PORT` | `8080` | 否 | 服务端监听端口。 |
-| `HOST` | 开发态 `127.0.0.1`；生产态 `0.0.0.0` | 否 | 服务监听地址。开发态默认仅本机可访问；需要局域网设备访问时可显式设置 `HOST=0.0.0.0`。 |
+| `HOST` | `0.0.0.0` | 否 | 服务监听地址。默认绑定所有网络接口；需要限制为本机访问时可显式设置 `HOST=127.0.0.1`。 |
 | `DATA_DIR` | `./data` | 否 | SQLite 数据库文件与图片附件存储目录。 |
 | `AUTH_SESSION_TTL_MS` | `604800000` (7 天) | 否 | 登录会话在服务端与浏览器 Cookie 中的有效期（毫秒）。 |
 | `TRASH_RETENTION_DAYS` | `30` (30 天) | 否 | 回收站画板保留天数。设为 `0` 禁用自动清理；超期后自动物理删除并回收 SQLite 空间与关联孤立附件。 |
@@ -274,7 +274,7 @@ AUTH_PASSWORD=your-password bun run dev
 | `GET` | `/api/auth/status` | 查询当前密码保护状态及当前客户端登录态 |
 | `POST` | `/api/auth/verify` | 提交密码进行验证，成功后下发 HttpOnly 会话 Cookie |
 | `POST` | `/api/auth/logout` | 注销登录并销毁服务端会话 |
-| `GET` | `/api/scenes` | 获取有效画板列表；带 `limit/cursor/q/folder_id/favorite/sort` 时返回 keyset 分页结果。无参数兼容响应最多返回 1000 项，超出时返回 `PAGINATION_REQUIRED` |
+| `GET` | `/api/scenes` | 获取有效画板 keyset 分页；`limit` 默认为 50、最大 100，支持 `cursor/q/folder_id/favorite/sort` 筛选与排序 |
 | `POST` | `/api/scenes` | 创建新画板 |
 | `GET` | `/api/scenes/:id` | 获取指定画板的图元数据与应用状态 |
 | `GET` | `/api/realtime` | 同源 Bun 原生 WebSocket；按 `scene_id` 订阅轻量场景/工作区变更事件 |
@@ -282,7 +282,7 @@ AUTH_PASSWORD=your-password bun run dev
 | `PUT` | `/api/scenes/:id` | 保存画板快照，携带 `baseRevision` 乐观锁校验 |
 | `PUT` | `/api/scenes/:id/thumbnail` | 保存画板缩略图预览 |
 | `DELETE` | `/api/scenes/:id` | 软删除画板至回收站 |
-| `GET` | `/api/scenes/trash` | 获取回收站中的画板列表，支持同样的 keyset 分页参数；无参数兼容响应最多返回 1000 项 |
+| `GET` | `/api/scenes/trash` | 获取回收站画板 keyset 分页；支持同样的分页参数 |
 | `POST` | `/api/scenes/:id/restore` | 从回收站还原指定画板 |
 | `DELETE` | `/api/scenes/trash` | 彻底清空回收站 |
 | `GET` | `/api/folders` | 获取文件夹列表及各文件夹画板计数 |

@@ -76,7 +76,6 @@ import type { RequestAddressResolver, ServerRuntime } from "./types";
 
 const DEFAULT_SCENE_PAGE_SIZE = 50;
 const MAX_SCENE_PAGE_SIZE = 100;
-const LEGACY_SCENE_LIST_LIMIT = 1_000;
 const MAX_THUMBNAIL_VERSION_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const sceneCursorEncoder = new TextEncoder();
 const sceneCursorDecoder = new TextDecoder();
@@ -345,11 +344,6 @@ const listScenePage = (
   };
 };
 
-const hasScenePageParameters = (url: URL) =>
-  ["limit", "cursor", "q", "folder_id", "favorite", "sort"].some((key) =>
-    url.searchParams.has(key),
-  );
-
 const publishSceneChanged = (
   runtime: ServerRuntime,
   event: Parameters<NonNullable<ServerRuntime["realtime"]>["publishSceneChanged"]>[0],
@@ -389,8 +383,6 @@ const preparedStatementsMap = new WeakMap<
     touchSceneLastOpened: ReturnType<ServerRuntime["db"]["query"]>;
     getFolderById: ReturnType<ServerRuntime["db"]["query"]>;
     getFileUpdatedAt: ReturnType<ServerRuntime["db"]["query"]>;
-    listScenes: ReturnType<ServerRuntime["db"]["query"]>;
-    listTrashScenes: ReturnType<ServerRuntime["db"]["query"]>;
     listFolders: ReturnType<ServerRuntime["db"]["query"]>;
   }
 >();
@@ -445,32 +437,6 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
       ),
       getFileUpdatedAt: runtime.db.query(
         "SELECT updated_at FROM files WHERE id = ?",
-      ),
-      listScenes: runtime.db.query(
-        `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
-                scenes.revision, scenes.content_bytes AS size,
-                scenes.element_count,
-                scenes.tags_json, scenes.is_favorite, scenes.folder_id,
-                scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
-                folders.name AS folder_name
-         FROM scenes
-         LEFT JOIN folders ON folders.id = scenes.folder_id
-         WHERE scenes.deleted_at IS NULL
-         ORDER BY scenes.updated_at DESC, scenes.id DESC
-         LIMIT ?`,
-      ),
-      listTrashScenes: runtime.db.query(
-        `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
-                scenes.revision, scenes.content_bytes AS size,
-                scenes.element_count,
-                scenes.tags_json, scenes.is_favorite, scenes.folder_id,
-                scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
-                folders.name AS folder_name
-         FROM scenes
-         LEFT JOIN folders ON folders.id = scenes.folder_id
-         WHERE scenes.deleted_at IS NOT NULL
-         ORDER BY scenes.deleted_at DESC, scenes.id DESC
-         LIMIT ?`,
       ),
       listFolders: runtime.db.query(
         `SELECT folders.id, folders.name, folders.icon, folders.color,
@@ -772,37 +738,11 @@ export const createRequestHandler = (
       }
 
       if (pathname === "/api/scenes" && req.method === "GET") {
-        if (hasScenePageParameters(url)) {
-          return jsonResponse(runtime, req, listScenePage(runtime, url, false));
-        }
-        const rows = stmts.listScenes.all(
-          LEGACY_SCENE_LIST_LIMIT + 1,
-        ) as unknown[];
-        if (rows.length > LEGACY_SCENE_LIST_LIMIT) {
-          throw new HttpError(
-            400,
-            "PAGINATION_REQUIRED",
-            `画板超过 ${LEGACY_SCENE_LIST_LIMIT} 个，请使用 limit/cursor 分页参数`,
-          );
-        }
-        return jsonResponse(runtime, req, rows.map(getSceneSummary));
+        return jsonResponse(runtime, req, listScenePage(runtime, url, false));
       }
 
       if (pathname === "/api/scenes/trash" && req.method === "GET") {
-        if (hasScenePageParameters(url)) {
-          return jsonResponse(runtime, req, listScenePage(runtime, url, true));
-        }
-        const rows = stmts.listTrashScenes.all(
-          LEGACY_SCENE_LIST_LIMIT + 1,
-        ) as unknown[];
-        if (rows.length > LEGACY_SCENE_LIST_LIMIT) {
-          throw new HttpError(
-            400,
-            "PAGINATION_REQUIRED",
-            `回收站画板超过 ${LEGACY_SCENE_LIST_LIMIT} 个，请使用 limit/cursor 分页参数`,
-          );
-        }
-        return jsonResponse(runtime, req, rows.map(getSceneSummary));
+        return jsonResponse(runtime, req, listScenePage(runtime, url, true));
       }
 
       if (pathname === "/api/scenes" && req.method === "POST") {
