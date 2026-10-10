@@ -1355,11 +1355,15 @@ describe("cloud persistence server", () => {
         success: boolean;
         id: string;
         restored: boolean;
+        revision: number;
+        noop: boolean;
       }>(repeatRestoreRes),
     ).toEqual({
       success: true,
       id: "scene_trash_test",
       restored: false,
+      revision: 3,
+      noop: true,
     });
 
     // 5. Normal /api/scenes should contain it again
@@ -1495,7 +1499,7 @@ describe("cloud persistence server", () => {
     const restored = await jsonRequest(
       handler,
       "/api/scenes/batch",
-      { scenes: entries, deleted: false },
+      { scenes: entries.map((entry) => ({ ...entry, revision: 2 })), deleted: false },
       { method: "PATCH", headers: { Cookie: cookie } },
     );
     expect(restored.status).toBe(200);
@@ -1511,6 +1515,7 @@ describe("cloud persistence server", () => {
     );
     expect(invalidPermanentDelete.status).toBe(409);
 
+    for (const entry of entries) entry.revision = 3;
     const trashedAgain = await jsonRequest(
       handler,
       "/api/scenes/batch",
@@ -1518,6 +1523,7 @@ describe("cloud persistence server", () => {
       { method: "PATCH", headers: { Cookie: cookie } },
     );
     expect(trashedAgain.status).toBe(200);
+    for (const entry of entries) entry.revision = 4;
     const permanentlyDeleted = await jsonRequest(
       handler,
       "/api/scenes/batch",

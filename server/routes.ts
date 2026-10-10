@@ -503,11 +503,11 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
         "SELECT id, deleted_at, revision FROM scenes WHERE id = ?",
       ),
       softDeleteScene: runtime.db.query(
-        `UPDATE scenes SET deleted_at = ?
+        `UPDATE scenes SET deleted_at = ?, updated_at = ?, revision = revision + 1
          WHERE id = ? AND revision = ? AND deleted_at IS NULL`,
       ),
       restoreScene: runtime.db.query(
-        `UPDATE scenes SET deleted_at = NULL
+        `UPDATE scenes SET deleted_at = NULL, updated_at = ?, revision = revision + 1
          WHERE id = ? AND revision = ? AND deleted_at IS NOT NULL`,
       ),
       deleteSceneFileReferences: runtime.db.query(
@@ -878,6 +878,7 @@ export const createRequestHandler = (
         const isPermanent = req.method === "DELETE";
         const isRestore = !isPermanent && body.deleted === false;
         const now = Date.now();
+        const changedEntries: typeof entries = [];
         const transaction = runtime.db.transaction(() => {
           for (const entry of entries) {
             const existing = stmts.getSceneStateById.get(entry.id) as {
@@ -888,9 +889,7 @@ export const createRequestHandler = (
             if (
               !existing ||
               (Number(existing.revision) || 1) !== entry.revision ||
-              (isPermanent && existing.deleted_at === null) ||
-              (isRestore && existing.deleted_at === null) ||
-              (!isPermanent && !isRestore && existing.deleted_at !== null)
+              (isPermanent && existing.deleted_at === null)
             ) {
               throw new HttpError(
                 409,
@@ -898,9 +897,12 @@ export const createRequestHandler = (
                 "选中的画板已发生变化，请刷新列表后重新选择",
               );
             }
+            if (isPermanent || (isRestore ? existing.deleted_at !== null : existing.deleted_at === null)) {
+              changedEntries.push(entry);
+            }
           }
 
-          for (const entry of entries) {
+          for (const entry of changedEntries) {
             if (isPermanent) {
               stmts.deleteSceneFileReferences.run(entry.id);
               const result = stmts.deleteTrashedScene.run(
@@ -915,7 +917,7 @@ export const createRequestHandler = (
                 );
               }
             } else if (isRestore) {
-              const result = stmts.restoreScene.run(entry.id, entry.revision);
+              const result = stmts.restoreScene.run(now, entry.id, entry.revision);
               if (result.changes !== 1) {
                 throw new HttpError(
                   409,
@@ -925,6 +927,7 @@ export const createRequestHandler = (
               }
             } else {
               const result = stmts.softDeleteScene.run(
+                now,
                 now,
                 entry.id,
                 entry.revision,
@@ -940,22 +943,25 @@ export const createRequestHandler = (
           }
         });
         transaction.immediate();
-        for (const entry of entries) {
+        for (const entry of changedEntries) {
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: entry.id,
-            revision: entry.revision,
+            revision: entry.revision + (isPermanent ? 0 : 1),
             updatedAt: now,
             changeKind: isRestore ? "restored" : "deleted",
           });
         }
-        publishWorkspaceChanged(runtime, now);
+        if (changedEntries.length) {
+          publishWorkspaceChanged(runtime, now);
+        }
         return jsonResponse(runtime, req, {
           success: true,
           ids: entries.map((entry) => entry.id),
           deleted: !isRestore,
           permanent: isPermanent,
           deleted_at: isPermanent || isRestore ? null : now,
+          noop: changedEntries.length === 0,
         });
       }
 
@@ -1233,17 +1239,17 @@ export const createRequestHandler = (
             success: true,
             id,
             restored: false,
+            revision: Number(existing.revision) || 1,
+            noop: true,
           });
         }
-        runtime.db.run(
-          "UPDATE scenes SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL",
-          [id],
-        );
         const updatedAt = Date.now();
+        const revision = (Number(existing.revision) || 1) + 1;
+        stmts.restoreScene.run(updatedAt, id, revision - 1);
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
-          revision: Number(existing.revision) || 1,
+          revision,
           updatedAt,
           changeKind: "restored",
         });
@@ -1251,6 +1257,7 @@ export const createRequestHandler = (
           success: true,
           id,
           restored: true,
+          revision,
         });
       }
 
@@ -1748,17 +1755,17 @@ export const createRequestHandler = (
             deleted: true,
             permanent: false,
             deleted_at: Number(existing.deleted_at),
+            revision: Number(existing.revision) || 1,
+            noop: true,
           });
         }
         const now = Date.now();
-        runtime.db.run(
-          "UPDATE scenes SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
-          [now, id],
-        );
+        const revision = (Number(existing.revision) || 1) + 1;
+        stmts.softDeleteScene.run(now, now, id, revision - 1);
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
-          revision: Number(existing.revision) || 1,
+          revision,
           updatedAt: now,
           changeKind: "deleted",
         });
@@ -1768,6 +1775,7 @@ export const createRequestHandler = (
           deleted: true,
           permanent: false,
           deleted_at: now,
+          revision,
         });
       }
 

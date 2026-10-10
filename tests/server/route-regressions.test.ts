@@ -40,6 +40,34 @@ afterEach(async () => {
 });
 
 describe("route failure and realtime regressions", () => {
+  it("invalidates old revisions across trash restoration and preserves repeated-state noops", async () => {
+    const { runtime, json, request } = setup();
+    await json("/api/scenes", { id: "trash_lifecycle" });
+    const events: SceneRealtimeEvent[] = [];
+    runtime.realtime = {
+      publishSceneChanged: (event) => { events.push(event); },
+      publishWorkspaceChanged: () => {},
+    };
+    const state = () => runtime.db.query("SELECT revision, updated_at, deleted_at FROM scenes WHERE id = ?").get("trash_lifecycle");
+    expect(await (await request("/api/scenes/trash_lifecycle", { method: "DELETE" })).json()).toMatchObject({ revision: 2 });
+    const deleted = state();
+    expect(await (await request("/api/scenes/trash_lifecycle", { method: "DELETE" })).json()).toMatchObject({ revision: 2, noop: true });
+    expect(state()).toEqual(deleted);
+    expect(await (await json("/api/scenes/batch", { scenes: [{ id: "trash_lifecycle", revision: 2 }], deleted: true }, "PATCH")).json()).toMatchObject({ noop: true });
+    expect(state()).toEqual(deleted);
+    expect(events).toHaveLength(1);
+    expect(await (await request("/api/scenes/trash_lifecycle/restore", { method: "POST" })).json()).toMatchObject({ revision: 3 });
+    const restored = state();
+    expect(await (await request("/api/scenes/trash_lifecycle/restore", { method: "POST" })).json()).toMatchObject({ revision: 3, noop: true });
+    expect(state()).toEqual(restored);
+    expect(await (await json("/api/scenes/batch", { scenes: [{ id: "trash_lifecycle", revision: 3 }], deleted: false }, "PATCH")).json()).toMatchObject({ noop: true });
+    expect(state()).toEqual(restored);
+    expect(events.map((event) => event.revision)).toEqual([2, 3]);
+    expect((await json("/api/scenes/trash_lifecycle", { name: "stale write", baseRevision: 1 }, "PATCH")).status).toBe(409);
+    expect((await json("/api/scenes/batch", { scenes: [{ id: "trash_lifecycle", revision: 1 }], deleted: true }, "PATCH")).status).toBe(409);
+    expect(state()).toEqual(restored);
+  });
+
   it("invalidates previews only on content changes and rejects stale repair uploads", async () => {
     const { json, request } = setup();
     await json("/api/scenes", { id: "repair_preview", elements: [{ id: "shape", type: "rectangle", x: 0, y: 0, width: 100, height: 100 }] });
@@ -87,9 +115,12 @@ describe("route failure and realtime regressions", () => {
         expect(events).toContainEqual(expect.objectContaining({
           type: "scene_changed",
           sceneId: scene.id,
-          revision: scene.revision,
+          revision: scene.revision + (operation.method === "DELETE" ? 0 : 1),
           changeKind: operation.changeKind,
         }));
+      }
+      if (operation.method !== "DELETE") {
+        for (const scene of scenes) scene.revision += 1;
       }
     }
   });
