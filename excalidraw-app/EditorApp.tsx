@@ -111,6 +111,7 @@ import {
 } from "./data/cloudSync";
 
 import type { CloudSaveSnapshot } from "./data/cloudSync";
+import { createCloudSceneRefreshGuard } from "./data/cloudSceneRefresh";
 
 const LazyCommandPalette = lazy(async () => {
   const { CommandPalette } = await import(
@@ -578,6 +579,29 @@ const ExcalidrawWrapper = (props: {
       recoveredSnapshot?: CloudSaveSnapshot | null,
     ) => {
       const loadId = ++cloudSceneLoadIdRef.current;
+      const canApplyRefresh =
+        excalidrawAPI &&
+        currentSceneIdRef.current === sceneId &&
+        !recoveredSnapshot
+          ? createCloudSceneRefreshGuard(() => {
+              const appState = excalidrawAPI.getAppState();
+              return {
+                sceneId: currentSceneIdRef.current,
+                signature: getCloudPersistenceSignature(
+                  excalidrawAPI.getName() || "未命名白板",
+                  excalidrawAPI.getSceneElements().filter(
+                    (element) => !element.isDeleted,
+                  ),
+                  {
+                    viewBackgroundColor: appState.viewBackgroundColor,
+                    gridSize: appState.gridSize,
+                  },
+                  excalidrawAPI.getFiles(),
+                ),
+                hasPending: cloudSaveQueue.hasPending(sceneId),
+              };
+            })
+          : null;
       cloudSceneLoadingRef.current = null;
       isApplyingCloudSceneRef.current = false;
       if (cloudSceneViewportTimerRef.current) {
@@ -596,6 +620,11 @@ const ExcalidrawWrapper = (props: {
         throw new Error("编辑器尚未初始化");
       }
       if (loadId !== cloudSceneLoadIdRef.current) {
+        return cloudData;
+      }
+      // An edit can start and even finish saving while the fetch is in flight.
+      // Keep that canvas and its queue revision rather than applying stale data.
+      if (canApplyRefresh && !canApplyRefresh()) {
         return cloudData;
       }
 
@@ -972,7 +1001,6 @@ const ExcalidrawWrapper = (props: {
           currentSceneIdRef.current === message.sceneId &&
           !cloudSaveQueue.hasPending(message.sceneId)
         ) {
-          cloudSaveQueue.setRevision(message.sceneId, message.revision);
           void loadSelectedCloudScene(message.sceneId, false);
         } else if (!cloudSaveQueue.hasPending(message.sceneId)) {
           cloudSaveQueue.setRevision(message.sceneId, message.revision);
