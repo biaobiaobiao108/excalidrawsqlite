@@ -358,7 +358,6 @@ const ExcalidrawWrapper = (props: {
         onAuthRequired: (sceneId) => {
           setIsAuthOpen(true);
           setAuthSceneId(sceneId);
-          setActiveCloudScene(sceneId);
         },
         onConflict: (sceneId, snapshot) => {
           setCloudConflict({ sceneId, snapshot });
