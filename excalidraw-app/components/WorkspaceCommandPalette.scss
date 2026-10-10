@@ -14,7 +14,7 @@
 
   .workspace-dialog-content-shell {
     inline-size: min(720px, 100%);
-    block-size: 100%;
+    block-size: fit-content;
     max-block-size: min(750px, calc(100dvh - 2rem));
     padding: 1.5rem;
     overflow: hidden;
@@ -31,7 +31,7 @@
     display: flex;
     flex-direction: column;
     min-block-size: 0;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     overflow: hidden;
   }
 
@@ -39,7 +39,7 @@
     display: flex;
     flex-direction: column;
     min-block-size: 0;
-    block-size: 100%;
+    block-size: auto;
     color: var(--popup-text-color);
 
     // 1:1 照搬 Excalidraw 原生 ExcTextField 结构与悬停/聚焦变色
@@ -94,16 +94,6 @@
       }
     }
 
-    // 1:1 照搬 Excalidraw 原生 shortcuts-wrapper 与 shortcut 规范
-    .shortcuts-wrapper {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin-block-start: 12px;
-      gap: 1.5rem;
-      flex-wrap: wrap;
-    }
-
     .shortcut {
       display: flex;
       justify-content: center;
@@ -114,11 +104,6 @@
 
       .shortcut-wrapper {
         display: flex;
-      }
-
-      .shortcut-plus {
-        margin: 0 4px;
-        color: var(--color-gray-50);
       }
 
       .shortcut-key {
@@ -133,19 +118,21 @@
         font-weight: 600;
       }
 
-      .shortcut-desc {
-        margin-inline-start: 4px;
-        color: var(--color-gray-50);
-      }
     }
 
-    // 1:1 照搬 Excalidraw 原生 commands 与 command-item / item-selected 样式
+    // 固定列表视口上限和行高，键盘移动选中项时只滚动列表本身。
     .commands {
       overflow-y: auto;
       box-sizing: border-box;
       margin-block-start: 12px;
       padding-inline-end: 4px;
       min-block-size: 0;
+      max-block-size: min(294px, 60dvh);
+      flex: 0 1 auto;
+      display: grid;
+      grid-auto-rows: max-content;
+      align-content: start;
+      gap: 2px;
       color: var(--popup-text-color);
       user-select: none;
       scrollbar-gutter: stable;
@@ -167,36 +154,10 @@
         }
       }
 
-      .command-category {
-        display: flex;
-        flex-direction: column;
-        padding: 12px 0;
-      }
-
-      .command-category-title {
-        font-size: 1rem;
-        font-weight: 600;
-        margin-block-end: 6px;
-        display: flex;
-        align-items: center;
-        color: var(--popup-text-color);
-
-        .icon {
-          display: inline-flex;
-          align-items: center;
-          margin-inline-start: 6px;
-          color: var(--color-gray-50);
-
-          svg {
-            width: 1rem;
-            height: 1rem;
-          }
-        }
-      }
-
       .command-item {
         color: var(--popup-text-color);
         height: 2.5rem;
+        flex-shrink: 0;
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -356,6 +317,17 @@
       border: 0;
       border-radius: 0;
       box-shadow: none;
+    }
+
+    .workspace-dialog-form-content,
+    .palette-dialog-inner {
+      flex: 1 1 auto;
+      block-size: 100%;
+    }
+
+    .commands {
+      flex: 1 1 auto;
+      max-block-size: none;
     }
   }
 }

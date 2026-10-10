@@ -6,8 +6,6 @@ import React, {
   useState,
 } from "react";
 
-import { getShortcutFromShortcutName } from "@excalidraw/excalidraw/actions/shortcuts";
-
 import type { CloudFolder, CloudSceneSummary } from "../data/cloudStorage";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 
@@ -53,7 +51,6 @@ interface PaletteCommand {
 
 type CommandGroup = {
   category: string;
-  icon?: React.ReactNode;
   items: PaletteCommand[];
 };
 
@@ -186,23 +183,6 @@ const parseCreateIntent = (
   };
 };
 
-// SVG Icons matching Excalidraw's look
-const historyCommandIcon = (
-  <svg
-    viewBox="0 0 24 24"
-    aria-hidden="true"
-    stroke="currentColor"
-    strokeWidth={1.5}
-    fill="none"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M20.984 12.53a9 9 0 1 0 -7.552 8.355" />
-    <path d="M12 7v5l3 3" />
-    <path d="M19 16l-2 3h4l-2 3" />
-  </svg>
-);
-
 const searchIcon = (
   <svg
     viewBox="0 0 24 24"
@@ -291,10 +271,8 @@ const SortIcon = () => (
 
 const CommandShortcutHint = ({
   shortcut,
-  children,
 }: {
   shortcut: string;
-  children?: React.ReactNode;
 }) => {
   const parts = shortcut.replace("++", "+$").split("+");
 
@@ -305,7 +283,6 @@ const CommandShortcutHint = ({
           <div className="shortcut-key">{item === "$" ? "+" : item}</div>
         </div>
       ))}
-      {children && <div className="shortcut-desc">{children}</div>}
     </div>
   );
 };
@@ -332,6 +309,7 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
   const [activeIndex, setActiveIndex] = useState(0);
   const [recentIds, setRecentIds] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const commandListRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // Load recents on initial render / open
@@ -643,7 +621,6 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
       if (recentCommands.length > 0) {
         groups.push({
           category: "最近使用",
-          icon: historyCommandIcon,
           items: recentCommands,
         });
       }
@@ -785,11 +762,20 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     setActiveIndex(0);
   }, [query]);
 
-  // 滚动聚焦高亮项
+  // 仅滚动命令列表视口，避免 scrollIntoView 连带移动弹窗或页面。
   useEffect(() => {
-    const el = itemRefs.current[activeIndex];
-    if (el && typeof el.scrollIntoView === "function") {
-      el.scrollIntoView({ block: "nearest" });
+    const list = commandListRef.current;
+    const item = itemRefs.current[activeIndex];
+    if (!list || !item) {
+      return;
+    }
+
+    const listBounds = list.getBoundingClientRect();
+    const itemBounds = item.getBoundingClientRect();
+    if (itemBounds.top < listBounds.top) {
+      list.scrollTop -= listBounds.top - itemBounds.top;
+    } else if (itemBounds.bottom > listBounds.bottom) {
+      list.scrollTop += itemBounds.bottom - listBounds.bottom;
     }
   }, [activeIndex]);
 
@@ -833,8 +819,6 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     return null;
   }
 
-  let runningIndex = 0;
-
   return (
     <WorkspaceDialog
       className="workspace-command-palette-dialog"
@@ -856,99 +840,67 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
           </div>
         </div>
 
-        <div className="shortcuts-wrapper">
-          <CommandShortcutHint shortcut="↑↓">选择</CommandShortcutHint>
-          <CommandShortcutHint shortcut="↵">确定</CommandShortcutHint>
-          <CommandShortcutHint shortcut="Ctrl+↵">
-            新标签打开
-          </CommandShortcutHint>
-          <CommandShortcutHint shortcut="Esc">关闭</CommandShortcutHint>
-          <CommandShortcutHint
-            shortcut={getShortcutFromShortcutName("commandPalette")}
-          >
-            开关菜单
-          </CommandShortcutHint>
-        </div>
-
-        <div className="commands" role="listbox">
+        <div className="commands" ref={commandListRef} role="listbox">
           {flattenedItems.length === 0 ? (
             <div className="no-match">
               <div className="icon">{searchIcon}</div>
               <span>没有匹配的命令……</span>
             </div>
           ) : (
-            groupedCommands.map((group) => (
-              <div key={group.category} className="command-category">
-                <div className="command-category-title">
-                  {group.category}
-                  {group.icon && (
-                    <div className="icon" style={{ marginLeft: "6px" }}>
-                      {group.icon}
-                    </div>
-                  )}
-                </div>
-                {group.items.map((item) => {
-                  const itemIndex = runningIndex++;
-                  const isSelected = itemIndex === activeIndex;
+            flattenedItems.map((item, itemIndex) => {
+              const isSelected = itemIndex === activeIndex;
 
-                  return (
-                    <button
-                      key={`${group.category}-${item.id}`}
-                      ref={(el) => {
-                        itemRefs.current[itemIndex] = el;
-                      }}
-                      type="button"
-                      role="option"
-                      aria-selected={isSelected}
-                      className={`command-item ${
-                        isSelected ? "item-selected" : ""
-                      }`}
-                      onClick={(e) => {
-                        const isNewTab =
-                          e.ctrlKey || e.metaKey || e.button === 1;
-                        executeItem(item, isNewTab);
-                      }}
-                      onMouseMove={() => setActiveIndex(itemIndex)}
-                    >
-                      <div className="name">
-                        <div className="icon">{item.icon}</div>
-                        <span className="label-text">{item.label}</span>
-                        {item.meta && (
-                          <div className="item-meta">
-                            {item.meta.folderName && (
-                              <span className="item-folder">
-                                <FolderIcon />
-                                {item.meta.folderName}
-                              </span>
-                            )}
-                            {item.meta.tags && item.meta.tags.length > 0 && (
-                              <span className="item-tag">
-                                #{item.meta.tags.join(" #")}
-                              </span>
-                            )}
-                            {item.meta.timeText && (
-                              <span className="item-time">
-                                {item.meta.timeText}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <div className="item-trailing">
-                        {item.activeBadge && (
-                          <span className="active-pill">
-                            {item.activeBadge}
+              return (
+                <button
+                  key={item.id}
+                  ref={(el) => {
+                    itemRefs.current[itemIndex] = el;
+                  }}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`command-item ${
+                    isSelected ? "item-selected" : ""
+                  }`}
+                  onClick={(e) => {
+                    const isNewTab = e.ctrlKey || e.metaKey || e.button === 1;
+                    executeItem(item, isNewTab);
+                  }}
+                  onMouseMove={() => setActiveIndex(itemIndex)}
+                >
+                  <div className="name">
+                    <div className="icon">{item.icon}</div>
+                    <span className="label-text">{item.label}</span>
+                    {item.meta && (
+                      <div className="item-meta">
+                        {item.meta.folderName && (
+                          <span className="item-folder">
+                            <FolderIcon />
+                            {item.meta.folderName}
                           </span>
                         )}
-                        {item.shortcut && (
-                          <CommandShortcutHint shortcut={item.shortcut} />
+                        {item.meta.tags && item.meta.tags.length > 0 && (
+                          <span className="item-tag">
+                            #{item.meta.tags.join(" #")}
+                          </span>
+                        )}
+                        {item.meta.timeText && (
+                          <span className="item-time">{item.meta.timeText}</span>
                         )}
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ))
+                    )}
+                  </div>
+                  <div className="item-trailing">
+                    {item.activeBadge && (
+                      <span className="active-pill">{item.activeBadge}</span>
+                    )}
+                    {item.shortcut && (
+                      <CommandShortcutHint shortcut={item.shortcut} />
+                    )}
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
       </div>
