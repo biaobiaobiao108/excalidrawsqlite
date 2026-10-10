@@ -30,6 +30,7 @@ export interface DialogProps {
   ariaLabel?: string;
   autofocus?: boolean;
   closeOnClickOutside?: boolean;
+  nativeTopLayer?: boolean;
 }
 
 function getDialogSize(size: DialogSize): number {
@@ -115,6 +116,7 @@ export const Dialog = (props: DialogProps) => {
       maxWidth={getDialogSize(props.size)}
       onCloseRequest={onClose}
       closeOnClickOutside={props.closeOnClickOutside}
+      nativeTopLayer={props.nativeTopLayer}
     >
       <Island ref={setIslandNode}>
         {props.title && (

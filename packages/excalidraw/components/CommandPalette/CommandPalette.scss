@@ -1,13 +1,23 @@
 .excalidraw {
-  // Use the viewport as the positioning reference so document scrollbars cannot
-  // shift the palette while the command list scrolls.
+  // Match the reference app: a native modal dialog enters the browser's top
+  // layer, so its centering cannot inherit page or portal positioning changes.
   .Modal.command-palette-dialog {
     position: fixed;
-    inset: 0 auto auto 0;
-    inline-size: 100vw;
-    block-size: 100dvh;
+    inset: 0;
+    inline-size: auto;
+    block-size: auto;
+    max-inline-size: none;
+    max-block-size: none;
+    margin: 0;
     box-sizing: border-box;
     padding: 0;
+    border: 0;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  .Modal.command-palette-dialog::backdrop {
+    background: transparent;
   }
 
   .command-palette-dialog {
@@ -132,6 +142,7 @@
     }
 
     .commands {
+      --command-list-bottom-inset: 8px;
       display: grid;
       grid-auto-rows: max-content;
       align-content: start;
@@ -143,6 +154,8 @@
       flex: 0 1 auto;
       margin-top: 12px;
       padding-right: 4px;
+      padding-block-end: var(--command-list-bottom-inset);
+      scroll-padding-block-end: var(--command-list-bottom-inset);
       color: var(--popup-text-color);
       user-select: none;
       scrollbar-gutter: stable;

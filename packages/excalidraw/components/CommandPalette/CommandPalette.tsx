@@ -862,10 +862,18 @@ function CommandPaletteInner({
 
     const listBounds = commandList.getBoundingClientRect();
     const commandBounds = selectedCommand.getBoundingClientRect();
+    const bottomInset =
+      Number.parseFloat(
+        getComputedStyle(commandList).getPropertyValue(
+          "--command-list-bottom-inset",
+        ),
+      ) || 0;
+    const visibleBottom = listBounds.bottom - bottomInset;
+
     if (commandBounds.top < listBounds.top) {
       commandList.scrollTop -= listBounds.top - commandBounds.top;
-    } else if (commandBounds.bottom > listBounds.bottom) {
-      commandList.scrollTop += commandBounds.bottom - listBounds.bottom;
+    } else if (commandBounds.bottom > visibleBottom) {
+      commandList.scrollTop += commandBounds.bottom - visibleBottom;
     }
   }, [commandsByCategory, currentCommand]);
 
@@ -877,6 +885,7 @@ function CommandPaletteInner({
       size={520}
       autofocus
       className="command-palette-dialog"
+      nativeTopLayer
     >
       <TextField
         value={commandSearch}
