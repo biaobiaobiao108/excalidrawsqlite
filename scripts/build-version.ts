@@ -8,7 +8,7 @@ const indexFile = path.join(appBuildDir, "index.html");
 
 const versionDate = (date: Date) => date.toISOString().replace(".000", "");
 
-const buildHash = (process.env.BUILD_SHA || process.env.VITE_APP_GIT_SHA || "")
+const buildHash = (process.env.BUILD_SHA || "")
   .trim()
   .slice(0, 7);
 const buildDate = (process.env.BUILD_DATE || "").trim();

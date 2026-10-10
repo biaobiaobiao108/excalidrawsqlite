@@ -105,23 +105,6 @@ export async function buildFrontend(options: BuildOptions = {}) {
           "<!-- THEME_INIT_PLACEHOLDER -->",
         );
 
-        // Rewrite public root references so Bun can bundle favicons
-        content = content.replace(
-          /href="\/favicon\.ico"/g,
-          'href="../public/favicon.ico"',
-        );
-        content = content.replace(
-          /href="\/apple-touch-icon\.png"/g,
-          'href="../public/apple-touch-icon.png"',
-        );
-        content = content.replace(
-          /href="\/favicon-32x32\.png"/g,
-          'href="../public/favicon-32x32.png"',
-        );
-        content = content.replace(
-          /href="\/favicon-16x16\.png"/g,
-          'href="../public/favicon-16x16.png"',
-        );
         return {
           contents: content,
           loader: "html",
@@ -132,7 +115,7 @@ export async function buildFrontend(options: BuildOptions = {}) {
 
   // 5. Run Bun.build
   const gitSha =
-    (process.env.BUILD_SHA || process.env.VITE_APP_GIT_SHA || "")
+    (process.env.BUILD_SHA || "")
       .trim()
       .slice(0, 7) || "local";
   const mode = isDev ? "development" : "production";
@@ -158,7 +141,6 @@ export async function buildFrontend(options: BuildOptions = {}) {
     plugins: [sassPlugin, htmlPlugin],
     define: {
       "process.env.NODE_ENV": JSON.stringify(mode),
-      "process.env.VITE_APP_GIT_SHA": JSON.stringify(gitSha),
       PKG_NAME: JSON.stringify(clientEnv.PKG_NAME),
       PKG_VERSION: JSON.stringify(clientEnv.PKG_VERSION),
       ...envDefines,
@@ -196,13 +178,6 @@ export async function buildFrontend(options: BuildOptions = {}) {
     finalHtml = finalHtml.replace(
       "<!-- PLACEHOLDER:EXCALIDRAW_APP_FONTS -->",
       "",
-    );
-
-    // Keep the browser favicon URL stable across builds so tab icons do not
-    // depend on a generated asset hash or a stale cached HTML document.
-    finalHtml = finalHtml.replace(
-      /href="\/favicon-[^"]+\.ico"/g,
-      'href="/favicon.ico"',
     );
 
     // Strip crossorigin attributes from same-origin bundles to avoid unnecessary CORS mode

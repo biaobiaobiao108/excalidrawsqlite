@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 
 import type { ServerRuntime } from "./types";
@@ -110,15 +109,7 @@ export const getStaticDir = (runtime: ServerRuntime) => {
   if (runtime.staticDir) {
     return path.resolve(runtime.staticDir);
   }
-  const candidates = [
-    path.join(PROJECT_ROOT, "excalidraw-app/build"),
-    path.join(PROJECT_ROOT, "excalidraw-app/dist"),
-    path.join(PROJECT_ROOT, "dist"),
-    path.join(PROJECT_ROOT, "build"),
-  ];
-  return (
-    candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0]
-  );
+  return path.join(PROJECT_ROOT, "excalidraw-app/build");
 };
 
 export const getStaticCacheControl = (pathname: string) => {
@@ -129,9 +120,6 @@ export const getStaticCacheControl = (pathname: string) => {
     pathname.startsWith("/locales/")
   ) {
     return "no-cache";
-  }
-  if (pathname === "/sw.js" || pathname === "/service-worker.js") {
-    return "no-store";
   }
   const filename = path.posix.basename(pathname);
   const hasContentHash = /^(?:chunk-[a-z0-9]+|.+-[a-z0-9]{8,})\.[a-z0-9]+$/i.test(

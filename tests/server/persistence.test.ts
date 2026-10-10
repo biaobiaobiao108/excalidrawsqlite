@@ -2281,7 +2281,6 @@ describe("cloud persistence server", () => {
       "export {};",
     );
     await fs.writeFile(path.join(staticDir, "chunk-a1b2c3d4.js"), "export {};");
-    await fs.writeFile(path.join(staticDir, "service-worker.js"), "self;");
     runtime.staticDir = staticDir;
 
     const page = await request(handler, "/cloud/scene", {
@@ -2337,8 +2336,6 @@ describe("cloud persistence server", () => {
     const hashedRootAsset = await request(handler, "/chunk-a1b2c3d4.js");
     expect(hashedRootAsset.headers.get("cache-control")).toContain("immutable");
 
-    const legacyWorker = await request(handler, "/service-worker.js");
-    expect(legacyWorker.headers.get("cache-control")).toBe("no-store");
   });
 
   it("cleans abandoned final backup files while preserving active downloads", async () => {
