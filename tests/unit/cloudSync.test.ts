@@ -42,6 +42,123 @@ const createPersistence = () => {
 };
 
 describe("cloud save queue", () => {
+  it("reuploads a cached attachment after server GC rejects its scene reference", async () => {
+    const originalFetch = globalThis.fetch;
+    const { persistence } = createPersistence();
+    const file = {
+      id: "queue-gc-recovery", mimeType: "image/png", created: 1,
+      dataURL: "data:image/png;base64,aGVsbG8=",
+    };
+    let attachmentExists = false;
+    let uploads = 0;
+    let sceneWrites = 0;
+    let revision = 1;
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveCloudScene: async (id, data) => {
+        sceneWrites++;
+        if (!attachmentExists) {
+          throw new CloudApiError("attachment reclaimed", 422, "MISSING_FILE");
+        }
+        expect(data.baseRevision).toBe(revision);
+        return { success: true, id, updated_at: 1, revision: ++revision };
+      },
+    });
+    try {
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest(
+        "SHA-256", new TextEncoder().encode("hello"),
+      ))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      globalThis.fetch = (async (input, init) => {
+        expect(input).toBe(`/api/files/${file.id}`);
+        expect(init?.method).toBe("PUT");
+        uploads++;
+        attachmentExists = true;
+        return new Response(null, { status: 204, headers: { etag: `"${digest}"` } });
+      }) as typeof fetch;
+      await queue.ready();
+      const saved = {
+        ...snapshot("with image"),
+        elements: [{ id: "image", type: "image", fileId: file.id, version: 1 }],
+        files: { [file.id]: file },
+      } as unknown as CloudSaveSnapshot;
+      queue.enqueue(saved);
+      expect(await queue.flush("scene")).toBe("saved");
+      expect(uploads).toBe(1);
+      // GC removes the remote attachment, while undo retains the local file.
+      attachmentExists = false;
+      queue.enqueue({ ...saved, baseRevision: revision });
+      expect(await queue.flush("scene")).toBe("saved");
+      expect(uploads).toBe(2);
+      expect(sceneWrites).toBe(3);
+      expect(queue.hasPending("scene")).toBe(false);
+      queue.enqueue({ ...saved, baseRevision: revision });
+      expect(await queue.flush("scene")).toBe("saved");
+      expect(uploads).toBe(2);
+    } finally {
+      queue.dispose();
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("bounds repeated missing attachment recovery and retains the latest edit", async () => {
+    const { persistence } = createPersistence();
+    const uploads: Array<boolean | undefined> = [];
+    let writes = 0;
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async (_, options) => { uploads.push(options?.forceUpload); },
+      saveCloudScene: async () => {
+        if (++writes === 1) queue.enqueue(snapshot("newer"));
+        throw new CloudApiError("attachment missing", 422, "MISSING_FILE");
+      },
+    });
+    try {
+      await queue.ready();
+      queue.enqueue(snapshot("older"));
+      expect(await queue.flush("scene")).toBe("error");
+      expect(writes).toBe(3);
+      expect(uploads).toEqual([undefined, true, true]);
+      expect(queue.getPendingSnapshot("scene")?.name).toBe("newer");
+    } finally {
+      queue.dispose();
+    }
+  });
+
+  for (const status of [401, 409]) {
+    it(`preserves ${status} handling after a forced attachment reupload`, async () => {
+      const { persistence } = createPersistence();
+      let writes = 0;
+      let auth = 0;
+      let conflicts = 0;
+      const queue = new CloudSaveQueue({
+        ...callbacks,
+        onAuthRequired: () => { auth++; },
+        onConflict: () => { conflicts++; },
+      }, {
+        persistence,
+        saveFilesToCloud: async () => {},
+        saveCloudScene: async () => {
+          if (++writes === 1) throw new CloudApiError("missing", 422, "MISSING_FILE");
+          throw new CloudApiError("blocked", status, "BLOCKED");
+        },
+        fetchCloudScene: async () => {
+          throw new Error("remote unavailable");
+        },
+      });
+      try {
+        await queue.ready();
+        queue.enqueue(snapshot("recover"));
+        expect(await queue.flush("scene")).toBe(status === 401 ? "auth" : "conflict");
+        expect(writes).toBe(2);
+        expect(auth).toBe(status === 401 ? 1 : 0);
+        expect(conflicts).toBe(status === 409 ? 1 : 0);
+        expect(queue.hasPending("scene")).toBe(true);
+      } finally {
+        queue.dispose();
+      }
+    });
+  }
+
   it("flushes an unchanged opened board without issuing a scene write", async () => {
     const { persistence } = createPersistence();
     let writes = 0;

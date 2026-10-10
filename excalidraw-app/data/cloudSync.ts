@@ -838,12 +838,16 @@ export class CloudSaveQueue {
 
     try {
       await this.waitForPersistence(sceneId);
+      let forceUpload = false;
       for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt++) {
         try {
           if (this.isDisposed || this.disposed.has(sceneId)) {
             return;
           }
-          await this.dependencies.saveFilesToCloud(snapshot.files);
+          await this.dependencies.saveFilesToCloud(
+            snapshot.files,
+            forceUpload ? { forceUpload: true } : undefined,
+          );
           if (this.isDisposed || this.disposed.has(sceneId)) {
             return;
           }
@@ -898,6 +902,18 @@ export class CloudSaveQueue {
             this.setStatus(sceneId, "conflict");
             this.callbacks.onConflict(sceneId, snapshot);
             return;
+          }
+          if (
+            error instanceof CloudApiError &&
+            error.status === 422 && error.code === "MISSING_FILE" &&
+            attempt < RETRY_DELAYS_MS.length - 1
+          ) {
+            // Upload caches describe a past server state. GC can reclaim an
+            // image while it remains available locally for undo/recovery.
+            // The rejected scene write has not committed; retry its original
+            // revision after renewing every attachment, within this budget.
+            forceUpload = true;
+            continue;
           }
           if (attempt === RETRY_DELAYS_MS.length - 1) {
             if (!this.pending.has(sceneId)) {

@@ -8,6 +8,48 @@ import {
 } from "../../excalidraw-app/data/cloudStorage";
 
 describe("cloud file upload", () => {
+  for (const webCrypto of [true, false]) {
+    it(`forces a reclaimed attachment upload while retaining normal deduplication (Web Crypto=${webCrypto})`, async () => {
+      const originalCrypto = globalThis.crypto;
+      const originalFetch = globalThis.fetch;
+      const file = {
+        id: `gc-upload-${webCrypto}`,
+        mimeType: "image/png",
+        created: 1,
+        dataURL: "data:image/png;base64,aGVsbG8=",
+      };
+      let requests = 0;
+      try {
+        const digest = Array.from(new Uint8Array(await originalCrypto.subtle.digest(
+          "SHA-256", new TextEncoder().encode("hello"),
+        ))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        if (!webCrypto) {
+          globalThis.crypto = { subtle: undefined } as unknown as Crypto;
+        }
+        globalThis.fetch = (async () => {
+          requests++;
+          return new Response(null, { status: 204, headers: { etag: `"${digest}"` } });
+        }) as unknown as typeof fetch;
+        const files = { [file.id]: file } as unknown as BinaryFiles;
+        await saveFilesToCloud(files);
+        await saveFilesToCloud(files);
+        expect(requests).toBe(1);
+        if (webCrypto) {
+          // Queue snapshots clone files, so this hits the ID/ETag cache.
+          await saveFilesToCloud({ [file.id]: { ...file } } as unknown as BinaryFiles);
+          expect(requests).toBe(1);
+        }
+        await saveFilesToCloud(files, { forceUpload: true });
+        expect(requests).toBe(2);
+        await saveFilesToCloud(files);
+        expect(requests).toBe(2);
+      } finally {
+        globalThis.crypto = originalCrypto;
+        globalThis.fetch = originalFetch;
+      }
+    });
+  }
+
   it("uploads without Web Crypto and skips unchanged files on retry", async () => {
     const originalCrypto = globalThis.crypto;
     const originalFetch = globalThis.fetch;

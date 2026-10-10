@@ -812,7 +812,10 @@ export async function clearCloudTrash(): Promise<{
   );
 }
 
-export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
+export async function saveFilesToCloud(
+  files: BinaryFiles,
+  options: { forceUpload?: boolean } = {},
+): Promise<void> {
   const entries = Object.values(files || {});
   const estimatedBytes = entries.reduce(
     (total, file) => total + Math.ceil(file.dataURL.length * 0.75),
@@ -821,14 +824,14 @@ export async function saveFilesToCloud(files: BinaryFiles): Promise<void> {
   await runWithConcurrency(entries, async (file) => {
     const blob = dataUrlToBlob(file.dataURL, file.mimeType);
     const digest = await sha256Hex(blob);
-    if (
+    if (!options.forceUpload && (
       (digest && uploadedCloudFileHashes.get(file) === digest) ||
       (!digest && uploadedCloudFileDataUrls.get(file) === file.dataURL)
-    ) {
+    )) {
       return;
     }
     const knownEtag = cloudFileEtags.get(file.id);
-    if (digest && knownEtag === `"${digest}"`) {
+    if (!options.forceUpload && digest && knownEtag === `"${digest}"`) {
       rememberCloudFileHash(file, digest);
       uploadedCloudFileDataUrls.set(file, file.dataURL);
       return;
