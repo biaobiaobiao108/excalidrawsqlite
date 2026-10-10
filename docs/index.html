@@ -1733,21 +1733,6 @@
             <div class="code-block">
               <button
                 class="copy-code-btn"
-                data-clipboard="mkdir -p ./data
-cat << 'EOF' > docker-compose.yml
-services:
-  excalidraw:
-    image: ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
-    restart: unless-stopped
-    ports:
-      - '127.0.0.1:8080:8080'
-    environment:
-      - AUTH_PASSWORD=your-strong-password
-      - TRUST_PROXY=false
-    volumes:
-      - ./data:/app/data
-EOF
-docker compose up -d"
               >
                 复制配置与启动命令
               </button>
@@ -2094,7 +2079,11 @@ bun run dev</code></pre>
 
       document.querySelectorAll(".copy-code-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
-          const text = btn.getAttribute("data-clipboard");
+          const visibleCode = btn
+            .closest(".code-block")
+            ?.querySelector("pre code")
+            ?.textContent?.trim();
+          const text = btn.getAttribute("data-clipboard") || visibleCode;
           if (navigator.clipboard && text) {
             navigator.clipboard
               .writeText(text)
