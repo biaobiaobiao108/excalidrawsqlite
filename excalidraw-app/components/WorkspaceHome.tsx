@@ -456,14 +456,6 @@ const FolderAppearanceIcon = ({
   );
 };
 
-const MoreIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="5" cy="12" r="1.4" />
-    <circle cx="12" cy="12" r="1.4" />
-    <circle cx="19" cy="12" r="1.4" />
-  </svg>
-);
-
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M3 6h18" />
@@ -952,16 +944,6 @@ const BoardCard = React.memo(({
                 disabled={actionPending}
               >
                 <TrashIcon />
-              </button>
-              <button
-                type="button"
-                className="icon-button board-more-button"
-                aria-label={`更多画板操作：${sceneName}`}
-                title="更多操作"
-                onClick={(event) => onOpenContextMenu(scene, event)}
-                disabled={actionPending}
-              >
-                <MoreIcon />
               </button>
             </>
           )}
