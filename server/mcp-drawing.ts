@@ -165,9 +165,7 @@ const validateLinear = (value: Record<string, unknown>) => {
   );
 };
 export const drawingElementSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("rectangle"), ...shapeFields }).strict(),
-  z.object({ type: z.literal("ellipse"), ...shapeFields }).strict(),
-  z.object({ type: z.literal("diamond"), ...shapeFields }).strict(),
+  z.object({ type: z.enum(["rectangle", "ellipse", "diamond"]), ...shapeFields }).strict(),
   z
     .object({
       type: z.literal("text"),
