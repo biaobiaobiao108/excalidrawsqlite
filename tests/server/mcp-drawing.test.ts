@@ -49,6 +49,13 @@ describe("MCP drawing contracts", () => {
     const unchanged = updateDrawingElements(changed.elements, [elementUpdateSchema.parse({ id: "box", labelId: "caption", labelStyle: { fontSize: 24, opacity: 40 } })]);
     expect(unchanged.updatedCount).toBe(0);
     expect(unchanged.elements).toEqual(changed.elements);
+    const precedence = elementUpdateSchema.parse({ id: "box", fontSize: 16, fontFamily: "Excalifont", textAlign: "right",
+      strokeColor: "blue", labelStyle: { fontSize: 24, fontFamily: "system", textAlign: "left", strokeColor: "red" } });
+    const styled = updateDrawingElements(changed.elements, [precedence]);
+    expect(styled.elements.find((e) => e.id === "caption")).toMatchObject({ fontSize: 24, fontFamily: 13, textAlign: "left", strokeColor: "red" });
+    const repeated = updateDrawingElements(styled.elements, [precedence]);
+    expect(repeated.updatedCount).toBe(0);
+    expect(repeated.elements).toEqual(styled.elements);
     expect(current).toEqual(before);
   });
   it("creates stable labels through updates and rejects invalid label operations atomically", () => {
@@ -72,6 +79,20 @@ describe("MCP drawing contracts", () => {
     ])).toThrow("标签 ID 已存在");
     expect(current).toEqual(before);
     expect(elementUpdateSchema.safeParse({ id: "box", labelStyle: { fontSzie: 30 } }).success).toBe(false);
+  });
+  it("rejects independently rotated bound labels instead of silently discarding their rotation", () => {
+    expect(() => createDrawingBatch([drawingElementSchema.parse({ ...shape("box"), text: "label", labelStyle: { rotation: 30 } })]))
+      .toThrow("绑定文字随形状旋转");
+    const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"), text: "label", rotation: 30, labelStyle: { rotation: 30 } })]).elements;
+    const before = structuredClone(current);
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "box", labelStyle: { rotation: 45 } })]))
+      .toThrow("绑定文字随形状旋转");
+    const changed = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "box", rotation: 45, labelStyle: { rotation: 45 } })]);
+    expect(Number(changed.elements.filter((e) => e.type === "text")[0].angle)).toBe(Math.PI / 4);
+    const repeated = updateDrawingElements(changed.elements, [elementUpdateSchema.parse({ id: "box", rotation: 45, labelStyle: { rotation: 45 } })]);
+    expect(repeated.updatedCount).toBe(0);
+    expect(current).toEqual(before);
+    expect(Number(createDrawingBatch(inputDrawingElements(changed.elements).elements).elements.filter((e) => e.type === "text")[0].angle)).toBe(Math.PI / 4);
   });
   it("roundtrips writable input with absolute bends, rotation, bindings and stable label IDs", () => {
     const current = createDrawingBatch([

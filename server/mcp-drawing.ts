@@ -302,6 +302,9 @@ const layoutLabel = (
   return { ...measured, ...position, angle: shape.angle };
 };
 export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
+  if ((spec.type === "rectangle" || spec.type === "ellipse" || spec.type === "diamond") &&
+    spec.labelStyle?.rotation !== undefined && Math.abs(spec.labelStyle.rotation - (spec.rotation ?? 0)) > 1e-10)
+    throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "绑定文字随形状旋转，labelStyle.rotation 必须与形状 rotation 相同");
   const base = { ...props(spec), ...(spec.id ? { id: spec.id } : {}) };
   if (spec.type === "line" || spec.type === "arrow") {
     const opts = {
@@ -506,6 +509,9 @@ export const updateDrawingElements = (
         throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "已有标签不能重命名 labelId，请保留原 ID");
       if (!existingLabelId && patch.labelId && map.has(patch.labelId))
         throw new HttpError(400, "DUPLICATE_ELEMENT_ID", `标签 ID 已存在：${patch.labelId}`);
+      if (patch.labelStyle?.rotation !== undefined &&
+        Math.abs(patch.labelStyle.rotation - (patch.rotation ?? element.angle * 180 / Math.PI)) > 1e-10)
+        throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "绑定文字随形状旋转，labelStyle.rotation 必须与更新后形状 rotation 相同");
     }
     if (isShapeLabel && patch.text !== undefined && patch.text.length > 2_000)
       throw new HttpError(
@@ -592,15 +598,20 @@ export const updateDrawingElements = (
         JSON.stringify((element as unknown as Record<string, unknown>)[key]) ===
         JSON.stringify(value),
     );
+    const labelTypography = {
+      fontSize: patch.labelStyle?.fontSize ?? patch.fontSize,
+      fontFamily: patch.labelStyle?.fontFamily ?? patch.fontFamily,
+      textAlign: patch.labelStyle?.textAlign ?? patch.textAlign,
+    };
     const sameText =
       (patch.text === undefined ||
         patch.text === (textComparison?.originalText ?? "")) &&
-      (patch.fontSize === undefined ||
-        patch.fontSize === textComparison?.fontSize) &&
-      (patch.fontFamily === undefined ||
-        fontId(patch.fontFamily) === textComparison?.fontFamily) &&
-      (patch.textAlign === undefined ||
-        patch.textAlign === textComparison?.textAlign);
+      (labelTypography.fontSize === undefined ||
+        labelTypography.fontSize === textComparison?.fontSize) &&
+      (labelTypography.fontFamily === undefined ||
+        fontId(labelTypography.fontFamily) === textComparison?.fontFamily) &&
+      (labelTypography.textAlign === undefined ||
+        labelTypography.textAlign === textComparison?.textAlign);
     const nestedLabelChanges = props(patch.labelStyle || {});
     const sameLabelStyle = Object.entries(nestedLabelChanges).every(([key, value]) =>
       JSON.stringify((textComparison as unknown as Record<string, unknown> | undefined)?.[key]) === JSON.stringify(value)) &&
