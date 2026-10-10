@@ -1526,9 +1526,9 @@ export const createRequestHandler = (
 
         const etag = row.sha256 ? `"${row.sha256}"` : undefined;
         const ifNoneMatch = req.headers.get("if-none-match");
-        const cacheControl = id.startsWith("thumbnail_")
-          ? "private, no-cache"
-          : "private, max-age=31536000, immutable";
+        // File IDs can be overwritten by PUT, so clients must revalidate even
+        // when the response carries a content hash ETag.
+        const cacheControl = "private, no-cache";
 
         if (etag && ifNoneMatch) {
           const clientEtags = ifNoneMatch

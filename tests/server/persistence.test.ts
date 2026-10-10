@@ -795,7 +795,7 @@ describe("cloud persistence server", () => {
     expect(download.status).toBe(200);
     expect(new Uint8Array(await download.arrayBuffer())).toEqual(bytes);
     expect(download.headers.get("content-type")).toContain("image/png");
-    expect(download.headers.get("cache-control")).toContain("immutable");
+    expect(download.headers.get("cache-control")).toContain("no-cache");
     const fileEtag = download.headers.get("etag");
     expect(fileEtag).toBeTruthy();
 
@@ -849,6 +849,55 @@ describe("cloud persistence server", () => {
         count: number;
       },
     ).toEqual({ count: 0 });
+  });
+
+  it("revalidates an overwritten file ID and returns its new content", async () => {
+    const { handler } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const initialBytes = new Uint8Array([1, 2, 3]);
+    const replacementBytes = new Uint8Array([9, 8, 7, 6]);
+    const upload = (body: Uint8Array) =>
+      request(handler, "/api/files/file_cache_validation", {
+        method: "PUT",
+        headers: { Cookie: cookie, "Content-Type": "image/png" },
+        body,
+      });
+
+    expect((await upload(initialBytes)).status).toBe(201);
+    const original = await request(
+      handler,
+      "/api/files/file_cache_validation",
+      { headers: { Cookie: cookie } },
+    );
+    const originalEtag = original.headers.get("etag");
+    expect(original.status).toBe(200);
+    expect(original.headers.get("cache-control")).toBe("private, no-cache");
+    expect(originalEtag).toBeTruthy();
+    expect(new Uint8Array(await original.arrayBuffer())).toEqual(initialBytes);
+
+    expect((await upload(replacementBytes)).status).toBe(201);
+    const revalidated = await request(
+      handler,
+      "/api/files/file_cache_validation",
+      {
+        headers: { Cookie: cookie, "If-None-Match": originalEtag! },
+      },
+    );
+    expect(revalidated.status).toBe(200);
+    expect(revalidated.headers.get("etag")).not.toBe(originalEtag);
+    expect(revalidated.headers.get("cache-control")).toBe("private, no-cache");
+    expect(new Uint8Array(await revalidated.arrayBuffer())).toEqual(
+      replacementBytes,
+    );
+
+    const currentEtag = revalidated.headers.get("etag");
+    const unchanged = await request(
+      handler,
+      "/api/files/file_cache_validation",
+      { headers: { Cookie: cookie, "If-None-Match": currentEtag! } },
+    );
+    expect(unchanged.status).toBe(304);
+    expect(unchanged.headers.get("etag")).toBe(currentEtag);
   });
 
   it("persists sessions across runtime restarts", async () => {
