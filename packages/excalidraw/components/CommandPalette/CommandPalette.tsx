@@ -73,6 +73,7 @@ import {
 import * as defaultItems from "./defaultCommandPaletteItems";
 import "./CommandPalette.scss";
 import { DEFAULT_CATEGORIES } from "./constants";
+import { scrollCommandIntoView } from "./scrollCommandIntoView";
 
 import type { CommandPaletteItem } from "./types";
 import type { ToolbarToolType } from "../Tools";
@@ -860,21 +861,7 @@ function CommandPaletteInner({
       return;
     }
 
-    const listBounds = commandList.getBoundingClientRect();
-    const commandBounds = selectedCommand.getBoundingClientRect();
-    const bottomInset =
-      Number.parseFloat(
-        getComputedStyle(commandList).getPropertyValue(
-          "--command-list-bottom-inset",
-        ),
-      ) || 0;
-    const visibleBottom = listBounds.bottom - bottomInset;
-
-    if (commandBounds.top < listBounds.top) {
-      commandList.scrollTop -= listBounds.top - commandBounds.top;
-    } else if (commandBounds.bottom > visibleBottom) {
-      commandList.scrollTop += commandBounds.bottom - visibleBottom;
-    }
+    scrollCommandIntoView(commandList, selectedCommand);
   }, [commandsByCategory, currentCommand]);
 
   return (

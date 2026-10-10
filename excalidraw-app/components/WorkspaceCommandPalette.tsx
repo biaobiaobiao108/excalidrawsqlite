@@ -1,12 +1,14 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 
 import type { CloudFolder, CloudSceneSummary } from "../data/cloudStorage";
+import { scrollCommandIntoView } from "../../packages/excalidraw/components/CommandPalette/scrollCommandIntoView";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 
 import "./WorkspaceCommandPalette.scss";
@@ -763,21 +765,15 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
   }, [query]);
 
   // 仅滚动命令列表视口，避免 scrollIntoView 连带移动弹窗或页面。
-  useEffect(() => {
+  useLayoutEffect(() => {
     const list = commandListRef.current;
     const item = itemRefs.current[activeIndex];
     if (!list || !item) {
       return;
     }
 
-    const listBounds = list.getBoundingClientRect();
-    const itemBounds = item.getBoundingClientRect();
-    if (itemBounds.top < listBounds.top) {
-      list.scrollTop -= listBounds.top - itemBounds.top;
-    } else if (itemBounds.bottom > listBounds.bottom) {
-      list.scrollTop += itemBounds.bottom - listBounds.bottom;
-    }
-  }, [activeIndex]);
+    scrollCommandIntoView(list, item);
+  }, [activeIndex, flattenedItems]);
 
   const executeItem = useCallback(
     (item: PaletteCommand, newTab = false) => {

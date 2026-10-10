@@ -150,7 +150,8 @@
       overflow-y: auto;
       box-sizing: border-box;
       min-height: 0;
-      max-height: min(294px, 60dvh);
+      // 七行命令（40px）、六个间隔（2px）和底部留白（8px）。
+      max-height: min(300px, 60dvh);
       flex: 0 1 auto;
       margin-top: 12px;
       padding-right: 4px;

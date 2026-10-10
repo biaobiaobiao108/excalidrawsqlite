@@ -122,12 +122,16 @@
 
     // 固定列表视口上限和行高，键盘移动选中项时只滚动列表本身。
     .commands {
+      --command-list-bottom-inset: 8px;
       overflow-y: auto;
       box-sizing: border-box;
       margin-block-start: 12px;
       padding-inline-end: 4px;
       min-block-size: 0;
-      max-block-size: min(294px, 60dvh);
+      // 七行命令（40px）、六个间隔（2px）和底部留白（8px）。
+      max-block-size: min(300px, 60dvh);
+      padding-block-end: var(--command-list-bottom-inset);
+      scroll-padding-block-end: var(--command-list-bottom-inset);
       flex: 0 1 auto;
       display: grid;
       grid-auto-rows: max-content;
