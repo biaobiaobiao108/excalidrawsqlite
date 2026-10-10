@@ -936,6 +936,15 @@ export const createRequestHandler = (
           }
         });
         transaction.immediate();
+        for (const entry of entries) {
+          publishSceneChanged(runtime, {
+            type: "scene_changed",
+            sceneId: entry.id,
+            revision: entry.revision,
+            updatedAt: now,
+            changeKind: isRestore ? "restored" : "deleted",
+          });
+        }
         publishWorkspaceChanged(runtime, now);
         return jsonResponse(runtime, req, {
           success: true,
@@ -1343,7 +1352,7 @@ export const createRequestHandler = (
         }
         const thumbnailId = `thumbnail_${sha256Hex(id)}`;
         const thumbnailVersion = parseThumbnailVersion(req);
-        return withThumbnailWriteLock(thumbnailId, async () => {
+        return await withThumbnailWriteLock(thumbnailId, async () => {
           const currentThumbnail = stmts.getFileUpdatedAt.get(thumbnailId) as
             | { updated_at: number }
             | null;
@@ -1410,7 +1419,7 @@ export const createRequestHandler = (
         ) || 1;
         const thumbnailId = `thumbnail_${sha256Hex(id)}`;
         const thumbnailVersion = parseThumbnailVersion(req);
-        return withThumbnailWriteLock(thumbnailId, async () => {
+        return await withThumbnailWriteLock(thumbnailId, async () => {
           const currentThumbnail = stmts.getFileUpdatedAt.get(thumbnailId) as
             | { updated_at: number }
             | null;
