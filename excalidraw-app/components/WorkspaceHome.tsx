@@ -46,6 +46,7 @@ import { AuthDialog } from "./AuthDialog";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import { CustomSelect } from "./CustomSelect";
 import { WorkspaceCommandPalette } from "./WorkspaceCommandPalette";
+import { refreshWorkspacePage } from "./workspace-page-refresh";
 import {
   applyBoardSelectionClick,
   isBoardSelectionModifierClick,
@@ -1309,6 +1310,8 @@ export const WorkspaceHome = ({
   };
   const currentPageRef = useRef({ key: pageQueryKey, options: currentPageOptions });
   currentPageRef.current = { key: pageQueryKey, options: currentPageOptions };
+  const loadedScenesRef = useRef({ scenes, trashScenes });
+  loadedScenesRef.current = { scenes, trashScenes };
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
   const updateSceneSelection = useCallback((next: BoardSelectionState) => {
@@ -1355,6 +1358,12 @@ export const WorkspaceHome = ({
     const isCurrent = () =>
       loadRequestRef.current === requestId &&
       currentPageRef.current.key === queryKey;
+    const loadedCount =
+      loadedPageQueryKeyRef.current === queryKey
+        ? (options.trash
+            ? loadedScenesRef.current.trashScenes
+            : loadedScenesRef.current.scenes).length
+        : 0;
     if (!workspaceSnapshot) {
       setLoading(true);
     }
@@ -1369,12 +1378,26 @@ export const WorkspaceHome = ({
         return;
       }
       const [scenePage, folderList, trashPage, stats] = await Promise.all([
-        fetchCloudScenePage(options.trash ? {} : options),
+        options.trash
+          ? fetchCloudScenePage({})
+          : refreshWorkspacePage(
+              options,
+              loadedCount,
+              fetchCloudScenePage,
+              isCurrent,
+            ),
         fetchCloudFolders(),
-        fetchCloudScenePage(options.trash ? options : { trash: true }),
+        options.trash
+          ? refreshWorkspacePage(
+              options,
+              loadedCount,
+              fetchCloudScenePage,
+              isCurrent,
+            )
+          : fetchCloudScenePage({ trash: true }),
         fetchCloudWorkspaceStats(),
       ]);
-      if (!isCurrent()) {
+      if (!isCurrent() || !scenePage || !trashPage) {
         return;
       }
       let migratedScene: CloudSceneSummary | null = null;
@@ -1434,6 +1457,21 @@ export const WorkspaceHome = ({
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!workspaceStats) {
+      return;
+    }
+    if (selectedTag && !workspaceStats.tags.includes(selectedTag)) {
+      setSelectedTag(null);
+    }
+    if (
+      selectedFolderId &&
+      !folders.some((folder) => folder.id === selectedFolderId)
+    ) {
+      setSelectedFolderId(null);
+    }
+  }, [workspaceStats, folders, selectedTag, selectedFolderId]);
 
   const getCurrentPageOptions = useCallback(
     (cursor: string | null = null) => ({
@@ -2746,7 +2784,7 @@ export const WorkspaceHome = ({
                     ]}
                   />
                 )}
-                {allTags.length > 0 && view !== "trash" && (
+                {(allTags.length > 0 || selectedTag) && view !== "trash" && (
                   <CustomSelect
                     className="workspace-select-tag"
                     value={selectedTag || ""}
