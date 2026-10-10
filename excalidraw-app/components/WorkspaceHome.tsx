@@ -1171,15 +1171,6 @@ export const WorkspaceHome = ({
     view,
   ]);
 
-  const recentScenes = useMemo(
-    () =>
-      sortScenes(
-        scenes.filter((scene) => scene.last_opened_at),
-        "opened",
-      ).slice(0, 4),
-    [scenes],
-  );
-
   const hasMoreScenes = Boolean(
     view === "trash" ? trashSceneCursor : sceneCursor,
   );
@@ -1459,67 +1450,66 @@ export const WorkspaceHome = ({
 
   return (
     <div className="workspace-home" ref={rootRef}>
-      <header className="workspace-header">
-        <a
-          className="workspace-brand"
-          href="/"
-          aria-label="返回画板首页"
-          onClick={(event) => {
-            if (onSelectScene) {
-              event.preventDefault();
-              setView("all");
-              setSelectedFolderId(null);
-              setSelectedTag(null);
-              setSearchQuery("");
-            }
-          }}
-        >
-          <ExcalidrawMark />
-          <span>Excalidraw</span>
-        </a>
-        <div className="workspace-header-actions">
-          <label className="workspace-search">
-            <SearchIcon />
-            <input
-              ref={searchInputRef}
-              value={searchQuery}
-              placeholder="搜索画板"
-              aria-label="搜索画板"
-              onChange={(event) => setSearchQuery(event.target.value)}
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  searchInputRef.current?.blur();
-                }
-              }}
-            />
-            <kbd>Ctrl+K</kbd>
-          </label>
-          <button
-            className="primary-button header-create-button"
-            type="button"
-            onClick={() => void handleCreateScene()}
-            disabled={!!pendingAction}
-            title={
-              selectedFolderId
-                ? `在${
-                    folders.find((folder) => folder.id === selectedFolderId)
-                      ?.name || "当前文件夹"
-                  }中新建画板`
-                : "在根目录中新建画板"
-            }
-          >
-            <span aria-hidden="true">＋</span>
-            新建画板
-          </button>
-        </div>
-      </header>
-
       <div className="workspace-layout">
         <aside
           className="workspace-sidebar"
           onClick={(event) => event.stopPropagation()}
         >
+          <header className="workspace-header">
+            <a
+              className="workspace-brand"
+              href="/"
+              aria-label="返回画板首页"
+              onClick={(event) => {
+                if (onSelectScene) {
+                  event.preventDefault();
+                  setView("all");
+                  setSelectedFolderId(null);
+                  setSelectedTag(null);
+                  setSearchQuery("");
+                }
+              }}
+            >
+              <ExcalidrawMark />
+              <span>Excalidraw</span>
+            </a>
+            <div className="workspace-header-actions">
+              <button
+                className="primary-button header-create-button"
+                type="button"
+                onClick={() => void handleCreateScene()}
+                disabled={!!pendingAction}
+                title={
+                  selectedFolderId
+                    ? `在${
+                        folders.find((folder) => folder.id === selectedFolderId)
+                          ?.name || "当前文件夹"
+                      }中新建画板`
+                    : "在根目录中新建画板"
+                }
+              >
+                <span aria-hidden="true">＋</span>
+                新建画板
+              </button>
+              <label className="workspace-search">
+                <SearchIcon />
+                <input
+                  ref={searchInputRef}
+                  value={searchQuery}
+                  placeholder="搜索画板"
+                  aria-label="搜索画板"
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      searchInputRef.current?.blur();
+                    }
+                  }}
+                />
+                <kbd>Ctrl+K</kbd>
+              </label>
+            </div>
+          </header>
           <nav className="workspace-nav" aria-label="画板导航">
             <button
               className={
@@ -1630,7 +1620,7 @@ export const WorkspaceHome = ({
                   : "把想法留在画布上，随时继续。"}
               </p>
             </div>
-            {view === "trash" ? (
+            {view === "trash" && (
               <button
                 type="button"
                 className="danger-button empty-trash-button"
@@ -1640,62 +1630,6 @@ export const WorkspaceHome = ({
                 <TrashIcon />
                 清空回收站
               </button>
-            ) : (
-              <div
-                className="view-toggle"
-                role="tablist"
-                aria-label="画板筛选"
-                onKeyDown={(event) => {
-                  const tabs = Array.from(
-                    event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                      '[role="tab"]',
-                    ),
-                  );
-                  const currentIndex = tabs.indexOf(
-                    event.target instanceof HTMLButtonElement
-                      ? event.target
-                      : tabs[0],
-                  );
-                  const nextIndex =
-                    event.key === "ArrowRight"
-                      ? (currentIndex + 1) % tabs.length
-                      : event.key === "ArrowLeft"
-                      ? (currentIndex - 1 + tabs.length) % tabs.length
-                      : event.key === "Home"
-                      ? 0
-                      : event.key === "End"
-                      ? tabs.length - 1
-                      : -1;
-                  if (nextIndex >= 0) {
-                    event.preventDefault();
-                    tabs[nextIndex].focus();
-                    tabs[nextIndex].click();
-                  }
-                }}
-              >
-                {(["all", "recent", "favorites"] as BoardView[]).map((item) => (
-                  <button
-                    key={item}
-                    className={
-                      view === item && !selectedFolderId ? "is-selected" : ""
-                    }
-                    onClick={() => {
-                      setView(item);
-                      setSelectedFolderId(null);
-                    }}
-                    type="button"
-                    role="tab"
-                    aria-selected={view === item && !selectedFolderId}
-                    tabIndex={view === item && !selectedFolderId ? 0 : -1}
-                  >
-                    {item === "all"
-                      ? "全部"
-                      : item === "recent"
-                      ? "最近打开"
-                      : "收藏"}
-                  </button>
-                ))}
-              </div>
             )}
           </div>
 
@@ -1704,39 +1638,6 @@ export const WorkspaceHome = ({
               {error}
             </div>
           )}
-
-          {!loading &&
-            recentScenes.length > 0 &&
-            view === "all" &&
-            !searchQuery &&
-            !selectedFolderId &&
-            !selectedTag && (
-              <section className="recent-section">
-                <div className="section-heading">
-                  <h2>最近打开</h2>
-                  <button type="button" onClick={() => setView("recent")}>
-                    查看全部 <span aria-hidden="true">→</span>
-                  </button>
-                </div>
-                <div className="recent-board-scroller">
-                  <div className="recent-board-row">
-                    {recentScenes.map((scene) => (
-                      <BoardCard
-                        key={scene.id}
-                        scene={scene}
-                        onOpen={navigateToScene}
-                        onPreload={onPreloadScene}
-                        onToggleFavorite={handleToggleFavorite}
-                        onEdit={openMetadataDialog}
-                        onDelete={handleDeleteScene}
-                        actionPending={!!pendingAction}
-                        eager
-                      />
-                    ))}
-                  </div>
-                </div>
-              </section>
-            )}
 
           <section className="all-boards-section">
             <div className="section-heading all-boards-heading">
