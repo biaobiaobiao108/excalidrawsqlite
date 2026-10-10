@@ -696,7 +696,16 @@ export const updateDrawingElements = (
                 : fontId(patch.labelStyle?.fontFamily ?? patch.fontFamily),
             textAlign: patch.labelStyle?.textAlign ?? patch.textAlign ?? label.textAlign,
           });
-          map.set(label.id, layoutLabel(next, refreshed));
+          const laidOut = layoutLabel(next, refreshed);
+          // Text constructors retain the source version. Existing labels must
+          // advance it for Store/History to adopt remote content and layout,
+          // while constructor timestamps alone must not create false changes.
+          const labelChanges = Object.fromEntries(Object.entries(laidOut).filter(([key, value]) =>
+            !["version", "versionNonce", "updated"].includes(key) &&
+            JSON.stringify((label as unknown as Record<string, unknown>)[key]) !== JSON.stringify(value)));
+          map.set(label.id, existing?.type === "text"
+            ? newElementWith(label, labelChanges as never)
+            : laidOut);
           if (!labelId)
             next = newElementWith(next, {
               boundElements: [

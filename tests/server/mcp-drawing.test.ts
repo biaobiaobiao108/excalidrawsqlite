@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { CaptureUpdateAction, StoreSnapshot } from "@excalidraw/element/store";
+import type { OrderedExcalidrawElement, SceneElementsMap } from "@excalidraw/element/types";
 import {
   drawingElementSchema,
   elementUpdateSchema,
@@ -36,6 +38,33 @@ const flow = () =>
     }),
   ]).elements;
 describe("MCP drawing contracts", () => {
+  it("advances existing label versions so remote text, style and layout update the Store baseline", () => {
+    let current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"),
+      text: "old", labelId: "caption" })]).elements;
+    let snapshot = StoreSnapshot.create(new Map(current.map((element) => [element.id, element])) as SceneElementsMap,
+      StoreSnapshot.empty().appState);
+    for (const input of [
+      { id: "box", text: "new" },
+      { id: "box", labelStyle: { strokeColor: "red", fontSize: 24 } },
+      { id: "box", x: 40, width: 160, rotation: 30 },
+    ]) {
+      const patch = elementUpdateSchema.parse(input);
+      const previousLabel = current.find((element) => element.id === "caption")!;
+      const changed = updateDrawingElements(current, [patch]);
+      const label = changed.elements.find((element) => element.id === "caption")!;
+      expect(label.version).toBeGreaterThan(previousLabel.version);
+      const nextSnapshot = snapshot.maybeClone(CaptureUpdateAction.NEVER,
+        new Map(changed.elements.map((element) => [element.id, element])) as SceneElementsMap, undefined);
+      expect(nextSnapshot).not.toBe(snapshot);
+      expect(nextSnapshot.elements.get("caption")).toEqual(label as OrderedExcalidrawElement);
+      const repeated = updateDrawingElements(changed.elements, [patch]);
+      expect(repeated.updatedCount).toBe(0);
+      expect(repeated.elements).toEqual(changed.elements);
+      current = changed.elements;
+      snapshot = nextSnapshot;
+    }
+  });
+
   it("updates label styles independently, merges fields and preserves stable label IDs", () => {
     const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"), text: "label",
       labelId: "caption", strokeColor: "blue", labelStyle: { strokeColor: "red", fontSize: 16, textAlign: "left" } })]).elements;
