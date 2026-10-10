@@ -699,6 +699,7 @@ class App extends React.Component<AppProps, AppState> {
   private store: Store;
   private history: History;
   private filePruneScheduled = false;
+  private pendingImageFileIds = new Map<FileId, number>();
   public excalidrawContainerValue: {
     container: HTMLDivElement | null;
     id: string;
@@ -3815,6 +3816,10 @@ class App extends React.Component<AppProps, AppState> {
       this.history.getReferencedFileIds(),
     );
 
+    for (const fileId of this.pendingImageFileIds.keys()) {
+      referencedFileIds.add(fileId);
+    }
+
     for (const element of this.scene.getNonDeletedElements()) {
       if (isInitializedImageElement(element)) {
         referencedFileIds.add(element.fileId);
@@ -3837,6 +3842,22 @@ class App extends React.Component<AppProps, AppState> {
       this.files = nextFiles;
     }
     this.imageCache.trim();
+  };
+
+  private retainPendingImageFile = (fileId: FileId) => {
+    this.pendingImageFileIds.set(
+      fileId,
+      (this.pendingImageFileIds.get(fileId) || 0) + 1,
+    );
+  };
+
+  private releasePendingImageFile = (fileId: FileId) => {
+    const refCount = this.pendingImageFileIds.get(fileId) || 0;
+    if (refCount <= 1) {
+      this.pendingImageFileIds.delete(fileId);
+    } else {
+      this.pendingImageFileIds.set(fileId, refCount - 1);
+    }
   };
 
   public async componentDidMount() {
@@ -3977,6 +3998,7 @@ class App extends React.Component<AppProps, AppState> {
     this.store.clear();
     this.files = {};
     this.imageCache.clear();
+    this.pendingImageFileIds.clear();
     this.resizeObserver?.disconnect();
     this.unmounted = true;
     this.viewport.destroy();
@@ -12750,6 +12772,7 @@ class App extends React.Component<AppProps, AppState> {
   private initializeImage = async (
     placeholderImageElement: ExcalidrawImageElement,
     imageFile: File,
+    onFileIdCreated?: (fileId: FileId) => void,
   ) => {
     // at this point this should be guaranteed image file, but we do this check
     // to satisfy TS down the line
@@ -12785,90 +12808,107 @@ class App extends React.Component<AppProps, AppState> {
       throw new Error(t("errors.imageInsertError"));
     }
 
-    const existingFileData = this.files[fileId];
-    if (!existingFileData?.dataURL) {
-      const { maxWidthOrHeight, maxFileSizeBytes } = this.props.imageOptions;
-
-      try {
-        imageFile = await resizeImageFile(imageFile, {
-          maxWidthOrHeight,
-        });
-      } catch (error: any) {
-        console.error(
-          "Error trying to resizing image file on insertion",
-          error,
-        );
+    this.retainPendingImageFile(fileId);
+    try {
+      onFileIdCreated?.(fileId);
+      if (this.unmounted) {
+        throw new Error("Editor was unmounted during image initialization.");
       }
+      const existingFileData = this.files[fileId];
+      if (!existingFileData?.dataURL) {
+        const { maxWidthOrHeight, maxFileSizeBytes } = this.props.imageOptions;
 
-      if (imageFile.size > maxFileSizeBytes) {
-        throw new Error(
-          t("errors.fileTooBig", {
-            maxSize: `${Math.trunc(maxFileSizeBytes / 1024 / 1024)}MB`,
-          }),
-        );
-      }
-    }
-
-    const dataURL =
-      this.files[fileId]?.dataURL || (await getDataURL(imageFile));
-
-    return new Promise<NonDeleted<InitializedExcalidrawImageElement>>(
-      async (resolve, reject) => {
         try {
-          let initializedImageElement = this.getLatestInitializedImageElement(
-            placeholderImageElement,
-            fileId,
-          );
-
-          this.addMissingFiles([
-            {
-              mimeType,
-              id: fileId,
-              dataURL,
-              created: Date.now(),
-              lastRetrieved: Date.now(),
-            },
-          ]);
-
-          if (!this.imageCache.get(fileId)) {
-            this.addNewImagesToImageCache();
-
-            const { erroredFiles } = await this.updateImageCache([
-              initializedImageElement,
-            ]);
-
-            if (erroredFiles.size) {
-              throw new Error("Image cache update resulted with an error.");
-            }
-          }
-
-          const imageHTML = await this.imageCache.get(fileId)?.image;
-
-          if (
-            imageHTML &&
-            this.state.newElement?.id !== initializedImageElement.id
-          ) {
-            initializedImageElement = this.getLatestInitializedImageElement(
-              placeholderImageElement,
-              fileId,
-            );
-
-            const naturalDimensions = this.getImageNaturalDimensions(
-              initializedImageElement,
-              imageHTML,
-            );
-
-            // no need to create a new instance anymore, just assign the natural dimensions
-            Object.assign(initializedImageElement, naturalDimensions);
-          }
-
-          resolve(initializedImageElement);
+          imageFile = await resizeImageFile(imageFile, {
+            maxWidthOrHeight,
+          });
         } catch (error: any) {
-          console.error(error);
-          reject(new Error(t("errors.imageInsertError")));
+          console.error(
+            "Error trying to resizing image file on insertion",
+            error,
+          );
         }
-      },
-    );
+
+        if (this.unmounted) {
+          throw new Error("Editor was unmounted during image initialization.");
+        }
+        if (imageFile.size > maxFileSizeBytes) {
+          throw new Error(
+            t("errors.fileTooBig", {
+              maxSize: `${Math.trunc(maxFileSizeBytes / 1024 / 1024)}MB`,
+            }),
+          );
+        }
+      }
+
+      const dataURL =
+        this.files[fileId]?.dataURL || (await getDataURL(imageFile));
+      if (this.unmounted) {
+        throw new Error("Editor was unmounted during image initialization.");
+      }
+
+      let initializedImageElement = this.getLatestInitializedImageElement(
+        placeholderImageElement,
+        fileId,
+      );
+
+      this.addMissingFiles([
+        {
+          mimeType,
+          id: fileId,
+          dataURL,
+          created: Date.now(),
+          lastRetrieved: Date.now(),
+        },
+      ]);
+
+      if (!this.imageCache.get(fileId)) {
+        this.addNewImagesToImageCache();
+
+        const { erroredFiles } = await this.updateImageCache([
+          initializedImageElement,
+        ]);
+
+        if (this.unmounted) {
+          this.imageCache.delete(fileId);
+          throw new Error("Editor was unmounted during image initialization.");
+        }
+        if (erroredFiles.size) {
+          throw new Error("Image cache update resulted with an error.");
+        }
+      }
+
+      const imageHTML = await this.imageCache.get(fileId)?.image;
+      if (this.unmounted) {
+        this.imageCache.delete(fileId);
+        throw new Error("Editor was unmounted during image initialization.");
+      }
+
+      if (
+        imageHTML &&
+        this.state.newElement?.id !== initializedImageElement.id
+      ) {
+        initializedImageElement = this.getLatestInitializedImageElement(
+          placeholderImageElement,
+          fileId,
+        );
+
+        const naturalDimensions = this.getImageNaturalDimensions(
+          initializedImageElement,
+          imageHTML,
+        );
+
+        // no need to create a new instance anymore, just assign the natural dimensions
+        Object.assign(initializedImageElement, naturalDimensions);
+      }
+
+      return initializedImageElement;
+    } catch (error: any) {
+      console.error(error);
+      throw new Error(t("errors.imageInsertError"));
+    } finally {
+      this.releasePendingImageFile(fileId);
+    }
   };
 
   /**
@@ -12990,32 +13030,65 @@ class App extends React.Component<AppProps, AppState> {
     return { updatedFiles, erroredFiles };
   };
 
+  private getImagesToDecode = () => {
+    const selectedElements = this.scene.getSelectedElements(this.state);
+    const croppingElement = this.state.croppingElementId
+      ? this.scene.getNonDeletedElement(this.state.croppingElementId)
+      : null;
+    const elements = [
+      ...(this.visibleElements || []),
+      ...selectedElements,
+      ...(this.state.newElement ? [this.state.newElement] : []),
+      ...(croppingElement ? [croppingElement] : []),
+    ];
+    const uniqueElements = new Map(
+      elements.map((element) => [element.id, element]),
+    );
+    return getInitializedImageElements([...uniqueElements.values()]);
+  };
+
   /** adds new images to imageCache and re-renders if needed */
   private addNewImagesToImageCache = async (
-    imageElements: InitializedExcalidrawImageElement[] = getInitializedImageElements(
-      this.scene.getNonDeletedElements(),
-    ),
+    imageElements?: InitializedExcalidrawImageElement[],
     files: BinaryFiles = this.files,
   ) => {
-    const uncachedImageElements = imageElements.filter(
+    const uncachedImageElements = (imageElements || this.getImagesToDecode()).filter(
       (element) => !element.isDeleted && !this.imageCache.has(element.fileId),
     );
 
     if (uncachedImageElements.length) {
-      const { updatedFiles } = await this.updateImageCache(
+      const { updatedFiles, erroredFiles } = await this.updateImageCache(
         uncachedImageElements,
         files,
       );
 
-      if (updatedFiles.size) {
-        for (const element of uncachedImageElements) {
-          if (updatedFiles.has(element.fileId)) {
-            ShapeCache.delete(element);
-          }
+      const successfullyLoadedFileIds = new Set(
+        uncachedImageElements
+          .filter((element) => {
+            const cacheEntry = this.imageCache.get(element.fileId);
+            return (
+              updatedFiles.has(element.fileId) &&
+              !erroredFiles.has(element.fileId) &&
+              Boolean(cacheEntry) &&
+              !(cacheEntry!.image instanceof Promise)
+            );
+          })
+          .map((element) => element.fileId),
+      );
+      for (const element of uncachedImageElements) {
+        if (successfullyLoadedFileIds.has(element.fileId)) {
+          ShapeCache.delete(element);
         }
       }
 
-      if (updatedFiles.size) {
+      const currentlyNeededFileIds = new Set(
+        this.getImagesToDecode().map((element) => element.fileId),
+      );
+      if (
+        [...successfullyLoadedFileIds].some((fileId) =>
+          currentlyNeededFileIds.has(fileId),
+        )
+      ) {
         this.scene.triggerUpdate();
       }
     }
@@ -13098,52 +13171,93 @@ class App extends React.Component<AppProps, AppState> {
     this.insertNewElements(placeholders);
 
     // Create, position, insert and select initialized (replacing placeholders)
-    const initialized = await Promise.all(
-      placeholders.map(async (placeholder, i) => {
-        try {
-          return await this.initializeImage(
-            placeholder,
-            await normalizeFile(imageFiles[i]),
-          );
-        } catch (error: any) {
-          this.setState({
-            errorMessage: error.message || t("errors.imageInsertError"),
-          });
-          return newElementWith(placeholder as ExcalidrawImageElement, {
-            isDeleted: true,
-          });
-        }
-      }),
-    );
-    const initializedMap = arrayToMap(initialized);
+    const retainedFileIds = new Set<FileId>();
+    try {
+      const initialized = await Promise.all(
+        placeholders.map(async (placeholder, i) => {
+          try {
+            return await this.initializeImage(
+              placeholder,
+              await normalizeFile(imageFiles[i]),
+              (fileId) => {
+                if (!retainedFileIds.has(fileId)) {
+                  retainedFileIds.add(fileId);
+                  this.retainPendingImageFile(fileId);
+                }
+              },
+            );
+          } catch (error: any) {
+            if (this.unmounted) {
+              return newElementWith(placeholder as ExcalidrawImageElement, {
+                isDeleted: true,
+              });
+            }
+            this.setState({
+              errorMessage: error.message || t("errors.imageInsertError"),
+            });
+            return newElementWith(placeholder as ExcalidrawImageElement, {
+              isDeleted: true,
+            });
+          }
+        }),
+      );
+      if (this.unmounted) {
+        return;
+      }
 
-    const positioned = positionElementsOnGrid(
-      initialized.filter((el) => !el.isDeleted),
-      sceneX,
-      sceneY,
-      gridPadding,
-    );
-    const positionedMap = arrayToMap(positioned);
+      // A scene load can replace all elements while image bytes are being
+      // normalized and decoded. Only finish insertion for placeholders that
+      // still belong to the current scene; never merge old async results into a
+      // newly loaded scene or resurrect a placeholder the user deleted.
+      const activePlaceholderIds = new Set(
+        placeholders
+          .filter((placeholder) => {
+            const current = this.scene.getNonDeletedElement(placeholder.id);
+            return current?.type === "image";
+          })
+          .map((placeholder) => placeholder.id),
+      );
+      if (!activePlaceholderIds.size) {
+        this.scheduleFilePrune();
+        return;
+      }
+      const activeInitialized = initialized.filter((element) =>
+        activePlaceholderIds.has(element.id),
+      );
+      const initializedMap = arrayToMap(activeInitialized);
 
-    const nextElements = this.scene
-      .getElementsIncludingDeleted()
-      .map((el) => positionedMap.get(el.id) ?? initializedMap.get(el.id) ?? el);
+      const positioned = positionElementsOnGrid(
+        activeInitialized.filter((el) => !el.isDeleted),
+        sceneX,
+        sceneY,
+        gridPadding,
+      );
+      const positionedMap = arrayToMap(positioned);
 
-    this.updateScene({
-      appState: {
-        selectedElementIds: makeNextSelectedElementIds(
-          Object.fromEntries(positioned.map((el) => [el.id, true])),
-          this.state,
-        ),
-      },
-      elements: nextElements,
-      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-    });
+      const nextElements = this.scene
+        .getElementsIncludingDeleted()
+        .map((el) => positionedMap.get(el.id) ?? initializedMap.get(el.id) ?? el);
 
-    this.setState({}, () => {
-      // actionFinalize after all state values have been updated
-      this.actionManager.executeAction(actionFinalize);
-    });
+      this.updateScene({
+        appState: {
+          selectedElementIds: makeNextSelectedElementIds(
+            Object.fromEntries(positioned.map((el) => [el.id, true])),
+            this.state,
+          ),
+        },
+        elements: nextElements,
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+
+      this.setState({}, () => {
+        // actionFinalize after all state values have been updated
+        this.actionManager.executeAction(actionFinalize);
+      });
+    } finally {
+      for (const fileId of retainedFileIds) {
+        this.releasePendingImageFile(fileId);
+      }
+    }
   };
 
   private handleAppOnDrop = async (event: React.DragEvent<HTMLDivElement>) => {

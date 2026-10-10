@@ -102,6 +102,8 @@ import { AppSidebar } from "./components/AppSidebar";
 import { LazyOverwriteConfirmDialog } from "./components/LazyOverwriteConfirmDialog";
 import {
   CloudSaveQueue,
+  getCloudPersistenceSignature,
+  getCloudSceneLoadSignatures,
   subscribeCloudRealtime,
   subscribeCloudTabSync,
   type CloudSaveStatus,
@@ -213,18 +215,13 @@ const getCloudFileIds = (elements: readonly any[]) => {
   return [...fileIds];
 };
 
-const getCloudPersistenceSignature = (
+const getCloudSceneContentSignature = (
   name: string,
   elements: readonly any[],
   appState: Pick<AppState, "viewBackgroundColor" | "gridSize">,
-  files: BinaryFiles,
-  fileIds = getCloudFileIds(elements),
 ) =>
   JSON.stringify({
     name,
-    // Excalidraw increments version/versionNonce for every persisted element
-    // change. Avoid serializing full element geometry and image data URLs on
-    // every pointer move; the autosave queue only needs a change fingerprint.
     elements: elements.map((element) => [
       element.id,
       element.version,
@@ -232,10 +229,6 @@ const getCloudPersistenceSignature = (
       element.isDeleted,
     ]),
     appState,
-    files: fileIds.map((fileId) => {
-      const file = files[fileId];
-      return [fileId, file?.mimeType, file?.created, file?.dataURL?.length];
-    }),
   });
 
 const waitForCloudFiles = async (
@@ -337,8 +330,17 @@ const ExcalidrawWrapper = (props: {
     null,
   );
   const isApplyingCloudSceneRef = useRef(false);
+  const cloudSceneLoadingRef = useRef<{
+    loadId: number;
+    sceneId: string;
+    contentSignature: string;
+    edited: boolean;
+  } | null>(null);
   const cloudBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const cloudSceneLoadIdRef = useRef(0);
+  const cloudSceneViewportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const thumbnailVersionRef = useRef(0);
   const thumbnailSaveQueue = useMemo(
     () => new LatestThumbnailSaveQueue<ThumbnailSnapshot>(),
@@ -433,6 +435,10 @@ const ExcalidrawWrapper = (props: {
         clearTimeout(savedStatusTimerRef.current);
         savedStatusTimerRef.current = null;
       }
+      if (cloudSceneViewportTimerRef.current) {
+        clearTimeout(cloudSceneViewportTimerRef.current);
+        cloudSceneViewportTimerRef.current = null;
+      }
       cloudSaveQueue.dispose();
       saveThumbnailDebounced.cancel();
       thumbnailSaveQueue.cancel();
@@ -515,6 +521,66 @@ const ExcalidrawWrapper = (props: {
     [excalidrawAPI],
   );
 
+  const enqueueCloudSceneSnapshot = useCallback(
+    (
+      sceneId: string,
+      elements: readonly OrderedExcalidrawElement[],
+      appState: AppState,
+      files: BinaryFiles,
+    ) => {
+      const referencedFiles: BinaryFiles = {};
+      const fileIds = getCloudFileIds(elements);
+      for (const fileId of fileIds) {
+        const file = files[fileId];
+        if (file) {
+          referencedFiles[fileId] = file;
+        }
+      }
+      const name = excalidrawAPI?.getName() || "未命名白板";
+      const persistedAppState = {
+        viewBackgroundColor: appState.viewBackgroundColor,
+        gridSize: appState.gridSize,
+      };
+      const persistedElements = elements.filter(
+        (element: any) => element?.isDeleted !== true,
+      );
+      const signature = getCloudPersistenceSignature(
+        name,
+        persistedElements,
+        persistedAppState,
+        referencedFiles,
+        fileIds,
+      );
+      if (signature === cloudPersistenceSignatureRef.current) {
+        cloudPersistenceDirtyRef.current = false;
+        return;
+      }
+
+      cloudPersistenceSignatureRef.current = signature;
+      cloudPersistenceDirtyRef.current = false;
+      cloudSaveQueue.enqueue({
+        sceneId,
+        name,
+        elements: persistedElements,
+        appState: persistedAppState,
+        files: referencedFiles,
+      });
+      const thumbnailVersion = Math.max(
+        Date.now(),
+        thumbnailVersionRef.current + 1,
+      );
+      thumbnailVersionRef.current = thumbnailVersion;
+      saveThumbnailDebounced({
+        sceneId,
+        elements: persistedElements,
+        appState,
+        files: referencedFiles,
+        thumbnailVersion,
+      });
+    },
+    [cloudSaveQueue, excalidrawAPI, saveThumbnailDebounced],
+  );
+
   const loadSelectedCloudScene = useCallback(
     async (
       sceneId: string,
@@ -522,7 +588,12 @@ const ExcalidrawWrapper = (props: {
       prefetchedCloudScene?: CloudSceneData,
     ) => {
       const loadId = ++cloudSceneLoadIdRef.current;
+      cloudSceneLoadingRef.current = null;
       isApplyingCloudSceneRef.current = false;
+      if (cloudSceneViewportTimerRef.current) {
+        clearTimeout(cloudSceneViewportTimerRef.current);
+        cloudSceneViewportTimerRef.current = null;
+      }
       const cloudData =
         prefetchedCloudScene?.id === sceneId
           ? prefetchedCloudScene
@@ -538,6 +609,10 @@ const ExcalidrawWrapper = (props: {
         repairBindings: true,
         deleteInvisibleElements: true,
       });
+      const restoredAppState = restoreAppState(
+        { ...cloudData.appState, name: cloudData.name },
+        excalidrawAPI.getAppState(),
+      );
 
       setCloudBootstrapError("");
       if (updateUrl) {
@@ -552,22 +627,45 @@ const ExcalidrawWrapper = (props: {
       }
 
       isApplyingCloudSceneRef.current = true;
+      cloudSaveQueue.setRevision(sceneId, cloudData.revision);
+      setActiveCloudScene(sceneId);
+      const initialContentSignature = getCloudSceneContentSignature(
+        cloudData.name,
+        elements.filter((element: any) => element?.isDeleted !== true),
+        {
+          viewBackgroundColor: restoredAppState.viewBackgroundColor,
+          gridSize: restoredAppState.gridSize,
+        },
+      );
+      cloudSceneLoadingRef.current = {
+        loadId,
+        sceneId,
+        contentSignature: initialContentSignature,
+        edited: false,
+      };
+      let editedDuringLoad = false;
       try {
         if (loadId !== cloudSceneLoadIdRef.current) {
           return cloudData;
         }
         excalidrawAPI.updateScene({
           elements,
-          appState: restoreAppState(
-            { ...cloudData.appState, name: cloudData.name },
-            excalidrawAPI.getAppState(),
-          ),
+          appState: restoredAppState,
           captureUpdate: CaptureUpdateAction.NEVER,
         });
         await loadCloudFilesIntoScene(elements, sceneId, loadId);
+        editedDuringLoad = Boolean(
+          cloudSceneLoadingRef.current?.loadId === loadId &&
+            cloudSceneLoadingRef.current.edited,
+        );
         if (cloudData.elements.length) {
-          setTimeout(() => {
-            if (!excalidrawAPI.isDestroyed) {
+          cloudSceneViewportTimerRef.current = setTimeout(() => {
+            cloudSceneViewportTimerRef.current = null;
+            if (
+              loadId === cloudSceneLoadIdRef.current &&
+              currentSceneIdRef.current === sceneId &&
+              !excalidrawAPI.isDestroyed
+            ) {
               excalidrawAPI.setViewport({
                 target: cloudData.elements,
                 fit: "scale-down",
@@ -579,34 +677,62 @@ const ExcalidrawWrapper = (props: {
       } finally {
         if (loadId === cloudSceneLoadIdRef.current) {
           isApplyingCloudSceneRef.current = false;
+          cloudSceneLoadingRef.current = null;
         }
       }
       if (loadId !== cloudSceneLoadIdRef.current) {
         return cloudData;
       }
-      cloudSaveQueue.setRevision(sceneId, cloudData.revision);
-      // Do not mark the scene active until the remote snapshot has replaced
-      // the editor state. Initialization onChange events must never enqueue
-      // the local browser cache back to the cloud scene.
-      setActiveCloudScene(sceneId);
       void markCloudSceneOpened(sceneId).catch((error) => {
         console.warn("最近打开时间更新失败", error);
       });
-      cloudPersistenceSignatureRef.current = getCloudPersistenceSignature(
-        cloudData.name,
-        excalidrawAPI.getSceneElementsIncludingDeleted(),
+      const currentElements = excalidrawAPI.getSceneElementsIncludingDeleted();
+      const currentAppState = excalidrawAPI.getAppState();
+      const currentFiles = excalidrawAPI.getFiles();
+      const { baselineSignature, hasChanges } = getCloudSceneLoadSignatures(
         {
-          viewBackgroundColor: excalidrawAPI.getAppState().viewBackgroundColor,
-          gridSize: excalidrawAPI.getAppState().gridSize,
+          name: cloudData.name,
+          elements: elements.filter(
+            (element: any) => element?.isDeleted !== true,
+          ),
+          appState: {
+            viewBackgroundColor: restoredAppState.viewBackgroundColor,
+            gridSize: restoredAppState.gridSize,
+          },
+          // Loading can add the remote files while the user is editing. Use
+          // the same completed file set for both signatures so hydration alone
+          // does not look like an edit.
+          files: currentFiles,
         },
-        excalidrawAPI.getFiles(),
+        {
+          name: excalidrawAPI.getName() || "未命名白板",
+          elements: currentElements.filter(
+            (element: any) => element?.isDeleted !== true,
+          ),
+          appState: {
+            viewBackgroundColor: currentAppState.viewBackgroundColor,
+            gridSize: currentAppState.gridSize,
+          },
+          files: currentFiles,
+        },
       );
+      cloudPersistenceSignatureRef.current = baselineSignature;
       cloudPersistenceDirtyRef.current = false;
+      if (editedDuringLoad && hasChanges) {
+        cloudPersistenceDirtyRef.current = true;
+        enqueueCloudSceneSnapshot(
+          sceneId,
+          currentElements,
+          currentAppState,
+          currentFiles,
+        );
+      }
       return cloudData;
     },
     [
       cloudSaveQueue,
       excalidrawAPI,
+      enqueueCloudSceneSnapshot,
       loadCloudFilesIntoScene,
       setActiveCloudScene,
     ],
@@ -1198,57 +1324,29 @@ const ExcalidrawWrapper = (props: {
     }
 
     const activeSceneId = currentSceneIdRef.current;
+    if (activeSceneId && isApplyingCloudSceneRef.current) {
+      const loadingScene = cloudSceneLoadingRef.current;
+      if (loadingScene?.sceneId === activeSceneId) {
+        const contentSignature = getCloudSceneContentSignature(
+          appState.name || "未命名白板",
+          elements.filter((element: any) => element?.isDeleted !== true),
+          {
+            viewBackgroundColor: appState.viewBackgroundColor,
+            gridSize: appState.gridSize,
+          },
+        );
+        if (contentSignature !== loadingScene.contentSignature) {
+          loadingScene.edited = true;
+          cloudPersistenceDirtyRef.current = true;
+        }
+      }
+    }
     if (
       activeSceneId &&
       !isApplyingCloudSceneRef.current &&
       cloudPersistenceDirtyRef.current
     ) {
-      const referencedFiles: BinaryFiles = {};
-      const fileIds = getCloudFileIds(elements);
-      for (const fileId of fileIds) {
-        const file = files[fileId];
-        if (file) {
-          referencedFiles[fileId] = file;
-        }
-      }
-      const name = excalidrawAPI?.getName() || "未命名白板";
-      const persistedAppState = {
-        viewBackgroundColor: appState.viewBackgroundColor,
-        gridSize: appState.gridSize,
-      };
-      const persistedElements = elements.filter(
-        (element: any) => element?.isDeleted !== true,
-      );
-      const signature = getCloudPersistenceSignature(
-        name,
-        persistedElements,
-        persistedAppState,
-        referencedFiles,
-        fileIds,
-      );
-      if (signature !== cloudPersistenceSignatureRef.current) {
-        cloudPersistenceSignatureRef.current = signature;
-        cloudPersistenceDirtyRef.current = false;
-        cloudSaveQueue.enqueue({
-          sceneId: activeSceneId,
-          name,
-          elements: persistedElements,
-          appState: persistedAppState,
-          files: referencedFiles,
-        });
-        const thumbnailVersion = Math.max(
-          Date.now(),
-          thumbnailVersionRef.current + 1,
-        );
-        thumbnailVersionRef.current = thumbnailVersion;
-        saveThumbnailDebounced({
-          sceneId: activeSceneId,
-          elements: persistedElements,
-          appState,
-          files: referencedFiles,
-          thumbnailVersion,
-        });
-      }
+      enqueueCloudSceneSnapshot(activeSceneId, elements, appState, files);
     }
 
     // Render the debug scene if the debug canvas is available

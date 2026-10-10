@@ -7,6 +7,36 @@ import { ImageCache } from "../../packages/excalidraw/imageCache";
 
 const fileId = (value: string) => value as FileId;
 
+const pngHeaderDataURL = (width: number, height: number) => {
+  const bytes = new Uint8Array([
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
+    0x00,
+    0x00,
+    0x00,
+    0x0d,
+    0x49,
+    0x48,
+    0x44,
+    0x52,
+    (width >>> 24) & 0xff,
+    (width >>> 16) & 0xff,
+    (width >>> 8) & 0xff,
+    width & 0xff,
+    (height >>> 24) & 0xff,
+    (height >>> 16) & 0xff,
+    (height >>> 8) & 0xff,
+    height & 0xff,
+  ]);
+  return `data:image/png;base64,${btoa(String.fromCharCode(...bytes))}`;
+};
+
 describe("image decode memory budget", () => {
   it("limits concurrent decodes to the pending reservation budget", async () => {
     const originalImage = globalThis.Image;
@@ -50,7 +80,7 @@ describe("image decode memory budget", () => {
           {
             id,
             mimeType: "image/png",
-            dataURL: "data:image/png;base64,AA==",
+            dataURL: pngHeaderDataURL(1024, 1024),
           },
         ]),
       ) as unknown as BinaryFiles;
@@ -75,6 +105,121 @@ describe("image decode memory budget", () => {
       await loading;
       expect(cache.getMemoryStats().pendingDecodes).toBe(0);
       expect(cache.size).toBe(3);
+    } finally {
+      globalThis.Image = originalImage;
+    }
+  });
+
+  it("uses decoded pixel dimensions and serializes a single image larger than the budget", async () => {
+    const originalImage = globalThis.Image;
+    const currentImages: PendingImage[] = [];
+    const waitingStarts: Array<() => void> = [];
+    let startedCount = 0;
+
+    class PendingImage {
+      onload: ((this: GlobalEventHandlers, ev: Event) => any) | null = null;
+      onerror: OnErrorEventHandler = null;
+      naturalWidth = 10;
+      naturalHeight = 10;
+      width = 10;
+      height = 10;
+
+      set src(_value: string) {
+        currentImages.push(this);
+        startedCount += 1;
+        this.naturalWidth = this.width = startedCount === 1 ? 4096 : 1024;
+        this.naturalHeight = this.height = startedCount === 1 ? 4096 : 1024;
+        waitingStarts.splice(0).forEach((resolve) => resolve());
+      }
+    }
+
+    const waitForStarts = (count: number) =>
+      startedCount >= count
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => waitingStarts.push(resolve));
+
+    globalThis.Image = PendingImage as unknown as typeof Image;
+    try {
+      const cache = new ImageCache(8 * 1024 * 1024);
+      const files = {
+        large: {
+          id: "large",
+          mimeType: "image/png",
+          // The header describes a 64 MiB image despite the tiny encoded body.
+          dataURL: pngHeaderDataURL(4096, 4096),
+        },
+        small: {
+          id: "small",
+          mimeType: "image/png",
+          dataURL: pngHeaderDataURL(1024, 1024),
+        },
+      } as unknown as BinaryFiles;
+      const loading = updateImageCache({
+        fileIds: [fileId("large"), fileId("small")],
+        files,
+        imageCache: cache,
+      });
+
+      await waitForStarts(1);
+      expect(startedCount).toBe(1);
+      expect(cache.getMemoryStats().pendingDecodeBytes).toBe(64 * 1024 * 1024);
+      expect(cache.getMemoryStats().pendingDecodes).toBe(1);
+      currentImages[0]?.onload?.call(currentImages[0] as any, new Event("load"));
+      await waitForStarts(2);
+      expect(startedCount).toBe(2);
+      expect(cache.getMemoryStats().pendingDecodeBytes).toBe(4 * 1024 * 1024);
+      currentImages[1]?.onload?.call(currentImages[1] as any, new Event("load"));
+      await loading;
+      expect(cache.getMemoryStats().pendingDecodeBytes).toBe(0);
+      expect(cache.get(fileId("small"))?.image).not.toBeInstanceOf(Promise);
+    } finally {
+      globalThis.Image = originalImage;
+    }
+  });
+
+  it("reserves the full decode budget when image dimensions cannot be read", async () => {
+    const originalImage = globalThis.Image;
+    const currentImages: PendingUnknownImage[] = [];
+    let signalDecodeStarted!: () => void;
+    const decodeStarted = new Promise<void>((resolve) => {
+      signalDecodeStarted = resolve;
+    });
+
+    class PendingUnknownImage {
+      onload: ((this: GlobalEventHandlers, ev: Event) => any) | null = null;
+      onerror: OnErrorEventHandler = null;
+      naturalWidth = 10;
+      naturalHeight = 10;
+      width = 10;
+      height = 10;
+
+      set src(_value: string) {
+        currentImages.push(this);
+        signalDecodeStarted();
+      }
+    }
+
+    globalThis.Image = PendingUnknownImage as unknown as typeof Image;
+    try {
+      const cache = new ImageCache(8 * 1024 * 1024);
+      const files = {
+        unknown: {
+          id: "unknown",
+          mimeType: "image/png",
+          dataURL: "data:image/png;base64,AA==",
+        },
+      } as unknown as BinaryFiles;
+      const loading = updateImageCache({
+        fileIds: [fileId("unknown")],
+        files,
+        imageCache: cache,
+      });
+
+      await decodeStarted;
+      expect(cache.getMemoryStats().pendingDecodeBytes).toBe(8 * 1024 * 1024);
+      currentImages[0]?.onload?.call(currentImages[0] as any, new Event("load"));
+      await loading;
+      expect(cache.getMemoryStats().pendingDecodeBytes).toBe(0);
     } finally {
       globalThis.Image = originalImage;
     }

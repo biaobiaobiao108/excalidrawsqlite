@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   CloudSaveQueue,
+  getCloudSceneLoadSignatures,
   type CloudSavePersistence,
   type CloudSaveSnapshot,
 } from "../../excalidraw-app/data/cloudSync";
@@ -37,6 +38,50 @@ const createPersistence = () => {
 };
 
 describe("cloud save queue", () => {
+  it("compares load-time edits with the remote baseline after files load", () => {
+    const remoteImage = {
+      id: "image",
+      type: "image",
+      fileId: "file",
+      version: 1,
+      versionNonce: 11,
+      isDeleted: false,
+    };
+    const remoteScene = {
+      name: "remote scene",
+      elements: [remoteImage],
+      appState: { viewBackgroundColor: "#ffffff", gridSize: 20 },
+      files: {
+        file: {
+          id: "file",
+          mimeType: "image/png",
+          created: 1,
+          dataURL: "data:image/png;base64,AA==",
+        },
+      } as any,
+    };
+
+    // Completing asynchronous attachment hydration should not create a
+    // difference when the editor still matches the remote scene.
+    expect(
+      getCloudSceneLoadSignatures(remoteScene, remoteScene).hasChanges,
+    ).toBe(false);
+
+    const editedScene = {
+      ...remoteScene,
+      elements: [{ ...remoteImage, version: 2, versionNonce: 22 }],
+    };
+    const signatures = getCloudSceneLoadSignatures(
+      remoteScene,
+      editedScene,
+    );
+
+    expect(signatures.hasChanges).toBe(true);
+    expect(signatures.baselineSignature).not.toBe(
+      signatures.currentSignature,
+    );
+  });
+
   it("keeps the latest edit when an in-flight save requires authentication", async () => {
     const { persistence } = createPersistence();
     const savedNames: string[] = [];

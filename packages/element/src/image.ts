@@ -33,6 +33,7 @@ export const loadHTMLImageElement = (dataURL: DataURL) => {
 
 const FALLBACK_IMAGE_DECODE_BUDGET_BYTES = 128 * 1024 * 1024;
 const MIN_IMAGE_DECODE_RESERVATION_BYTES = 4 * 1024 * 1024;
+const MAX_IMAGE_HEADER_BYTES = 64 * 1024;
 
 type DecodeLimiter = {
   budgetBytes: number;
@@ -114,14 +115,282 @@ const acquireImageDecodeBudget = (
     drain();
   });
 
-const estimateImageDecodeBytes = (
-  dataURL: DataURL,
-  budgetBytes: number,
-) =>
-  Math.min(
-    budgetBytes,
-    Math.max(MIN_IMAGE_DECODE_RESERVATION_BYTES, dataURL.length * 8),
+const getImageHeaderBytes = (dataURL: DataURL) => {
+  const separator = dataURL.indexOf(",");
+  if (separator < 0) {
+    return null;
+  }
+  const metadata = dataURL.slice(0, separator).toLowerCase();
+  if (!metadata.includes(";base64")) {
+    return null;
+  }
+
+  const payload = dataURL.slice(separator + 1);
+  const maxEncodedLength = Math.ceil(MAX_IMAGE_HEADER_BYTES / 3) * 4;
+  const encodedPrefix = payload.slice(0, maxEncodedLength);
+  const alignedPrefix = encodedPrefix.slice(
+    0,
+    encodedPrefix.length - (encodedPrefix.length % 4),
   );
+  try {
+    const binary = atob(alignedPrefix);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
+};
+
+const parseSvgLength = (value: string | undefined) => {
+  if (!value) {
+    return null;
+  }
+  const match = value.trim().match(/^([\d.]+)(px|pt|pc|mm|cm|in)?$/i);
+  if (!match) {
+    return null;
+  }
+  const number = Number(match[1]);
+  if (!Number.isFinite(number) || number <= 0) {
+    return null;
+  }
+  const scale = ({
+    px: 1,
+    pt: 96 / 72,
+    pc: 16,
+    mm: 96 / 25.4,
+    cm: 96 / 2.54,
+    in: 96,
+  } as Record<string, number>)[match[2]?.toLowerCase() || "px"];
+  return number * scale;
+};
+
+const getSvgDimensions = (dataURL: DataURL) => {
+  const separator = dataURL.indexOf(",");
+  if (separator < 0) {
+    return null;
+  }
+  const metadata = dataURL.slice(0, separator).toLowerCase();
+  const payload = dataURL.slice(separator + 1, separator + 1 + MAX_IMAGE_HEADER_BYTES);
+  let source: string;
+  try {
+    source = metadata.includes(";base64")
+      ? atob(payload.slice(0, payload.length - (payload.length % 4)))
+      : decodeURIComponent(payload);
+  } catch {
+    return null;
+  }
+
+  const svgTag = source.match(/<svg\b([^>]*)>/i)?.[1];
+  if (!svgTag) {
+    return null;
+  }
+  const getAttribute = (name: string) =>
+    svgTag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "i"))?.[1];
+  let width = parseSvgLength(getAttribute("width"));
+  let height = parseSvgLength(getAttribute("height"));
+  const viewBox = getAttribute("viewBox")
+    ?.trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (
+    viewBox?.length === 4 &&
+    viewBox.every((value) => Number.isFinite(value)) &&
+    viewBox[2] > 0 &&
+    viewBox[3] > 0
+  ) {
+    if (width && !height) {
+      height = (width * viewBox[3]) / viewBox[2];
+    } else if (height && !width) {
+      width = (height * viewBox[2]) / viewBox[3];
+    } else if (!width && !height) {
+      width = viewBox[2];
+      height = viewBox[3];
+    }
+  }
+  return width && height ? { width, height } : null;
+};
+
+const getImageDimensions = (dataURL: DataURL) => {
+  const separator = dataURL.indexOf(",");
+  if (separator < 0) {
+    return null;
+  }
+  const headerBytes = getImageHeaderBytes(dataURL);
+  if (!headerBytes) {
+    return dataURL.slice(0, separator).toLowerCase().includes("svg")
+      ? getSvgDimensions(dataURL)
+      : null;
+  }
+  const view = new DataView(
+    headerBytes.buffer,
+    headerBytes.byteOffset,
+    headerBytes.byteLength,
+  );
+  const mimeType = dataURL.slice(0, separator).toLowerCase();
+
+  if (
+    mimeType.includes("image/png") &&
+    headerBytes.length >= 24 &&
+    String.fromCharCode(...headerBytes.subarray(12, 16)) === "IHDR"
+  ) {
+    return { width: view.getUint32(16), height: view.getUint32(20) };
+  }
+
+  if (mimeType.includes("image/gif") && headerBytes.length >= 10) {
+    return {
+      width: view.getUint16(6, true),
+      height: view.getUint16(8, true),
+    };
+  }
+
+  if (mimeType.includes("image/bmp") && headerBytes.length >= 26) {
+    const dibHeaderSize = view.getUint32(14, true);
+    if (dibHeaderSize === 12) {
+      return {
+        width: view.getUint16(18, true),
+        height: view.getUint16(20, true),
+      };
+    }
+    if (dibHeaderSize < 40) {
+      return null;
+    }
+    return {
+      width: Math.abs(view.getInt32(18, true)),
+      height: Math.abs(view.getInt32(22, true)),
+    };
+  }
+
+  if (mimeType.includes("image/x-icon") && headerBytes.length >= 8) {
+    return {
+      width: headerBytes[6] || 256,
+      height: headerBytes[7] || 256,
+    };
+  }
+
+  if (
+    mimeType.includes("image/webp") &&
+    headerBytes.length >= 25 &&
+    String.fromCharCode(...headerBytes.subarray(0, 4)) === "RIFF" &&
+    String.fromCharCode(...headerBytes.subarray(8, 12)) === "WEBP"
+  ) {
+    const chunk = String.fromCharCode(...headerBytes.subarray(12, 16));
+    if (chunk === "VP8X" && headerBytes.length >= 30) {
+      return {
+        width:
+          1 +
+          headerBytes[24] +
+          (headerBytes[25] << 8) +
+          (headerBytes[26] << 16),
+        height:
+          1 +
+          headerBytes[27] +
+          (headerBytes[28] << 8) +
+          (headerBytes[29] << 16),
+      };
+    }
+    if (
+      chunk === "VP8 " &&
+      headerBytes.length >= 30 &&
+      headerBytes[23] === 0x9d &&
+      headerBytes[24] === 0x01 &&
+      headerBytes[25] === 0x2a
+    ) {
+      return {
+        width: view.getUint16(26, true) & 0x3fff,
+        height: view.getUint16(28, true) & 0x3fff,
+      };
+    }
+    if (chunk === "VP8L" && headerBytes.length >= 25 && headerBytes[20] === 0x2f) {
+      const width =
+        1 + headerBytes[21] + ((headerBytes[22] & 0x3f) << 8);
+      const height =
+        1 +
+        (headerBytes[22] >> 6) +
+        (headerBytes[23] << 2) +
+        ((headerBytes[24] & 0x0f) << 10);
+      return { width, height };
+    }
+  }
+
+  if (mimeType.includes("image/jpeg") || mimeType.includes("image/jfif")) {
+    let offset = 2;
+    while (offset + 4 < headerBytes.length) {
+      if (headerBytes[offset] !== 0xff) {
+        offset++;
+        continue;
+      }
+      while (headerBytes[offset] === 0xff) {
+        offset++;
+      }
+      const marker = headerBytes[offset++];
+      if (marker === 0xd9 || marker === 0xda) {
+        break;
+      }
+      if (
+        marker === 0x01 ||
+        (marker >= 0xd0 && marker <= 0xd7)
+      ) {
+        continue;
+      }
+      if (offset + 1 >= headerBytes.length) {
+        break;
+      }
+      const segmentLength = view.getUint16(offset);
+      if (offset + segmentLength > headerBytes.length) {
+        break;
+      }
+      if (
+        [
+          0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb,
+          0xcd, 0xce, 0xcf,
+        ].includes(marker)
+      ) {
+        return {
+          height: view.getUint16(offset + 3),
+          width: view.getUint16(offset + 5),
+        };
+      }
+      offset += segmentLength;
+    }
+  }
+
+  if (mimeType.includes("image/avif") && headerBytes.length >= 20) {
+    for (let offset = 4; offset + 16 <= headerBytes.length; offset++) {
+      if (
+        String.fromCharCode(...headerBytes.subarray(offset, offset + 4)) ===
+        "ispe"
+      ) {
+        return {
+          width: view.getUint32(offset + 8),
+          height: view.getUint32(offset + 12),
+        };
+      }
+    }
+  }
+
+  return null;
+};
+
+const estimateImageDecodeBytes = (dataURL: DataURL, budgetBytes: number) => {
+  const dimensions = getImageDimensions(dataURL);
+  if (!dimensions) {
+    // Unknown formats may be highly compressed. Serialize their decodes
+    // against the entire cache budget instead of trusting encoded byte length.
+    return budgetBytes;
+  }
+  const decodedBytes = dimensions.width * dimensions.height * 4;
+  if (!Number.isFinite(decodedBytes) || decodedBytes <= 0) {
+    return budgetBytes;
+  }
+  // Keep the real estimate when one image exceeds the shared budget. The
+  // limiter permits that single decode only while no other decode is active;
+  // capping the reservation here would allow multiple oversized images to
+  // decode concurrently and exceed the intended peak-memory bound.
+  return Math.max(MIN_IMAGE_DECODE_RESERVATION_BYTES, decodedBytes);
+};
 
 /** NOTE: updates cache even if already populated with given image. Thus,
  * you should filter out the images upstream if you want to optimize this. */

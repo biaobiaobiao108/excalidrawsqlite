@@ -1,4 +1,5 @@
 import type {
+  FileId,
   NonDeletedExcalidrawElement,
   OrderedExcalidrawElement,
 } from "@excalidraw/element/types";
@@ -21,6 +22,68 @@ export interface CloudSaveSnapshot {
   /** Revision observed when this snapshot was created. */
   baseRevision?: number;
 }
+
+export type CloudScenePersistenceSignatureInput = {
+  name: string;
+  elements: readonly any[];
+  appState: Pick<AppState, "viewBackgroundColor" | "gridSize">;
+  files: BinaryFiles;
+};
+
+export const getCloudPersistenceSignature = (
+  name: string,
+  elements: readonly any[],
+  appState: Pick<AppState, "viewBackgroundColor" | "gridSize">,
+  files: BinaryFiles,
+  fileIds = elements
+    .filter(
+      (element) =>
+        element?.type === "image" &&
+        element.isDeleted !== true &&
+        typeof element.fileId === "string",
+    )
+    .map((element) => element.fileId as FileId),
+) =>
+  JSON.stringify({
+    name,
+    // Excalidraw increments version/versionNonce for every persisted element
+    // change. Avoid serializing full element geometry and image data URLs on
+    // every pointer move; the autosave queue only needs a change fingerprint.
+    elements: elements.map((element) => [
+      element.id,
+      element.version,
+      element.versionNonce,
+      element.isDeleted,
+    ]),
+    appState,
+    files: fileIds.map((fileId: FileId) => {
+      const file = files[fileId];
+      return [fileId, file?.mimeType, file?.created, file?.dataURL?.length];
+    }),
+  });
+
+export const getCloudSceneLoadSignatures = (
+  remoteScene: CloudScenePersistenceSignatureInput,
+  currentScene: CloudScenePersistenceSignatureInput,
+) => {
+  const baselineSignature = getCloudPersistenceSignature(
+    remoteScene.name,
+    remoteScene.elements,
+    remoteScene.appState,
+    remoteScene.files,
+  );
+  const currentSignature = getCloudPersistenceSignature(
+    currentScene.name,
+    currentScene.elements,
+    currentScene.appState,
+    currentScene.files,
+  );
+  return {
+    baselineSignature,
+    currentSignature,
+    hasChanges: baselineSignature !== currentSignature,
+  };
+};
 
 type QueueCallbacks = {
   onAuthRequired: (sceneId: string) => void;
