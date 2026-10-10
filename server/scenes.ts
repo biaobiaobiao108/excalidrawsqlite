@@ -10,13 +10,25 @@ import {
 
 import type { ServerRuntime } from "./types";
 
+const storedInteger = (value: unknown, minimum: number): number => {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum) {
+    throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
+  }
+  return value;
+};
+
 export const parseStoredScene = (row: any) => {
   try {
+    const elements = JSON.parse(row.elements);
+    const appState = JSON.parse(row.app_state);
+    if (!Array.isArray(elements) || !appState || typeof appState !== "object" || Array.isArray(appState)) {
+      throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
+    }
     return {
       id: row.id,
       name: row.name,
-      elements: JSON.parse(row.elements || "[]"),
-      appState: JSON.parse(row.app_state || "{}"),
+      elements,
+      appState,
       created_at: row.created_at,
       updated_at: row.updated_at,
       tags: parseStoredTags(row.tags_json),
@@ -25,7 +37,7 @@ export const parseStoredScene = (row: any) => {
       last_opened_at: row.last_opened_at || null,
       thumbnail_file_id: row.thumbnail_file_id || null,
       deleted_at: row.deleted_at || null,
-      revision: Number(row.revision) || 1,
+      revision: storedInteger(row.revision, 1),
     };
   } catch {
     throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
@@ -37,16 +49,9 @@ export const getSceneSummary = (row: any) => ({
   name: row.name,
   created_at: row.created_at,
   updated_at: row.updated_at,
-  revision: Number(row.revision) || 1,
+  revision: storedInteger(row.revision, 1),
   size: row.size === undefined ? undefined : Number(row.size),
-  element_count:
-    row.element_count !== undefined && row.element_count !== null
-      ? Number(row.element_count)
-      : typeof row.elements === "string"
-      ? (JSON.parse(row.elements || "[]") || []).length
-      : Array.isArray(row.elements)
-      ? row.elements.length
-      : 0,
+  element_count: storedInteger(row.element_count, 0),
   tags: parseStoredTags(row.tags_json),
   favorite: Boolean(row.is_favorite),
   folder_id: row.folder_id || null,
