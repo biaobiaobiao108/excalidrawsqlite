@@ -77,7 +77,13 @@ export interface CloudFolder {
     | "layers"
     | "star"
     | "image"
-    | "code";
+    | "code"
+    | "bookmark"
+    | "file"
+    | "tag"
+    | "heart"
+    | "compass"
+    | "briefcase";
   color: string;
   created_at: number;
   updated_at: number;

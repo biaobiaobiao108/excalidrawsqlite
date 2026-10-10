@@ -15,7 +15,6 @@ import "./WorkspaceCommandPalette.scss";
 
 export type BoardView = "all" | "recent" | "favorites" | "trash";
 export type SortMode = "updated" | "opened" | "created";
-export type LayoutMode = "grid" | "list";
 
 export interface WorkspaceCommandPaletteProps {
   isOpen: boolean;
@@ -25,7 +24,6 @@ export interface WorkspaceCommandPaletteProps {
   trashCount: number;
   currentView: BoardView;
   currentSort: SortMode;
-  currentLayout: LayoutMode;
   selectedFolderId: string | null;
   onSelectScene: (scene: CloudSceneSummary, newTab?: boolean) => void;
   onCreateScene: (folderId?: string | null, name?: string) => void;
@@ -33,7 +31,6 @@ export interface WorkspaceCommandPaletteProps {
   onChangeView: (view: BoardView) => void;
   onSelectFolder: (folderId: string | null) => void;
   onChangeSort: (sort: SortMode) => void;
-  onToggleLayout: () => void;
   onEmptyTrash: () => void;
   onReload: () => void;
 }
@@ -267,17 +264,6 @@ const GridIcon = () => (
   </svg>
 );
 
-const ListIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <line x1="8" y1="6" x2="21" y2="6" />
-    <line x1="8" y1="12" x2="21" y2="12" />
-    <line x1="8" y1="18" x2="21" y2="18" />
-    <line x1="3" y1="6" x2="3.01" y2="6" />
-    <line x1="3" y1="12" x2="3.01" y2="12" />
-    <line x1="3" y1="18" x2="3.01" y2="18" />
-  </svg>
-);
-
 const ClockIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="12" r="8" />
@@ -332,7 +318,6 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
   trashCount,
   currentView,
   currentSort,
-  currentLayout,
   selectedFolderId,
   onSelectScene,
   onCreateScene,
@@ -340,7 +325,6 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
   onChangeView,
   onSelectFolder,
   onChangeSort,
-  onToggleLayout,
   onEmptyTrash,
   onReload,
 }) => {
@@ -550,18 +534,6 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     // 显示设置
     list.push(
       {
-        id: "display-layout",
-        category: "显示设置",
-        label: currentLayout === "grid" ? "切换为列表视图" : "切换为网格视图",
-        keywords: ["qiehuan", "wangge", "liebiao", "layout", "grid", "list"],
-        icon: currentLayout === "grid" ? <ListIcon /> : <GridIcon />,
-        perform: () => {
-          recordRecent("display-layout");
-          onClose();
-          onToggleLayout();
-        },
-      },
-      {
         id: "sort-updated",
         category: "显示设置",
         label: "按最近修改时间排序",
@@ -608,7 +580,6 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     folders,
     currentView,
     selectedFolderId,
-    currentLayout,
     currentSort,
     recordRecent,
     onClose,
@@ -618,7 +589,6 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     onEmptyTrash,
     onChangeView,
     onSelectFolder,
-    onToggleLayout,
     onChangeSort,
   ]);
 

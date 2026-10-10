@@ -80,6 +80,10 @@ export const ContextMenu = React.memo(
             }
 
             const actionName = item.name;
+            const actionIcon =
+              typeof item.icon === "function"
+                ? item.icon(appState, elements)
+                : item.icon;
             let label = "";
             if (item.label) {
               if (typeof item.label === "function") {
@@ -115,6 +119,21 @@ export const ContextMenu = React.memo(
                     checkmark: item.checked?.(appState),
                   })}
                 >
+                  <span className="context-menu-item__icon" aria-hidden="true">
+                    {actionIcon || (
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="1.8"
+                      >
+                        <path d="M5 6h14M5 12h9M5 18h14" />
+                        <circle cx="17" cy="12" r="1.5" />
+                      </svg>
+                    )}
+                  </span>
                   <div className="context-menu-item__label">{label}</div>
                   <kbd className="context-menu-item__shortcut">
                     {actionName

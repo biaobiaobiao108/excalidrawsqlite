@@ -63,6 +63,12 @@ export const validateFolderIcon = (value: unknown) => {
     "star",
     "image",
     "code",
+    "bookmark",
+    "file",
+    "tag",
+    "heart",
+    "compass",
+    "briefcase",
   ]);
   if (typeof value !== "string" || !allowedIcons.has(value)) {
     throw new HttpError(400, "INVALID_FOLDER_ICON", "无效的文件夹图标");

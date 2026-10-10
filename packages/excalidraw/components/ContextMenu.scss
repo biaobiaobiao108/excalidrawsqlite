@@ -1,4 +1,3 @@
-@use "sass:color";
 @use "../css/variables.module" as *;
 
 .excalidraw {
@@ -8,43 +7,50 @@
 
   .context-menu {
     position: relative;
-    border-radius: 4px;
-    box-shadow: 0 3px 10px color.adjust(#000, $alpha: -0.8);
+    box-sizing: border-box;
+    max-height: calc(100svh - 1.5rem);
+    overflow-y: auto;
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-island);
     list-style: none;
     user-select: none;
     margin: 0;
-    padding: 0.5rem 0;
-    background-color: var(--popup-secondary-bg-color);
-    border: 1px solid var(--button-gray-3);
+    padding: 0.5rem;
+    background-color: var(--island-bg-color);
+    border: 1px solid var(--default-border-color);
     cursor: default;
   }
 
   .context-menu button {
-    color: var(--popup-text-color);
+    color: var(--color-on-surface);
   }
 
   .context-menu-item {
     position: relative;
+    display: flex;
+    align-items: center;
+    column-gap: 0.625rem;
     width: 100%;
-    min-width: 9.5rem;
+    min-width: 16rem;
+    min-height: 2.4rem;
     margin: 0;
-    padding: 0.25rem 1rem 0.25rem 1.25rem;
+    padding: 0.25rem 0.625rem;
     text-align: start;
-    border-radius: 0;
+    border-radius: var(--border-radius-md);
     background-color: transparent;
     border: none;
     white-space: nowrap;
     font-family: inherit;
 
-    display: grid;
-    grid-template-columns: 1fr 0.2fr;
-    align-items: center;
-
     &.checkmark::before {
       position: absolute;
-      left: 6px;
-      margin-bottom: 1px;
+      inset-inline-start: 0.7rem;
+      z-index: 1;
       content: "\2713";
+    }
+
+    &.checkmark .context-menu-item__icon {
+      visibility: hidden;
     }
 
     &.dangerous {
@@ -53,50 +59,70 @@
       }
     }
 
+    .context-menu-item__icon {
+      display: grid;
+      place-items: center;
+      flex: 0 0 1.25rem;
+      inline-size: 1.25rem;
+      block-size: 1.25rem;
+      color: inherit;
+
+      svg {
+        inline-size: 1.25rem;
+        block-size: 1.25rem;
+        max-inline-size: 100%;
+        max-block-size: 100%;
+      }
+    }
+
     .context-menu-item__label {
-      justify-self: start;
-      margin-inline-end: 20px;
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .context-menu-item__shortcut {
-      justify-self: end;
+      flex: 0 0 auto;
+      margin-inline-start: auto;
       opacity: 0.6;
       font-family: inherit;
-      font-size: 0.7rem;
+      font-size: 0.8rem;
+      white-space: nowrap;
     }
   }
 
   .context-menu-item:hover {
-    color: var(--popup-bg-color);
-    background-color: var(--select-highlight-color);
+    color: var(--color-on-surface);
+    background-color: var(--button-hover-bg);
 
     &.dangerous {
       .context-menu-item__label {
-        color: var(--popup-bg-color);
+        color: $color-red-7;
       }
-      background-color: $color-red-6;
+      background-color: color-mix(in srgb, #e03131 10%, transparent);
     }
   }
 
-  .context-menu-item:focus {
-    z-index: 1;
+  .context-menu-item:focus-visible {
+    outline: 2px solid var(--color-brand-active);
+    outline-offset: -2px;
+  }
+
+  .context-menu-item-separator {
+    height: 0;
+    margin: 0.3rem 0.4rem;
+    border: 0;
+    border-top: 1px solid var(--default-border-color);
   }
 
   @include isMobile {
     .context-menu-item {
-      display: block;
-
-      .context-menu-item__label {
-        margin-inline-end: 0;
-      }
+      min-width: min(16rem, calc(100vw - 3rem));
 
       .context-menu-item__shortcut {
         display: none;
       }
     }
-  }
-
-  .context-menu-item-separator {
-    border: none;
-    border-top: 1px solid $color-gray-5;
   }
 }

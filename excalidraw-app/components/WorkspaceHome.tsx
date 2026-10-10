@@ -43,7 +43,6 @@ import "./WorkspaceHome.scss";
 
 type BoardView = "all" | "recent" | "favorites" | "trash";
 type SortMode = "updated" | "opened" | "created";
-type LayoutMode = "grid" | "list";
 
 const LOCAL_SCENE_MIGRATION_KEY = "excalidraw-cloud-scene-migration-v1";
 
@@ -69,15 +68,7 @@ type FolderDialogState = {
   color: string;
 };
 
-type FolderIconName =
-  | "folder"
-  | "book"
-  | "palette"
-  | "lightbulb"
-  | "layers"
-  | "star"
-  | "image"
-  | "code";
+type FolderIconName = CloudFolder["icon"];
 
 type FolderAppearance = {
   icon: FolderIconName;
@@ -108,6 +99,12 @@ const FOLDER_ICON_OPTIONS: Array<{ id: FolderIconName; label: string }> = [
   { id: "star", label: "星标" },
   { id: "image", label: "图片" },
   { id: "code", label: "代码" },
+  { id: "bookmark", label: "书签" },
+  { id: "file", label: "文档" },
+  { id: "tag", label: "标签" },
+  { id: "heart", label: "收藏" },
+  { id: "compass", label: "导航" },
+  { id: "briefcase", label: "项目" },
 ];
 
 const FOLDER_COLOR_OPTIONS = [
@@ -351,6 +348,36 @@ const FolderAppearanceIcon = ({
         </>
       )}
       {icon === "code" && <path d="m8 7-5 5 5 5m8-10 5 5-5 5m-2-13-4 16" />}
+      {icon === "bookmark" && (
+        <path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-4-6 4V4.5Z" />
+      )}
+      {icon === "file" && (
+        <>
+          <path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3.5Z" />
+          <path d="M14 3.5V8h4M9 12h6M9 16h6" />
+        </>
+      )}
+      {icon === "tag" && (
+        <>
+          <path d="M20 13 13 20 3.5 10.5V4h6.5L20 13Z" />
+          <circle cx="7.5" cy="8" r="1" />
+        </>
+      )}
+      {icon === "heart" && (
+        <path d="M20.8 8.8c0 5.1-8.8 10.3-8.8 10.3S3.2 13.9 3.2 8.8a4.5 4.5 0 0 1 8.8-1.3 4.5 4.5 0 0 1 8.8 1.3Z" />
+      )}
+      {icon === "compass" && (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="m15.8 8.2-2.3 5.3-5.3 2.3 2.3-5.3 5.3-2.3Z" />
+        </>
+      )}
+      {icon === "briefcase" && (
+        <>
+          <rect x="3.5" y="7" width="17" height="13" rx="2" />
+          <path d="M8.5 7V5a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v2M3.5 12h17M10 12v2h4v-2" />
+        </>
+      )}
     </svg>
   );
 };
@@ -1048,7 +1075,6 @@ export const WorkspaceHome = ({
   );
   const [view, setView] = useState<BoardView>("all");
   const [sort, setSort] = useState<SortMode>("updated");
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -2111,21 +2137,6 @@ export const WorkspaceHome = ({
                   ariaLabel="排序方式"
                   options={SORT_OPTIONS}
                 />
-                <button
-                  className="list-mode-button"
-                  type="button"
-                  aria-label={layoutMode === "grid" ? "列表视图" : "网格视图"}
-                  title={
-                    layoutMode === "grid" ? "切换到列表视图" : "切换到网格视图"
-                  }
-                  onClick={() =>
-                    setLayoutMode((current) =>
-                      current === "grid" ? "list" : "grid",
-                    )
-                  }
-                >
-                  <GridIcon />
-                </button>
               </div>
             </div>
 
@@ -2166,11 +2177,7 @@ export const WorkspaceHome = ({
                   )}
               </div>
             ) : (
-              <div
-                className={`board-grid ${
-                  layoutMode === "list" ? "is-list" : ""
-                }`}
-              >
+              <div className="board-grid">
                 {filteredScenes.map((scene) => (
                   <BoardCard
                     key={scene.id}
@@ -2278,7 +2285,6 @@ export const WorkspaceHome = ({
         trashCount={trashScenes.length}
         currentView={view}
         currentSort={sort}
-        currentLayout={layoutMode}
         selectedFolderId={selectedFolderId}
         onSelectScene={navigateToScene}
         onCreateScene={handleCreateScene}
@@ -2292,9 +2298,6 @@ export const WorkspaceHome = ({
           setView("all");
         }}
         onChangeSort={setSort}
-        onToggleLayout={() =>
-          setLayoutMode((current) => (current === "grid" ? "list" : "grid"))
-        }
         onEmptyTrash={handleEmptyTrash}
         onReload={loadWorkspace}
       />
