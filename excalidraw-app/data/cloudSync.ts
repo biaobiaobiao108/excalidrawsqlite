@@ -766,6 +766,11 @@ export class CloudSaveQueue {
     return this.flush();
   }
 
+  /** React StrictMode replays setup/cleanup with the same queue instance. */
+  activate() {
+    this.isDisposed = false;
+  }
+
   dispose() {
     this.isDisposed = true;
     for (const timer of this.timers.values()) {

@@ -430,6 +430,11 @@ const ExcalidrawWrapper = (props: {
     [thumbnailSaveQueue],
   );
 
+  useEffect(() => {
+    cloudSaveQueue.activate();
+    return () => cloudSaveQueue.dispose();
+  }, [cloudSaveQueue]);
+
   useEffect(
     () => () => {
       if (savedStatusTimerRef.current) {
@@ -440,11 +445,10 @@ const ExcalidrawWrapper = (props: {
         clearTimeout(cloudSceneViewportTimerRef.current);
         cloudSceneViewportTimerRef.current = null;
       }
-      cloudSaveQueue.dispose();
       saveThumbnailDebounced.cancel();
       thumbnailSaveQueue.cancel();
     },
-    [cloudSaveQueue, saveThumbnailDebounced, thumbnailSaveQueue],
+    [saveThumbnailDebounced, thumbnailSaveQueue],
   );
 
   useEffect(() => {

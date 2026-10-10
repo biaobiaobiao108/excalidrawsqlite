@@ -42,6 +42,29 @@ const createPersistence = () => {
 };
 
 describe("cloud save queue", () => {
+  it("saves edits after StrictMode replays queue setup and cleanup", async () => {
+    const { persistence } = createPersistence();
+    const names: string[] = [];
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async (id, data) => {
+        names.push(data.name!);
+        return { success: true, id, updated_at: 1, revision: 2 };
+      },
+    });
+    queue.activate();
+    queue.dispose();
+    queue.activate();
+    await queue.ready();
+    queue.enqueue(snapshot("edit after effect replay"));
+    expect(await queue.flush("scene")).toBe("saved");
+    expect(names).toEqual(["edit after effect replay"]);
+    queue.dispose();
+    queue.enqueue(snapshot("edit after real unmount"));
+    expect(queue.hasPending("scene")).toBe(false);
+  });
+
   it("exposes recovered content and retains its original revision for the next edit", async () => {
     const { persistence, snapshots } = createPersistence();
     snapshots.set("scene", snapshot("offline content"));
