@@ -1318,6 +1318,9 @@ export const WorkspaceHome = ({
         : 0,
   );
   const loadedPageQueryKeyRef = useRef(workspaceSnapshot?.pageQueryKey || "");
+  // Keep the visible page and its filters together until the next request wins.
+  const [displayedPageOptions, setDisplayedPageOptions] =
+    useState<CloudScenePageOptions>({});
   const [view, setView] = useState<BoardView>("all");
   const [sort, setSort] = useState<SortMode>("updated");
   const [searchQuery, setSearchQuery] = useState("");
@@ -1365,6 +1368,12 @@ export const WorkspaceHome = ({
   const pageQueryKeyRef = useRef(pageQueryKey);
   pageQueryKeyRef.current = pageQueryKey;
   const previousPageQueryKeyRef = useRef(pageQueryKey);
+  const previousSearchQueryRef = useRef(searchQuery.trim());
+  const pageTransitionPending = loadedPageQueryKeyRef.current !== pageQueryKey;
+  const hasDisplayedFilters = Boolean(
+    displayedPageOptions.query || displayedPageOptions.tag ||
+      displayedPageOptions.folderId,
+  );
   const currentPageOptions: CloudScenePageOptions = {
     trash: view === "trash",
     query: searchQuery.trim() || undefined,
@@ -1507,6 +1516,7 @@ export const WorkspaceHome = ({
       setWorkspaceStats(nextSnapshot.stats);
       setPageTotalCount(nextSnapshot.pageTotalCount);
       loadedPageQueryKeyRef.current = queryKey;
+      setDisplayedPageOptions(options);
       setSceneCursor(nextScenePage.nextCursor);
       setTrashSceneCursor(nextTrashPage.nextCursor);
     } catch (requestError: any) {
@@ -1559,14 +1569,11 @@ export const WorkspaceHome = ({
     }
     const requestId = ++loadRequestRef.current;
     const { key: queryKey, options } = currentPageRef.current;
-    setLoading(true);
     setError("");
     try {
-      const [page, stats, folderList] = await Promise.all([
-        fetchCloudScenePage(getCurrentPageOptions()),
-        fetchCloudWorkspaceStats(),
-        fetchCloudFolders(),
-      ]);
+      // Navigation only changes the list; shared metadata is refreshed on load
+      // and after mutations/tab notifications, rather than on every filter.
+      const page = await fetchCloudScenePage(options);
       if (
         loadRequestRef.current !== requestId ||
         currentPageRef.current.key !== queryKey
@@ -1581,9 +1588,8 @@ export const WorkspaceHome = ({
         setSceneCursor(page.nextCursor);
       }
       setPageTotalCount(page.totalCount);
-      setWorkspaceStats(stats);
-      setFolders(folderList);
       loadedPageQueryKeyRef.current = queryKey;
+      setDisplayedPageOptions(options);
     } catch (requestError: any) {
       if (
         loadRequestRef.current !== requestId ||
@@ -1604,12 +1610,15 @@ export const WorkspaceHome = ({
         setLoading(false);
       }
     }
-  }, [getCurrentPageOptions]);
+  }, []);
 
   const loadMoreScenes = useCallback(async () => {
     const isTrash = view === "trash";
     const cursor = isTrash ? trashSceneCursor : sceneCursor;
-    if (!cursor || loadingMore) {
+    if (
+      !cursor || loadingMore ||
+      loadedPageQueryKeyRef.current !== pageQueryKey
+    ) {
       return;
     }
     const queryKey = pageQueryKey;
@@ -1676,20 +1685,27 @@ export const WorkspaceHome = ({
       return;
     }
     previousPageQueryKeyRef.current = pageQueryKey;
+    const searchChanged = previousSearchQueryRef.current !== searchQuery.trim();
+    previousSearchQueryRef.current = searchQuery.trim();
     // Invalidate old requests immediately, before the debounce starts.
     loadRequestRef.current += 1;
     pageRequestRef.current += 1;
     loadMoreRequestRef.current += 1;
     setLoadingMore(false);
-    const timer = setTimeout(() => {
+    const reload = () => {
       if (workspaceLoadedRef.current) {
         void reloadCurrentPage();
       } else {
         void loadWorkspace();
       }
-    }, 180);
+    };
+    if (!searchChanged) {
+      reload();
+      return;
+    }
+    const timer = setTimeout(reload, 180);
     return () => clearTimeout(timer);
-  }, [pageQueryKey, reloadCurrentPage, loadWorkspace]);
+  }, [pageQueryKey, searchQuery, reloadCurrentPage, loadWorkspace]);
 
   useEffect(() => {
     if (workspaceSnapshot && workspaceStats) {
@@ -1776,22 +1792,23 @@ export const WorkspaceHome = ({
   );
 
   const filteredScenes = useMemo(() => {
-    const targetScenes = view === "trash" ? trashScenes : scenes;
-    const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+    const options = displayedPageOptions;
+    const targetScenes = options.trash ? trashScenes : scenes;
+    const normalizedQuery = (options.query || "").toLocaleLowerCase();
     const filtered = targetScenes.filter((scene) => {
-      if (view === "recent" && !scene.last_opened_at) {
+      if (options.opened && !scene.last_opened_at) {
         return false;
       }
-      if (view === "favorites" && !scene.favorite) {
+      if (options.favorite && !scene.favorite) {
         return false;
       }
       if (
-        view !== "trash" && selectedFolderId &&
-        scene.folder_id !== selectedFolderId
+        !options.trash && options.folderId &&
+        scene.folder_id !== options.folderId
       ) {
         return false;
       }
-      if (view !== "trash" && selectedTag && !scene.tags.includes(selectedTag)) {
+      if (!options.trash && options.tag && !scene.tags.includes(options.tag)) {
         return false;
       }
       if (!normalizedQuery) {
@@ -1802,15 +1819,11 @@ export const WorkspaceHome = ({
         .toLocaleLowerCase();
       return searchable.includes(normalizedQuery);
     });
-    return sortScenes(filtered, view === "recent" ? "opened" : sort);
+    return sortScenes(filtered, options.sort || "updated");
   }, [
     scenes,
     trashScenes,
-    searchQuery,
-    selectedFolderId,
-    selectedTag,
-    sort,
-    view,
+    displayedPageOptions,
   ]);
 
   const selectedScenes = useMemo(
@@ -1896,7 +1909,8 @@ export const WorkspaceHome = ({
   }, []);
 
   const hasMoreScenes = Boolean(
-    view === "trash" ? trashSceneCursor : sceneCursor,
+    !pageTransitionPending &&
+      (view === "trash" ? trashSceneCursor : sceneCursor),
   );
 
   const shouldVirtualizeBoardGrid =
@@ -2584,6 +2598,9 @@ export const WorkspaceHome = ({
   const openBackgroundContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target;
     event.preventDefault();
+    if (pageTransitionPending) {
+      return;
+    }
     if (!(target instanceof Element)) {
       return;
     }
@@ -2776,7 +2793,7 @@ export const WorkspaceHome = ({
     <BoardCard
       key={scene.id}
       scene={scene}
-      isTrash={view === "trash"}
+      isTrash={!!displayedPageOptions.trash}
       onOpen={navigateToScene}
       onPreload={onPreloadScene}
       onToggleFavorite={handleToggleFavorite}
@@ -3070,94 +3087,99 @@ export const WorkspaceHome = ({
               </div>
             </div>
 
-            {loading ? (
-              <div className="workspace-empty-state loading-state">
-                正在加载画板...
-              </div>
-            ) : filteredScenes.length === 0 ? (
-              <div className="workspace-empty-state">
-                <div className="empty-state-icon">
-                  {view === "trash" ? <EmptyTrashIcon /> : <ExcalidrawMark />}
+            <div
+              aria-busy={pageTransitionPending || loading}
+              inert={pageTransitionPending && !loading}
+            >
+              {loading ? (
+                <div className="workspace-empty-state loading-state">
+                  正在加载画板...
                 </div>
-                <h3>
-                  {view === "trash"
-                    ? "回收站为空"
-                    : searchQuery || selectedTag || selectedFolderId
-                    ? "没有找到匹配的画板"
-                    : "还没有画板"}
-                </h3>
-                <p>
-                  {view === "trash"
-                    ? "删除的画板会暂存在这里，方便随时还原。"
-                    : searchQuery || selectedTag || selectedFolderId
-                    ? "试试更换关键词或筛选条件。"
-                    : "创建一个画板，把下一个想法画出来。"}
-                </p>
-                {!searchQuery &&
-                  !selectedTag &&
-                  !selectedFolderId &&
-                  view !== "trash" && (
-                    <button
-                      className="primary-button"
-                      type="button"
-                      onClick={() => void handleCreateScene()}
-                    >
-                      新建第一个画板
-                    </button>
-                  )}
-              </div>
-            ) : (
-              shouldVirtualizeBoardGrid ? (
-                <div
-                  ref={boardGridRef}
-                  className="board-grid board-grid-virtualized"
-                  style={{ height: boardGridVirtualizer.getTotalSize() }}
-                  onKeyDown={handleBoardGridKeyDown}
-                >
-                  {boardGridVirtualizer.getVirtualItems().map((virtualRow) => {
-                    const startIndex =
-                      virtualRow.index * boardGridMetrics.columns;
-                    return (
-                      <div
-                        key={virtualRow.key}
-                        ref={boardGridVirtualizer.measureElement}
-                        data-index={virtualRow.index}
-                        className="board-grid-virtual-row"
-                        style={
-                          {
-                            "--board-grid-columns": boardGridMetrics.columns,
-                            transform: `translateY(${virtualRow.start - boardGridMetrics.scrollMargin}px)`,
-                          } as React.CSSProperties
-                        }
+              ) : filteredScenes.length === 0 ? (
+                <div className="workspace-empty-state">
+                  <div className="empty-state-icon">
+                    {displayedPageOptions.trash
+                      ? <EmptyTrashIcon />
+                      : <ExcalidrawMark />}
+                  </div>
+                  <h3>
+                    {displayedPageOptions.trash
+                      ? "回收站为空"
+                      : hasDisplayedFilters
+                      ? "没有找到匹配的画板"
+                      : "还没有画板"}
+                  </h3>
+                  <p>
+                    {displayedPageOptions.trash
+                      ? "删除的画板会暂存在这里，方便随时还原。"
+                      : hasDisplayedFilters
+                      ? "试试更换关键词或筛选条件。"
+                      : "创建一个画板，把下一个想法画出来。"}
+                  </p>
+                  {!hasDisplayedFilters &&
+                    !displayedPageOptions.trash && (
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={() => void handleCreateScene()}
                       >
-                        {filteredScenes
-                          .slice(
-                            startIndex,
-                            startIndex + boardGridMetrics.columns,
-                          )
-                          .map(renderBoardCard)}
-                      </div>
-                    );
-                  })}
+                        新建第一个画板
+                      </button>
+                    )}
                 </div>
               ) : (
-                <div ref={boardGridRef} className="board-grid">
-                  {filteredScenes.map(renderBoardCard)}
+                shouldVirtualizeBoardGrid ? (
+                  <div
+                    ref={boardGridRef}
+                    className="board-grid board-grid-virtualized"
+                    style={{ height: boardGridVirtualizer.getTotalSize() }}
+                    onKeyDown={handleBoardGridKeyDown}
+                  >
+                    {boardGridVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const startIndex =
+                        virtualRow.index * boardGridMetrics.columns;
+                      return (
+                        <div
+                          key={virtualRow.key}
+                          ref={boardGridVirtualizer.measureElement}
+                          data-index={virtualRow.index}
+                          className="board-grid-virtual-row"
+                          style={
+                            {
+                              "--board-grid-columns": boardGridMetrics.columns,
+                              transform: `translateY(${virtualRow.start - boardGridMetrics.scrollMargin}px)`,
+                            } as React.CSSProperties
+                          }
+                        >
+                          {filteredScenes
+                            .slice(
+                              startIndex,
+                              startIndex + boardGridMetrics.columns,
+                            )
+                            .map(renderBoardCard)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div ref={boardGridRef} className="board-grid">
+                    {filteredScenes.map(renderBoardCard)}
+                  </div>
+                )
+              )}
+              {hasMoreScenes && (
+                <div className="workspace-load-more">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void loadMoreScenes()}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? "加载中..." : "加载更多画板"}
+                  </button>
                 </div>
-              )
-            )}
-            {hasMoreScenes && (
-              <div className="workspace-load-more">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => void loadMoreScenes()}
-                  disabled={loadingMore}
-                >
-                  {loadingMore ? "加载中..." : "加载更多画板"}
-                </button>
-              </div>
-            )}
+              )}
+            </div>
           </section>
         </main>
       </div>
