@@ -570,6 +570,11 @@ export const createRequestHandler = (
   requestAddressResolver?: RequestAddressResolver,
 ) => {
   const stmts = getPreparedStatements(runtime);
+  const assertSceneFolderExists = (folderId: string | null) => {
+    if (folderId && !stmts.getFolderById.get(folderId)) {
+      throw new HttpError(400, "FOLDER_NOT_FOUND", "文件夹不存在");
+    }
+  };
   const handler = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const pathname = url.pathname;
@@ -1000,6 +1005,10 @@ export const createRequestHandler = (
           await assertReferencedFilesExist(runtime, fileIds);
           try {
             const transaction = runtime.db.transaction(() => {
+              // Attachment checks and the storage queue can yield after metadata
+              // validation. Recheck inside the synchronous commit so deletion
+              // cannot leave a board referencing a folder that no longer exists.
+              assertSceneFolderExists(folderId);
               runtime.db.run(
                 `INSERT INTO scenes
                  (id, name, elements, app_state, created_at, updated_at, revision,
@@ -1554,6 +1563,7 @@ export const createRequestHandler = (
         const now = Date.now();
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {
+          assertSceneFolderExists(folderId);
           const result = runtime.db.run(
             `UPDATE scenes
              SET name = ?, tags_json = ?, is_favorite = ?, folder_id = ?,
@@ -1651,6 +1661,7 @@ export const createRequestHandler = (
         const now = Date.now();
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {
+          assertSceneFolderExists(folderId);
           const result = runtime.db.run(
             `UPDATE scenes
              SET name = ?, elements = ?, app_state = ?, tags_json = ?,

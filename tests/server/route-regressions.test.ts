@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "bun:test";
 
 import { createServerConfig } from "../../server/config";
+import { withStorageMutationLock } from "../../server/files";
 import { createRequestHandler } from "../../server/routes";
 import { createRuntime } from "../../server/runtime";
 
@@ -40,6 +41,49 @@ afterEach(async () => {
 });
 
 describe("route failure and realtime regressions", () => {
+  it("rejects a deleted target folder when scene creation or saving waits for storage", async () => {
+    for (const method of ["POST", "PUT"] as const) {
+      const { runtime, json, request } = setup();
+      const folderResponse = await json("/api/folders", { name: "待删除文件夹" });
+      const { id: folderId } = await folderResponse.json() as { id: string };
+      if (method === "PUT") {
+        expect((await json("/api/scenes", { id: "folder_race", name: "原画板" })).status).toBe(201);
+      }
+      const stored = () => runtime.db.query("SELECT * FROM scenes WHERE id = ?").get("folder_race");
+      const before = stored();
+      let release!: () => void;
+      let started!: () => void;
+      const entered = new Promise<void>((resolve) => { started = resolve; });
+      const storageTask = withStorageMutationLock(runtime, async () => {
+        started();
+        await new Promise<void>((resolve) => { release = resolve; });
+      });
+      await entered;
+      const saving = json(
+        method === "POST" ? "/api/scenes" : "/api/scenes/folder_race",
+        { id: "folder_race", name: "新画板", folder_id: folderId, elements: [], appState: {} },
+        method,
+      );
+      try {
+        // Let JSON parsing and the initial folder validation reach the held
+        // storage queue before deleting the target folder.
+        await Bun.sleep(0);
+        expect((await request(`/api/folders/${folderId}`, { method: "DELETE" })).status).toBe(200);
+      } finally {
+        release();
+        await storageTask;
+      }
+      const response = await saving;
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "FOLDER_NOT_FOUND" });
+      expect(stored()).toEqual(before);
+      expect(runtime.bodyMemoryBudget.getStats().currentBytes).toBe(0);
+      if (method === "PUT") {
+        expect((await json("/api/scenes/folder_race", { name: "正常保存" }, "PUT")).status).toBe(200);
+      }
+    }
+  });
+
   it("rejects invalid stored revisions across reads and mutations without changing the board", async () => {
     const { runtime, json, request } = setup();
     await json("/api/scenes", { id: "corrupt_revision" });
