@@ -120,6 +120,6 @@ export const performDatabaseMaintenance = (runtime: ServerRuntime) => {
   try {
     runtime.db.run("PRAGMA wal_checkpoint(PASSIVE);");
   } catch (error) {
-    console.error("[Database] WAL checkpoint failed", error);
+    console.info("[Database] WAL checkpoint failed", error);
   }
 };

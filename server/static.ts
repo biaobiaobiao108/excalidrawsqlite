@@ -4,7 +4,15 @@ import path from "node:path";
 import type { ServerRuntime } from "./types";
 import { PROJECT_ROOT } from "./paths";
 
-export const getStaticETag = async (file: ReturnType<typeof Bun.file>) => {
+const STATIC_ETAG_CACHE_LIMIT = 512;
+type StaticETagCacheEntry = {
+  size: number;
+  lastModified: number;
+  etag: string | Promise<string>;
+};
+const staticETagCache = new Map<string, StaticETagCacheEntry>();
+
+const hashStaticFile = async (file: ReturnType<typeof Bun.file>) => {
   const hasher = new Bun.CryptoHasher("sha256");
   const reader = file.stream().getReader();
   try {
@@ -22,6 +30,52 @@ export const getStaticETag = async (file: ReturnType<typeof Bun.file>) => {
     reader.releaseLock();
   }
   return `"${hasher.digest("hex")}"`;
+};
+
+export const getStaticETag = async (
+  file: ReturnType<typeof Bun.file>,
+  cacheKey?: string,
+) => {
+  if (!cacheKey) {
+    return hashStaticFile(file);
+  }
+
+  const key = path.resolve(cacheKey);
+  const size = file.size;
+  const lastModified = file.lastModified;
+  const cached = staticETagCache.get(key);
+  if (cached?.size === size && cached.lastModified === lastModified) {
+    // Refresh insertion order to keep frequently requested assets in the
+    // bounded cache.
+    staticETagCache.delete(key);
+    staticETagCache.set(key, cached);
+    return cached.etag;
+  }
+
+  const pendingETag = hashStaticFile(file);
+  staticETagCache.delete(key);
+  staticETagCache.set(key, { size, lastModified, etag: pendingETag });
+  while (staticETagCache.size > STATIC_ETAG_CACHE_LIMIT) {
+    const oldestKey = staticETagCache.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    staticETagCache.delete(oldestKey);
+  }
+
+  try {
+    const etag = await pendingETag;
+    const current = staticETagCache.get(key);
+    if (current?.etag === pendingETag) {
+      current.etag = etag;
+    }
+    return etag;
+  } catch (error) {
+    if (staticETagCache.get(key)?.etag === pendingETag) {
+      staticETagCache.delete(key);
+    }
+    throw error;
+  }
 };
 
 export const staticIfNoneMatchMatches = (

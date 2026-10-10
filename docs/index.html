@@ -1897,6 +1897,11 @@ bun run dev</code></pre>
                     <td>服务监听端口。</td>
                   </tr>
                   <tr>
+                    <td><code>HOST</code></td>
+                    <td>开发态 <code>127.0.0.1</code>；生产态 <code>0.0.0.0</code></td>
+                    <td>服务监听地址。开发态默认仅本机可访问；需要局域网设备访问时可显式设置 <code>HOST=0.0.0.0</code>。</td>
+                  </tr>
+                  <tr>
                     <td><code>DATA_DIR</code></td>
                     <td><code>./data</code></td>
                     <td>SQLite 数据库与图片附件存储目录。</td>

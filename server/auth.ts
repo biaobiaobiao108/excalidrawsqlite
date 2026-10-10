@@ -24,7 +24,7 @@ export const cleanupExpiredSessions = (runtime: ServerRuntime, now: number) => {
   try {
     runtime.db.run("DELETE FROM sessions WHERE expires_at <= ?", [now]);
   } catch (error) {
-    console.error("[Sessions] cleanup failed", error);
+    console.info("[Sessions] cleanup failed", error);
   }
 };
 
@@ -90,7 +90,7 @@ export const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
       [hashSessionToken(runtime, token), expiresAt, Date.now()],
     );
   } catch (error) {
-    console.error("[Sessions] failed to persist session", error);
+    console.info("[Sessions] failed to persist session", error);
   }
   const secure = isSecureRequest(runtime, req);
   const name =
@@ -155,7 +155,7 @@ export const isAuthorized = (runtime: ServerRuntime, req: Request) => {
         runtime.sessions.set(token, expiresAt);
       }
     } catch (error) {
-      console.error("[Sessions] query failed", error);
+      console.info("[Sessions] query failed", error);
     }
   }
   if (!expiresAt || expiresAt <= Date.now()) {

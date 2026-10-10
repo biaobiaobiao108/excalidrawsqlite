@@ -76,10 +76,10 @@ export const isAllowedOrigin = (runtime: ServerRuntime, req: Request) => {
 
 const CSP_DIRECTIVES = [
   "default-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval' blob:",
+  "script-src 'self' 'wasm-unsafe-eval'",
   "style-src 'self' https://cdn.jsdelivr.net",
   // Mermaid and CodeMirror generate runtime styles. Scope the compatibility
-  // allowance to CSS only; script-src remains nonce/source controlled.
+  // allowance to CSS only; script execution remains source restricted.
   "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
   "style-src-attr 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
@@ -170,7 +170,7 @@ export const errorResponse = (
         ? new HttpError(499, "REQUEST_ABORTED", "请求已取消")
       : new HttpError(500, "INTERNAL_ERROR", "服务器内部错误");
   if (!(error instanceof HttpError) && !wasAborted) {
-    console.error("[API] request failed", error);
+    console.info("[API] request failed", error);
   }
   return jsonResponse(
     runtime,

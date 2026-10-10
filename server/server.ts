@@ -43,9 +43,9 @@ export { createRequestHandler } from "./routes";
 export type { RequestAddressResolver, ServerConfig, ServerRuntime } from "./types";
 
 export const resolveServerHostname = (
-  _isDev: boolean,
+  isDev: boolean,
   configuredHost = process.env.HOST,
-) => configuredHost || "0.0.0.0";
+) => configuredHost || (isDev ? "127.0.0.1" : "0.0.0.0");
 
 type StoppableServer = {
   stop: (closeActiveConnections?: boolean) => Promise<void> | void;
@@ -111,11 +111,11 @@ export const shutdownServer = async (options: {
   }
 
   if (timedOut || gracefulError) {
-    console.error("[Server] 优雅关闭超时，正在强制断开连接");
+    console.info("[Server] 优雅关闭超时，正在强制断开连接");
     try {
       await server.stop(true);
     } catch (error) {
-      console.error("[Server] 强制关闭失败", error);
+      console.info("[Server] 强制关闭失败", error);
     }
     return { forced: true };
   }
@@ -123,7 +123,7 @@ export const shutdownServer = async (options: {
   try {
     runtime.db.run("PRAGMA wal_checkpoint(TRUNCATE);");
   } catch (error) {
-    console.error("[Database] Shutdown WAL checkpoint failed", error);
+    console.info("[Database] Shutdown WAL checkpoint failed", error);
   }
   try {
     runtime.db.close();
@@ -145,7 +145,7 @@ export const createShutdownSignalHandler = (
     shutdownPromise = shutdown()
       .then(() => exit(0))
       .catch((error) => {
-        console.error("[Server] 关闭失败", error);
+        console.info("[Server] 关闭失败", error);
         exit(1);
       });
   };
@@ -203,7 +203,7 @@ export const startServer = async () => {
     const tracked = task.then(
       () => undefined,
       (error) => {
-        console.error("[Server] 后台维护任务失败", error);
+        console.info("[Server] 后台维护任务失败", error);
       },
     );
     backgroundTasks.add(tracked);
@@ -217,12 +217,12 @@ export const startServer = async () => {
     performDatabaseMaintenance(runtime);
     trackBackgroundTask(
       cleanupOrphanedFiles(runtime).catch((error) => {
-        console.error("[Files] cleanup failed", error);
+        console.info("[Files] cleanup failed", error);
       }),
     );
     trackBackgroundTask(
       cleanupStaleFileArtifacts(runtime).catch((error) => {
-        console.error("[Files] stale artifact cleanup failed", error);
+        console.info("[Files] stale artifact cleanup failed", error);
       }),
     );
   };
@@ -230,7 +230,7 @@ export const startServer = async () => {
   const runStorageScanMaintenance = () => {
     trackBackgroundTask(
       cleanupUntrackedFiles(runtime).catch((error) => {
-        console.error("[Files] untracked file cleanup failed", error);
+        console.info("[Files] untracked file cleanup failed", error);
       }),
     );
     trackBackgroundTask(
@@ -240,7 +240,7 @@ export const startServer = async () => {
           consistency.untrackedFiles.length ||
           consistency.orphanedReferences
         ) {
-          console.warn("[Storage] 一致性检查发现问题", consistency);
+          console.info("[Storage] 一致性检查发现问题", consistency);
         }
       }),
     );
@@ -268,17 +268,17 @@ export const startServer = async () => {
   cleanupExpiredTrashScenes(runtime);
   trackBackgroundTask(
     cleanupOrphanedFiles(runtime).catch((error) => {
-      console.error("[Files] initial cleanup failed", error);
+      console.info("[Files] initial cleanup failed", error);
     }),
   );
   trackBackgroundTask(
     cleanupStaleFileArtifacts(runtime).catch((error) => {
-      console.error("[Files] initial stale artifact cleanup failed", error);
+      console.info("[Files] initial stale artifact cleanup failed", error);
     }),
   );
   trackBackgroundTask(
     cleanupUntrackedFiles(runtime).catch((error) => {
-      console.error("[Files] initial untracked file cleanup failed", error);
+      console.info("[Files] initial untracked file cleanup failed", error);
     }),
   );
   trackBackgroundTask(
@@ -288,7 +288,7 @@ export const startServer = async () => {
         consistency.untrackedFiles.length ||
         consistency.orphanedReferences
       ) {
-        console.warn(
+        console.info(
           "[Storage] initial consistency check found issues",
           consistency,
         );

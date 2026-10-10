@@ -310,7 +310,7 @@ const upsertPreparedFile = async (
       try {
         await atomicWrite.restore();
       } catch (restoreError) {
-        console.error("[Files] Failed to roll back file after database error", {
+        console.info("[Files] Failed to roll back file after database error", {
           filePath,
           error: restoreError,
         });
@@ -320,7 +320,7 @@ const upsertPreparedFile = async (
     }
 
     await atomicWrite.cleanup().catch((error) => {
-      console.error("[Files] Failed to remove temporary backup", {
+      console.info("[Files] Failed to remove temporary backup", {
         filePath,
         error,
       });
@@ -569,7 +569,7 @@ export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
             .rename(quarantinePath, filePath)
             .catch(() => undefined);
         }
-        console.warn("[Files] 附件垃圾回收失败，保留原文件", {
+        console.info("[Files] 附件垃圾回收失败，保留原文件", {
           id: row.id,
           error,
         });
@@ -579,32 +579,62 @@ export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
 };
 
 export const cleanupUntrackedFiles = async (runtime: ServerRuntime) => {
-  const knownFileIds = new Set(
-    (
-      runtime.db.query("SELECT id FROM files").all() as Array<{ id: string }>
-    ).map((row) => row.id),
-  );
-  const cutoff = Date.now() - ORPHAN_FILE_GRACE_MS;
-  let cleaned = 0;
-  for (const entry of await fs.promises.readdir(runtime.filesDir, {
-    withFileTypes: true,
-  })) {
-    if (
-      cleaned >= UNTRACKED_FILE_CLEANUP_BATCH_SIZE ||
-      !entry.isFile() ||
-      !FILE_ID_PATTERN.test(entry.name) ||
-      knownFileIds.has(entry.name)
-    ) {
-      continue;
+  await withStorageMutationLock(runtime, async () => {
+    const knownFileIds = new Set(
+      (
+        runtime.db.query("SELECT id FROM files").all() as Array<{ id: string }>
+      ).map((row) => row.id),
+    );
+    const cutoff = Date.now() - ORPHAN_FILE_GRACE_MS;
+    let cleaned = 0;
+    for (const entry of await fs.promises.readdir(runtime.filesDir, {
+      withFileTypes: true,
+    })) {
+      if (
+        cleaned >= UNTRACKED_FILE_CLEANUP_BATCH_SIZE ||
+        !entry.isFile() ||
+        !FILE_ID_PATTERN.test(entry.name) ||
+        knownFileIds.has(entry.name)
+      ) {
+        continue;
+      }
+      const filePath = path.join(runtime.filesDir, entry.name);
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      if (stat && stat.mtimeMs < cutoff) {
+        await fs.promises.rm(filePath, { force: true });
+        cleaned += 1;
+        console.info("[Files] 清理未跟踪附件", { filePath });
+      }
     }
-    const filePath = path.join(runtime.filesDir, entry.name);
-    const stat = await fs.promises.stat(filePath).catch(() => null);
-    if (stat && stat.mtimeMs < cutoff) {
-      await fs.promises.rm(filePath, { force: true });
-      cleaned += 1;
-      console.info("[Files] 清理未跟踪附件", { filePath });
-    }
+  });
+};
+
+const fileMatchesMetadata = async (
+  filePath: string,
+  metadata: { byte_size: number; sha256: string },
+) => {
+  const file = Bun.file(filePath);
+  if (!(await file.exists()) || file.size !== metadata.byte_size) {
+    return false;
   }
+
+  const hasher = new Bun.CryptoHasher("sha256");
+  const reader = file.stream().getReader();
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) {
+        break;
+      }
+      hasher.update(result.value);
+    }
+  } catch (error) {
+    await reader.cancel(error).catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  return hasher.digest("hex") === metadata.sha256;
 };
 
 const recoverInterruptedFileReplacements = async (runtime: ServerRuntime) => {
@@ -633,10 +663,60 @@ const recoverInterruptedFileReplacements = async (runtime: ServerRuntime) => {
 
   for (const { id, name } of backupsWithTime) {
     const filePath = getFilePath(runtime, id);
-    if (await fileExists(filePath)) {
+    const backupPath = path.join(runtime.filesDir, name);
+    const metadata = runtime.db
+      .query("SELECT byte_size, sha256 FROM files WHERE id = ?")
+      .get(id) as { byte_size: number; sha256: string } | null;
+    const targetExists = await fileExists(filePath);
+
+    if (metadata && targetExists) {
+      if (await fileMatchesMetadata(filePath, metadata)) {
+        // The database commit completed before the process stopped; this is
+        // only the old copy left behind by the atomic replacement.
+        await fs.promises.rm(backupPath, { force: true });
+        continue;
+      }
+      if (!(await fileMatchesMetadata(backupPath, metadata))) {
+        // Neither copy agrees with the committed row. Keep the backup for
+        // manual recovery rather than deleting the only potentially useful
+        // copy during stale-artifact cleanup.
+        continue;
+      }
+
+      // Restore through the same replacement path as uploads. The original
+      // backup remains until the restored bytes have been verified against
+      // SQLite, so another interruption can retry safely.
+      const restoreTempPath = `${filePath}.${randomHex(8)}.tmp`;
+      try {
+        await fs.promises.copyFile(backupPath, restoreTempPath);
+        const atomicWrite = await finalizeAtomicFileWrite(
+          filePath,
+          restoreTempPath,
+        );
+        if (await fileMatchesMetadata(filePath, metadata)) {
+          await atomicWrite.cleanup();
+          await fs.promises.rm(backupPath, { force: true });
+          console.info("[Files] 恢复数据库版本的附件", { filePath });
+        }
+      } catch (error) {
+        await fs.promises.rm(restoreTempPath, { force: true }).catch(() => {});
+        console.info("[Files] 附件内容恢复失败，保留备份", {
+          backupPath,
+          error,
+        });
+      }
       continue;
     }
-    const backupPath = path.join(runtime.filesDir, name);
+
+    if (targetExists) {
+      continue;
+    }
+
+    if (metadata && !(await fileMatchesMetadata(backupPath, metadata))) {
+      // Do not install bytes that would disagree with the row clients will
+      // receive from SQLite. Leave the artifact intact for later inspection.
+      continue;
+    }
     try {
       await fs.promises.rename(backupPath, filePath);
       console.info("[Files] 恢复中断替换的附件", { filePath });
@@ -646,7 +726,7 @@ const recoverInterruptedFileReplacements = async (runtime: ServerRuntime) => {
       }
       // Keep an unrecoverable backup in place for a later retry or manual
       // recovery. The stale-artifact pass below must not delete it.
-      console.warn("[Files] 附件备份恢复失败，保留备份", {
+      console.info("[Files] 附件备份恢复失败，保留备份", {
         backupPath,
         error,
       });
@@ -700,6 +780,23 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
             !(await fileExists(getFilePath(runtime, backupMatch[1])))
           ) {
             continue;
+          }
+          if (backupMatch) {
+            const metadata = runtime.db
+              .query("SELECT byte_size, sha256 FROM files WHERE id = ?")
+              .get(backupMatch[1]) as {
+              byte_size: number;
+              sha256: string;
+            } | null;
+            if (
+              metadata &&
+              !(await fileMatchesMetadata(
+                getFilePath(runtime, backupMatch[1]),
+                metadata,
+              ))
+            ) {
+              continue;
+            }
           }
         }
         await fs.promises.rm(filePath, { force: true });

@@ -13,8 +13,12 @@ import {
   resolveServerHostname,
   type ServerRuntime,
 } from "../../server/server";
+import { createDatabaseSnapshot } from "../../server/backup";
 import { readJson, releaseJsonBodyMemoryBudget } from "../../server/http";
-import { withStorageMutationLock } from "../../server/files";
+import {
+  cleanupUntrackedFiles,
+  withStorageMutationLock,
+} from "../../server/files";
 import { BodyMemoryBudget } from "../../server/types";
 import { cleanupExpiredTrashScenes } from "../../server/scenes";
 
@@ -177,8 +181,8 @@ describe("cloud persistence server", () => {
     ).toBe(true);
   });
 
-  it("binds development servers to all interfaces and preserves explicit host overrides", () => {
-    expect(resolveServerHostname(true, "")).toBe("0.0.0.0");
+  it("binds development servers to localhost and preserves explicit host overrides", () => {
+    expect(resolveServerHostname(true, "")).toBe("127.0.0.1");
     expect(resolveServerHostname(false, "")).toBe("0.0.0.0");
     expect(resolveServerHostname(true, "192.0.2.10")).toBe("192.0.2.10");
   });
@@ -435,6 +439,60 @@ describe("cloud persistence server", () => {
 
     finishLock();
     await lock;
+  });
+
+  it("serializes untracked-file cleanup with attachment uploads", async () => {
+    const { runtime } = createTestRuntime();
+    const id = "file_cleanup_race";
+    const filePath = path.join(runtime.filesDir, id);
+    await fs.writeFile(filePath, new Uint8Array([1, 2, 3]));
+    const staleTime = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await fs.utimes(filePath, staleTime, staleTime);
+
+    let releaseLock!: () => void;
+    let notifyLockStarted!: () => void;
+    const lockStarted = new Promise<void>((resolve) => {
+      notifyLockStarted = resolve;
+    });
+    const heldLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    const uploadLock = withStorageMutationLock(runtime, async () => {
+      notifyLockStarted();
+      await heldLock;
+    });
+    await lockStarted;
+
+    let cleanupFinished = false;
+    const cleanup = cleanupUntrackedFiles(runtime).then(() => {
+      cleanupFinished = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(cleanupFinished).toBe(false);
+    expect(existsSync(filePath)).toBe(true);
+
+    const bytes = new Uint8Array([9, 8, 7]);
+    await fs.writeFile(filePath, bytes);
+    const hasher = new Bun.CryptoHasher("sha256");
+    hasher.update(bytes);
+    runtime.db.run(
+      `INSERT INTO files
+       (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        id,
+        "image/png",
+        bytes.byteLength,
+        hasher.digest("hex"),
+        Date.now(),
+        Date.now(),
+      ],
+    );
+
+    releaseLock();
+    await Promise.all([uploadLock, cleanup]);
+    expect(await fs.readFile(filePath)).toEqual(Buffer.from(bytes));
   });
 
   it("rejects unknown-length JSON once its byte limit is exceeded", async () => {
@@ -761,6 +819,51 @@ describe("cloud persistence server", () => {
       { headers: { Cookie: cookie } },
     );
     expect(invalidSort.status).toBe(400);
+  });
+
+  it("requires pagination before legacy scene lists can exceed their memory cap", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const insert = runtime.db.query(
+      `INSERT INTO scenes (id, name, elements, app_state, created_at, updated_at, deleted_at)
+       VALUES (?, ?, '[]', '{}', ?, ?, ?)`,
+    );
+    const seedScenes = runtime.db.transaction(() => {
+      for (let index = 0; index < 1_001; index += 1) {
+        const timestamp = Date.now() + index;
+        insert.run(
+          `scene_legacy_active_${index}`,
+          `Active ${index}`,
+          timestamp,
+          timestamp,
+          null,
+        );
+        insert.run(
+          `scene_legacy_trash_${index}`,
+          `Trash ${index}`,
+          timestamp,
+          timestamp,
+          timestamp,
+        );
+      }
+    });
+    seedScenes.immediate();
+
+    const active = await request(handler, "/api/scenes", {
+      headers: { Cookie: cookie },
+    });
+    expect(active.status).toBe(400);
+    expect(await responseJson<{ code: string }>(active)).toMatchObject({
+      code: "PAGINATION_REQUIRED",
+    });
+
+    const trash = await request(handler, "/api/scenes/trash", {
+      headers: { Cookie: cookie },
+    });
+    expect(trash.status).toBe(400);
+    expect(await responseJson<{ code: string }>(trash)).toMatchObject({
+      code: "PAGINATION_REQUIRED",
+    });
   });
 
   it("stores files on disk and prevents deleted scenes from being recreated", async () => {
@@ -1372,6 +1475,25 @@ describe("cloud persistence server", () => {
     expect(targetScene?.element_count).toBe(0);
     expect(targetScene?.thumbnail_file_id).toBe(null);
 
+    const beforeFolderDelete = await request(
+      handler,
+      "/api/scenes/scene_metadata",
+      { headers: { Cookie: cookie } },
+    );
+    const beforeFolderDeleteScene = await responseJson<{
+      revision: number;
+      folder_id: string | null;
+    }>(beforeFolderDelete);
+    expect(beforeFolderDeleteScene.folder_id).toBe(folder.id);
+    const publishedSceneEvents: Array<{
+      sceneId: string;
+      revision: number;
+      changeKind: string;
+    }> = [];
+    runtime.realtime = {
+      publishSceneChanged: (event) => publishedSceneEvents.push(event),
+      publishWorkspaceChanged: () => {},
+    };
     const deletedFolder = await request(handler, `/api/folders/${folder.id}`, {
       method: "DELETE",
       headers: { Cookie: cookie },
@@ -1380,9 +1502,70 @@ describe("cloud persistence server", () => {
     const scene = await request(handler, "/api/scenes/scene_metadata", {
       headers: { Cookie: cookie },
     });
-    expect(
-      (await responseJson<{ folder_id: string | null }>(scene)).folder_id,
-    ).toBe(null);
+    const afterFolderDeleteScene = await responseJson<{
+      folder_id: string | null;
+      revision: number;
+    }>(scene);
+    expect(afterFolderDeleteScene.folder_id).toBe(null);
+    expect(afterFolderDeleteScene.revision).toBe(
+      beforeFolderDeleteScene.revision + 1,
+    );
+    expect(scene.headers.get("etag")).not.toBe(
+      beforeFolderDelete.headers.get("etag"),
+    );
+    expect(publishedSceneEvents).toContainEqual(
+      expect.objectContaining({
+        sceneId: "scene_metadata",
+        revision: afterFolderDeleteScene.revision,
+        changeKind: "metadata",
+      }),
+    );
+  });
+
+  it("stores scene content size as UTF-8 bytes", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const elements = [{ id: "element_utf8", type: "text", text: "白板内容" }];
+    const created = await jsonRequest(
+      handler,
+      "/api/scenes",
+      { id: "scene_utf8_bytes", elements },
+      { headers: { Cookie: cookie } },
+    );
+    expect(created.status).toBe(201);
+
+    const stored = runtime.db
+      .query("SELECT elements, content_bytes FROM scenes WHERE id = ?")
+      .get("scene_utf8_bytes") as {
+      elements: string;
+      content_bytes: number;
+    };
+    const expectedBytes = Buffer.byteLength(stored.elements, "utf8");
+    expect(stored.content_bytes).toBe(expectedBytes);
+    expect(expectedBytes).toBeGreaterThan(stored.elements.length);
+    expect((await responseJson<{ size: number }>(created)).size).toBe(
+      expectedBytes,
+    );
+
+    const updated = await jsonRequest(
+      handler,
+      "/api/scenes/scene_utf8_bytes",
+      {
+        elements: [...elements, { id: "element_more", type: "text", text: "修改" }],
+        baseRevision: 1,
+      },
+      { method: "PUT", headers: { Cookie: cookie } },
+    );
+    expect(updated.status).toBe(200);
+    const updatedStored = runtime.db
+      .query("SELECT elements, content_bytes FROM scenes WHERE id = ?")
+      .get("scene_utf8_bytes") as {
+      elements: string;
+      content_bytes: number;
+    };
+    expect(updatedStored.content_bytes).toBe(
+      Buffer.byteLength(updatedStored.elements, "utf8"),
+    );
   });
 
   it("advances thumbnail versions even when the image bytes are unchanged", async () => {
@@ -1677,6 +1860,91 @@ describe("cloud persistence server", () => {
     expect(await fs.stat(backupPath).catch(() => null)).toBeNull();
   });
 
+  it("restores the attachment version committed in SQLite after an interrupted replacement", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const id = "file_interrupted_committed";
+    const original = new Uint8Array([4, 5, 6]);
+    const upload = await request(handler, `/api/files/${id}`, {
+      method: "PUT",
+      headers: { Cookie: cookie, "Content-Type": "image/png" },
+      body: original,
+    });
+    expect(upload.status).toBe(201);
+
+    const filePath = path.join(runtime.filesDir, id);
+    const backupPath = path.join(
+      runtime.filesDir,
+      `${id}.0123456789abcdef.bak`,
+    );
+    await fs.writeFile(filePath, new Uint8Array([9, 8, 7]));
+    await fs.writeFile(backupPath, original);
+    const staleTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.utimes(backupPath, staleTime, staleTime);
+
+    await cleanupStaleFileArtifacts(runtime);
+
+    expect(await fs.readFile(filePath)).toEqual(Buffer.from(original));
+    expect(await fs.stat(backupPath).catch(() => null)).toBeNull();
+  });
+
+  it("removes an old replacement backup after the new SQLite row committed", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const id = "file_replacement_committed";
+    const original = new Uint8Array([1, 2, 3]);
+    const current = new Uint8Array([9, 8, 7]);
+    const upload = (bytes: Uint8Array<ArrayBuffer>) =>
+      request(handler, `/api/files/${id}`, {
+        method: "PUT",
+        headers: { Cookie: cookie, "Content-Type": "image/png" },
+        body: bytes,
+      });
+    expect((await upload(original)).status).toBe(201);
+    expect((await upload(current)).status).toBe(201);
+
+    const filePath = path.join(runtime.filesDir, id);
+    const backupPath = path.join(
+      runtime.filesDir,
+      `${id}.0123456789abcdef.bak`,
+    );
+    await fs.writeFile(backupPath, original);
+    const staleTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.utimes(backupPath, staleTime, staleTime);
+
+    await cleanupStaleFileArtifacts(runtime);
+
+    expect(await fs.readFile(filePath)).toEqual(Buffer.from(current));
+    expect(await fs.stat(backupPath).catch(() => null)).toBeNull();
+  });
+
+  it("keeps unverified replacement backups when the current attachment disagrees with SQLite", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const id = "file_keep_unverified";
+    const upload = await request(handler, `/api/files/${id}`, {
+      method: "PUT",
+      headers: { Cookie: cookie, "Content-Type": "image/png" },
+      body: new Uint8Array([1, 2, 3]),
+    });
+    expect(upload.status).toBe(201);
+
+    const filePath = path.join(runtime.filesDir, id);
+    const backupPath = path.join(
+      runtime.filesDir,
+      `${id}.0123456789abcdef.bak`,
+    );
+    await fs.writeFile(filePath, new Uint8Array([9, 8, 7]));
+    await fs.writeFile(backupPath, new Uint8Array([6, 5, 4]));
+    const staleTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.utimes(backupPath, staleTime, staleTime);
+
+    await cleanupStaleFileArtifacts(runtime);
+
+    expect(await fs.readFile(filePath)).toEqual(Buffer.from([9, 8, 7]));
+    expect(await fs.readFile(backupPath)).toEqual(Buffer.from([6, 5, 4]));
+  });
+
   it("does not serve the SPA shell for missing static assets", async () => {
     const { handler, runtime, directory } = createTestRuntime({
       ALLOW_ANONYMOUS: "true",
@@ -1718,6 +1986,18 @@ describe("cloud persistence server", () => {
     });
     expect(revalidatedAsset.status).toBe(304);
     expect(revalidatedAsset.headers.get("etag")).toBe(assetEtag);
+
+    await fs.writeFile(path.join(staticDir, "assets", "valid.js"), "changed;");
+    const changedAsset = await request(handler, "/assets/valid.js", {
+      headers: { Accept: "*/*" },
+    });
+    expect(changedAsset.status).toBe(200);
+    expect(changedAsset.headers.get("etag")).not.toBe(assetEtag);
+    const changedHasher = new Bun.CryptoHasher("sha256");
+    changedHasher.update("changed;");
+    expect(changedAsset.headers.get("etag")).toBe(
+      `"${changedHasher.digest("hex")}"`,
+    );
 
     await fs.mkdir(path.join(staticDir, "locales"), { recursive: true });
     await fs.writeFile(
@@ -1773,7 +2053,8 @@ describe("cloud persistence server", () => {
     const csp = res.headers.get("content-security-policy");
     expect(csp).toBeTruthy();
     expect(csp).toContain("default-src 'self'");
-    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval' blob:");
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
+    expect(csp).not.toMatch(/script-src[^;]*\bblob:/);
     expect(csp).toContain("style-src 'self' https://cdn.jsdelivr.net");
     expect(csp).toContain(
       "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
@@ -1869,8 +2150,8 @@ describe("cloud persistence server", () => {
     expect(artifacts).toHaveLength(0);
   });
 
-  it("rejects a database snapshot before creating an oversized temp file", async () => {
-    const { handler } = createTestRuntime({ MAX_BACKUP_BYTES: "1" });
+  it("rejects an oversized database snapshot and removes its temp file", async () => {
+    const { handler, directory } = createTestRuntime({ MAX_BACKUP_BYTES: "1" });
     const cookie = await authenticate(handler);
     const response = await request(handler, "/api/backup/snapshot", {
       headers: { Cookie: cookie },
@@ -1879,6 +2160,56 @@ describe("cloud persistence server", () => {
     expect(await responseJson<{ code: string }>(response)).toMatchObject({
       code: "BACKUP_TOO_LARGE",
     });
+    const artifacts = (await fs.readdir(directory)).filter((name) =>
+      name.startsWith("excalidraw-backup-"),
+    );
+    expect(artifacts).toHaveLength(0);
+  });
+
+  it("measures the compacted SQLite snapshot instead of rejecting free pages", async () => {
+    const { runtime } = createTestRuntime();
+    const initialSnapshot = await createDatabaseSnapshot(
+      runtime,
+      `baseline-${crypto.randomUUID()}`,
+    );
+    const compactSize = Bun.file(initialSnapshot.tempBackupFile).size;
+    await initialSnapshot.cleanup();
+    runtime.config.maxBackupBytes = Math.max(compactSize * 2, 64 * 1024);
+
+    const createPadding = runtime.db.transaction(() => {
+      runtime.db.run(
+        "CREATE TABLE backup_padding (payload TEXT NOT NULL)",
+      );
+      const insert = runtime.db.query(
+        "INSERT INTO backup_padding (payload) VALUES (?)",
+      );
+      const payload = "x".repeat(8192);
+      for (let index = 0; index < 300; index += 1) {
+        insert.run(payload);
+      }
+    });
+    createPadding.immediate();
+    runtime.db.run("DROP TABLE backup_padding");
+    const pageCount = Number(
+      (runtime.db.query("PRAGMA page_count").get() as { page_count: number })
+        .page_count,
+    );
+    const pageSize = Number(
+      (runtime.db.query("PRAGMA page_size").get() as { page_size: number })
+        .page_size,
+    );
+    expect(pageCount * pageSize).toBeGreaterThan(
+      runtime.config.maxBackupBytes,
+    );
+
+    const snapshot = await createDatabaseSnapshot(
+      runtime,
+      `freelist-${crypto.randomUUID()}`,
+    );
+    expect(Bun.file(snapshot.tempBackupFile).size).toBeLessThanOrEqual(
+      runtime.config.maxBackupBytes,
+    );
+    await snapshot.cleanup();
   });
 
   it("exports a complete backup containing the database, manifest and attachments", async () => {

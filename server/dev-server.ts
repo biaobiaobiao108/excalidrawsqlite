@@ -65,10 +65,10 @@ export const startDevWatcher = async (): Promise<() => void> => {
             console.log("[Dev] 📢 编译完成，正在通知浏览器热刷新...");
             broadcastDevReload();
           } else {
-            console.error("[Dev] ❌ 增量打包失败 (退出码非 0)");
+            console.info("[Dev] ❌ 增量打包失败 (退出码非 0)");
           }
         } catch (error) {
-          console.error("[Dev] ❌ 增量打包执行出错:", error);
+          console.info("[Dev] ❌ 增量打包执行出错:", error);
         }
       } while (rebuildPending);
       isBuilding = false;
@@ -99,7 +99,7 @@ export const startDevWatcher = async (): Promise<() => void> => {
         );
         watchers.push(watcher);
       } catch (err) {
-        console.warn(`[Dev] 无法监听路径 ${target.path}:`, err);
+        console.info(`[Dev] 无法监听路径 ${target.path}:`, err);
       }
     }
   }

@@ -76,6 +76,7 @@ import type { RequestAddressResolver, ServerRuntime } from "./types";
 
 const DEFAULT_SCENE_PAGE_SIZE = 50;
 const MAX_SCENE_PAGE_SIZE = 100;
+const LEGACY_SCENE_LIST_LIMIT = 1_000;
 const MAX_THUMBNAIL_VERSION_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const sceneCursorEncoder = new TextEncoder();
 const sceneCursorDecoder = new TextDecoder();
@@ -177,8 +178,9 @@ const staticFileResponse = async (
   file: ReturnType<typeof Bun.file>,
   pathname: string,
   contentType?: string,
+  cacheKey?: string,
 ) => {
-  const etag = await getStaticETag(file);
+  const etag = await getStaticETag(file, cacheKey);
   const cacheControl = getStaticCacheControl(pathname);
   const headers = {
     "Cache-Control": cacheControl,
@@ -454,7 +456,8 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
          FROM scenes
          LEFT JOIN folders ON folders.id = scenes.folder_id
          WHERE scenes.deleted_at IS NULL
-         ORDER BY scenes.updated_at DESC, scenes.id DESC`,
+         ORDER BY scenes.updated_at DESC, scenes.id DESC
+         LIMIT ?`,
       ),
       listTrashScenes: runtime.db.query(
         `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
@@ -466,7 +469,8 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
          FROM scenes
          LEFT JOIN folders ON folders.id = scenes.folder_id
          WHERE scenes.deleted_at IS NOT NULL
-         ORDER BY scenes.deleted_at DESC, scenes.id DESC`,
+         ORDER BY scenes.deleted_at DESC, scenes.id DESC
+         LIMIT ?`,
       ),
       listFolders: runtime.db.query(
         `SELECT folders.id, folders.name, folders.icon, folders.color,
@@ -771,20 +775,34 @@ export const createRequestHandler = (
         if (hasScenePageParameters(url)) {
           return jsonResponse(runtime, req, listScenePage(runtime, url, false));
         }
-        const rows = stmts
-          .listScenes.all()
-          .map(getSceneSummary);
-        return jsonResponse(runtime, req, rows);
+        const rows = stmts.listScenes.all(
+          LEGACY_SCENE_LIST_LIMIT + 1,
+        ) as unknown[];
+        if (rows.length > LEGACY_SCENE_LIST_LIMIT) {
+          throw new HttpError(
+            400,
+            "PAGINATION_REQUIRED",
+            `画板超过 ${LEGACY_SCENE_LIST_LIMIT} 个，请使用 limit/cursor 分页参数`,
+          );
+        }
+        return jsonResponse(runtime, req, rows.map(getSceneSummary));
       }
 
       if (pathname === "/api/scenes/trash" && req.method === "GET") {
         if (hasScenePageParameters(url)) {
           return jsonResponse(runtime, req, listScenePage(runtime, url, true));
         }
-        const rows = stmts
-          .listTrashScenes.all()
-          .map(getSceneSummary);
-        return jsonResponse(runtime, req, rows);
+        const rows = stmts.listTrashScenes.all(
+          LEGACY_SCENE_LIST_LIMIT + 1,
+        ) as unknown[];
+        if (rows.length > LEGACY_SCENE_LIST_LIMIT) {
+          throw new HttpError(
+            400,
+            "PAGINATION_REQUIRED",
+            `回收站画板超过 ${LEGACY_SCENE_LIST_LIMIT} 个，请使用 limit/cursor 分页参数`,
+          );
+        }
+        return jsonResponse(runtime, req, rows.map(getSceneSummary));
       }
 
       if (pathname === "/api/scenes" && req.method === "POST") {
@@ -813,6 +831,7 @@ export const createRequestHandler = (
         const elementsJson = JSON.stringify(elements);
         const appStateJson = JSON.stringify(appState);
         const tagsJson = JSON.stringify(tags);
+        const contentBytes = Buffer.byteLength(elementsJson, "utf8");
         const now = Date.now();
         await withStorageMutationLock(runtime, async () => {
           await assertReferencedFilesExist(runtime, fileIds);
@@ -835,7 +854,7 @@ export const createRequestHandler = (
                   favorite ? 1 : 0,
                   folderId,
                   elements.length,
-                  elementsJson.length,
+                  contentBytes,
                   sha256Hex(elementsJson),
                 ],
               );
@@ -869,7 +888,7 @@ export const createRequestHandler = (
             created_at: now,
             updated_at: now,
             revision: 1,
-            size: elementsJson.length,
+            size: contentBytes,
             element_count: elements.filter((el: any) => !el?.isDeleted).length,
             tags_json: tagsJson,
             is_favorite: favorite ? 1 : 0,
@@ -981,15 +1000,44 @@ export const createRequestHandler = (
             deleted: false,
           });
         }
+        const affectedScenes = runtime.db
+          .query("SELECT id, revision, updated_at FROM scenes WHERE folder_id = ?")
+          .all(id) as Array<{
+          id: string;
+          revision: number;
+          updated_at: number;
+        }>;
+        const now = affectedScenes.reduce(
+          (latest, scene) => Math.max(latest, Number(scene.updated_at) + 1),
+          Date.now(),
+        );
         const transaction = runtime.db.transaction(() => {
-          runtime.db.run(
-            "UPDATE scenes SET folder_id = NULL WHERE folder_id = ?",
-            [id],
+          const updateScene = runtime.db.query(
+            `UPDATE scenes
+             SET folder_id = NULL, updated_at = ?, revision = ?
+             WHERE id = ? AND folder_id = ?`,
           );
+          for (const scene of affectedScenes) {
+            updateScene.run(
+              now,
+              (Number(scene.revision) || 1) + 1,
+              scene.id,
+              id,
+            );
+          }
           runtime.db.run("DELETE FROM folders WHERE id = ?", [id]);
         });
         transaction.immediate();
-        publishWorkspaceChanged(runtime, Date.now());
+        for (const scene of affectedScenes) {
+          publishSceneChanged(runtime, {
+            type: "scene_changed",
+            sceneId: scene.id,
+            revision: (Number(scene.revision) || 1) + 1,
+            updatedAt: now,
+            changeKind: "metadata",
+          });
+        }
+        publishWorkspaceChanged(runtime, now);
         return jsonResponse(runtime, req, { success: true, id, deleted: true });
       }
 
@@ -1376,7 +1424,7 @@ export const createRequestHandler = (
         const appStateJson = JSON.stringify(appState);
         const tagsJson = JSON.stringify(tags);
         const elementCount = elements.length;
-        const contentBytes = elementsJson.length;
+        const contentBytes = Buffer.byteLength(elementsJson, "utf8");
         const contentSha256 = sha256Hex(elementsJson);
         const isUnchanged =
           existing.name === name &&
@@ -1614,7 +1662,14 @@ export const createRequestHandler = (
       }
       const staticFile = Bun.file(staticPath);
       if (await staticFile.exists()) {
-        return staticFileResponse(runtime, req, staticFile, pathname);
+        return staticFileResponse(
+          runtime,
+          req,
+          staticFile,
+          pathname,
+          undefined,
+          staticPath,
+        );
       }
       const acceptsHtml = (req.headers.get("accept") || "")
         .toLowerCase()
@@ -1629,6 +1684,7 @@ export const createRequestHandler = (
             indexFile,
             "/index.html",
             "text/html; charset=utf-8",
+            indexPath,
           );
         }
       }

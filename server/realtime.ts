@@ -82,7 +82,7 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
     }
     const status = server.publish(topic, serializeEvent(event));
     if (status < 0) {
-      console.warn("[Realtime] WebSocket backpressure applied", { topic });
+      console.info("[Realtime] WebSocket backpressure applied", { topic });
     }
   };
 
