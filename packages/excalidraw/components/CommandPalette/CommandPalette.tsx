@@ -855,7 +855,7 @@ function CommandPaletteInner({
       onCloseRequest={() => closeCommandPalette()}
       closeOnClickOutside
       title={false}
-      size={720}
+      size={600}
       autofocus
       className="command-palette-dialog"
     >

@@ -13,7 +13,7 @@
   --popup-text-color: #252e29;
 
   .workspace-dialog-content-shell {
-    inline-size: min(720px, 100%);
+    inline-size: min(600px, 100%);
     block-size: fit-content;
     max-block-size: min(750px, calc(100dvh - 2rem));
     padding: 1.5rem;
