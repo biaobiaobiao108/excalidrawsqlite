@@ -6,6 +6,7 @@ import {
   createDrawingBatch,
   updateDrawingElements,
   removeDrawingElements,
+  inputDrawingElements,
 } from "../../server/mcp-drawing";
 
 const shape = (id: string, x = 0) =>
@@ -35,6 +36,50 @@ const flow = () =>
     }),
   ]).elements;
 describe("MCP drawing contracts", () => {
+  it("roundtrips writable input with absolute bends, rotation, bindings and stable label IDs", () => {
+    const current = createDrawingBatch([
+      drawingElementSchema.parse({ ...shape("a"), x: 50, y: 60, rotation: 30,
+        text: "多行中文标签", labelId: "label-a", fontSize: 16,
+        labelStyle: { strokeColor: "red", fontFamily: "system", textAlign: "left", fontSize: 18 },
+        roundness: 12, opacity: 50.5 }),
+      drawingElementSchema.parse({ type: "ellipse", id: "b", x: 300, y: 90, width: 100, height: 80 }),
+      drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[150, 100], [220, 140], [300, 190]],
+        startBinding: { elementId: "a" }, endBinding: { elementId: "b", fixedPoint: [0, 1.36] } }),
+      drawingElementSchema.parse({ type: "text", id: "free", x: 20, y: 200, text: "独立文字", textAlign: "right", rotation: 15 }),
+      drawingElementSchema.parse({ type: "line", id: "line", points: [[-50, 20], [-10, 40], [60, 10]] }),
+    ]).elements;
+    const input = inputDrawingElements(current);
+    expect(input.unsupportedElementIds).toEqual([]);
+    expect(input.elements.length).toBe(5);
+    expect(input.elements.find((e) => e.id === "a")).toMatchObject({ labelId: "label-a" });
+    expect(input.elements.find((e) => e.id === "a")!.rotation).toBeCloseTo(30);
+    expect(input.elements.find((e) => e.id === "edge")).toMatchObject({ points: [[150, 100], [220, 140], [300, 190]], endBinding: { fixedPoint: [0, 1.36] } });
+    const copy = createDrawingBatch(input.elements.map((e) => drawingElementSchema.parse(e))).elements;
+    expect(copy.map((e) => e.id)).toEqual(current.map((e) => e.id));
+    expect(inputDrawingElements(copy)).toEqual(input);
+    const semantic = (elements: typeof current) => elements.map(({ seed, version, versionNonce, updated, index, ...rest }) => rest);
+    expect(semantic(copy)).toEqual(semantic(current));
+  });
+  it("accepts native orbit fixed points outside the target on write/read/write", () => {
+    const current = createDrawingBatch([
+      drawingElementSchema.parse({ type: "ellipse", id: "oval", x: 100, y: 100, width: 110, height: 110 }),
+      drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[0, 250], [100, 250]], endBinding: { elementId: "oval" } }),
+    ]).elements;
+    const edge = current.find((e) => e.id === "edge")!;
+    expect(edge.type === "arrow" && edge.endBinding!.fixedPoint[1]).toBeGreaterThan(1);
+    expect(inputDrawingElements(createDrawingBatch(inputDrawingElements(current).elements).elements))
+      .toEqual(inputDrawingElements(current));
+    expect(drawingElementSchema.safeParse({ type: "arrow", points: [[0, 0], [1, 1]], endBinding: { elementId: "oval", fixedPoint: [0, Infinity] } }).success).toBe(false);
+  });
+  it("reports unsupported native elements and omitted editor metadata explicitly", () => {
+    const current = createDrawingBatch([shape("a")]).elements;
+    const modified = { ...current[0], groupIds: ["group"], frameId: "frame", locked: true, link: "https://example.com" };
+    const image = { ...current[0], id: "image", type: "image" } as typeof current[number];
+    const input = inputDrawingElements([modified, image]);
+    expect(input.elements.map((e) => e.id)).toEqual(["a"]);
+    expect(input.unsupportedElementIds).toEqual(["image"]);
+    expect(input.warnings).toContainEqual({ elementId: "a", fields: ["groupIds", "frameId", "locked", "link"] });
+  });
   it("rejects misspelled nested fields and invalid styles", () => {
     for (const extra of [
       { zIndex: 999 },

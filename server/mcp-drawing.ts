@@ -104,14 +104,14 @@ const binding = z
   .object({
     elementId: idSchema,
     fixedPoint: z
-      .tuple([z.number().min(0).max(1), z.number().min(0).max(1)])
+      .tuple([coordinate, coordinate])
       .optional(),
     mode: z.enum(["orbit", "inside"]).optional(),
   })
   .strict()
   .nullable()
   .describe(
-    "绑定目标 ID，可引用同批新图元；fixedPoint 为目标内归一化坐标，默认根据端点推导；mode 默认 orbit，null 解绑",
+    "绑定目标 ID，可引用同批新图元；fixedPoint 为相对目标的归一化坐标，orbit 端点可以超出 [0,1]，默认根据端点推导；mode 默认 orbit，null 解绑",
   );
 const arrowhead = z
   .enum([
@@ -139,6 +139,8 @@ const shapeFields = {
   width: dimension,
   height: dimension,
   text: z.string().max(2_000).optional(),
+  labelId: idSchema.optional().describe("绑定文字图元的稳定 ID；复制 input 视图时保留，通常无需指定"),
+  labelStyle: z.object({ ...typography, ...style }).strict().optional().describe("绑定文字的独立样式；省略时继承形状样式"),
   ...typography,
   ...style,
 };
@@ -324,15 +326,21 @@ export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
   }
   if (spec.type === "text")
     return [
-      newTextElement({
-        ...base,
+      {
+        ...newTextElement({
+          ...base,
+          x: spec.x,
+          y: spec.y,
+          text: spec.text,
+          fontSize: spec.fontSize,
+          fontFamily: fontId(spec.fontFamily),
+          textAlign: spec.textAlign,
+        }),
+        // The writable API consistently uses top-left coordinates, including
+        // centered/right-aligned text, just as updateDrawingElements does.
         x: spec.x,
         y: spec.y,
-        text: spec.text,
-        fontSize: spec.fontSize,
-        fontFamily: fontId(spec.fontFamily),
-        textAlign: spec.textAlign,
-      }),
+      },
     ];
   const shape = newElement({
     ...base,
@@ -347,12 +355,14 @@ export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
     shape,
     newTextElement({
       ...props(spec),
+      ...props(spec.labelStyle || {}),
+      ...(spec.labelId ? { id: spec.labelId } : {}),
       x: 0,
       y: 0,
       text: spec.text,
-      fontSize: spec.fontSize,
-      fontFamily: fontId(spec.fontFamily),
-      textAlign: spec.textAlign || "center",
+      fontSize: spec.labelStyle?.fontSize ?? spec.fontSize,
+      fontFamily: fontId(spec.labelStyle?.fontFamily ?? spec.fontFamily),
+      textAlign: spec.labelStyle?.textAlign ?? spec.textAlign ?? "center",
       verticalAlign: "middle",
       containerId: shape.id,
     }),
@@ -711,6 +721,114 @@ export const compactElement = (element: ExcalidrawElement) => {
       .filter((key) => fields[key] !== undefined)
       .map((key) => [key, fields[key]]),
   );
+};
+
+/** Writable projection, rather than a dump of editor-only fields. */
+export const inputDrawingElements = (current: readonly ExcalidrawElement[]) => {
+  const active = current.filter((element) => !element.isDeleted);
+  const map = new Map(active.map((element) => [element.id, element]));
+  const candidates = new Map<string, Spec>();
+  const foldedLabels = new Map<string, string>();
+  const unsupported = new Set<string>();
+  const warnings: { elementId: string; fields: string[] }[] = [];
+  const writableStyle = (element: ExcalidrawElement) => ({
+    ...Object.fromEntries(
+      Object.keys(style)
+        .filter((key) => !["rotation", "roundness"].includes(key))
+        .map((key) => [key, (element as unknown as Record<string, unknown>)[key]]),
+    ),
+    roundness: element.roundness,
+    rotation: (element.angle * 180) / Math.PI,
+  });
+  const textStyle = (element: ExcalidrawTextElement) => ({
+    ...writableStyle(element),
+    fontSize: element.fontSize,
+    fontFamily: element.fontFamily,
+    textAlign: element.textAlign,
+  });
+  for (const element of active) {
+    const fields: string[] = [];
+    if (element.groupIds.length) fields.push("groupIds");
+    if (element.frameId) fields.push("frameId");
+    if (element.locked) fields.push("locked");
+    if (element.link) fields.push("link");
+    if (element.customData) fields.push("customData");
+    if (isArrowElement(element) && element.elbowed) fields.push("elbowed");
+    if (element.type === "text") {
+      if (element.verticalAlign !== (element.containerId ? "middle" : "top"))
+        fields.push("verticalAlign");
+      if (!element.autoResize) fields.push("autoResize", "width");
+    }
+    if (fields.length) warnings.push({ elementId: element.id, fields });
+    const base = { id: element.id, type: element.type, ...writableStyle(element) };
+    let candidate: Record<string, unknown>;
+    if (["rectangle", "ellipse", "diamond"].includes(element.type)) {
+      candidate = {
+        ...base, x: element.x, y: element.y,
+        width: element.width, height: element.height,
+      };
+      const labelId = element.boundElements?.find((bound) => bound.type === "text")?.id;
+      const label = labelId ? map.get(labelId) : undefined;
+      if (label?.type === "text" && label.containerId === element.id) {
+        candidate.text = label.originalText;
+        candidate.labelId = label.id;
+        candidate.labelStyle = textStyle(label);
+        foldedLabels.set(label.id, element.id);
+        if (label.angle !== element.angle)
+          warnings.push({ elementId: label.id, fields: ["rotation"] });
+      }
+    } else if (element.type === "text") {
+      // Container text is folded by its shape; unsupported containers are
+      // reported below instead of accidentally turning labels into free text.
+      if (element.containerId) continue;
+      candidate = {
+        ...base, x: element.x, y: element.y,
+        text: element.originalText, ...textStyle(element),
+      };
+    } else if (element.type === "line" || element.type === "arrow") {
+      candidate = {
+        ...base,
+        points: element.points.map(([x, y]) => [element.x + x, element.y + y]),
+      };
+      if (element.type === "arrow") Object.assign(candidate, {
+        startBinding: element.startBinding,
+        endBinding: element.endBinding,
+        startArrowhead: element.startArrowhead,
+        endArrowhead: element.endArrowhead,
+      });
+    } else {
+      unsupported.add(element.id);
+      continue;
+    }
+    const parsed = drawingElementSchema.safeParse(candidate);
+    if (parsed.success) candidates.set(element.id, parsed.data);
+    else unsupported.add(element.id);
+  }
+  for (const element of active) {
+    if (element.type === "text" && element.containerId &&
+        !candidates.has(foldedLabels.get(element.id) || "")) unsupported.add(element.id);
+  }
+  // A projected arrow must not reference a target omitted from the projection.
+  // Remove dependent arrows transitively, reporting all missing elements.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const available = new Set([...candidates.keys(), ...[...foldedLabels]
+      .filter(([, parentId]) => candidates.has(parentId)).map(([labelId]) => labelId)]);
+    for (const [id, spec] of candidates) {
+      if (spec.type === "arrow" && [spec.startBinding, spec.endBinding]
+        .some((bound) => bound && !available.has(bound.elementId))) {
+        candidates.delete(id);
+        unsupported.add(id);
+        changed = true;
+      }
+    }
+  }
+  return {
+    elements: [...candidates.values()],
+    unsupportedElementIds: [...unsupported],
+    warnings,
+  };
 };
 
 export const removeDrawingElements = (
