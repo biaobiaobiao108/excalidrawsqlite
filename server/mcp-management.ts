@@ -101,7 +101,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
     const board = readSummary(runtime, boardId);
     return { ...board, boardId, noop, deleted, url: boardUrl(boardId) };
   };
-  server.registerTool("list_folders", { description: "分页列出文件夹及画板数量，支持名称搜索；已有名称时可直接传给 create_board/manage_board 无需先查询。", inputSchema: z.strictObject({ query: z.string().max(80).optional(), cursor: z.string().min(1).max(128).optional(), limit: z.number().int().min(1).max(100).default(50) }), annotations: { readOnlyHint: true } }, safeTool(async ({ query, cursor, limit }) => {
+  server.registerTool("list_folders", { description: "分页列出文件夹及画板数量，支持名称搜索；已有名称时可直接传给 create_board/manage_board 无需先查询。", inputSchema: z.strictObject({ query: z.string().max(80).optional(), cursor: z.string().min(1).max(128).optional(), limit: z.number().int().min(1).max(100).default(50) }), annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ query, cursor, limit }) => {
     const folders = (await api<Folder[]>("/api/folders", "GET")).filter((folder) => !query || folder.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
     const offset = cursor ? folders.findIndex((folder) => folder.id === cursor) + 1 : 0;
     if (cursor && offset === 0) throw new HttpError(400, "INVALID_CURSOR", "文件夹分页游标无效，请重新从第一页读取");
@@ -114,25 +114,25 @@ export function registerManagementTools(server: McpServer, context: Context) {
     tagQueryCache.set(runtime, tagQuery);
   }
   const tagsStatement = tagQuery;
-  server.registerTool("list_tags", { description: "列出在用标签及画板数量，返回有界分页；标签直接在 create_board/manage_board 使用，无需单独创建。", inputSchema: z.strictObject({ cursor: z.string().max(32).optional(), limit: z.number().int().min(1).max(100).default(50) }), annotations: { readOnlyHint: true } }, safeTool(async ({ cursor, limit }) => {
+  server.registerTool("list_tags", { description: "列出在用标签及画板数量，返回有界分页；标签直接在 create_board/manage_board 使用，无需单独创建。", inputSchema: z.strictObject({ cursor: z.string().max(32).optional(), limit: z.number().int().min(1).max(100).default(50) }), annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ cursor, limit }) => {
     const rows = tagsStatement.all(cursor ?? "", limit + 1) as Array<{ name: string; boardCount: number }>;
     const tags = rows.slice(0, limit);
     return result({ tags, nextCursor: rows.length > limit ? tags.at(-1)!.name : null });
   }));
   const folderCreateSchema = z.strictObject({ name: z.string().trim().min(1).max(80), icon: iconSchema.optional(), color: colorSchema.optional() });
-  server.registerTool("create_folder", { description: "创建文件夹并返回 ID；需要避免同名重复时使用 ensure_folder。", inputSchema: folderCreateSchema }, safeTool(async (args) => result(await api<Folder>("/api/folders", "POST", args))));
-  server.registerTool("ensure_folder", { description: "按精确名称查找或创建文件夹，返回 created；已有同名文件夹保持颜色和图标，重复同名时返回歧义错误。", inputSchema: folderCreateSchema }, safeTool(async (args) => {
+  server.registerTool("create_folder", { description: "创建文件夹并返回 ID；需要避免同名重复时使用 ensure_folder。", inputSchema: folderCreateSchema, annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false } }, safeTool(async (args) => result(await api<Folder>("/api/folders", "POST", args))));
+  server.registerTool("ensure_folder", { description: "按精确名称查找或创建文件夹，返回 created；已有同名文件夹保持颜色和图标，重复同名时返回歧义错误。", inputSchema: folderCreateSchema, annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
     const existing = await findFolder({ folderName: args.name }, api);
     return result({ ...(existing ?? await api<Folder>("/api/folders", "POST", args)), created: !existing });
   }));
-  server.registerTool("update_folder", { description: "改名、颜色和图标可在一次调用中合并；folderId/folderName 二选一用于精确定位。", inputSchema: z.strictObject({ ...folderFields, name: z.string().trim().min(1).max(80).optional(), icon: iconSchema.optional(), color: colorSchema.optional() }) }, safeTool(async (args) => {
+  server.registerTool("update_folder", { description: "改名、颜色和图标可在一次调用中合并；folderId/folderName 二选一用于精确定位。", inputSchema: z.strictObject({ ...folderFields, name: z.string().trim().min(1).max(80).optional(), icon: iconSchema.optional(), color: colorSchema.optional() }), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
     const existing = await findFolder(args, api);
     if (!existing) throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
     const metadata = { name: args.name ?? existing.name, icon: args.icon ?? existing.icon, color: args.color?.toLowerCase() ?? existing.color };
     const noop = metadata.name === existing.name && metadata.icon === existing.icon && metadata.color === existing.color;
     return result({ ...(noop ? existing : await api<Folder>(`/api/folders/${encodeURIComponent(existing.id)}`, "PATCH", metadata)), noop });
   }));
-  server.registerTool("delete_folder", { description: "删除文件夹并将其中画板移到根目录，保留全部画板；dryRun=true 预览，执行必须 confirm=true，可传 expectedBoardCount 防止数量变化误操作。", inputSchema: z.strictObject({ ...folderFields, dryRun: z.boolean().default(false), confirm: z.boolean().optional(), expectedBoardCount: z.number().int().nonnegative().optional() }), annotations: { destructiveHint: true } }, safeTool(async (args) => {
+  server.registerTool("delete_folder", { description: "删除文件夹并将其中画板移到根目录，保留全部画板；dryRun=true 预览，执行必须 confirm=true，可传 expectedBoardCount 防止数量变化误操作。", inputSchema: z.strictObject({ ...folderFields, dryRun: z.boolean().default(false), confirm: z.boolean().optional(), expectedBoardCount: z.number().int().nonnegative().optional() }), annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
     const folder = await findFolder(args, api);
     if (!folder) throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
     const boardCount = folderBoardCount(runtime, folder.id);
@@ -141,13 +141,13 @@ export function registerManagementTools(server: McpServer, context: Context) {
     if (args.expectedBoardCount !== undefined && boardCount !== args.expectedBoardCount) throw new HttpError(409, "FOLDER_CHANGED", "文件夹画板数量发生变化，请重新预览");
     return result({ ...await api<Record<string, unknown>>(`/api/folders/${encodeURIComponent(folder.id)}`, "DELETE"), movedBoards: boardCount });
   }));
-  server.registerTool("manage_board", { description: "一次合并画板改名、收藏、移入文件夹和标签增删替换，不读取或回传完整图元；相同内容返回 noop 且不递增 revision。", inputSchema: metadataSchema }, safeTool(async (args) => result(await manage(args))));
+  server.registerTool("manage_board", { description: "一次合并画板改名、收藏、移入文件夹和标签增删替换，不读取或回传完整图元；相同内容返回 noop 且不递增 revision。", inputSchema: metadataSchema, annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => result(await manage(args))));
   const stateSchema = z.strictObject({ boardId: z.string().min(1).max(128), expectedRevision: expectedRevisionSchema });
-  server.registerTool("delete_board", { description: "将画板软删除到回收站，保留内容和附件，可用 restore_board 还原；没有永久删除选项。", inputSchema: stateSchema, annotations: { destructiveHint: true } }, safeTool(async ({ boardId, expectedRevision }) => result(await setDeleted(boardId, true, expectedRevision))));
-  server.registerTool("restore_board", { description: "从回收站恢复画板；已恢复时返回 noop，可传 expectedRevision。", inputSchema: stateSchema }, safeTool(async ({ boardId, expectedRevision }) => result(await setDeleted(boardId, false, expectedRevision))));
+  server.registerTool("delete_board", { description: "将画板软删除到回收站，保留内容和附件，可用 restore_board 还原；没有永久删除选项。", inputSchema: stateSchema, annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ boardId, expectedRevision }) => result(await setDeleted(boardId, true, expectedRevision))));
+  server.registerTool("restore_board", { description: "从回收站恢复画板；已恢复时返回 noop，可传 expectedRevision。", inputSchema: stateSchema, annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ boardId, expectedRevision }) => result(await setDeleted(boardId, false, expectedRevision))));
   const batchRevision = z.number().int().positive().describe("每项必须提供当前修订号，可来自 list_boards 或上次写入返回");
   const batchItemSchema = z.union([metadataSchema.extend({ action: z.literal("manage"), expectedRevision: batchRevision }), stateSchema.extend({ action: z.enum(["delete", "restore"]), expectedRevision: batchRevision })]);
-  server.registerTool("batch_manage_boards", { description: "一次管理最多 100 个画板，每项必须传 expectedRevision，独立执行并返回成功/错误、revision 和 noop；支持 manage、delete(软删除)、restore。部分失败不回滚其他项，partial=true 表示部分成功，冲突项重新读取后判断。", inputSchema: z.strictObject({ items: z.array(batchItemSchema).min(1).max(100) }) }, safeTool(async ({ items }) => {
+  server.registerTool("batch_manage_boards", { description: "一次管理最多 100 个画板，每项必须传 expectedRevision，独立执行并返回成功/错误、revision 和 noop；支持 manage、delete(软删除)、restore。部分失败不回滚其他项，partial=true 表示部分成功，冲突项重新读取后判断。", inputSchema: z.strictObject({ items: z.array(batchItemSchema).min(1).max(100) }), annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ items }) => {
     const outcomes: Record<string, unknown>[] = [];
     for (const item of items) {
       try {

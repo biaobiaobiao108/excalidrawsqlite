@@ -96,14 +96,17 @@ describe("Excalidraw MCP endpoint", () => {
     try {
       await client.connect(transport);
       const tools = await client.listTools();
-      expect(tools.tools.map((tool) => tool.name)).toEqual([
+      expect(tools.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
         "list_boards",
         "get_board",
         "create_board",
         "add_elements",
         "remove_elements",
         "update_board",
-      ]);
+        "update_element", "get_boards_batch", "list_folders", "list_tags", "ensure_folder",
+        "create_folder", "update_folder", "delete_folder", "manage_board", "delete_board", "restore_board", "batch_manage_boards",
+      ]));
+      expect(tools.tools.map((tool) => tool.name).some((name) => /clear_trash|purge|permanent/.test(name))).toBe(false);
       expect(client.getInstructions()).toContain("一次传入名称和全部 elements");
 
       const created = toolResult<{ id: string; name: string; revision: number }>(
@@ -281,6 +284,68 @@ describe("Excalidraw MCP endpoint", () => {
         name: "get_board", arguments: { boardId: complete.id, view: "summary" },
       }));
       expect(unchanged.revision).toBe(2);
+
+      // Exercise the server validator directly so client-side schema checks cannot mask a write.
+      for (const typo of ["zIndex", "strokeColour", "fillStyles"]) {
+        const invalidResponse = await mcpHandler.fetch(new Request(
+          `http://test.local/mcp/${encodeURIComponent(runtime.config.mcpToken!)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 91, method: "tools/call", params: {
+              name: "add_elements", arguments: { boardId: complete.id, elements: [{
+                type: "rectangle", x: 0, y: 0, width: 100, height: 60, [typo]: 999,
+              }] },
+            } }),
+          },
+        ));
+        expect(await invalidResponse.text()).toContain("Unrecognized key");
+      }
+      const afterInvalid = toolResult<{ revision: number }>(await client.callTool({
+        name: "get_board", arguments: { boardId: complete.id, view: "summary" },
+      }));
+      expect(afterInvalid.revision).toBe(2);
+
+      const connected = toolResult<{ id: string; revision: number }>(await client.callTool({
+        name: "create_board", arguments: {
+          name: "完整工作流", folderName: "流程文件夹", tags: ["工作流"], favorite: true,
+          elements: [
+            { id: "source", type: "rectangle", x: 0, y: 0, width: 180, height: 80, text: "开始" },
+            { id: "target", type: "rectangle", x: 300, y: 100, width: 180, height: 80, text: "终点" },
+            { id: "connector", type: "arrow", points: [[180, 40], [250, 40], [250, 140], [300, 140]],
+              startBinding: { elementId: "source" }, endBinding: { elementId: "target" } },
+          ],
+        },
+      }));
+      const moved = toolResult<{ revision: number; updatedCount: number }>(await client.callTool({
+        name: "update_element", arguments: { boardId: connected.id, expectedRevision: 1,
+          update: { id: "source", x: 100, strokeColor: "#f00", opacity: 50.5, rotation: 15, roundness: 12 } },
+      }));
+      expect(moved.revision).toBe(2);
+      const styled = toolResult<{ elements: Array<Record<string, unknown>> }>(await client.callTool({
+        name: "get_board", arguments: { boardId: connected.id, elementIds: ["source", "connector"], view: "full" },
+      }));
+      expect(styled.elements.find((element) => element.id === "source")).toMatchObject({ strokeColor: "#f00", opacity: 50.5, x: 100 });
+      expect(styled.elements.find((element) => element.id === "connector")).toMatchObject({
+        startBinding: { elementId: "source" }, endBinding: { elementId: "target" },
+      });
+      const noop = toolResult<{ revision: number; noop: boolean }>(await client.callTool({
+        name: "update_element", arguments: { boardId: connected.id, update: { id: "source", strokeColor: "#f00" } },
+      }));
+      expect(noop).toMatchObject({ revision: 2, noop: true });
+      const page = toolResult<{ elements: unknown[]; nextOffset: number; truncated: boolean }>(await client.callTool({
+        name: "get_board", arguments: { boardId: complete.id, limit: 2 },
+      }));
+      expect(page).toMatchObject({ nextOffset: 2, truncated: true });
+      expect(page.elements).toHaveLength(2);
+      const batch = toolResult<{ boards: Array<Record<string, unknown>>; truncated: boolean }>(await client.callTool({
+        name: "get_boards_batch", arguments: { boardIds: [complete.id, connected.id], maxChars: 10_000 },
+      }));
+      expect(batch.truncated).toBe(true);
+      expect(JSON.stringify(batch).length).toBeLessThanOrEqual(10_000);
+      const favorites = toolResult<{ items: Array<{ id: string }> }>(await client.callTool({
+        name: "list_boards", arguments: { view: "favorites", tag: "工作流" },
+      }));
+      expect(favorites.items.map((scene) => scene.id)).toContain(connected.id);
     } finally {
       await client.close();
       await mcpHandler.close();

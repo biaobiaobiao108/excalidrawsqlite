@@ -1,18 +1,11 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 
-import { DEFAULT_ELEMENT_PROPS } from "@excalidraw/common";
-import { pointFrom } from "@excalidraw/math";
-import type { LocalPoint } from "@excalidraw/math";
 import {
-  newArrowElement,
-  newElement,
-  newLinearElement,
-  newTextElement,
-} from "@excalidraw/element/newElement";
-import { syncInvalidIndices } from "@excalidraw/element/fractionalIndex";
-import { newElementWith } from "@excalidraw/element/mutateElement";
-import { setCustomTextMetricsProvider } from "@excalidraw/element/textMeasurements";
+  colorSchema, drawingElementSchema, createDrawingBatch, removeDrawingElements,
+  compactElement, elementUpdateSchema, updateDrawingElements,
+} from "./mcp-drawing";
+import { registerManagementTools, resolveFolder } from "./mcp-management";
 
 import { randomBase64Url, timingSafeEqual } from "./crypto";
 import { HttpError } from "./errors";
@@ -25,9 +18,11 @@ export const MCP_PATH = "/mcp";
 
 const MCP_SERVER_INSTRUCTIONS = [
   "Excalidraw 白板支持搜索、读取及批量绘制。普通绘图优先 create_board 一次传入名称和全部 elements，不要先建空板再逐个绘制。",
-  "每次最多 1,000 个图元描述，只有超过数量或请求体限制时才分批；形状的 text 自动生成绑定文字，不需要另建文字。坐标为画布坐标，x/y 是左上角，箭头和直线使用 startX/startY/endX/endY。",
-  "修改已有画板优先 update_board，一次合并删除、添加及改名；局部修改可省略 expectedRevision，服务端读取最新版本并用乐观锁保存。基于已读内容修改时传 expectedRevision，冲突后重新读取并重新判断，不要盲目重试。",
-  "get_board 默认返回紧凑图元；view=summary 只读元数据，elementIds 可限定图元，view=full 才返回完整内部字段。list_boards 用 query 搜索，使用 nextCursor 分页。",
+  "每次最多 1,000 个图元描述；形状 text 自动绑定文字。可给节点指定 id，箭头 startBinding/endBinding.elementId 引用同批或已有节点，拖动节点时保持连接。折线 points 使用绝对画布坐标；二点仍可用 startX/startY/endX/endY。字段严格校验，不能输入原始内部字段。",
+  "修改优先 update_board 一次合并添加、removeElementIds、updates 原地修改及元数据；只改一个图元用 update_element，保留 ID 和绑定。expectedRevision 是可选的已读修订号，服务端始终使用乐观锁；冲突后重新判断，禁止盲目重试。",
+  "get_board 默认紧凑图元，可按 elementIds、query、type 定位，使用 nextOffset 分页；summary 仅元数据，full 返回内部字段。批读用 get_boards_batch，遵守总字符预算，不是跨画板一致快照。list_boards 支持文件夹、收藏、标签、最近打开及回收站筛选，nextCursor 分页。",
+  "create_board 可同时设置 folderId/folderName、favorite、tags；folderName 会幂等获取或创建文件夹，重名歧义报错。文件夹用 list/ensure/create/update/delete_folder。manage_board 一次管理收藏、标签、移动和改名，batch_manage_boards 批量管理逐条返回结果。",
+  "delete_board 只软删除，restore_board 还原；MCP 不提供永久删除或清空回收站。回收站受服务端保留期限约束。delete_folder 仅移画板至根目录，正式执行需 confirm=true，可先 dryRun 查看影响。",
   "完整机器结果位于 structuredContent，content 只给简短说明；客户端应透传 structuredContent，并检查 ok 与 error.code。写操作只返回修订号、数量、生成的 ID 和画板 URL，无需为了确认成功再读取整个画板。",
   "不支持图片上传、自由绘制或直接输入原始 Excalidraw JSON；工具接受矩形、椭圆、菱形、文字、直线和箭头。输入必须为 JSON 对象，多行字符串遵循 JSON 转义规则。",
 ].join(" ");
@@ -45,92 +40,6 @@ type SceneData = {
   appState: Record<string, unknown>;
   revision: number;
 };
-
-const coordinateSchema = z.number().finite().min(-1_000_000).max(1_000_000);
-const dimensionSchema = z.number().finite().positive().max(1_000_000);
-const colorSchema = z.string().max(64);
-const styleSchema = {
-  strokeColor: colorSchema.optional(),
-  backgroundColor: colorSchema.optional(),
-  fillStyle: z.enum(["hachure", "cross-hatch", "solid", "zigzag"]).optional(),
-  strokeWidth: z.number().finite().min(0.5).max(100).optional(),
-  strokeStyle: z.enum(["solid", "dashed", "dotted"]).optional(),
-  roughness: z.number().finite().min(0).max(2).optional(),
-  opacity: z.number().int().min(0).max(100).optional(),
-};
-
-const drawingElementSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("rectangle"),
-    x: coordinateSchema,
-    y: coordinateSchema,
-    width: dimensionSchema,
-    height: dimensionSchema,
-    text: z.string().max(2_000).optional(),
-    ...styleSchema,
-  }),
-  z.object({
-    type: z.literal("ellipse"),
-    x: coordinateSchema,
-    y: coordinateSchema,
-    width: dimensionSchema,
-    height: dimensionSchema,
-    text: z.string().max(2_000).optional(),
-    ...styleSchema,
-  }),
-  z.object({
-    type: z.literal("diamond"),
-    x: coordinateSchema,
-    y: coordinateSchema,
-    width: dimensionSchema,
-    height: dimensionSchema,
-    text: z.string().max(2_000).optional(),
-    ...styleSchema,
-  }),
-  z.object({
-    type: z.literal("text"),
-    x: coordinateSchema,
-    y: coordinateSchema,
-    text: z.string().min(1).max(10_000),
-    fontSize: z.number().finite().min(1).max(512).optional(),
-    ...styleSchema,
-  }),
-  z.object({
-    type: z.literal("line"),
-    startX: coordinateSchema,
-    startY: coordinateSchema,
-    endX: coordinateSchema,
-    endY: coordinateSchema,
-    ...styleSchema,
-  }).refine((element) => element.startX !== element.endX || element.startY !== element.endY),
-  z.object({
-    type: z.literal("arrow"),
-    startX: coordinateSchema,
-    startY: coordinateSchema,
-    endX: coordinateSchema,
-    endY: coordinateSchema,
-    ...styleSchema,
-  }).refine((element) => element.startX !== element.endX || element.startY !== element.endY),
-]);
-
-type DrawingElementSpec = z.infer<typeof drawingElementSchema>;
-
-// The server cannot measure text with a browser canvas. This provider keeps
-// generated text geometry deterministic while approximating CJK glyph widths.
-setCustomTextMetricsProvider({
-  getLineWidth(text, fontString) {
-    const fontSize = Number.parseFloat(fontString) || 20;
-    let width = 0;
-    for (const character of text) {
-      width += /[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff]/u.test(
-        character,
-      )
-        ? fontSize
-        : fontSize * 0.58;
-    }
-    return width;
-  },
-});
 
 const result = (value: Record<string, unknown>) => ({
   structuredContent: { ok: !value.error, ...value },
@@ -154,19 +63,17 @@ const safeTool = <T>(handler: (args: T) => Promise<ReturnType<typeof result>>) =
 const expectedRevisionSchema = z.number().int().positive().optional()
   .describe("可选的读取时修订号；省略时读取最新版本，仍使用乐观锁保存");
 
+const boardMetadataSchema = {
+  folderId: z.string().min(1).max(128).nullable().optional().describe("目标文件夹 ID；null 移至根目录，不可与 folderName 同传"),
+  folderName: z.string().trim().min(1).max(80).optional().describe("按精确名称获取或创建文件夹；重名拒绝，不可与 folderId 同传"),
+  tags: z.array(z.string().trim().min(1).max(32)).max(12).optional().describe("完整标签列表，空数组清除；增删标签可用 manage_board"),
+  favorite: z.boolean().optional(),
+};
+
 const assertRevision = (current: SceneData, expectedRevision?: number) => {
   if (expectedRevision !== undefined && expectedRevision !== current.revision) {
     throw new HttpError(409, "REVISION_CONFLICT", `画板已更新，当前修订号为 ${current.revision}；请重新读取后判断修改。`);
   }
-};
-
-const compactElement = (element: ExcalidrawElement) => {
-  const fields = element as unknown as Record<string, unknown>;
-  return Object.fromEntries([
-    "id", "type", "x", "y", "width", "height", "angle", "text", "fontSize",
-    "strokeColor", "backgroundColor", "fillStyle", "strokeWidth", "strokeStyle",
-    "roughness", "opacity", "points", "containerId", "boundElements", "startBinding", "endBinding",
-  ].filter((key) => fields[key] !== undefined).map((key) => [key, fields[key]]));
 };
 
 const getPathToken = (req: Request) => {
@@ -187,7 +94,7 @@ const getPathToken = (req: Request) => {
 };
 
 const createInternalApi = (apiHandler: ApiHandler, sessionToken: string) =>
-  async <T>(path: string, method: "GET" | "POST" | "PUT", body?: unknown) => {
+  async <T>(path: string, method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown) => {
     const req = new Request(`http://excalidraw-mcp.internal${path}`, {
       method,
       headers: {
@@ -214,157 +121,6 @@ const createInternalApi = (apiHandler: ApiHandler, sessionToken: string) =>
     }
     return parsed as T;
   };
-
-const elementStyle = (element: DrawingElementSpec) => ({
-  strokeColor: element.strokeColor || DEFAULT_ELEMENT_PROPS.strokeColor,
-  backgroundColor:
-    element.backgroundColor || DEFAULT_ELEMENT_PROPS.backgroundColor,
-  fillStyle: element.fillStyle || DEFAULT_ELEMENT_PROPS.fillStyle,
-  strokeWidth: element.strokeWidth ?? DEFAULT_ELEMENT_PROPS.strokeWidth,
-  strokeStyle: element.strokeStyle || DEFAULT_ELEMENT_PROPS.strokeStyle,
-  roughness: element.roughness ?? DEFAULT_ELEMENT_PROPS.roughness,
-  opacity: element.opacity ?? DEFAULT_ELEMENT_PROPS.opacity,
-});
-
-const createDrawingElements = (spec: DrawingElementSpec): ExcalidrawElement[] => {
-  const style = elementStyle(spec);
-  switch (spec.type) {
-    case "rectangle":
-    case "ellipse":
-    case "diamond": {
-      const shape = newElement({
-        type: spec.type,
-        x: spec.x,
-        y: spec.y,
-        width: spec.width,
-        height: spec.height,
-        ...style,
-      });
-      if (!spec.text) {
-        return [shape];
-      }
-      const label = newTextElement({
-        x: spec.x + spec.width / 2,
-        y: spec.y + spec.height / 2,
-        text: spec.text,
-        fontSize: 20,
-        textAlign: "center",
-        verticalAlign: "middle",
-        containerId: shape.id,
-        ...style,
-      });
-      return [
-        {
-          ...shape,
-          boundElements: [{ type: "text", id: label.id }],
-        } as ExcalidrawElement,
-        label,
-      ];
-    }
-    case "text":
-      return [
-        newTextElement({
-          x: spec.x,
-          y: spec.y,
-          text: spec.text,
-          fontSize: spec.fontSize,
-          ...style,
-        }),
-      ];
-    case "line":
-    case "arrow": {
-      const x = Math.min(spec.startX, spec.endX);
-      const y = Math.min(spec.startY, spec.endY);
-      const points = [
-        pointFrom<LocalPoint>(spec.startX - x, spec.startY - y),
-        pointFrom<LocalPoint>(spec.endX - x, spec.endY - y),
-      ];
-      const opts = {
-        x,
-        y,
-        width: Math.abs(spec.endX - spec.startX),
-        height: Math.abs(spec.endY - spec.startY),
-        points,
-        ...style,
-      };
-      if (spec.type === "line") {
-        return [newLinearElement({ type: "line", ...opts })];
-      }
-      return [
-        newArrowElement({
-          type: "arrow",
-          endArrowhead: "arrow",
-          ...opts,
-        }),
-      ];
-    }
-  }
-};
-
-const removeDrawingElements = (
-  current: readonly ExcalidrawElement[],
-  requestedIds: readonly string[],
-) => {
-  const idsToRemove = new Set(requestedIds);
-  for (const element of current) {
-    if (!idsToRemove.has(element.id)) {
-      continue;
-    }
-    const fields = element as ExcalidrawElement & {
-      boundElements?: Array<{ id: string; type: string }> | null;
-    };
-    for (const bound of fields.boundElements || []) {
-      if (bound.type === "text") {
-        idsToRemove.add(bound.id);
-      }
-    }
-    for (const child of current) {
-      const childFields = child as ExcalidrawElement & {
-        containerId?: string | null;
-      };
-      if (childFields.containerId === element.id) {
-        idsToRemove.add(child.id);
-      }
-    }
-  }
-
-  const remaining = current.filter((element) => !idsToRemove.has(element.id));
-  const remainingIds = new Set(remaining.map((element) => element.id));
-  const cleaned = remaining.map((element) => {
-    const fields = element as ExcalidrawElement & {
-      boundElements?: Array<{ id: string; type: string }> | null;
-      containerId?: string | null;
-      startBinding?: { elementId: string } | null;
-      endBinding?: { elementId: string } | null;
-    };
-    const updates: Record<string, unknown> = {};
-    if (Array.isArray(fields.boundElements)) {
-      const boundElements = fields.boundElements.filter((bound) =>
-        remainingIds.has(bound.id),
-      );
-      if (boundElements.length !== fields.boundElements.length) {
-        updates.boundElements = boundElements.length ? boundElements : null;
-      }
-    }
-    for (const bindingKey of ["startBinding", "endBinding"] as const) {
-      const binding = fields[bindingKey];
-      if (binding && !remainingIds.has(binding.elementId)) {
-        updates[bindingKey] = null;
-      }
-    }
-    if (fields.containerId && !remainingIds.has(fields.containerId)) {
-      updates.containerId = null;
-    }
-    return Object.keys(updates).length
-      ? newElementWith(element, updates as never)
-      : element;
-  });
-
-  return {
-    elements: cleaned,
-    removedCount: current.length - remaining.length,
-  };
-};
 
 export const createMcpRequestHandler = (
   runtime: ServerRuntime,
@@ -394,15 +150,70 @@ export const createMcpRequestHandler = (
           return `${origin}/?id=${encodeURIComponent(id)}`;
         };
 
+        const readBoard = async ({
+          boardId, view = "elements", elementIds, query, type, offset = 0,
+          limit = 1_000, maxChars = 1_000_000,
+        }: {
+          boardId: string; view?: "summary" | "elements" | "full"; elementIds?: string[];
+          query?: string; type?: string; offset?: number; limit?: number; maxChars?: number;
+        }) => {
+          if (view === "summary") {
+            if (elementIds || query || type || offset) {
+              throw new HttpError(400, "INVALID_ARGUMENT", "summary 不读取图元，请省略图元筛选与 offset。");
+            }
+            const summary = await api<Record<string, unknown>>(`/api/scenes/${encodeURIComponent(boardId)}/summary`, "GET");
+            return { ...summary, url: boardUrl(boardId) };
+          }
+          const board = await api<SceneData>(`/api/scenes/${encodeURIComponent(boardId)}`, "GET");
+          const selected = elementIds ? new Set(elementIds) : null;
+          const needle = query?.toLocaleLowerCase();
+          const matches = board.elements.filter((element) =>
+            (!selected || selected.has(element.id)) && (!type || element.type === type) &&
+            (!needle || (element.type === "text" && element.text.toLocaleLowerCase().includes(needle))),
+          );
+          const base = view === "full"
+            ? { ...board, elements: [] as Record<string, unknown>[], elementCount: board.elements.length, url: boardUrl(board.id) }
+            : { id: board.id, name: board.name, revision: board.revision, elementCount: board.elements.length,
+                elements: [] as Record<string, unknown>[], url: boardUrl(board.id) };
+          const allIds = selected ? new Set(board.elements.map((element) => element.id)) : null;
+          const metadata = { ...base, matchedCount: matches.length, nextOffset: null, truncated: false,
+            ...(selected ? { notFoundIds: elementIds!.filter((id) => !allIds!.has(id)) } : {}) };
+          // Budget is charged per element rather than serializing another complete scene.
+          // Reserve digits for the pagination offset and the outer structured result.
+          let chars = JSON.stringify(metadata).length + 64;
+          if (chars > maxChars) {
+            throw new HttpError(400, "READ_BUDGET_TOO_SMALL", "画板元数据超过字符预算，请增加 maxChars 或使用 elements/summary。");
+          }
+          const elements: Record<string, unknown>[] = [];
+          let index = offset;
+          while (index < matches.length && elements.length < limit) {
+            const element = view === "full" ? matches[index] : compactElement(matches[index]);
+            const cost = JSON.stringify(element).length + 1;
+            if (chars + cost > maxChars) break;
+            chars += cost;
+            elements.push(element as unknown as Record<string, unknown>);
+            index++;
+          }
+          if (index === offset && index < matches.length) {
+            throw new HttpError(400, "READ_BUDGET_TOO_SMALL", `图元 ${matches[index].id} 超过字符预算；请增加 maxChars 或改用 elements。`);
+          }
+          return { ...metadata, elements, nextOffset: index < matches.length ? index : null, truncated: index < matches.length };
+        };
+
         server.registerTool(
           "list_boards",
           {
             title: "列出画板",
-            description: "搜索并列出画板摘要（名称、ID、修订号、图元数量）；不回传正文。query 搜索名称/标签/文件夹，cursor 接续 nextCursor。",
+            description: "搜索画板摘要；支持文件夹、收藏、精确标签、最近打开和回收站视图。query 匹配名称/标签/文件夹名；cursor 接续 nextCursor，不回传图元。trash 固定按删除时间倒序。",
             inputSchema: z.object({
               query: z.string().max(120).optional(),
               limit: z.number().int().min(1).max(100).optional(),
               cursor: z.string().max(2_000).optional(),
+              folderId: z.string().min(1).max(128).nullable().optional().describe("null 仅根目录；省略则不限目录"),
+              favorite: z.boolean().optional(),
+              tag: z.string().trim().min(1).max(32).optional(),
+              view: z.enum(["all", "recent", "favorites", "trash"]).optional(),
+              sort: z.enum(["updated", "created", "opened"]).optional(),
             }).strict(),
             annotations: {
               readOnlyHint: true,
@@ -410,14 +221,25 @@ export const createMcpRequestHandler = (
               openWorldHint: false,
             },
           },
-          safeTool(async ({ query, limit, cursor }) => {
+          safeTool(async ({ query, limit, cursor, folderId, favorite, tag, view = "all", sort }) => {
+            if (view === "favorites" && favorite === false) {
+              throw new HttpError(400, "INVALID_ARGUMENT", "favorites 视图不能同时指定 favorite=false。");
+            }
+            if (view === "trash" && sort && sort !== "updated") {
+              throw new HttpError(400, "INVALID_ARGUMENT", "trash 视图固定按删除时间倒序，请省略 sort。");
+            }
             const params = new URLSearchParams({
               limit: String(limit || 50),
             });
             if (query?.trim()) params.set("q", query.trim());
             if (cursor) params.set("cursor", cursor);
+            if (folderId !== undefined) params.set("folder_id", folderId || "");
+            if (favorite !== undefined || view === "favorites") params.set("favorite", String(favorite ?? true));
+            if (tag) params.set("tag", tag);
+            if (view === "recent") params.set("opened", "true");
+            if (sort || view === "recent") params.set("sort", sort || "opened");
             const boards = await api<Record<string, unknown>>(
-              `/api/scenes?${params.toString()}`,
+              `/api/scenes${view === "trash" ? "/trash" : ""}?${params.toString()}`,
               "GET",
             );
             return result(boards);
@@ -428,11 +250,16 @@ export const createMcpRequestHandler = (
           "get_board",
           {
             title: "读取画板",
-            description: "读取画板及修订号。默认紧凑图元；summary 只返回元数据，full 返回原始内部字段。elementIds 可只读取待修改图元。",
+            description: "读取修订号与图元；默认紧凑，summary 元数据，full 内部字段。按 ID、文字 query 或 type 定位，返回 nextOffset/truncated；单次最多1,000图元和 maxChars 字符，分页时保留筛选参数。",
             inputSchema: z.object({
               boardId: z.string().min(1).max(128),
               view: z.enum(["summary", "elements", "full"]).optional(),
               elementIds: z.array(z.string().min(1).max(128)).min(1).max(1_000).optional(),
+              query: z.string().trim().min(1).max(120).optional().describe("搜索文字图元；形状标签为独立绑定文字"),
+              type: z.enum(["rectangle", "ellipse", "diamond", "text", "line", "arrow", "image", "freedraw", "frame", "magicframe", "embeddable", "iframe"]).optional(),
+              offset: z.number().int().min(0).optional(),
+              limit: z.number().int().min(1).max(1_000).optional(),
+              maxChars: z.number().int().min(1_000).max(2_000_000).optional().describe("图元与元数据总字符预算，默认1,000,000"),
             }).strict(),
             annotations: {
               readOnlyHint: true,
@@ -440,24 +267,7 @@ export const createMcpRequestHandler = (
               openWorldHint: false,
             },
           },
-          safeTool(async ({ boardId, view = "elements", elementIds }) => {
-            if (view === "summary") {
-              if (elementIds) throw new HttpError(400, "INVALID_ARGUMENT", "summary 不读取图元，请省略 elementIds。");
-              const summary = await api<Record<string, unknown>>(`/api/scenes/${encodeURIComponent(boardId)}/summary`, "GET");
-              return result({ ...summary, url: boardUrl(boardId) });
-            }
-            const board = await api<SceneData>(
-              `/api/scenes/${encodeURIComponent(boardId)}`,
-              "GET",
-            );
-            const selected = elementIds ? new Set(elementIds) : null;
-            const elements = board.elements.filter((element) => !selected || selected.has(element.id));
-            return result(view === "full"
-              ? { ...board, elements, elementCount: board.elements.length, url: boardUrl(board.id) }
-              : { id: board.id, name: board.name, revision: board.revision, elementCount: board.elements.length,
-                elements: elements.map(compactElement), url: boardUrl(board.id),
-                ...(selected ? { notFoundIds: elementIds!.filter((id) => !elements.some((element) => element.id === id)) } : {}) });
-          }),
+          safeTool(async (args) => result(await readBoard(args))),
         );
 
         server.registerTool(
@@ -469,6 +279,7 @@ export const createMcpRequestHandler = (
               name: z.string().trim().min(1).max(120),
               elements: z.array(drawingElementSchema).max(1_000).optional(),
               backgroundColor: colorSchema.optional().describe("画布背景颜色，默认白色"),
+              ...boardMetadataSchema,
             }).strict(),
             annotations: {
               destructiveHint: false,
@@ -476,12 +287,14 @@ export const createMcpRequestHandler = (
               openWorldHint: false,
             },
           },
-          safeTool(async ({ name, elements = [], backgroundColor }) => {
-            const created = syncInvalidIndices(elements.flatMap(createDrawingElements));
+          safeTool(async ({ name, elements = [], backgroundColor, folderId, folderName, tags, favorite }) => {
+            const { elements: drawing, created } = createDrawingBatch(elements);
+            const resolvedFolder = await resolveFolder({ folderId, folderName }, api);
             const board = await api<{ id: string; name: string; revision: number }>(
               "/api/scenes",
               "POST",
-              { name, elements: created, appState: { viewBackgroundColor: backgroundColor || "#ffffff" } },
+              { name, elements: drawing, appState: { viewBackgroundColor: backgroundColor || "#ffffff" },
+                ...(resolvedFolder === undefined ? {} : { folder_id: resolvedFolder }), tags, favorite },
             );
             return result({ ...board, addedCount: created.length, elementIds: created.map((element) => element.id), url: boardUrl(board.id) });
           }),
@@ -510,11 +323,7 @@ export const createMcpRequestHandler = (
               "GET",
             );
             assertRevision(current, expectedRevision);
-            const created = elements.flatMap(createDrawingElements);
-            const merged = syncInvalidIndices([
-              ...current.elements,
-              ...created,
-            ]);
+            const { created, elements: merged } = createDrawingBatch(elements, current.elements);
             const saved = await api<{ revision: number; updated_at: number }>(
               `/api/scenes/${encodeURIComponent(boardId)}`,
               "PUT",
@@ -580,35 +389,97 @@ export const createMcpRequestHandler = (
           "update_board",
           {
             title: "批量修改画板",
-            description: "一次合并删除图元、添加图元、改名和背景修改，原子保存一个修订。替换局部图形时同时传 removeElementIds 与 elements；删除容器自动删除绑定文字并清理引用。不会覆盖其余图元。",
+            description: "一次原子保存：先删除 removeElementIds，再添加 elements，再按 updates 原地修改；还可同步改名、背景、收藏、标签及文件夹。修改保留图元ID与连接。新文件夹可用 folderName 自动获取或创建。",
             inputSchema: z.object({
               boardId: z.string().min(1).max(128),
               expectedRevision: expectedRevisionSchema,
               elements: z.array(drawingElementSchema).min(1).max(1_000).optional(),
               removeElementIds: z.array(z.string().min(1).max(128)).min(1).max(1_000).optional(),
+              updates: z.array(elementUpdateSchema).min(1).max(1_000).optional(),
               name: z.string().trim().min(1).max(120).optional(),
               backgroundColor: colorSchema.optional(),
+              ...boardMetadataSchema,
             }).strict(),
             annotations: { destructiveHint: true, idempotentHint: false, openWorldHint: false },
           },
-          safeTool(async ({ boardId, expectedRevision, elements, removeElementIds, name, backgroundColor }) => {
-            if (!elements && !removeElementIds && name === undefined && backgroundColor === undefined) {
-              throw new HttpError(400, "EMPTY_UPDATE", "请提供 elements、removeElementIds、name 或 backgroundColor 中的至少一项。");
+          safeTool(async ({ boardId, expectedRevision, elements, removeElementIds, updates, name, backgroundColor, folderId, folderName, tags, favorite }) => {
+            if (!elements && !removeElementIds && !updates && name === undefined && backgroundColor === undefined &&
+                folderId === undefined && folderName === undefined && tags === undefined && favorite === undefined) {
+              throw new HttpError(400, "EMPTY_UPDATE", "请提供图元修改或画板元数据中至少一项。");
             }
             const current = await api<SceneData>(`/api/scenes/${encodeURIComponent(boardId)}`, "GET");
             assertRevision(current, expectedRevision);
             const remaining = removeDrawingElements(current.elements, removeElementIds || []);
-            const created = (elements || []).flatMap(createDrawingElements);
+            const { created, elements: merged } = createDrawingBatch(elements || [], remaining.elements);
+            const updated = updateDrawingElements(merged, updates || []);
+            const resolvedFolder = await resolveFolder({ folderId, folderName }, api);
             const saved = await api<{ revision: number }>(`/api/scenes/${encodeURIComponent(boardId)}`, "PUT", {
               baseRevision: current.revision,
               ...(name === undefined ? {} : { name }),
-              elements: syncInvalidIndices([...remaining.elements, ...created]),
+              elements: updated.elements,
               appState: { ...current.appState, ...(backgroundColor === undefined ? {} : { viewBackgroundColor: backgroundColor }) },
+              ...(resolvedFolder === undefined ? {} : { folder_id: resolvedFolder }), tags, favorite,
             });
-            return result({ boardId, revision: saved.revision, addedCount: created.length, removedCount: remaining.removedCount,
+            return result({ boardId, revision: saved.revision, addedCount: created.length, removedCount: remaining.removedCount, updatedCount: updated.updatedCount,
               elementIds: created.map((element) => element.id), url: boardUrl(boardId) });
           }),
         );
+
+        server.registerTool("update_element", {
+          title: "原地修改图元",
+          description: "只传待改字段，按 update.id 原地修改，保留ID/连接/其余字段；形状text修改绑定文字。批量改多个图元用 update_board.updates，一次保存。",
+          inputSchema: z.strictObject({
+            boardId: z.string().min(1).max(128),
+            update: elementUpdateSchema,
+            expectedRevision: expectedRevisionSchema,
+          }),
+          annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        }, safeTool(async ({ boardId, update, expectedRevision }) => {
+          const current = await api<SceneData>(`/api/scenes/${encodeURIComponent(boardId)}`, "GET");
+          assertRevision(current, expectedRevision);
+          const updated = updateDrawingElements(current.elements, [update]);
+          if (!updated.updatedCount) {
+            return result({ boardId, revision: current.revision, updatedCount: 0, noop: true });
+          }
+          const saved = await api<{ revision: number }>(`/api/scenes/${encodeURIComponent(boardId)}`, "PUT", {
+            baseRevision: current.revision, elements: updated.elements, appState: current.appState,
+          });
+          return result({ boardId, revision: saved.revision, updatedCount: updated.updatedCount, elementId: update.id, url: boardUrl(boardId) });
+        }));
+
+        server.registerTool("get_boards_batch", {
+          title: "批量读取画板",
+          description: "一次读取最多20块画板，默认紧凑图元，总字符预算 maxChars；逐条报告错误/分页，不构成跨画板一致快照。长画板使用get_board按nextOffset继续。",
+          inputSchema: z.strictObject({
+            boardIds: z.array(z.string().min(1).max(128)).min(1).max(20),
+            view: z.enum(["summary", "elements", "full"]).optional(),
+            maxChars: z.number().int().min(10_000).max(2_000_000).optional(),
+          }),
+          annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+        }, safeTool(async ({ boardIds, view = "elements", maxChars = 1_000_000 }) => {
+          const boards: Record<string, unknown>[] = [];
+          // Reserve space for per-board errors, pagination flags and the result envelope.
+          let remaining = maxChars - 5_000;
+          for (const boardId of boardIds) {
+            if (remaining < 1_000) {
+              boards.push({ boardId, error: { code: "READ_BUDGET_EXHAUSTED", message: "总字符预算已用完，请单独读取该画板。" } });
+              continue;
+            }
+            try {
+              const board = await readBoard({ boardId, view, maxChars: Math.max(1_000, remaining - 500) });
+              remaining -= JSON.stringify(board).length;
+              boards.push(board);
+            } catch (error) {
+              if (!(error instanceof HttpError)) throw error;
+              boards.push({ boardId, error: { code: error.code, message: error.message } });
+            }
+          }
+          const failed = boards.filter((board) => board.error).length;
+          return result({ boards, maxChars, partial: failed > 0 && failed < boards.length,
+            truncated: boards.some((board) => board.error || board.truncated) });
+        }));
+
+        registerManagementTools(server, { runtime, api, result, safeTool, boardUrl });
 
         return server;
       }, {

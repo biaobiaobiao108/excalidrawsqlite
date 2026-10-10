@@ -246,13 +246,25 @@ bun run dev
 
 | 工具 | 用途 |
 | --- | --- |
-| `list_boards` | 按名称、标签、文件夹搜索画板摘要，使用 `nextCursor` 接续分页。 |
-| `get_board` | 默认读取紧凑图元及修订号；`view=summary` 只读元数据，`view=full` 读取内部字段，`elementIds` 限定待查看图元。 |
-| `create_board` | 一次传入 `name` 和全部 `elements` 创建完整画板，可指定 `backgroundColor`；省略图元时创建空板，允许同名。 |
-| `update_board` | 一次合并 `removeElementIds`、新增 `elements`、`name` 和 `backgroundColor`，原子保存一个修订，保留其余图元。 |
+| `list_boards` | 名称搜索及文件夹、收藏、精确标签筛选；`view=all/recent/favorites/trash`，支持排序和 `nextCursor` 分页。 |
+| `get_board` | 默认紧凑图元及修订号；`summary` 元数据，`full` 内部字段。按 `elementIds`、文字 `query`、`type` 定位，支持 `limit/offset/maxChars`，返回 `nextOffset/truncated`。 |
+| `get_boards_batch` | 一次读取最多 20 块画板，共享字符预算，逐条返回错误或分页信息；不是跨画板一致快照。 |
+| `create_board` | 一次创建并绘制，可同时设置背景、收藏、标签和 `folderId/folderName`；允许同名，省略图元创建空板。 |
+| `update_board` | 一次合并删除、新增、`updates` 原地修改和画板元数据，原子保存一个修订；顺序为删除→新增→原地修改。 |
+| `update_element` | 传 `update.id` 与待修改字段，保留图元 ID、连接和其余字段，改颜色无需回传完整 JSON。 |
 | `add_elements` / `remove_elements` | 单纯追加或按 ID 移除图元；普通绘图无需先创建空板再调用追加。 |
+| `list_folders` / `list_tags` | 分页读取文件夹、标签及画板计数。 |
+| `ensure_folder` / `create_folder` | 按精确名称幂等获取或创建，或明确创建新文件夹；同名歧义要求使用 ID。 |
+| `update_folder` / `delete_folder` | 修改名称、图标、颜色；删除仅把画板移至根目录，`dryRun=true` 预览，执行需 `confirm=true`，可校验 `expectedBoardCount`。 |
+| `manage_board` | 一次合并改名、收藏、移动与标签操作；`tags` 必须与 `tagMode=replace/add/remove` 同传，相同元数据返回 `noop`。 |
+| `delete_board` / `restore_board` | 仅软删除或还原，没有永久删除参数；回收站受 `TRASH_RETENTION_DAYS` 保留期限约束。 |
+| `batch_manage_boards` | 最多 100 项 `manage/delete/restore`，每项必传 `expectedRevision`；独立执行，返回逐项结果、`noop` 和 `partial`。 |
 
-每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 会自动生成居中绑定文字，回执的 `addedCount` 与 `elementIds` 包含这些文字。Agent 不需要拼装 Excalidraw 的内部字段；仅超过数量或请求体限制时才需要分批。删除形状时会同时删除其绑定文字并清理引用。
+每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 与 `elementIds` 包含这些文字。可指定稳定 `id`，箭头的 `startBinding/endBinding.elementId` 能引用同批或已有节点，移动/缩放节点时保留连接；`points` 是绝对画布坐标，支持多段折线，不与二点坐标字段混用。删除形状同时删除绑定文字并清理引用。
+
+图元和嵌套对象严格拒绝未知字段，`strokeColour`、`fillStyles`、`zIndex` 等错误不会写库。颜色接受十六进制、`transparent` 和 schema 列出的常见 CSS 颜色名；`opacity` 为 0–100 百分比，可带小数；`rotation` 以度为单位；`roundness` 支持像素半径或圆角对象；文字可指定 `fontSize/fontFamily/textAlign`。读取或修改已有场景时保留图片及自由画笔图元，但不提供图片上传、自由画笔生成、原始场景覆盖、备份、永久删除或清空回收站工具。
+
+创建或移动时 `folderId` 与 `folderName` 二选一，`folderId=null` 表示根目录，`folderName` 自动获取或创建文件夹；已有文件夹不修改外观，同名歧义报错。`create_board/update_board.tags` 表示完整标签列表，增删标签使用 `manage_board`。不修改内容地打开画板、保存或返回主页不再产生内容修订；恢复未保存草稿和真实编辑仍正常保存。
 
 工具结果的完整机器数据在 `structuredContent`，文本 `content` 只给简短说明；客户端须保留结构化结果并检查 `ok`、`error.code`。写入默认返回修订号、数量、生成的 ID 和画板 URL，无需再次读取全文确认成功。旧客户端如只解析文本 JSON，需改为读取 `structuredContent`；需要完整原始场景的调用需显式设置 `get_board.view=full`。
 
@@ -263,12 +275,22 @@ bun run dev
 ```json
 {
   "name": "流程示意",
+  "folderName": "工作流",
+  "favorite": true,
+  "tags": ["流程"],
   "elements": [
-    { "type": "rectangle", "x": 0, "y": 0, "width": 180, "height": 80, "text": "开始" },
-    { "type": "arrow", "startX": 180, "startY": 40, "endX": 280, "endY": 40 },
-    { "type": "diamond", "x": 280, "y": 0, "width": 160, "height": 80, "text": "是否完成" }
+    { "id": "start", "type": "rectangle", "x": 0, "y": 0, "width": 180, "height": 80, "text": "开始" },
+    { "id": "decision", "type": "diamond", "x": 300, "y": 100, "width": 160, "height": 80, "text": "是否完成" },
+    { "type": "arrow", "points": [[180, 40], [240, 40], [240, 140], [300, 140]],
+      "startBinding": { "elementId": "start" }, "endBinding": { "elementId": "decision" } }
   ]
 }
+```
+
+只修改节点颜色时调用 `update_element`，无需删除重建：
+
+```json
+{ "boardId": "返回的画板 ID", "update": { "id": "start", "strokeColor": "#315f4c", "opacity": 80.5 } }
 ```
 
 MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提交到仓库或暴露在浏览器端代码中。
