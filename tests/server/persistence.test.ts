@@ -91,6 +91,30 @@ afterEach(async () => {
 });
 
 describe("cloud persistence server", () => {
+  it("rejects duplicate folder names and preserves timestamps for unchanged metadata", async () => {
+    const { handler, runtime } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
+    const created = await jsonRequest(handler, "/api/folders", { name: " 项目 " });
+    expect(created.status).toBe(201);
+    const folder = await responseJson<{ id: string; updated_at: number }>(created);
+    const duplicate = await jsonRequest(handler, "/api/folders", { name: "项目" });
+    expect(duplicate.status).toBe(409);
+    expect(await responseJson(duplicate)).toMatchObject({ code: "FOLDER_NAME_EXISTS" });
+    const other = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/folders", { name: "其他" }));
+    expect((await jsonRequest(handler, `/api/folders/${other.id}`, { name: "项目" }, { method: "PATCH" })).status).toBe(409);
+    await Bun.sleep(5);
+    const folderNoop = await jsonRequest(handler, `/api/folders/${folder.id}`, { name: "项目" }, { method: "PATCH" });
+    expect(await responseJson(folderNoop)).toMatchObject({ updated_at: folder.updated_at, noop: true });
+    const board = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/scenes", { name: "无变化", elements: [], tags: ["甲", "乙"], favorite: true, folder_id: folder.id }));
+    const stored = runtime.db.query("SELECT updated_at, revision FROM scenes WHERE id = ?").get(board.id);
+    await Bun.sleep(5);
+    const unchanged = await jsonRequest(handler, `/api/scenes/${board.id}`, { name: "无变化", tags: ["乙", "甲"], favorite: true, folder_id: folder.id }, { method: "PATCH" });
+    expect(unchanged.status).toBe(200);
+    expect(await responseJson(unchanged)).toMatchObject({ noop: true });
+    expect(runtime.db.query("SELECT updated_at, revision FROM scenes WHERE id = ?").get(board.id)).toEqual(stored);
+    const conflict = await jsonRequest(handler, `/api/scenes/${board.id}`, { favorite: true, baseRevision: 999 }, { method: "PATCH" });
+    expect(conflict.status).toBe(409);
+  });
+
   it("authorizes workspace statistics and returns an empty workspace", async () => {
     const { handler } = createTestRuntime();
     expect((await request(handler, "/api/workspace/stats")).status).toBe(401);

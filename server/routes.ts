@@ -471,6 +471,7 @@ const preparedStatementsMap = new WeakMap<
     getSceneSummaryById: ReturnType<ServerRuntime["db"]["query"]>;
     touchSceneLastOpened: ReturnType<ServerRuntime["db"]["query"]>;
     getFolderById: ReturnType<ServerRuntime["db"]["query"]>;
+    getFolderNameConflict: ReturnType<ServerRuntime["db"]["query"]>;
     getFileUpdatedAt: ReturnType<ServerRuntime["db"]["query"]>;
     listFolders: ReturnType<ServerRuntime["db"]["query"]>;
   }
@@ -536,7 +537,10 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
         "UPDATE scenes SET last_opened_at = ? WHERE id = ?",
       ),
       getFolderById: runtime.db.query(
-        "SELECT id, icon, color FROM folders WHERE id = ?",
+        "SELECT id, name, icon, color FROM folders WHERE id = ?",
+      ),
+      getFolderNameConflict: runtime.db.query(
+        "SELECT id FROM folders WHERE trim(name) = ? AND id != ? LIMIT 1",
       ),
       getFileUpdatedAt: runtime.db.query(
         "SELECT updated_at FROM files WHERE id = ?",
@@ -1073,10 +1077,15 @@ export const createRequestHandler = (
         const id = `folder_${Date.now().toString(36)}_${randomHex(4)}`;
         const now = Date.now();
         try {
-          runtime.db.run(
-            "INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-            [id, name, icon, color, now, now],
-          );
+          runtime.db.transaction(() => {
+            if (stmts.getFolderNameConflict.get(name, id)) {
+              throw new HttpError(409, "FOLDER_NAME_EXISTS", "同名文件夹已存在，请使用已有文件夹或更换名称");
+            }
+            runtime.db.run(
+              "INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+              [id, name, icon, color, now, now],
+            );
+          }).immediate();
         } catch (error: any) {
           if (
             String(error?.message || "")
@@ -1112,6 +1121,7 @@ export const createRequestHandler = (
         const name = validateFolderName(body.name);
         const existing = stmts.getFolderById.get(id) as {
           id: string;
+          name: string;
           icon: string;
           color: string;
         } | null;
@@ -1124,11 +1134,20 @@ export const createRequestHandler = (
         const color = hasOwn(body, "color")
           ? validateFolderColor(body.color)
           : existing.color;
+        if (name === existing.name && icon === existing.icon && color === existing.color) {
+          return jsonResponse(runtime, req, { success: true, ...(getFolderSummary(runtime, id) as Record<string, unknown>), noop: true });
+        }
         const now = Date.now();
-        runtime.db.run(
-          "UPDATE folders SET name = ?, icon = ?, color = ?, updated_at = ? WHERE id = ?",
-          [name, icon, color, now, id],
-        );
+        runtime.db.transaction(() => {
+          // Existing duplicates remain addressable by ID; only a rename must be unique.
+          if (name !== existing.name && stmts.getFolderNameConflict.get(name, id)) {
+            throw new HttpError(409, "FOLDER_NAME_EXISTS", "同名文件夹已存在，请更换名称");
+          }
+          runtime.db.run(
+            "UPDATE folders SET name = ?, icon = ?, color = ?, updated_at = ? WHERE id = ?",
+            [name, icon, color, now, id],
+          );
+        }).immediate();
         const updated = getFolderSummary(runtime, id);
         if (!updated) {
           throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
@@ -1518,6 +1537,10 @@ export const createRequestHandler = (
           body,
           existing,
         );
+        const currentTags = JSON.parse(existing.tags_json) as string[];
+        if (name === existing.name && favorite === Boolean(existing.is_favorite) && folderId === existing.folder_id && tags.length === currentTags.length && tags.every((tag) => currentTags.includes(tag))) {
+          return jsonResponse(runtime, req, { ...getSceneSummary(stmts.getSceneSummaryById.get(id)), noop: true });
+        }
         const now = Date.now();
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {

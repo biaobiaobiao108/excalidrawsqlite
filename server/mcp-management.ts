@@ -28,9 +28,24 @@ async function findFolder(input: { folderId?: string | null; folderName?: string
   if (input.folderId === undefined && input.folderName === undefined) throw new HttpError(400, "INVALID_FOLDER_SELECTOR", "请提供 folderId 或 folderName");
   if (input.folderId !== undefined && input.folderName !== undefined) throw new HttpError(400, "INVALID_FOLDER", "folderId 与 folderName 不能同时传入");
   const folders = await api<Folder[]>("/api/folders", "GET");
-  const matches = folders.filter((folder) => input.folderId !== undefined ? folder.id === input.folderId : folder.name === input.folderName?.trim());
+  const matches = folders.filter((folder) => input.folderId !== undefined ? folder.id === input.folderId : folder.name.trim() === input.folderName?.trim());
   if (matches.length > 1) throw new HttpError(409, "AMBIGUOUS_FOLDER", "存在多个同名文件夹，请使用 folderId");
   return matches[0];
+}
+
+async function ensureNamedFolder(args: { name: string; icon?: string; color?: string }, api: ManagementApi) {
+  const existing = await findFolder({ folderName: args.name }, api);
+  if (existing) return { folder: existing, created: false };
+  try {
+    return { folder: await api<Folder>("/api/folders", "POST", args), created: true };
+  } catch (error) {
+    // The route checks names synchronously inside the write transaction. If another
+    // request won after our lookup, resolve that folder instead of creating a duplicate.
+    if (!(error instanceof HttpError) || error.code !== "FOLDER_NAME_EXISTS") throw error;
+    const folder = await findFolder({ folderName: args.name }, api);
+    if (!folder) throw error;
+    return { folder, created: false };
+  }
 }
 
 /** Creating or moving a board can ensure its named folder in the same tool call. */
@@ -39,7 +54,7 @@ export async function resolveFolder(input: { folderId?: string | null; folderNam
   if (input.folderId === null && input.folderName === undefined) return null;
   const folder = await findFolder(input, api);
   if (folder) return folder.id;
-  if (input.folderName !== undefined) return (await api<Folder>("/api/folders", "POST", { name: input.folderName })).id;
+  if (input.folderName !== undefined) return (await ensureNamedFolder({ name: input.folderName }, api)).folder.id;
   throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
 }
 
@@ -120,10 +135,10 @@ export function registerManagementTools(server: McpServer, context: Context) {
     return result({ tags, nextCursor: rows.length > limit ? tags.at(-1)!.name : null });
   }));
   const folderCreateSchema = z.strictObject({ name: z.string().trim().min(1).max(80), icon: iconSchema.optional(), color: colorSchema.optional() });
-  server.registerTool("create_folder", { description: "创建文件夹并返回 ID；需要避免同名重复时使用 ensure_folder。", inputSchema: folderCreateSchema, annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false } }, safeTool(async (args) => result(await api<Folder>("/api/folders", "POST", args))));
-  server.registerTool("ensure_folder", { description: "按精确名称查找或创建文件夹，返回 created；已有同名文件夹保持颜色和图标，重复同名时返回歧义错误。", inputSchema: folderCreateSchema, annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
-    const existing = await findFolder({ folderName: args.name }, api);
-    return result({ ...(existing ?? await api<Folder>("/api/folders", "POST", args)), created: !existing });
+  server.registerTool("create_folder", { description: "创建文件夹并返回 ID；名称去除首尾空白、区分大小写，已存在时报 FOLDER_NAME_EXISTS。需要复用时使用 ensure_folder。", inputSchema: folderCreateSchema, annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false } }, safeTool(async (args) => result(await api<Folder>("/api/folders", "POST", args))));
+  server.registerTool("ensure_folder", { description: "按去除首尾空白后的精确名称查找或创建文件夹（区分大小写），返回 created；已有文件夹保持颜色和图标，历史同名歧义时报错并要求使用 folderId。", inputSchema: folderCreateSchema, annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
+    const { folder, created } = await ensureNamedFolder(args, api);
+    return result({ ...folder, created });
   }));
   server.registerTool("update_folder", { description: "改名、颜色和图标可在一次调用中合并；folderId/folderName 二选一用于精确定位。", inputSchema: z.strictObject({ ...folderFields, name: z.string().trim().min(1).max(80).optional(), icon: iconSchema.optional(), color: colorSchema.optional() }), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
     const existing = await findFolder(args, api);

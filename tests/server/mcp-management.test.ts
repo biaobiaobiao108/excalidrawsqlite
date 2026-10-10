@@ -30,7 +30,11 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     const board = await call("create_board", { name: "管理测试", folderName: "项目", tags: ["计划"], favorite: true });
     const managed = await call("manage_board", { boardId: board.id, expectedRevision: board.revision, name: "重命名", favorite: false, tags: ["进展"], tagMode: "add" });
     expect(managed).toMatchObject({ ok: true, name: "重命名", favorite: false, tags: ["计划", "进展"], revision: board.revision + 1 });
+    const savedMetadata = runtime.db.query("SELECT revision, updated_at FROM scenes WHERE id = ?").get(board.id);
+    // Force a measurable timestamp difference if a supposedly noop operation writes.
+    await Bun.sleep(5);
     expect(await call("manage_board", { boardId: board.id, favorite: false, tags: ["进展"], tagMode: "add" })).toMatchObject({ ok: true, noop: true, revision: managed.revision });
+    expect(runtime.db.query("SELECT revision, updated_at FROM scenes WHERE id = ?").get(board.id)).toEqual(savedMetadata);
     expect(await call("manage_board", { boardId: board.id, tags: ["计划"] })).toMatchObject({ ok: false, error: { code: "INVALID_TAGS" } });
     expect(await call("manage_board", { boardId: board.id, favorite: true, expectedRevision: board.revision })).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
     const invalidMetadata = await client.callTool({ name: "manage_board", arguments: { boardId: board.id, favourit: true } });
@@ -51,9 +55,19 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     expect(restored).toMatchObject({ ok: true, deleted: false, folder_id: null, revision: deleted.revision + 1 });
     const batch = await call("batch_manage_boards", { items: [{ action: "manage", boardId: board.id, expectedRevision: restored.revision, favorite: true }, { action: "restore", boardId: "nonexistent", expectedRevision: 1 }, { action: "restore", boardId: board.id, expectedRevision: restored.revision + 1 }] });
     expect(batch).toMatchObject({ ok: true, succeeded: 2, failed: 1, partial: true, results: [{ ok: true, favorite: true }, { ok: false, error: { code: "SCENE_NOT_FOUND" } }, { ok: true, noop: true }] });
-    await call("create_folder", { name: "重复" });
-    await call("create_folder", { name: "重复" });
+    const originalDuplicate = await call("create_folder", { name: "重复" });
+    expect(await call("create_folder", { name: " 重复 " })).toMatchObject({ ok: false, error: { code: "FOLDER_NAME_EXISTS" } });
+    const otherFolder = await call("create_folder", { name: "另一个" });
+    expect(await call("update_folder", { folderId: otherFolder.id, name: "重复" })).toMatchObject({ ok: false, error: { code: "FOLDER_NAME_EXISTS" } });
+    // Existing databases can contain old duplicate names. Do not migrate/delete them.
+    runtime.db.run("INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", ["folder_legacy_duplicate", "重复", "folder", "#315f4c", 1, 1]);
     expect(await call("ensure_folder", { name: "重复" })).toMatchObject({ ok: false, error: { code: "AMBIGUOUS_FOLDER" } });
+    expect(await call("manage_board", { boardId: board.id, folderName: "重复" })).toMatchObject({ ok: false, error: { code: "AMBIGUOUS_FOLDER" } });
+    expect(await call("manage_board", { boardId: board.id, folderId: originalDuplicate.id })).toMatchObject({ ok: true, folder_id: originalDuplicate.id });
+    const concurrent = await Promise.all(Array.from({ length: 4 }, () => call("ensure_folder", { name: "并发文件夹" })));
+    expect(new Set(concurrent.map((item) => item.id)).size).toBe(1);
+    expect(concurrent.filter((item) => item.created)).toHaveLength(1);
+    expect(runtime.db.query("SELECT COUNT(*) AS count FROM folders WHERE name = ?").get("并发文件夹")).toEqual({ count: 1 });
     const newFolderBoard = await call("create_board", { name: "新文件夹一次创建", folderName: "新文件夹" });
     expect(newFolderBoard).toMatchObject({ ok: true, folder_id: expect.any(String) });
     expect(await call("manage_board", { boardId: newFolderBoard.id, folderId: null, tags: [], tagMode: "replace" })).toMatchObject({ ok: true, folder_id: null, tags: [] });
