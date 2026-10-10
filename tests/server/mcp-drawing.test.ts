@@ -52,7 +52,7 @@ describe("MCP drawing contracts", () => {
     expect(input.unsupportedElementIds).toEqual([]);
     expect(input.elements.length).toBe(5);
     expect(input.elements.find((e) => e.id === "a")).toMatchObject({ labelId: "label-a" });
-    expect(input.elements.find((e) => e.id === "a")!.rotation).toBeCloseTo(30);
+    expect(input.elements.find((e) => e.id === "a")!.rotation).toBe(30);
     expect(input.elements.find((e) => e.id === "edge")).toMatchObject({ points: [[150, 100], [220, 140], [300, 190]], endBinding: { fixedPoint: [0, 1.36] } });
     const copy = createDrawingBatch(input.elements.map((e) => drawingElementSchema.parse(e))).elements;
     expect(copy.map((e) => e.id)).toEqual(current.map((e) => e.id));
@@ -70,6 +70,52 @@ describe("MCP drawing contracts", () => {
     expect(inputDrawingElements(createDrawingBatch(inputDrawingElements(current).elements).elements))
       .toEqual(inputDrawingElements(current));
     expect(drawingElementSchema.safeParse({ type: "arrow", points: [[0, 0], [1, 1]], endBinding: { elementId: "oval", fixedPoint: [0, Infinity] } }).success).toBe(false);
+  });
+  it("keeps shape-label limits consistent for shapes and direct bound-text updates", () => {
+    for (const type of ["rectangle", "ellipse", "diamond"] as const) {
+      const current = createDrawingBatch([
+        drawingElementSchema.parse({ ...shape("container"), type, text: "label", labelId: "label" }),
+      ]).elements;
+      const before = structuredClone(current);
+      for (const id of ["container", "label"]) {
+        const valid = updateDrawingElements(current, [elementUpdateSchema.parse({ id, text: "x".repeat(2_000) })]);
+        const input = inputDrawingElements(valid.elements);
+        expect(input.elements.length).toBe(1);
+        expect(input.unsupportedElementIds).toEqual([]);
+        expect(input.elements[0]).toMatchObject({ text: "x".repeat(2_000) });
+        expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id, text: "x".repeat(2_001) })]))
+          .toThrow("形状标签最多 2000 字符");
+      }
+      expect(current).toEqual(before);
+    }
+    const free = createDrawingBatch([drawingElementSchema.parse({ type: "text", id: "free", x: 0, y: 0, text: "free" })]).elements;
+    const valid = updateDrawingElements(free, [elementUpdateSchema.parse({ id: "free", text: "x".repeat(10_000) })]);
+    expect(inputDrawingElements(valid.elements).elements[0]).toMatchObject({ text: "x".repeat(10_000) });
+  });
+  it("explains omitted oversized labels and dependent arrows in the input projection", () => {
+    const current = createDrawingBatch([
+      drawingElementSchema.parse({ ...shape("container"), text: "label", labelId: "label" }),
+      drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[200, 40], [100, 40]], endBinding: { elementId: "container" } }),
+    ]).elements.map((element) => element.type === "text"
+      ? { ...element, text: "x".repeat(2_001), originalText: "x".repeat(2_001) }
+      : element);
+    const input = inputDrawingElements(current);
+    expect(input.elements).toEqual([]);
+    expect(new Set(input.unsupportedElementIds)).toEqual(new Set(["container", "label", "edge"]));
+    expect(input.warnings.find((warning) => warning.elementId === "container")).toMatchObject({ code: "UNWRITABLE_ELEMENT", fields: ["text"] });
+    for (const id of input.unsupportedElementIds) {
+      const warning = input.warnings.find((item) => item.elementId === id && item.message);
+      expect(warning?.message).toContain("仍在画板中");
+    }
+    expect(input.warnings.find((warning) => warning.elementId === "container")?.message).toContain("2000");
+  });
+  it("rounds degree conversion noise while preserving fractional rotations", () => {
+    for (const rotation of [30, -30, 15, 359.123456789, 0.0000000001]) {
+      const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("a"), rotation })]).elements;
+      const input = inputDrawingElements(current);
+      expect(input.elements[0].rotation).toBe(rotation);
+      expect(inputDrawingElements(createDrawingBatch(input.elements).elements)).toEqual(input);
+    }
   });
   it("reports unsupported native elements and omitted editor metadata explicitly", () => {
     const current = createDrawingBatch([shape("a")]).elements;

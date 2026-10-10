@@ -33,6 +33,7 @@ import type {
   NonDeleted,
 } from "@excalidraw/element/types";
 import { HttpError } from "./errors";
+import { COLOR_PATTERN, COLOR_DESCRIPTION } from "./color";
 
 const coordinate = z.number().finite().min(-1_000_000).max(1_000_000);
 const dimension = z.number().finite().positive().max(1_000_000);
@@ -41,10 +42,7 @@ export const colorSchema = z
   .string()
   .trim()
   .max(64)
-  .regex(
-    /^(?:#[\da-f]{3}|#[\da-f]{4}|#[\da-f]{6}|#[\da-f]{8}|transparent|black|white|red|green|blue|yellow|orange|purple|pink|gray|grey|brown|cyan|magenta|lime|navy|teal|olive|maroon|silver|aqua|fuchsia)$/i,
-    "颜色须为 #RGB/#RGBA/#RRGGBB/#RRGGBBAA、transparent 或常见 CSS 颜色名",
-  );
+  .regex(COLOR_PATTERN, COLOR_DESCRIPTION);
 const roundness = z
   .union([
     z.number().finite().min(0).max(1_000),
@@ -203,7 +201,7 @@ export const elementUpdateSchema = z
     y: coordinate.optional(),
     width: dimension.optional(),
     height: dimension.optional(),
-    text: z.string().max(10_000).optional(),
+    text: z.string().max(10_000).optional().describe("形状及其绑定标签最多 2000 字符；独立文字最多 10000 字符，空字符串清除形状标签"),
     ...typography,
     ...style,
     points: points.optional(),
@@ -488,6 +486,17 @@ export const updateDrawingElements = (
     const element = map.get(patch.id);
     if (!element)
       throw new HttpError(404, "ELEMENT_NOT_FOUND", `图元不存在：${patch.id}`);
+    const labelContainer = element.type === "text" && element.containerId
+      ? map.get(element.containerId)
+      : undefined;
+    const isShapeLabel = ["rectangle", "ellipse", "diamond"].includes(element.type) ||
+      !!labelContainer && ["rectangle", "ellipse", "diamond"].includes(labelContainer.type);
+    if (isShapeLabel && patch.text !== undefined && patch.text.length > 2_000)
+      throw new HttpError(
+        400,
+        "INVALID_ELEMENT_UPDATE",
+        `形状标签最多 2000 字符，图元 ${patch.id} 收到 ${patch.text.length} 字符`,
+      );
     const linear = element.type === "arrow" || element.type === "line";
     if (
       !linear &&
@@ -730,7 +739,7 @@ export const inputDrawingElements = (current: readonly ExcalidrawElement[]) => {
   const candidates = new Map<string, Spec>();
   const foldedLabels = new Map<string, string>();
   const unsupported = new Set<string>();
-  const warnings: { elementId: string; fields: string[] }[] = [];
+  const warnings: { elementId: string; fields: string[]; code?: string; message?: string }[] = [];
   const writableStyle = (element: ExcalidrawElement) => ({
     ...Object.fromEntries(
       Object.keys(style)
@@ -738,7 +747,9 @@ export const inputDrawingElements = (current: readonly ExcalidrawElement[]) => {
         .map((key) => [key, (element as unknown as Record<string, unknown>)[key]]),
     ),
     roundness: element.roundness,
-    rotation: (element.angle * 180) / Math.PI,
+    // Degrees are the public input protocol; discard conversion noise while
+    // retaining sub-pixel precision for any supported canvas dimension.
+    rotation: Number(((element.angle * 180) / Math.PI).toFixed(10)),
   });
   const textStyle = (element: ExcalidrawTextElement) => ({
     ...writableStyle(element),
@@ -798,15 +809,27 @@ export const inputDrawingElements = (current: readonly ExcalidrawElement[]) => {
       });
     } else {
       unsupported.add(element.id);
+      warnings.push({ elementId: element.id, fields: ["type"], code: "UNSUPPORTED_ELEMENT_TYPE",
+        message: `input 视图不支持 ${element.type} 图元；该图元仍在画板中，未删除` });
       continue;
     }
     const parsed = drawingElementSchema.safeParse(candidate);
     if (parsed.success) candidates.set(element.id, parsed.data);
-    else unsupported.add(element.id);
+    else {
+      unsupported.add(element.id);
+      warnings.push({ elementId: element.id,
+        fields: [...new Set(parsed.error.issues.map((issue) => issue.path.join(".") || "element"))],
+        code: "UNWRITABLE_ELEMENT",
+        message: `图元不符合可写 schema，input 视图已跳过；该图元仍在画板中，未删除：${parsed.error.issues.map((issue) => `${issue.path.join(".") || "element"}: ${issue.message}`).join("；")}` });
+    }
   }
   for (const element of active) {
     if (element.type === "text" && element.containerId &&
-        !candidates.has(foldedLabels.get(element.id) || "")) unsupported.add(element.id);
+        !candidates.has(foldedLabels.get(element.id) || "")) {
+      unsupported.add(element.id);
+      warnings.push({ elementId: element.id, fields: ["containerId"], code: "UNWRITABLE_LABEL_CONTAINER",
+        message: `绑定文字的容器 ${element.containerId} 未能投影到 input 视图；文字仍在画板中，未删除` });
+    }
   }
   // A projected arrow must not reference a target omitted from the projection.
   // Remove dependent arrows transitively, reporting all missing elements.
@@ -820,6 +843,8 @@ export const inputDrawingElements = (current: readonly ExcalidrawElement[]) => {
         .some((bound) => bound && !available.has(bound.elementId))) {
         candidates.delete(id);
         unsupported.add(id);
+        warnings.push({ elementId: id, fields: ["startBinding", "endBinding"], code: "UNWRITABLE_BINDING_TARGET",
+          message: "箭头绑定了未能投影到 input 视图的目标，已跳过箭头；箭头仍在画板中，未删除" });
         changed = true;
       }
     }
