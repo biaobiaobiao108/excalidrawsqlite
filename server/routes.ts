@@ -48,6 +48,9 @@ import {
   getSceneSummary,
   parseSceneMetadata,
   parseStoredScene,
+  parseStoredElements,
+  parseStoredAppState,
+  storedSceneRevision,
   sanitizeSceneElements,
 } from "./scenes";
 import {
@@ -888,7 +891,7 @@ export const createRequestHandler = (
             } | null;
             if (
               !existing ||
-              (Number(existing.revision) || 1) !== entry.revision ||
+              storedSceneRevision(existing.revision) !== entry.revision ||
               (isPermanent && existing.deleted_at === null)
             ) {
               throw new HttpError(
@@ -1195,7 +1198,7 @@ export const createRequestHandler = (
           for (const scene of affectedScenes) {
             updateScene.run(
               now,
-              (Number(scene.revision) || 1) + 1,
+              storedSceneRevision(scene.revision) + 1,
               scene.id,
               id,
             );
@@ -1207,7 +1210,7 @@ export const createRequestHandler = (
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: scene.id,
-            revision: (Number(scene.revision) || 1) + 1,
+            revision: storedSceneRevision(scene.revision) + 1,
             updatedAt: now,
             changeKind: "metadata",
           });
@@ -1239,12 +1242,12 @@ export const createRequestHandler = (
             success: true,
             id,
             restored: false,
-            revision: Number(existing.revision) || 1,
+            revision: storedSceneRevision(existing.revision),
             noop: true,
           });
         }
         const updatedAt = Date.now();
-        const revision = (Number(existing.revision) || 1) + 1;
+        const revision = storedSceneRevision(existing.revision) + 1;
         stmts.restoreScene.run(updatedAt, id, revision - 1);
         publishSceneChanged(runtime, {
           type: "scene_changed",
@@ -1290,7 +1293,7 @@ export const createRequestHandler = (
         if (!versionRow) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
-        const sceneRevision = Number(versionRow.revision) || 1;
+        const sceneRevision = storedSceneRevision(versionRow.revision);
         const sceneUpdatedAt = Number(versionRow.updated_at) || 0;
         const etag = `"scene-${sha256Hex(
           JSON.stringify([
@@ -1531,7 +1534,7 @@ export const createRequestHandler = (
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
-        const currentRevision = Number(existing.revision) || 1;
+        const currentRevision = storedSceneRevision(existing.revision);
         if (baseRevision !== undefined && baseRevision !== currentRevision) {
           throw new HttpError(
             409,
@@ -1601,7 +1604,7 @@ export const createRequestHandler = (
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
         const baseRevision = requireRevision(body.baseRevision);
-        const currentRevision = Number(existing.revision) || 1;
+        const currentRevision = storedSceneRevision(existing.revision);
         if (baseRevision !== undefined && baseRevision !== currentRevision) {
           throw new HttpError(
             409,
@@ -1616,11 +1619,11 @@ export const createRequestHandler = (
         );
         const rawElements = hasOwn(body, "elements")
           ? validateElements(body.elements)
-          : JSON.parse(existing.elements || "[]");
+          : parseStoredElements(existing.elements);
         const elements = sanitizeSceneElements(rawElements);
         const appState = hasOwn(body, "appState")
           ? validateAppState(body.appState)
-          : JSON.parse(existing.app_state || "{}");
+          : parseStoredAppState(existing.app_state);
         const fileIds = extractFileIds(elements);
         const elementsJson = JSON.stringify(elements);
         const appStateJson = JSON.stringify(appState);
@@ -1737,7 +1740,7 @@ export const createRequestHandler = (
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: id,
-            revision: Number(existing.revision) || 1,
+            revision: storedSceneRevision(existing.revision),
             updatedAt: Date.now(),
             changeKind: "deleted",
           });
@@ -1755,12 +1758,12 @@ export const createRequestHandler = (
             deleted: true,
             permanent: false,
             deleted_at: Number(existing.deleted_at),
-            revision: Number(existing.revision) || 1,
+            revision: storedSceneRevision(existing.revision),
             noop: true,
           });
         }
         const now = Date.now();
-        const revision = (Number(existing.revision) || 1) + 1;
+        const revision = storedSceneRevision(existing.revision) + 1;
         stmts.softDeleteScene.run(now, now, id, revision - 1);
         publishSceneChanged(runtime, {
           type: "scene_changed",

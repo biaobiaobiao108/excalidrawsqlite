@@ -40,6 +40,58 @@ afterEach(async () => {
 });
 
 describe("route failure and realtime regressions", () => {
+  it("rejects invalid stored revisions across reads and mutations without changing the board", async () => {
+    const { runtime, json, request } = setup();
+    await json("/api/scenes", { id: "corrupt_revision" });
+    const stored = () => runtime.db.query("SELECT * FROM scenes WHERE id = ?").get("corrupt_revision");
+    for (const revision of [0, -1, 1.5]) {
+      runtime.db.run("UPDATE scenes SET revision = ? WHERE id = ?", [revision, "corrupt_revision"]);
+      const before = stored();
+      const operations = [
+        () => request("/api/scenes/corrupt_revision"),
+        () => request("/api/scenes/corrupt_revision/summary"),
+        () => json("/api/scenes/corrupt_revision", { name: "禁止写入" }, "PATCH"),
+        () => json("/api/scenes/corrupt_revision", { elements: [], appState: {} }, "PUT"),
+        () => request("/api/scenes/corrupt_revision", { method: "DELETE" }),
+        () => json("/api/scenes/corrupt_revision/restore", {}),
+        () => json("/api/scenes/batch", { scenes: [{ id: "corrupt_revision", revision: 1 }], deleted: true }, "PATCH"),
+      ];
+      for (const operation of operations) {
+        const response = await operation();
+        expect(response.status).toBe(500);
+        expect(await response.json()).toMatchObject({ code: "CORRUPT_SCENE" });
+        expect(stored()).toEqual(before);
+      }
+    }
+  });
+
+  it("preserves omitted valid content on partial saves and rejects corrupt stored content atomically", async () => {
+    const { runtime, json, request } = setup();
+    const elements = [{ id: "preserved_shape", type: "rectangle" }];
+    const appState = { viewBackgroundColor: "#abc" };
+    await json("/api/scenes", { id: "partial_content", elements, appState });
+    expect((await json("/api/scenes/partial_content", { name: "只改名" }, "PUT")).status).toBe(200);
+    expect(await (await request("/api/scenes/partial_content")).json()).toMatchObject({ elements, appState });
+    const stored = () => runtime.db.query("SELECT * FROM scenes WHERE id = ?").get("partial_content");
+    for (const column of ["elements", "app_state"] as const) {
+      for (const malformed of ["", "null", column === "elements" ? "{}" : "[]"]) {
+        runtime.db.run(`UPDATE scenes SET ${column} = ? WHERE id = ?`, [malformed, "partial_content"]);
+        const before = stored();
+        for (const operation of [
+          () => request("/api/scenes/partial_content"),
+          () => json("/api/scenes/partial_content", { name: "禁止丢失内容" }, "PUT"),
+        ]) {
+          const response = await operation();
+          expect(response.status).toBe(500);
+          expect(await response.json()).toMatchObject({ code: "CORRUPT_SCENE" });
+          expect(stored()).toEqual(before);
+        }
+        // Explicit replacement remains available; omitted fields never receive guessed defaults.
+        expect((await json("/api/scenes/partial_content", { elements, appState }, "PUT")).status).toBe(200);
+      }
+    }
+  });
+
   it("invalidates old revisions across trash restoration and preserves repeated-state noops", async () => {
     const { runtime, json, request } = setup();
     await json("/api/scenes", { id: "trash_lifecycle" });

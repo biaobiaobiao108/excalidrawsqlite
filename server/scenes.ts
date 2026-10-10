@@ -17,13 +17,39 @@ const storedInteger = (value: unknown, minimum: number): number => {
   return value;
 };
 
+export const storedSceneRevision = (value: unknown) => storedInteger(value, 1);
+
+const parseSceneJson = (value: unknown): any => {
+  try {
+    if (typeof value !== "string") {
+      throw new Error("Missing stored JSON");
+    }
+    return JSON.parse(value);
+  } catch {
+    throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
+  }
+};
+
+export const parseStoredElements = (value: unknown): unknown[] => {
+  const elements = parseSceneJson(value);
+  if (!Array.isArray(elements)) {
+    throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
+  }
+  return elements;
+};
+
+export const parseStoredAppState = (value: unknown): Record<string, unknown> => {
+  const appState = parseSceneJson(value);
+  if (!appState || typeof appState !== "object" || Array.isArray(appState)) {
+    throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
+  }
+  return appState;
+};
+
 export const parseStoredScene = (row: any) => {
   try {
-    const elements = JSON.parse(row.elements);
-    const appState = JSON.parse(row.app_state);
-    if (!Array.isArray(elements) || !appState || typeof appState !== "object" || Array.isArray(appState)) {
-      throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
-    }
+    const elements = parseStoredElements(row.elements);
+    const appState = parseStoredAppState(row.app_state);
     return {
       id: row.id,
       name: row.name,
@@ -37,7 +63,7 @@ export const parseStoredScene = (row: any) => {
       last_opened_at: row.last_opened_at || null,
       thumbnail_file_id: row.thumbnail_file_id || null,
       deleted_at: row.deleted_at || null,
-      revision: storedInteger(row.revision, 1),
+      revision: storedSceneRevision(row.revision),
     };
   } catch {
     throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
@@ -49,7 +75,7 @@ export const getSceneSummary = (row: any) => ({
   name: row.name,
   created_at: row.created_at,
   updated_at: row.updated_at,
-  revision: storedInteger(row.revision, 1),
+  revision: storedSceneRevision(row.revision),
   size: row.size === undefined ? undefined : Number(row.size),
   element_count: storedInteger(row.element_count, 0),
   tags: parseStoredTags(row.tags_json),
