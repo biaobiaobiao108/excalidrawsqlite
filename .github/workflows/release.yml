@@ -71,6 +71,46 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build amd64 image for startup smoke check
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: excalidraw:release-smoke
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start image and check health endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_name="excalidraw-release-smoke"
+          cleanup() {
+            docker rm --force "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run --detach \
+            --name "$container_name" \
+            --publish 127.0.0.1:18080:8080 \
+            excalidraw:release-smoke
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18080/api/health; then
+              echo "Container health check passed."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs "$container_name"
+          echo "Container did not become healthy at /api/health." >&2
+          exit 1
+
       - name: Build and push Docker image
         id: docker_build
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5

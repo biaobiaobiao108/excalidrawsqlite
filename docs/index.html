@@ -1752,7 +1752,7 @@ docker compose up -d"
               </button>
               <pre><code>mkdir -p ./data
 
-# 创建 docker-compose.yml
+cat &lt;&lt; 'EOF' &gt; docker-compose.yml
 services:
   excalidraw:
     image: ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
@@ -1764,6 +1764,7 @@ services:
       - TRUST_PROXY=false
     volumes:
       - ./data:/app/data
+EOF
 
 # 启动服务
 docker compose up -d</code></pre>

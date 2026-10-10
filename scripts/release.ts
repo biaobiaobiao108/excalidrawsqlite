@@ -12,7 +12,9 @@ const PACKAGES = [
   "element",
   "excalidraw",
 ];
+const ROOT_DIR = path.resolve(__dirname, "..");
 const PACKAGES_DIR = path.resolve(__dirname, "../packages");
+const CHANGELOG_PATH = path.resolve(PACKAGES_DIR, "excalidraw/CHANGELOG.md");
 
 /**
  * Returns the arguments for the release script.
@@ -100,7 +102,7 @@ const getPackageJsonPath = (packageName: string) => {
 
 const runCommand = (args: string[], { cwd, inherit = false }: { cwd?: string; inherit?: boolean } = {}) => {
   const result = spawnSync(args, {
-    cwd,
+    cwd: cwd ?? ROOT_DIR,
     stdout: inherit ? "inherit" : "pipe",
     stderr: inherit ? "inherit" : "pipe",
   });
@@ -112,6 +114,30 @@ const runCommand = (args: string[], { cwd, inherit = false }: { cwd?: string; in
   return result;
 };
 
+const getReleaseFilePaths = () => [
+  ...PACKAGES.map((packageName) => getPackageJsonPath(packageName)),
+  path.resolve(__dirname, "../bun.lock"),
+  CHANGELOG_PATH,
+];
+
+const restoreReleaseFiles = (originalFiles: Map<string, Buffer>) => {
+  for (const [filePath, content] of originalFiles) {
+    fs.writeFileSync(filePath, content);
+  }
+};
+
+const assertCleanWorkingTree = () => {
+  const status = new TextDecoder()
+    .decode(runCommand(["git", "status", "--porcelain", "--untracked-files=all"]).stdout)
+    .trim();
+
+  if (status) {
+    throw new Error(
+      "Stable release requires a clean working tree. Commit or stash existing changes before running the release script.",
+    );
+  }
+};
+
 const updatePackageJsons = (nextVersion: string) => {
   const packageJsons = new Map<string, string>();
 
@@ -121,13 +147,22 @@ const updatePackageJsons = (nextVersion: string) => {
 
     pkg.version = nextVersion;
 
-    if (pkg.dependencies) {
-      for (const dependencyName of PACKAGES) {
-        if (!pkg.dependencies[`@excalidraw/${dependencyName}`]) {
-          continue;
-        }
+    for (const dependencyGroup of [
+      "dependencies",
+      "devDependencies",
+      "optionalDependencies",
+      "peerDependencies",
+    ] as const) {
+      const dependencies = pkg[dependencyGroup];
+      if (!dependencies) {
+        continue;
+      }
 
-        pkg.dependencies[`@excalidraw/${dependencyName}`] = nextVersion;
+      for (const dependencyName of PACKAGES) {
+        const packageDependency = `@excalidraw/${dependencyName}`;
+        if (dependencies[packageDependency]) {
+          dependencies[packageDependency] = nextVersion;
+        }
       }
     }
 
@@ -149,6 +184,54 @@ const getShortCommitHash = () => {
     .trim();
 };
 
+const prepareRelease = async (tag: string, version: string) => {
+  const releaseFilePaths = getReleaseFilePaths();
+  const originalFiles = new Map(
+    releaseFilePaths.map((filePath) => [filePath, fs.readFileSync(filePath)]),
+  );
+
+  try {
+    if (tag === "latest") {
+      await updateChangelog(version);
+    }
+
+    updatePackageJsons(version);
+
+    console.info("Regenerating bun.lock for the updated workspace versions...");
+    runCommand(["bun", "install", "--lockfile-only"], { inherit: true });
+
+    console.info("Checking the regenerated lockfile...");
+    runCommand(["bun", "install", "--frozen-lockfile"], { inherit: true });
+  } catch (error) {
+    restoreReleaseFiles(originalFiles);
+
+    throw new Error(
+      `Could not prepare release ${version}; package manifests, bun.lock, and changelog were restored.`,
+      { cause: error },
+    );
+  }
+
+  return originalFiles;
+};
+
+const assertOnlyReleaseFilesAreStaged = () => {
+  const stagedFiles = new TextDecoder()
+    .decode(runCommand(["git", "diff", "--cached", "--name-only", "-z"]).stdout)
+    .split("\0")
+    .filter(Boolean)
+    .map((filePath) => path.resolve(ROOT_DIR, filePath));
+  const allowedFiles = new Set(getReleaseFilePaths());
+  const unexpectedFiles = stagedFiles.filter((filePath) => !allowedFiles.has(filePath));
+
+  if (unexpectedFiles.length) {
+    throw new Error(
+      `Refusing to create a release commit with unrelated staged files: ${unexpectedFiles
+        .map((filePath) => path.relative(ROOT_DIR, filePath))
+        .join(", ")}`,
+    );
+  }
+};
+
 const askToCommit = async (tag: string, nextVersion: string): Promise<void> => {
   if (tag !== "latest") {
     return;
@@ -156,7 +239,16 @@ const askToCommit = async (tag: string, nextVersion: string): Promise<void> => {
 
   const answer = (prompt("Would you like to commit these changes to git? (Y/n): ") || "").toLowerCase();
   if (answer === "y") {
-    runCommand(["git", "add", "-u"], { inherit: true });
+    runCommand(
+      [
+        "git",
+        "add",
+        "--",
+        ...getReleaseFilePaths().map((filePath) => path.relative(ROOT_DIR, filePath)),
+      ],
+      { inherit: true },
+    );
+    assertOnlyReleaseFilesAreStaged();
     runCommand(
       [
         "git",
@@ -172,9 +264,6 @@ const askToCommit = async (tag: string, nextVersion: string): Promise<void> => {
 };
 
 const buildPackages = () => {
-  console.info("Running bun install...");
-  runCommand(["bun", "install", "--frozen-lockfile"], { inherit: true });
-
   console.info("Removing existing build artifacts...");
   for (const packageName of PACKAGES) {
     const pkgDir = path.resolve(PACKAGES_DIR, packageName);
@@ -216,13 +305,21 @@ const publishPackages = (tag: string, version: string) => {
 /** main */
 const [tag, version, nonInteractive] = getArguments();
 
-buildPackages();
-
 if (tag === "latest") {
-  await updateChangelog(version);
+  assertCleanWorkingTree();
 }
 
-updatePackageJsons(version);
+const originalReleaseFiles = await prepareRelease(tag, version);
+
+try {
+  buildPackages();
+} catch (error) {
+  restoreReleaseFiles(originalReleaseFiles);
+  throw new Error(
+    `Could not build release ${version}; package manifests, bun.lock, and changelog were restored.`,
+    { cause: error },
+  );
+}
 
 if (nonInteractive) {
   publishPackages(tag, version);
