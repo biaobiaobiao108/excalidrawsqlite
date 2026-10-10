@@ -91,6 +91,182 @@ afterEach(async () => {
 });
 
 describe("cloud persistence server", () => {
+  it("authorizes workspace statistics and returns an empty workspace", async () => {
+    const { handler } = createTestRuntime();
+    expect((await request(handler, "/api/workspace/stats")).status).toBe(401);
+    const cookie = await authenticate(handler);
+    const stats = await request(handler, "/api/workspace/stats", {
+      headers: { Cookie: cookie },
+    });
+    expect(stats.status).toBe(200);
+    expect(await responseJson(stats)).toEqual({
+      sceneCount: 0,
+      favoriteCount: 0,
+      trashCount: 0,
+      tags: [],
+    });
+  });
+
+  it("counts the whole workspace and filtered pages independently of pagination", async () => {
+    const { runtime, handler } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const headers = { Cookie: cookie };
+    const folderResponse = await jsonRequest(
+      handler,
+      "/api/folders",
+      { name: "统计文件夹" },
+      { headers },
+    );
+    const folder = await responseJson<{ id: string }>(folderResponse);
+    const insertScene = runtime.db.prepare(`
+      INSERT INTO scenes
+        (id, name, elements, app_state, created_at, updated_at, tags_json,
+         is_favorite, folder_id, last_opened_at, deleted_at)
+      VALUES (?, ?, '[]', '{}', 1, ?, ?, ?, ?, ?, ?)
+    `);
+    for (let index = 0; index < 105; index++) {
+      const tags = ["共享"];
+      if (index === 0) {
+        tags.push("精确");
+      }
+      if (index === 1) {
+        tags.push("精确扩展");
+      }
+      if (index === 104) {
+        tags.push("尾页");
+      }
+      insertScene.run(
+        `stats_${index}`,
+        index === 2 ? "唯一搜索" : `分页 ${index}`,
+        1000 + index,
+        JSON.stringify(tags),
+        index % 2 === 0 ? 1 : 0,
+        index < 3 ? folder.id : null,
+        index < 4 ? 100 + index : null,
+        null,
+      );
+    }
+    for (let index = 0; index < 3; index++) {
+      insertScene.run(
+        `stats_deleted_${index}`,
+        "回收站画板",
+        index,
+        '["垃圾专属"]',
+        1,
+        folder.id,
+        null,
+        100 + index,
+      );
+    }
+    insertScene.finalize();
+
+    const readStats = async () =>
+      responseJson<{
+        sceneCount: number;
+        favoriteCount: number;
+        trashCount: number;
+        tags: string[];
+      }>(await request(handler, "/api/workspace/stats", { headers }));
+    const initialStats = await readStats();
+    expect(initialStats).toEqual({
+      sceneCount: 105,
+      favoriteCount: 53,
+      trashCount: 3,
+      tags: ["共享", "尾页", "精确", "精确扩展"],
+    });
+    type Page = {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+      totalCount: number;
+    };
+    const readPage = async (pathname: string) => {
+      const response = await request(handler, pathname, { headers });
+      expect(response.status).toBe(200);
+      return responseJson<Page>(response);
+    };
+    const firstPage = await readPage("/api/scenes?limit=100");
+    expect(firstPage.items).toHaveLength(100);
+    expect(firstPage.totalCount).toBe(105);
+    expect(firstPage.nextCursor).toBeTruthy();
+    const secondPage = await readPage(
+      `/api/scenes?limit=100&cursor=${encodeURIComponent(firstPage.nextCursor!)}`,
+    );
+    expect(secondPage.items).toHaveLength(5);
+    expect(secondPage.totalCount).toBe(105);
+    expect(secondPage.nextCursor).toBeNull();
+
+    for (const [query, count] of [
+      ["favorite=true", 53],
+      [`folder_id=${folder.id}`, 3],
+      ["q=唯一搜索", 1],
+      ["q=不存在", 0],
+      ["opened=true&sort=opened", 4],
+      ["opened=false", 101],
+      ["tag=精确", 1],
+      ["tag=精确&q=分页", 1],
+      ["tag=精确&q=唯一搜索", 0],
+    ] as const) {
+      const filtered = await readPage(`/api/scenes?${query}&limit=1`);
+      expect(filtered.totalCount).toBe(count);
+      expect(filtered.items).toHaveLength(count > 0 ? 1 : 0);
+      if (filtered.nextCursor) {
+        const next = await readPage(
+          `/api/scenes?${query}&limit=1&cursor=${encodeURIComponent(filtered.nextCursor)}`,
+        );
+        expect(next.totalCount).toBe(count);
+      }
+      expect(await readStats()).toEqual(initialStats);
+    }
+    const tagged = await readPage("/api/scenes?tag=精确");
+    expect(tagged.items.map(({ id }) => id)).toEqual(["stats_0"]);
+    const trashPage = await readPage("/api/scenes/trash?limit=1");
+    expect(trashPage.totalCount).toBe(3);
+    const nextTrashPage = await readPage(
+      `/api/scenes/trash?limit=1&cursor=${encodeURIComponent(trashPage.nextCursor!)}`,
+    );
+    expect(nextTrashPage.totalCount).toBe(3);
+
+    const updated = await jsonRequest(
+      handler,
+      "/api/scenes/stats_1",
+      { favorite: true, tags: ["共享", "更新标签"] },
+      { method: "PATCH", headers },
+    );
+    expect(updated.status).toBe(200);
+    expect(await readStats()).toEqual({
+      sceneCount: 105,
+      favoriteCount: 54,
+      trashCount: 3,
+      tags: ["共享", "尾页", "更新标签", "精确"],
+    });
+    const deleted = await request(handler, "/api/scenes/stats_0", {
+      method: "DELETE",
+      headers,
+    });
+    expect(deleted.status).toBe(200);
+    expect(await readStats()).toEqual({
+      sceneCount: 104,
+      favoriteCount: 53,
+      trashCount: 4,
+      tags: ["共享", "尾页", "更新标签"],
+    });
+    const restored = await request(handler, "/api/scenes/stats_0/restore", {
+      method: "POST",
+      headers,
+    });
+    expect(restored.status).toBe(200);
+    expect(await readStats()).toEqual({
+      sceneCount: 105,
+      favoriteCount: 54,
+      trashCount: 3,
+      tags: ["共享", "尾页", "更新标签", "精确"],
+    });
+    for (const query of ["opened=invalid", `tag=${"长".repeat(121)}`]) {
+      const invalid = await request(handler, `/api/scenes?${query}`, { headers });
+      expect(invalid.status).toBe(400);
+    }
+  });
+
   it("allows the thumbnail version header in CORS preflight", async () => {
     const { handler } = createTestRuntime({
       CORS_ORIGIN: "https://whiteboard.example",

@@ -387,15 +387,34 @@ export async function logoutCloudSession(): Promise<void> {
 export type CloudScenePage = {
   items: CloudSceneSummary[];
   nextCursor: string | null;
+  totalCount: number;
 };
+
+export type CloudWorkspaceStats = {
+  sceneCount: number;
+  favoriteCount: number;
+  trashCount: number;
+  tags: string[];
+};
+
+export async function fetchCloudWorkspaceStats(): Promise<CloudWorkspaceStats> {
+  return fetchJson<CloudWorkspaceStats>(
+    "/api/workspace/stats",
+    { headers: getHeaders() },
+    "获取画板统计失败",
+    CLOUD_READ_RETRIES,
+  );
+}
 
 export type CloudScenePageOptions = {
   trash?: boolean;
   cursor?: string | null;
   limit?: number;
   query?: string;
+  tag?: string;
   folderId?: string | null;
   favorite?: boolean;
+  opened?: boolean;
   sort?: "updated" | "opened" | "created";
 };
 
@@ -411,6 +430,12 @@ export async function fetchCloudScenePage(
   }
   if (options.query?.trim()) {
     params.set("q", options.query.trim());
+  }
+  if (options.tag) {
+    params.set("tag", options.tag);
+  }
+  if (options.opened) {
+    params.set("opened", "true");
   }
   if (options.folderId) {
     params.set("folder_id", options.folderId);

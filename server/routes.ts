@@ -73,6 +73,7 @@ import {
 } from "./validation";
 
 import type { RequestAddressResolver, ServerRuntime } from "./types";
+import { getWorkspaceStats } from "./workspace";
 
 const DEFAULT_SCENE_PAGE_SIZE = 50;
 const MAX_SCENE_PAGE_SIZE = 100;
@@ -80,6 +81,35 @@ const MAX_SCENE_BATCH_SIZE = 500;
 const MAX_THUMBNAIL_VERSION_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const sceneCursorEncoder = new TextEncoder();
 const sceneCursorDecoder = new TextDecoder();
+
+// Filter combinations have a finite set of SQL shapes; values stay bound parameters.
+const sceneCountQueries = new WeakMap<
+  ServerRuntime,
+  Map<string, ReturnType<ServerRuntime["db"]["query"]>>
+>();
+
+const getScenePageCount = (
+  runtime: ServerRuntime,
+  conditions: string[],
+  params: Array<string | number>,
+) => {
+  let queries = sceneCountQueries.get(runtime);
+  if (!queries) {
+    queries = new Map();
+    sceneCountQueries.set(runtime, queries);
+  }
+  const where = conditions.join(" AND ");
+  let query = queries.get(where);
+  if (!query) {
+    query = runtime.db.query(`
+      SELECT COUNT(*) AS count FROM scenes
+      LEFT JOIN folders ON folders.id = scenes.folder_id
+      WHERE ${where}
+    `);
+    queries.set(where, query);
+  }
+  return (query.get(...params) as { count: number }).count;
+};
 
 const parseSceneBatchEntries = (body: Record<string, unknown>) => {
   if (
@@ -285,8 +315,18 @@ const listScenePage = (
   const limit = parseScenePageSize(url.searchParams.get("limit"));
   const cursor = decodeSceneCursor(url.searchParams.get("cursor"));
   const query = url.searchParams.get("q")?.trim() || "";
+  const tag = url.searchParams.get("tag")?.trim() || "";
   if (query.length > 120) {
     throw new HttpError(400, "INVALID_QUERY", "搜索关键词过长");
+  }
+  if (tag.length > 120) {
+    throw new HttpError(400, "INVALID_TAG", "标签关键词过长");
+  }
+  const opened = url.searchParams.has("opened")
+    ? url.searchParams.get("opened")
+    : undefined;
+  if (opened !== undefined && opened !== "true" && opened !== "false") {
+    throw new HttpError(400, "INVALID_OPENED", "opened 参数无效");
   }
   const hasFolderFilter = url.searchParams.has("folder_id");
   const folderId = hasFolderFilter ? url.searchParams.get("folder_id") : undefined;
@@ -322,6 +362,20 @@ const listScenePage = (
     conditions.push("scenes.is_favorite = ?");
     params.push(favorite === "true" ? 1 : 0);
   }
+  if (opened !== undefined) {
+    conditions.push(
+      opened === "true"
+        ? "scenes.last_opened_at IS NOT NULL"
+        : "scenes.last_opened_at IS NULL",
+    );
+  }
+  if (tag) {
+    conditions.push(
+      "EXISTS (SELECT 1 FROM json_each(scenes.tags_json) AS tag WHERE tag.type = 'text' AND tag.value = ?)",
+    );
+    params.push(tag);
+  }
+  const totalCount = getScenePageCount(runtime, conditions, params);
   if (cursor) {
     const column = trashed
       ? "scenes.deleted_at"
@@ -368,6 +422,7 @@ const listScenePage = (
   const items = rows.slice(0, limit).map(getSceneSummary);
   return {
     items,
+    totalCount,
     nextCursor: hasMore
       ? encodeSceneCursor(rows[limit - 1])
       : null,
@@ -783,6 +838,10 @@ export const createRequestHandler = (
         if (rateLimited) {
           return rateLimited;
         }
+      }
+
+      if (pathname === "/api/workspace/stats" && req.method === "GET") {
+        return jsonResponse(runtime, req, getWorkspaceStats(runtime));
       }
 
       if (pathname === "/api/scenes" && req.method === "GET") {

@@ -22,7 +22,7 @@ import {
   deleteCloudScene,
   fetchCloudFolders,
   fetchCloudScenePage,
-  fetchCloudSceneSummary,
+  fetchCloudWorkspaceStats,
   permanentlyDeleteCloudScenes,
   renameCloudFolder,
   restoreCloudScenes,
@@ -33,6 +33,8 @@ import {
   type CloudSceneBatchEntry,
   type CloudFolder,
   type CloudSceneSummary,
+  type CloudScenePageOptions,
+  type CloudWorkspaceStats,
 } from "../data/cloudStorage";
 import {
   broadcastWorkspaceChanged,
@@ -58,11 +60,15 @@ type BoardView = "all" | "recent" | "favorites" | "trash";
 type SortMode = "updated" | "opened" | "created";
 
 const LOCAL_SCENE_MIGRATION_KEY = "excalidraw-cloud-scene-migration-v1";
+const DEFAULT_PAGE_QUERY_KEY = "all|updated|||";
 
 type WorkspaceSnapshot = {
   scenes: CloudSceneSummary[];
   trashScenes: CloudSceneSummary[];
   folders: CloudFolder[];
+  stats: CloudWorkspaceStats;
+  pageQueryKey: string;
+  pageTotalCount: number;
 };
 
 let workspaceSnapshot: WorkspaceSnapshot | null = null;
@@ -1224,7 +1230,10 @@ export const WorkspaceHome = ({
     scrollMargin: 0,
   });
   const [scenes, setScenes] = useState<CloudSceneSummary[]>(
-    () => workspaceSnapshot?.scenes || [],
+    () =>
+      workspaceSnapshot?.pageQueryKey === DEFAULT_PAGE_QUERY_KEY
+        ? workspaceSnapshot.scenes
+        : [],
   );
   const [trashScenes, setTrashScenes] = useState<CloudSceneSummary[]>(
     () => workspaceSnapshot?.trashScenes || [],
@@ -1232,6 +1241,16 @@ export const WorkspaceHome = ({
   const [folders, setFolders] = useState<CloudFolder[]>(
     () => workspaceSnapshot?.folders || [],
   );
+  const [workspaceStats, setWorkspaceStats] = useState<CloudWorkspaceStats | null>(
+    () => workspaceSnapshot?.stats || null,
+  );
+  const [pageTotalCount, setPageTotalCount] = useState(
+    () =>
+      workspaceSnapshot?.pageQueryKey === DEFAULT_PAGE_QUERY_KEY
+        ? workspaceSnapshot.pageTotalCount
+        : 0,
+  );
+  const loadedPageQueryKeyRef = useRef(workspaceSnapshot?.pageQueryKey || "");
   const [view, setView] = useState<BoardView>("all");
   const [sort, setSort] = useState<SortMode>("updated");
   const [searchQuery, setSearchQuery] = useState("");
@@ -1243,7 +1262,9 @@ export const WorkspaceHome = ({
   const sceneSelectionRef = useRef(sceneSelection);
   sceneSelectionRef.current = sceneSelection;
   const selectedSceneIds = sceneSelection.ids;
-  const [loading, setLoading] = useState(() => !workspaceSnapshot);
+  const [loading, setLoading] = useState(
+    () => workspaceSnapshot?.pageQueryKey !== DEFAULT_PAGE_QUERY_KEY,
+  );
   const [error, setError] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
   const [metadataDialog, setMetadataDialog] =
@@ -1276,6 +1297,18 @@ export const WorkspaceHome = ({
   ].join("|");
   const pageQueryKeyRef = useRef(pageQueryKey);
   pageQueryKeyRef.current = pageQueryKey;
+  const previousPageQueryKeyRef = useRef(pageQueryKey);
+  const currentPageOptions: CloudScenePageOptions = {
+    trash: view === "trash",
+    query: searchQuery.trim() || undefined,
+    tag: view === "trash" ? undefined : selectedTag || undefined,
+    folderId: view === "trash" ? undefined : selectedFolderId,
+    favorite: view === "favorites",
+    opened: view === "recent",
+    sort: view === "recent" ? "opened" : sort,
+  };
+  const currentPageRef = useRef({ key: pageQueryKey, options: currentPageOptions });
+  currentPageRef.current = { key: pageQueryKey, options: currentPageOptions };
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
   const updateSceneSelection = useCallback((next: BoardSelectionState) => {
@@ -1315,7 +1348,13 @@ export const WorkspaceHome = ({
 
   const loadWorkspace = useCallback(async () => {
     const requestId = ++loadRequestRef.current;
-    const isCurrent = () => loadRequestRef.current === requestId;
+    const { key: queryKey, options } = currentPageRef.current;
+    pageRequestRef.current += 1;
+    loadMoreRequestRef.current += 1;
+    setLoadingMore(false);
+    const isCurrent = () =>
+      loadRequestRef.current === requestId &&
+      currentPageRef.current.key === queryKey;
     if (!workspaceSnapshot) {
       setLoading(true);
     }
@@ -1329,42 +1368,56 @@ export const WorkspaceHome = ({
         setAuthOpen(true);
         return;
       }
-      const [scenePage, folderList, trashPage] = await Promise.all([
-        fetchCloudScenePage(),
+      const [scenePage, folderList, trashPage, stats] = await Promise.all([
+        fetchCloudScenePage(options.trash ? {} : options),
         fetchCloudFolders(),
-        fetchCloudScenePage({ trash: true }).catch(() => ({
-          items: [],
-          nextCursor: null,
-        })),
+        fetchCloudScenePage(options.trash ? options : { trash: true }),
+        fetchCloudWorkspaceStats(),
       ]);
       if (!isCurrent()) {
         return;
       }
       let migratedScene: CloudSceneSummary | null = null;
-      if (
-        scenePage.items.length === 0 &&
-        trashPage.items.length === 0 &&
-        !scenePage.nextCursor &&
-        !trashPage.nextCursor
-      ) {
+      if (stats.sceneCount === 0 && stats.trashCount === 0) {
         try {
           migratedScene = await migrateLocalScene();
         } catch (migrationError) {
           console.warn("迁移本地画板失败", migrationError);
         }
       }
+      const [nextScenePage, nextTrashPage, nextStats] = migratedScene
+        ? await Promise.all([
+            fetchCloudScenePage(options.trash ? {} : options),
+            fetchCloudScenePage(options.trash ? options : { trash: true }),
+            fetchCloudWorkspaceStats(),
+          ])
+        : [scenePage, trashPage, stats];
       const nextSnapshot = {
-        scenes: migratedScene ? [migratedScene] : scenePage.items,
+        scenes: nextScenePage.items,
         folders: folderList,
-        trashScenes: trashPage.items,
+        trashScenes: nextTrashPage.items,
+        stats: nextStats,
+        pageQueryKey: queryKey,
+        pageTotalCount: options.trash
+          ? nextTrashPage.totalCount
+          : nextScenePage.totalCount,
       };
+      if (!isCurrent()) {
+        return;
+      }
       workspaceSnapshot = nextSnapshot;
       setScenes(nextSnapshot.scenes);
       setFolders(nextSnapshot.folders);
       setTrashScenes(nextSnapshot.trashScenes);
-      setSceneCursor(migratedScene ? null : scenePage.nextCursor);
-      setTrashSceneCursor(trashPage.nextCursor);
+      setWorkspaceStats(nextSnapshot.stats);
+      setPageTotalCount(nextSnapshot.pageTotalCount);
+      loadedPageQueryKeyRef.current = queryKey;
+      setSceneCursor(nextScenePage.nextCursor);
+      setTrashSceneCursor(nextTrashPage.nextCursor);
     } catch (requestError: any) {
+      if (!isCurrent()) {
+        return;
+      }
       if (
         requestError?.status === 401 ||
         requestError?.code === "AUTH_REQUIRED"
@@ -1384,14 +1437,10 @@ export const WorkspaceHome = ({
 
   const getCurrentPageOptions = useCallback(
     (cursor: string | null = null) => ({
-      trash: view === "trash",
+      ...currentPageRef.current.options,
       cursor,
-      query: searchQuery.trim() || selectedTag || undefined,
-      folderId: view === "trash" ? undefined : selectedFolderId,
-      favorite: view === "favorites",
-      sort: view === "recent" ? "opened" : sort,
     }),
-    [searchQuery, selectedFolderId, selectedTag, sort, view],
+    [],
   );
 
   const reloadCurrentPage = useCallback(async () => {
@@ -1399,21 +1448,39 @@ export const WorkspaceHome = ({
       return;
     }
     const requestId = ++loadRequestRef.current;
+    const { key: queryKey, options } = currentPageRef.current;
     setLoading(true);
     setError("");
     try {
-      const page = await fetchCloudScenePage(getCurrentPageOptions());
-      if (loadRequestRef.current !== requestId) {
+      const [page, stats, folderList] = await Promise.all([
+        fetchCloudScenePage(getCurrentPageOptions()),
+        fetchCloudWorkspaceStats(),
+        fetchCloudFolders(),
+      ]);
+      if (
+        loadRequestRef.current !== requestId ||
+        currentPageRef.current.key !== queryKey
+      ) {
         return;
       }
-      if (view === "trash") {
+      if (options.trash) {
         setTrashScenes(page.items);
         setTrashSceneCursor(page.nextCursor);
       } else {
         setScenes(page.items);
         setSceneCursor(page.nextCursor);
       }
+      setPageTotalCount(page.totalCount);
+      setWorkspaceStats(stats);
+      setFolders(folderList);
+      loadedPageQueryKeyRef.current = queryKey;
     } catch (requestError: any) {
+      if (
+        loadRequestRef.current !== requestId ||
+        currentPageRef.current.key !== queryKey
+      ) {
+        return;
+      }
       if (
         requestError?.status === 401 ||
         requestError?.code === "AUTH_REQUIRED"
@@ -1427,7 +1494,7 @@ export const WorkspaceHome = ({
         setLoading(false);
       }
     }
-  }, [getCurrentPageOptions, view]);
+  }, [getCurrentPageOptions]);
 
   const loadMoreScenes = useCallback(async () => {
     const isTrash = view === "trash";
@@ -1462,6 +1529,7 @@ export const WorkspaceHome = ({
         setScenes(mergeScenes);
         setSceneCursor(page.nextCursor);
       }
+      setPageTotalCount(page.totalCount);
     } catch (requestError: any) {
       if (
         requestId === loadMoreRequestRef.current &&
@@ -1488,27 +1556,43 @@ export const WorkspaceHome = ({
     void loadWorkspace();
     return () => {
       loadRequestRef.current += 1;
+      pageRequestRef.current += 1;
+      loadMoreRequestRef.current += 1;
     };
   }, [loadWorkspace]);
 
   useEffect(() => {
-    if (!workspaceLoadedRef.current) {
+    if (previousPageQueryKeyRef.current === pageQueryKey) {
       return;
     }
+    previousPageQueryKeyRef.current = pageQueryKey;
+    // Invalidate old requests immediately, before the debounce starts.
+    loadRequestRef.current += 1;
+    pageRequestRef.current += 1;
+    loadMoreRequestRef.current += 1;
+    setLoadingMore(false);
     const timer = setTimeout(() => {
-      pageRequestRef.current += 1;
-      loadMoreRequestRef.current += 1;
-      void reloadCurrentPage();
-      setLoadingMore(false);
+      if (workspaceLoadedRef.current) {
+        void reloadCurrentPage();
+      } else {
+        void loadWorkspace();
+      }
     }, 180);
     return () => clearTimeout(timer);
-  }, [pageQueryKey, reloadCurrentPage]);
+  }, [pageQueryKey, reloadCurrentPage, loadWorkspace]);
 
   useEffect(() => {
-    if (workspaceSnapshot) {
-      workspaceSnapshot = { scenes, folders, trashScenes };
+    if (workspaceSnapshot && workspaceStats) {
+      workspaceSnapshot = {
+        scenes,
+        folders,
+        trashScenes,
+        stats: workspaceStats,
+        pageQueryKey: loadedPageQueryKeyRef.current,
+        pageTotalCount,
+      };
     }
-  }, [folders, loading, scenes, trashScenes]);
+  }, [folders, loading, scenes, trashScenes, workspaceStats, pageTotalCount]);
 
   useEffect(
     () => subscribeCloudTabSync(() => void loadWorkspace()),
@@ -1517,11 +1601,10 @@ export const WorkspaceHome = ({
 
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    let summaryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-    let disposed = false;
-    const pendingSceneIds = new Set<string>();
-
-    const scheduleWorkspaceRefresh = () => {
+    const unsubscribe = subscribeCloudRealtime(null, (event) => {
+      if (event.type !== "scene_changed" && event.type !== "workspace_changed") {
+        return;
+      }
       if (refreshTimer) {
         clearTimeout(refreshTimer);
       }
@@ -1529,91 +1612,12 @@ export const WorkspaceHome = ({
         refreshTimer = null;
         void loadWorkspace();
       }, 250);
-    };
-
-    const refreshSceneSummaries = async () => {
-      summaryRefreshTimer = null;
-      const sceneIds = [...pendingSceneIds];
-      pendingSceneIds.clear();
-      if (!sceneIds.length) {
-        return;
-      }
-      const results = await Promise.all(
-        sceneIds.map(async (sceneId) => {
-          try {
-            return { sceneId, summary: await fetchCloudSceneSummary(sceneId) };
-          } catch (error: any) {
-            return { sceneId, summary: null, error };
-          }
-        }),
-      );
-      if (disposed) {
-        return;
-      }
-      for (const { sceneId, summary, error } of results) {
-        if (summary) {
-          if (summary.deleted_at) {
-            setScenes((current) =>
-              current.filter((scene) => scene.id !== sceneId),
-            );
-            setTrashScenes((current) => [
-              summary,
-              ...current.filter((scene) => scene.id !== sceneId),
-            ]);
-          } else {
-            setTrashScenes((current) =>
-              current.filter((scene) => scene.id !== sceneId),
-            );
-            setScenes((current) => {
-              const index = current.findIndex((scene) => scene.id === sceneId);
-              if (index < 0) {
-                return [summary, ...current];
-              }
-              const next = [...current];
-              next[index] = summary;
-              return next;
-            });
-          }
-        } else if (error?.status === 404) {
-          setScenes((current) =>
-            current.filter((scene) => scene.id !== sceneId),
-          );
-          setTrashScenes((current) =>
-            current.filter((scene) => scene.id !== sceneId),
-          );
-        } else if (error?.status === 401) {
-          setAuthOpen(true);
-        }
-      }
-    };
-
-    const scheduleSceneSummaryRefresh = (sceneId: string) => {
-      pendingSceneIds.add(sceneId);
-      if (summaryRefreshTimer) {
-        return;
-      }
-      summaryRefreshTimer = setTimeout(() => {
-        void refreshSceneSummaries();
-      }, 250);
-    };
-
-    const unsubscribe = subscribeCloudRealtime(null, (event) => {
-      if (event.type === "scene_changed") {
-        scheduleSceneSummaryRefresh(event.sceneId);
-      } else if (event.type === "workspace_changed") {
-        scheduleWorkspaceRefresh();
-      }
     });
     return () => {
-      disposed = true;
       unsubscribe();
       if (refreshTimer) {
         clearTimeout(refreshTimer);
       }
-      if (summaryRefreshTimer) {
-        clearTimeout(summaryRefreshTimer);
-      }
-      pendingSceneIds.clear();
     };
   }, [loadWorkspace]);
 
@@ -1650,21 +1654,16 @@ export const WorkspaceHome = ({
 
   const allTags = useMemo(
     () =>
-      [...new Set(scenes.flatMap((scene) => scene.tags))].sort((a, b) =>
+      [...(workspaceStats?.tags || [])].sort((a, b) =>
         a.localeCompare(b, "zh-CN"),
       ),
-    [scenes],
+    [workspaceStats?.tags],
   );
 
-  const folderSceneCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const scene of scenes) {
-      if (scene.folder_id) {
-        counts.set(scene.folder_id, (counts.get(scene.folder_id) || 0) + 1);
-      }
-    }
-    return counts;
-  }, [scenes]);
+  const folderSceneCounts = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder.scene_count])),
+    [folders],
+  );
 
   const filteredScenes = useMemo(() => {
     const targetScenes = view === "trash" ? trashScenes : scenes;
@@ -1676,10 +1675,13 @@ export const WorkspaceHome = ({
       if (view === "favorites" && !scene.favorite) {
         return false;
       }
-      if (selectedFolderId && scene.folder_id !== selectedFolderId) {
+      if (
+        view !== "trash" && selectedFolderId &&
+        scene.folder_id !== selectedFolderId
+      ) {
         return false;
       }
-      if (selectedTag && !scene.tags.includes(selectedTag)) {
+      if (view !== "trash" && selectedTag && !scene.tags.includes(selectedTag)) {
         return false;
       }
       if (!normalizedQuery) {
@@ -1954,6 +1956,11 @@ export const WorkspaceHome = ({
     ownerWindow.location.assign(`${url.pathname}${url.search}`);
   };
 
+  const notifyWorkspaceChanged = () => {
+    broadcastWorkspaceChanged();
+    void loadWorkspace();
+  };
+
   const handleCreateScene = async (
     targetFolderId?: string | null,
     sceneName?: string,
@@ -1971,7 +1978,7 @@ export const WorkspaceHome = ({
         folder_id: folderId,
         appState: { viewBackgroundColor: "#fbfaf7" },
       });
-      broadcastWorkspaceChanged();
+      notifyWorkspaceChanged();
       navigateToScene(scene);
     } catch (requestError: any) {
       if (requestError?.status === 401) {
@@ -2003,7 +2010,7 @@ export const WorkspaceHome = ({
       setScenes((current) =>
         current.map((item) => (item.id === scene.id ? updated : item)),
       );
-      broadcastWorkspaceChanged();
+      notifyWorkspaceChanged();
     } catch (requestError: any) {
       setScenes((current) =>
         current.map((item) =>
@@ -2038,6 +2045,7 @@ export const WorkspaceHome = ({
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
       setMetadataDialog(null);
+      notifyWorkspaceChanged();
     } catch (requestError: any) {
       setError(requestError?.message || "保存画板信息失败");
     } finally {
@@ -2059,7 +2067,7 @@ export const WorkspaceHome = ({
             setTrashScenes((current) =>
               current.filter((item) => item.id !== scene.id),
             );
-            broadcastWorkspaceChanged();
+            notifyWorkspaceChanged();
           } catch (requestError: any) {
             setError(requestError?.message || "彻底删除画板失败");
           } finally {
@@ -2078,7 +2086,7 @@ export const WorkspaceHome = ({
         { ...scene, deleted_at: Date.now() },
         ...current,
       ]);
-      broadcastWorkspaceChanged();
+      notifyWorkspaceChanged();
     } catch (requestError: any) {
       setError(requestError?.message || "删除画板失败");
     } finally {
@@ -2087,12 +2095,12 @@ export const WorkspaceHome = ({
   };
 
   const handleEmptyTrash = () => {
-    if (!trashScenes.length || pendingAction) {
+    if (!workspaceStats?.trashCount || pendingAction) {
       return;
     }
     setConfirmDialog({
       title: "清空回收站",
-      message: `确定要清空回收站中的所有画板（共 ${trashScenes.length} 个）吗？此操作将永久删除这些画板且无法恢复。`,
+      message: `确定要清空回收站中的所有画板（共 ${workspaceStats.trashCount} 个）吗？此操作将永久删除这些画板且无法恢复。`,
       confirmLabel: "清空回收站",
       confirmVariant: "danger",
       onConfirm: async () => {
@@ -2100,7 +2108,7 @@ export const WorkspaceHome = ({
         try {
           await clearCloudTrash();
           setTrashScenes([]);
-          broadcastWorkspaceChanged();
+          notifyWorkspaceChanged();
         } catch (requestError: any) {
           setError(requestError?.message || "清空回收站失败");
         } finally {
@@ -2119,7 +2127,7 @@ export const WorkspaceHome = ({
         current.filter((item) => item.id !== scene.id),
       );
       setScenes((current) => [{ ...scene, deleted_at: null }, ...current]);
-      broadcastWorkspaceChanged();
+      notifyWorkspaceChanged();
     } catch (requestError: any) {
       setError(requestError?.message || "还原画板失败");
     } finally {
@@ -2166,7 +2174,7 @@ export const WorkspaceHome = ({
         ...current.filter((scene) => !completedIds.has(scene.id)),
       ]);
       removeSceneIdsFromSelection([...completedIds]);
-      broadcastWorkspaceChanged();
+      notifyWorkspaceChanged();
     } finally {
       setPendingAction(null);
     }
@@ -2193,7 +2201,7 @@ export const WorkspaceHome = ({
         ...current.filter((scene) => !completedIds.has(scene.id)),
       ]);
       removeSceneIdsFromSelection([...completedIds]);
-      broadcastWorkspaceChanged();
+      notifyWorkspaceChanged();
     } finally {
       setPendingAction(null);
     }
@@ -2225,7 +2233,7 @@ export const WorkspaceHome = ({
             current.filter((scene) => !completedIds.has(scene.id)),
           );
           removeSceneIdsFromSelection([...completedIds]);
-          broadcastWorkspaceChanged();
+          notifyWorkspaceChanged();
         } finally {
           setPendingAction(null);
         }
@@ -2257,14 +2265,14 @@ export const WorkspaceHome = ({
               : scene,
           ),
         );
-        broadcastWorkspaceChanged();
+        notifyWorkspaceChanged();
       } else {
         const created = await createCloudFolder(folderDialog.name.trim(), {
           icon: folderDialog.icon,
           color: folderDialog.color,
         });
         setFolders((current) => [...current, created]);
-        broadcastWorkspaceChanged();
+        notifyWorkspaceChanged();
       }
       setFolderDialog(null);
     } catch (requestError: any) {
@@ -2294,7 +2302,7 @@ export const WorkspaceHome = ({
               : scene,
             ),
           );
-          broadcastWorkspaceChanged();
+          notifyWorkspaceChanged();
           if (selectedFolderId === folder.id) {
             setSelectedFolderId(null);
           }
@@ -2578,7 +2586,7 @@ export const WorkspaceHome = ({
             >
               <GridIcon />
               所有画板
-              <span>{scenes.length}</span>
+              <span>{workspaceStats?.sceneCount ?? "…"}</span>
             </button>
             <button
               className={view === "recent" ? "is-selected" : ""}
@@ -2601,7 +2609,7 @@ export const WorkspaceHome = ({
             >
               <StarIcon />
               收藏
-              <span>{scenes.filter((scene) => scene.favorite).length}</span>
+              <span>{workspaceStats?.favoriteCount ?? "…"}</span>
             </button>
             <button
               className={view === "trash" ? "is-selected" : ""}
@@ -2613,7 +2621,9 @@ export const WorkspaceHome = ({
             >
               <TrashIcon />
               回收站
-              {trashScenes.length > 0 && <span>{trashScenes.length}</span>}
+              {!!workspaceStats?.trashCount && (
+                <span>{workspaceStats.trashCount}</span>
+              )}
             </button>
           </nav>
           <div className="folder-heading">
@@ -2684,7 +2694,7 @@ export const WorkspaceHome = ({
               <button
                 type="button"
                 className="danger-button empty-trash-button"
-                disabled={trashScenes.length === 0 || !!pendingAction}
+                disabled={!workspaceStats?.trashCount || !!pendingAction}
                 onClick={handleEmptyTrash}
               >
                 <TrashIcon />
@@ -2714,7 +2724,11 @@ export const WorkspaceHome = ({
                     ? "最近打开"
                     : "所有画板"}
                 </h2>
-                <span>{filteredScenes.length}</span>
+                <span>
+                  {loadedPageQueryKeyRef.current === pageQueryKey
+                    ? pageTotalCount
+                    : "…"}
+                </span>
               </div>
               <div className="section-tools">
                 {folders.length > 0 && view !== "trash" && (
@@ -2910,7 +2924,7 @@ export const WorkspaceHome = ({
         onClose={() => setCommandPaletteOpen(false)}
         scenes={scenes}
         folders={folders}
-        trashCount={trashScenes.length}
+        trashCount={workspaceStats?.trashCount || 0}
         currentView={view}
         currentSort={sort}
         selectedFolderId={selectedFolderId}
