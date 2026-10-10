@@ -14,6 +14,7 @@ import {
 } from "./files";
 import { closeDevReloadSubscribers } from "./dev-reload";
 import { createRequestHandler } from "./routes";
+import { createMcpRequestHandler, MCP_PATH } from "./mcp";
 import {
   createRealtimeHub,
   REALTIME_PATH,
@@ -59,6 +60,7 @@ export const shutdownServer = async (options: {
   closeDevWatcher?: (() => void) | null;
   closeDevReload?: () => Promise<void>;
   closeRealtime?: () => void;
+  closeMcp?: () => Promise<void>;
   maintenanceTimer?: ReturnType<typeof setInterval>;
   maintenanceTimers?: ReadonlyArray<ReturnType<typeof setInterval>>;
   backgroundTasks?: ReadonlySet<Promise<unknown>>;
@@ -70,6 +72,7 @@ export const shutdownServer = async (options: {
     closeDevWatcher,
     closeDevReload = closeDevReloadSubscribers,
     closeRealtime,
+    closeMcp,
     maintenanceTimer,
     maintenanceTimers = [],
     backgroundTasks = new Set(),
@@ -93,6 +96,11 @@ export const shutdownServer = async (options: {
       closeRealtime?.();
     } catch {
       // Ignore realtime shutdown failures while closing the server.
+    }
+    try {
+      await closeMcp?.();
+    } catch {
+      // Ignore MCP transport shutdown failures while closing the server.
     }
     await closeDevReload();
     await Promise.all([Promise.resolve(server.stop()), ...backgroundTasks]);
@@ -173,6 +181,7 @@ export const startServer = async () => {
     runtime,
     (req) => serverRef.current?.requestIP(req)?.address,
   );
+  const mcpHandler = createMcpRequestHandler(runtime, handler);
   const port = Number(process.env.PORT) || DEFAULT_PORT;
   const isDev =
     process.argv.includes("--dev") || process.env.NODE_ENV === "development";
@@ -250,8 +259,12 @@ export const startServer = async () => {
     hostname,
     port,
     fetch: (req, websocketServer) => {
-      if (new URL(req.url).pathname === REALTIME_PATH) {
+      const pathname = new URL(req.url).pathname;
+      if (pathname === REALTIME_PATH) {
         return realtime.upgrade(req, websocketServer);
+      }
+      if (pathname === MCP_PATH) {
+        return mcpHandler.fetch(req);
       }
       return handler(req);
     },
@@ -308,6 +321,7 @@ export const startServer = async () => {
       runtime,
       closeDevWatcher,
       closeRealtime: () => realtime.closeSockets(),
+      closeMcp: mcpHandler.close,
       maintenanceTimers: [maintenanceTimer, storageScanTimer],
       backgroundTasks,
     });

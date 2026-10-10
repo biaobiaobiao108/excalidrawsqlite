@@ -69,6 +69,7 @@
 
 - 通过环境变量 `AUTH_PASSWORD` 开启密码保护。
 - 服务端签发安全 `HttpOnly` 会话 Cookie，会话记录持久化于 SQLite，浏览器端不存放明文凭证。
+- 设置 `MCP_TOKEN` 后可通过 MCP Streamable HTTP 接入 Agent，列出/读取/新建画板，并添加或移除 Excalidraw 图元。
 - 服务端注入严格的 **Content Security Policy (CSP)**，禁止 `unsafe-inline` 和 `unsafe-eval` 脚本执行。
 
 ### 7. 📦 完整备份与一键归档
@@ -196,6 +197,7 @@ AUTH_PASSWORD=your-password bun run dev
 | 环境变量 | 默认值 | 必填项 | 说明 |
 | :-- | :-- | :-: | :-- |
 | `AUTH_PASSWORD` | _无_ | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。 |
+| `MCP_TOKEN` | _无_ | 否 | 设置后启用 `POST /mcp` MCP 服务；客户端使用 `Authorization: Bearer <MCP_TOKEN>`。未设置时 MCP 端点关闭。 |
 | `ALLOW_ANONYMOUS` | `false` | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。 |
 | `TRUST_PROXY` | `false` | 否 | 仅在应用端口被可信反向代理隔离保护时设为 `true`，用于识别 HTTPS 并下发 Secure Cookie。代理需覆盖 `X-Forwarded-For` 为实际客户端 IP，且应用端口不得允许不可信客户端直连；直连部署应保持 `false`，以防伪造转发头绕过登录限流。 |
 | `PORT` | `8080` | 否 | 服务端监听端口。 |
@@ -210,11 +212,49 @@ AUTH_PASSWORD=your-password bun run dev
 
 ---
 
+## 🤖 MCP：让 Agent 读取和绘制画板
+
+MCP 使用标准 Streamable HTTP 传输，端点为 `http://你的服务地址:8080/mcp`。设置高强度随机令牌后重启服务：
+
+```bash
+MCP_TOKEN=replace-with-a-long-random-secret bun run dev
+```
+
+Windows PowerShell：
+
+```powershell
+$env:MCP_TOKEN = "replace-with-a-long-random-secret"
+bun run dev
+```
+
+在支持远程 HTTP MCP 的 Agent 客户端中添加服务：
+
+```json
+{
+  "mcpServers": {
+    "excalidrawsqlite": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer replace-with-a-long-random-secret"
+      }
+    }
+  }
+}
+```
+
+提供的工具包括 `list_boards`、`get_board`、`create_board`、`add_elements` 和 `remove_elements`。绘制工具接受矩形、椭圆、菱形、文字、直线和箭头等结构化描述；Agent 不需要自行拼装 Excalidraw 的内部图元字段。画板写入沿用项目现有的校验、修订号冲突保护和实时通知，已打开且没有未保存本地修改的画板会自动刷新；检测到本地并发修改时会返回修订冲突，避免覆盖用户的编辑。
+
+MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提交到仓库或暴露在浏览器端代码中。
+
+---
+
 ## 📂 项目结构概览
 
 ```text
 ├── server/
 │   ├── server.ts           # Bun 服务启动入口与优雅退出处理
+│   ├── mcp.ts              # MCP Streamable HTTP 工具与认证入口
 │   ├── routes.ts           # 纯原生 API 路由与静态资源/SPA 分发
 │   ├── dev-server.ts       # 开发态源码增量监听与热重载编译调度
 │   ├── dev-reload.ts       # 基于 Web Streams 的原生 SSE 广播通道

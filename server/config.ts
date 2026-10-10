@@ -70,6 +70,7 @@ export const createServerConfig = (
 
   return {
     authPassword,
+    mcpToken: env.MCP_TOKEN?.trim() || "",
     allowAnonymous,
     nodeEnv,
     trustProxy: parseBooleanEnv(env.TRUST_PROXY),
