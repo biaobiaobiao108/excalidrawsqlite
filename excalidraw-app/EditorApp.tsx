@@ -216,22 +216,6 @@ const getCloudFileIds = (elements: readonly any[]) => {
   return [...fileIds];
 };
 
-const getCloudSceneContentSignature = (
-  name: string,
-  elements: readonly any[],
-  appState: Pick<AppState, "viewBackgroundColor" | "gridSize">,
-) =>
-  JSON.stringify({
-    name,
-    elements: elements.map((element) => [
-      element.id,
-      element.version,
-      element.versionNonce,
-      element.isDeleted,
-    ]),
-    appState,
-  });
-
 const waitForCloudFiles = async (
   fileIds: readonly FileId[],
   files: BinaryFiles,
@@ -334,7 +318,6 @@ const ExcalidrawWrapper = (props: {
   const cloudSceneLoadingRef = useRef<{
     loadId: number;
     sceneId: string;
-    contentSignature: string;
     edited: boolean;
   } | null>(null);
   const cloudBootstrapPromiseRef = useRef<Promise<void> | null>(null);
@@ -644,18 +627,9 @@ const ExcalidrawWrapper = (props: {
         recoveredSnapshot?.baseRevision ?? cloudData.revision,
       );
       setActiveCloudScene(sceneId);
-      const initialContentSignature = getCloudSceneContentSignature(
-        cloudData.name,
-        elements.filter((element: any) => element?.isDeleted !== true),
-        {
-          viewBackgroundColor: restoredAppState.viewBackgroundColor,
-          gridSize: restoredAppState.gridSize,
-        },
-      );
       cloudSceneLoadingRef.current = {
         loadId,
         sceneId,
-        contentSignature: initialContentSignature,
         edited: false,
       };
       let editedDuringLoad = false;
@@ -733,6 +707,7 @@ const ExcalidrawWrapper = (props: {
           },
           files: currentFiles,
         },
+        editedDuringLoad,
       );
       cloudPersistenceSignatureRef.current = baselineSignature;
       cloudPersistenceDirtyRef.current = false;
@@ -812,9 +787,16 @@ const ExcalidrawWrapper = (props: {
         persistedSnapshot.files,
         fileIds,
       );
-      cloudSaveQueue.enqueue(persistedSnapshot);
+      // Explicit save/navigation also flushes recovered or queued edits, but
+      // opening and leaving an unchanged board must not increment its revision.
+      if (signature !== cloudPersistenceSignatureRef.current) {
+        cloudSaveQueue.enqueue(persistedSnapshot);
+      }
       const status = await cloudSaveQueue.flush(persistedSnapshot.sceneId);
-      if (status === "saved") {
+      if (
+        status === "saved" ||
+        (status === "idle" && !cloudSaveQueue.hasPending(persistedSnapshot.sceneId))
+      ) {
         cloudPersistenceSignatureRef.current = signature;
         cloudPersistenceDirtyRef.current = false;
         await pendingThumbnail;
@@ -1302,6 +1284,11 @@ const ExcalidrawWrapper = (props: {
   const onIncrement: ExcalidrawProps["onIncrement"] = useCallback((event) => {
     if (event.type === "durable") {
       cloudPersistenceDirtyRef.current = true;
+      // Hydration uses CaptureUpdateAction.NEVER (ephemeral). Only a durable
+      // local edit should cause the loaded remote scene to be saved again.
+      if (cloudSceneLoadingRef.current) {
+        cloudSceneLoadingRef.current.edited = true;
+      }
     }
   }, []);
 
@@ -1348,23 +1335,6 @@ const ExcalidrawWrapper = (props: {
     }
 
     const activeSceneId = currentSceneIdRef.current;
-    if (activeSceneId && isApplyingCloudSceneRef.current) {
-      const loadingScene = cloudSceneLoadingRef.current;
-      if (loadingScene?.sceneId === activeSceneId) {
-        const contentSignature = getCloudSceneContentSignature(
-          appState.name || "未命名白板",
-          elements.filter((element: any) => element?.isDeleted !== true),
-          {
-            viewBackgroundColor: appState.viewBackgroundColor,
-            gridSize: appState.gridSize,
-          },
-        );
-        if (contentSignature !== loadingScene.contentSignature) {
-          loadingScene.edited = true;
-          cloudPersistenceDirtyRef.current = true;
-        }
-      }
-    }
     if (
       activeSceneId &&
       !isApplyingCloudSceneRef.current &&

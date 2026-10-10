@@ -81,8 +81,9 @@ export const getCloudPersistenceSignature = (
 export const getCloudSceneLoadSignatures = (
   remoteScene: CloudScenePersistenceSignatureInput,
   currentScene: CloudScenePersistenceSignatureInput,
+  editedDuringLoad = true,
 ) => {
-  const baselineSignature = getCloudPersistenceSignature(
+  const remoteSignature = getCloudPersistenceSignature(
     remoteScene.name,
     remoteScene.elements,
     remoteScene.appState,
@@ -94,6 +95,12 @@ export const getCloudSceneLoadSignatures = (
     currentScene.appState,
     currentScene.files,
   );
+  // Restore/attachment hydration can normalize the scene without a user edit.
+  // Adopt the hydrated scene as the baseline instead of writing those changes
+  // back and invalidating the revision held by an MCP client.
+  const baselineSignature = editedDuringLoad
+    ? remoteSignature
+    : currentSignature;
   return {
     baselineSignature,
     currentSignature,

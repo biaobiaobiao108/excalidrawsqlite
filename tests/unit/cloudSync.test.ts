@@ -42,6 +42,26 @@ const createPersistence = () => {
 };
 
 describe("cloud save queue", () => {
+  it("flushes an unchanged opened board without issuing a scene write", async () => {
+    const { persistence } = createPersistence();
+    let writes = 0;
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async (id) => {
+        writes++;
+        return { success: true, id, updated_at: 1, revision: 2 };
+      },
+    });
+    await queue.ready();
+    queue.setRevision("scene", 5);
+    expect(await queue.flush("scene")).toBe("idle");
+    expect(writes).toBe(0);
+    expect(queue.getRevision("scene")).toBe(5);
+    expect(queue.hasPending("scene")).toBe(false);
+    queue.dispose();
+  });
+
   it("saves edits after StrictMode replays queue setup and cleanup", async () => {
     const { persistence } = createPersistence();
     const names: string[] = [];
@@ -200,6 +220,33 @@ describe("cloud save queue", () => {
     expect(signatures.baselineSignature).not.toBe(
       signatures.currentSignature,
     );
+  });
+
+  it("adopts restore normalization without saving but preserves load-time user edits", () => {
+    const remoteScene = {
+      name: "MCP board",
+      elements: [{
+        id: "text", type: "text", text: "label", width: 80,
+        version: 1, versionNonce: 11, isDeleted: false,
+      }],
+      appState: { viewBackgroundColor: "#ffffff", gridSize: 20 },
+      files: {},
+    };
+    const hydratedScene = {
+      ...remoteScene,
+      elements: [{ ...remoteScene.elements[0], width: 85, version: 2, versionNonce: 22 }],
+    };
+    const hydration = getCloudSceneLoadSignatures(remoteScene, hydratedScene, false);
+    expect(hydration.hasChanges).toBe(false);
+    expect(hydration.baselineSignature).toBe(hydration.currentSignature);
+
+    const editedScene = {
+      ...hydratedScene,
+      elements: [{ ...hydratedScene.elements[0], text: "user edit", version: 3, versionNonce: 33 }],
+    };
+    expect(getCloudSceneLoadSignatures(remoteScene, editedScene, true).hasChanges).toBe(true);
+    // A subsequent local edit must also differ from the adopted baseline.
+    expect(getCloudSceneLoadSignatures(hydratedScene, editedScene).hasChanges).toBe(true);
   });
 
   it("keeps the latest edit when an in-flight save requires authentication", async () => {
