@@ -41,6 +41,7 @@ import {
   isAllowedOrigin,
   jsonResponse,
   readJson,
+  releaseJsonBodyMemoryBudget,
   response,
 } from "./http";
 import {
@@ -500,7 +501,7 @@ export const createRequestHandler = (
         "Access-Control-Allow-Methods":
           "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers":
-          "Content-Type, Accept, X-Thumbnail-Version",
+          "Content-Type, Accept, X-Thumbnail-Version, If-None-Match",
         "Access-Control-Max-Age": "600",
       });
       const origin = req.headers.get("origin");
@@ -845,7 +846,7 @@ export const createRequestHandler = (
             }
             throw error;
           }
-        });
+        }, req.signal);
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
@@ -1400,7 +1401,7 @@ export const createRequestHandler = (
         await withStorageMutationLock(runtime, async () => {
           await assertReferencedFilesExist(runtime, fileIds);
           transaction.immediate();
-        });
+        }, req.signal);
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
@@ -1612,6 +1613,8 @@ export const createRequestHandler = (
       );
     } catch (error) {
       return errorResponse(runtime, req, error);
+    } finally {
+      releaseJsonBodyMemoryBudget(req);
     }
   };
 

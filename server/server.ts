@@ -42,6 +42,11 @@ export {
 export { createRequestHandler } from "./routes";
 export type { RequestAddressResolver, ServerConfig, ServerRuntime } from "./types";
 
+export const resolveServerHostname = (
+  isDev: boolean,
+  configuredHost = process.env.HOST,
+) => configuredHost || (isDev ? "127.0.0.1" : "0.0.0.0");
+
 type StoppableServer = {
   stop: (closeActiveConnections?: boolean) => Promise<void> | void;
 };
@@ -169,9 +174,9 @@ export const startServer = async () => {
     (req) => serverRef.current?.requestIP(req)?.address,
   );
   const port = Number(process.env.PORT) || DEFAULT_PORT;
-  const hostname = process.env.HOST || "0.0.0.0";
   const isDev =
     process.argv.includes("--dev") || process.env.NODE_ENV === "development";
+  const hostname = resolveServerHostname(isDev);
 
   let closeDevWatcher: (() => void) | null = null;
   if (isDev) {

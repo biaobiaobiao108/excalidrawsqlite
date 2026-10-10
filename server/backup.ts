@@ -81,6 +81,62 @@ const tarEntrySize = (name: string, size: number) => {
   );
 };
 
+type BackupFileRow = {
+  id: string;
+  storage_path: string | null;
+  mime_type: string;
+  byte_size: number;
+  sha256: string;
+  created_at: number;
+  updated_at: number;
+};
+
+const BACKUP_FILES_QUERY = `SELECT id, storage_path, mime_type, byte_size, sha256,
+  created_at, updated_at FROM files ORDER BY id`;
+
+const serializeManifestFile = (row: BackupFileRow) => {
+  const { id, storage_path, ...metadata } = row;
+  return JSON.stringify({
+    id,
+    path: storage_path ? `files/${id}` : null,
+    ...metadata,
+  });
+};
+
+const manifestPrefix = (createdAt: string) =>
+  `{"format":"excalidraw-full-backup","version":1,"createdAt":${JSON.stringify(createdAt)},"database":"excalidraw.db","filesDirectory":"files","files":[`;
+
+const manifestSuffix = "]}";
+
+const writeTarManifest = async (
+  writer: ReturnType<ReturnType<typeof Bun.file>["writer"]>,
+  query: ReturnType<Database["query"]>,
+  prefix: string,
+  expectedSize: number,
+) => {
+  await writer.write(createTarHeader("manifest.json", expectedSize, "file"));
+  let written = 0;
+  const writeText = async (value: string) => {
+    const bytes = textEncoder.encode(value);
+    written += bytes.byteLength;
+    if (written > expectedSize) {
+      throw new Error("备份清单大小在写入期间发生变化");
+    }
+    await writer.write(bytes);
+  };
+  await writeText(prefix);
+  let first = true;
+  for (const row of query.iterate() as Iterable<BackupFileRow>) {
+    await writeText(`${first ? "" : ","}${serializeManifestFile(row)}`);
+    first = false;
+  }
+  await writeText(manifestSuffix);
+  if (written !== expectedSize) {
+    throw new Error("备份清单大小在写入期间发生变化");
+  }
+  await writePadding(writer, written);
+};
+
 const ensureBackupWithinLimit = (size: number, maxBytes: number) => {
   if (!Number.isSafeInteger(size) || size > maxBytes) {
     throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
@@ -124,6 +180,10 @@ const writeTarFile = async (
         break;
       }
       written += result.value.byteLength;
+      if (written > size) {
+        await reader.cancel();
+        throw new Error(`备份文件大小在读取期间发生变化：${name}`);
+      }
       await writer.write(result.value);
     }
   } finally {
@@ -133,16 +193,6 @@ const writeTarFile = async (
     throw new Error(`备份文件大小在读取期间发生变化：${name}`);
   }
   await writePadding(writer, size);
-};
-
-const writeTarBytes = async (
-  writer: ReturnType<ReturnType<typeof Bun.file>["writer"]>,
-  name: string,
-  bytes: Uint8Array,
-) => {
-  await writer.write(createTarHeader(name, bytes.byteLength, "file"));
-  await writer.write(bytes);
-  await writePadding(writer, bytes.byteLength);
 };
 
 export const acquireBackupLock = (runtime: ServerRuntime) => {
@@ -239,54 +289,53 @@ export const createFullBackup = async (
 ) =>
   withStorageMutationLock(runtime, async () => {
     const snapshot = await createDatabaseSnapshot(runtime, timestamp);
+    let snapshotDb: Database | undefined;
     try {
-      const snapshotDb = new Database(snapshot.tempBackupFile, {
+      snapshotDb = new Database(snapshot.tempBackupFile, {
         readonly: true,
       });
-      let fileRows: Array<{
-        id: string;
-        storage_path: string | null;
-        mime_type: string;
-        byte_size: number;
-        sha256: string;
-        created_at: number;
-        updated_at: number;
-      }>;
-      try {
-        fileRows = snapshotDb
-          .query(
-            `SELECT id, storage_path, mime_type, byte_size, sha256, created_at, updated_at
-             FROM files ORDER BY id`,
-          )
-          .all() as typeof fileRows;
-      } finally {
-        snapshotDb.close();
+      const filesQuery = snapshotDb.query(BACKUP_FILES_QUERY);
+      const createdAt = new Date().toISOString();
+      const prefix = manifestPrefix(createdAt);
+      const databaseFile = Bun.file(snapshot.tempBackupFile);
+      const baseArchiveBytes =
+        TAR_BLOCK_SIZE * 2 +
+        tarEntrySize("excalidraw.db", databaseFile.size);
+      let manifestBytes =
+        textEncoder.encode(prefix).byteLength +
+        textEncoder.encode(manifestSuffix).byteLength;
+      let rowCount = 0;
+
+      // Count and validate rows one at a time. The manifest remains bounded by
+      // MAX_BACKUP_BYTES without materializing either the row set or JSON text.
+      for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
+        const serializedBytes = textEncoder.encode(
+          serializeManifestFile(row),
+        ).byteLength;
+        manifestBytes += serializedBytes + (rowCount > 0 ? 1 : 0);
+        rowCount += 1;
+        ensureBackupWithinLimit(
+          baseArchiveBytes + tarEntrySize("manifest.json", manifestBytes),
+          runtime.config.maxBackupBytes,
+        );
       }
 
-      const manifest = JSON.stringify(
-        {
-          format: "excalidraw-full-backup",
-          version: 1,
-          createdAt: new Date().toISOString(),
-          database: "excalidraw.db",
-          filesDirectory: "files",
-          files: fileRows.map(({ id, storage_path, ...metadata }) => ({
-            id,
-            path: storage_path ? `files/${id}` : null,
-            ...metadata,
-          })),
-        },
-        null,
-        2,
-      );
-      const databaseFile = Bun.file(snapshot.tempBackupFile);
-      const manifestBytes = new TextEncoder().encode(manifest);
-      // TAR has two trailing zero blocks. Count every header and payload pad
-      // before writing so the configured limit bounds the actual archive.
-      let archiveBytes = TAR_BLOCK_SIZE * 2;
-      archiveBytes += tarEntrySize("excalidraw.db", databaseFile.size);
-      archiveBytes += tarEntrySize("manifest.json", manifestBytes.byteLength);
+      let archiveBytes =
+        baseArchiveBytes + tarEntrySize("manifest.json", manifestBytes);
       ensureBackupWithinLimit(archiveBytes, runtime.config.maxBackupBytes);
+      for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
+        if (!row.storage_path) {
+          continue;
+        }
+        const filePath = getFilePath(runtime, row.id);
+        if (!(await fileExists(filePath))) {
+          throw new Error(`附件文件缺失：${row.id}`);
+        }
+        archiveBytes += tarEntrySize(`files/${row.id}`, Bun.file(filePath).size);
+        ensureBackupWithinLimit(archiveBytes, runtime.config.maxBackupBytes);
+      }
+
+      const manifestSize = manifestBytes;
 
       const archivePath = path.join(
         path.dirname(runtime.dbPath),
@@ -309,9 +358,9 @@ export const createFullBackup = async (
           snapshot.tempBackupFile,
           databaseFile.size,
         );
-        await writeTarBytes(writer, "manifest.json", manifestBytes);
+        await writeTarManifest(writer, filesQuery, prefix, manifestSize);
 
-        for (const row of fileRows) {
+        for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
           if (!row.storage_path) {
             continue;
           }
@@ -344,6 +393,7 @@ export const createFullBackup = async (
         cleanup: () => removeBackupArtifact(runtime, archivePath),
       };
     } finally {
+      snapshotDb?.close();
       await snapshot.cleanup().catch(() => {});
     }
   });

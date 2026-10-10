@@ -15,27 +15,92 @@ import { isRecord, validateId } from "./validation";
 import type { ServerRuntime } from "./types";
 
 const thumbnailWriteLocks = new Map<string, Promise<void>>();
-const storageMutationLocks = new WeakMap<ServerRuntime, Promise<void>>();
+type StorageMutationWaiter = {
+  task: () => Promise<unknown>;
+  resolve: (value: unknown) => void;
+  reject: (error: unknown) => void;
+  signal?: AbortSignal;
+  abort?: () => void;
+  started: boolean;
+};
+
+type StorageMutationQueue = {
+  active: boolean;
+  waiters: StorageMutationWaiter[];
+};
+
+const storageMutationLocks = new WeakMap<ServerRuntime, StorageMutationQueue>();
+
+const startNextStorageMutation = (
+  runtime: ServerRuntime,
+  queue: StorageMutationQueue,
+) => {
+  if (queue.active) {
+    return;
+  }
+  const waiter = queue.waiters.shift();
+  if (!waiter) {
+    if (storageMutationLocks.get(runtime) === queue) {
+      storageMutationLocks.delete(runtime);
+    }
+    return;
+  }
+
+  queue.active = true;
+  waiter.started = true;
+  if (waiter.abort && waiter.signal) {
+    waiter.signal.removeEventListener("abort", waiter.abort);
+  }
+  void Promise.resolve()
+    .then(waiter.task)
+    .then(waiter.resolve, waiter.reject)
+    .finally(() => {
+      queue.active = false;
+      startNextStorageMutation(runtime, queue);
+    });
+};
 
 export const withStorageMutationLock = async <T>(
   runtime: ServerRuntime,
   task: () => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> => {
-  const previous = storageMutationLocks.get(runtime) || Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  storageMutationLocks.set(runtime, current);
-  await previous;
-  try {
-    return await task();
-  } finally {
-    release();
-    if (storageMutationLocks.get(runtime) === current) {
-      storageMutationLocks.delete(runtime);
-    }
+  if (signal?.aborted) {
+    throw new DOMException("The request was aborted", "AbortError");
   }
+  let queue = storageMutationLocks.get(runtime);
+  if (!queue) {
+    queue = { active: false, waiters: [] };
+    storageMutationLocks.set(runtime, queue);
+  }
+
+  return await new Promise<T>((resolve, reject) => {
+    const waiter: StorageMutationWaiter = {
+      task,
+      resolve: (value) => resolve(value as T),
+      reject,
+      signal,
+      started: false,
+    };
+    if (signal) {
+      waiter.abort = () => {
+        if (waiter.started) {
+          return;
+        }
+        const index = queue!.waiters.indexOf(waiter);
+        if (index < 0) {
+          return;
+        }
+        queue!.waiters.splice(index, 1);
+        signal.removeEventListener("abort", waiter.abort!);
+        reject(new DOMException("The request was aborted", "AbortError"));
+        startNextStorageMutation(runtime, queue!);
+      };
+      signal.addEventListener("abort", waiter.abort, { once: true });
+    }
+    queue!.waiters.push(waiter);
+    startNextStorageMutation(runtime, queue!);
+  });
 };
 
 export const withThumbnailWriteLock = async <T>(
@@ -119,7 +184,10 @@ const finalizeAtomicFileWrite = async (
     }
   } catch (error) {
     await fs.promises.rm(tempPath, { force: true });
-    await fs.promises.rm(backupPath, { force: true });
+    // If replacement and rollback both failed, keep the only surviving copy.
+    if (!(await fileExists(backupPath)) || (await fileExists(filePath))) {
+      await fs.promises.rm(backupPath, { force: true });
+    }
     throw error;
   }
 
@@ -539,7 +607,59 @@ export const cleanupUntrackedFiles = async (runtime: ServerRuntime) => {
   }
 };
 
+const recoverInterruptedFileReplacements = async (runtime: ServerRuntime) => {
+  const entries = await fs.promises.readdir(runtime.filesDir, {
+    withFileTypes: true,
+  });
+  const backups = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const match = /^([A-Za-z0-9_-]{1,128})\.[a-f0-9]{16}\.bak$/i.exec(
+        entry.name,
+      );
+      return match ? { id: match[1], name: entry.name } : null;
+    })
+    .filter((entry): entry is { id: string; name: string } => entry !== null);
+  const backupsWithTime = await Promise.all(
+    backups.map(async (backup) => ({
+      ...backup,
+      mtimeMs:
+        (await fs.promises
+          .stat(path.join(runtime.filesDir, backup.name))
+          .catch(() => null))?.mtimeMs || 0,
+    })),
+  );
+  backupsWithTime.sort((left, right) => right.mtimeMs - left.mtimeMs);
+
+  for (const { id, name } of backupsWithTime) {
+    const filePath = getFilePath(runtime, id);
+    if (await fileExists(filePath)) {
+      continue;
+    }
+    const backupPath = path.join(runtime.filesDir, name);
+    try {
+      await fs.promises.rename(backupPath, filePath);
+      console.info("[Files] 恢复中断替换的附件", { filePath });
+    } catch (error: any) {
+      if (error?.code === "ENOENT" && (await fileExists(filePath))) {
+        continue;
+      }
+      // Keep an unrecoverable backup in place for a later retry or manual
+      // recovery. The stale-artifact pass below must not delete it.
+      console.warn("[Files] 附件备份恢复失败，保留备份", {
+        backupPath,
+        error,
+      });
+    }
+  }
+};
+
 export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
+  // Serialize recovery with file uploads so cleanup cannot observe the brief
+  // Windows replace window between removing the destination and renaming it.
+  await withStorageMutationLock(runtime, async () => {
+    await recoverInterruptedFileReplacements(runtime);
+  });
   const cutoff = Date.now() - STALE_FILE_ARTIFACT_MS;
   const directories = [
     {
@@ -571,6 +691,17 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
       }
       const stat = await fs.promises.stat(filePath).catch(() => null);
       if (stat && (!staleOnly || stat.mtimeMs < cutoff)) {
+        if (/\.bak$/i.test(entry.name)) {
+          const backupMatch = /^([A-Za-z0-9_-]{1,128})\.[a-f0-9]{16}\.bak$/i.exec(
+            entry.name,
+          );
+          if (
+            backupMatch &&
+            !(await fileExists(getFilePath(runtime, backupMatch[1])))
+          ) {
+            continue;
+          }
+        }
         await fs.promises.rm(filePath, { force: true });
         console.info("[Files] 清理过期临时附件", { filePath });
       }

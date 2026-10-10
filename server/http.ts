@@ -7,6 +7,22 @@ type BodyMemoryBudgetLike = {
   release: (bytes: number) => void;
 };
 
+const jsonBodyMemoryLeases = new WeakMap<
+  Request,
+  Array<{ budget: BodyMemoryBudgetLike; bytes: number }>
+>();
+
+export const releaseJsonBodyMemoryBudget = (req: Request) => {
+  const leases = jsonBodyMemoryLeases.get(req);
+  if (!leases) {
+    return;
+  }
+  jsonBodyMemoryLeases.delete(req);
+  for (const { budget, bytes } of leases) {
+    budget.release(bytes);
+  }
+};
+
 export const getCookie = (req: Request, name: string) => {
   const cookies = req.headers.get("cookie") || "";
   for (const part of cookies.split(";")) {
@@ -97,7 +113,7 @@ export const securityHeaders = (runtime: ServerRuntime, req: Request) => {
   if (origin && runtime.config.corsOrigins.has(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
     headers.set("Access-Control-Allow-Credentials", "true");
-    headers.set("Access-Control-Expose-Headers", "X-File-Created-At");
+    headers.set("Access-Control-Expose-Headers", "ETag, X-File-Created-At");
     headers.set("Vary", "Origin");
   }
   return headers;
@@ -145,11 +161,15 @@ export const errorResponse = (
   req: Request,
   error: unknown,
 ) => {
+  const wasAborted =
+    error instanceof DOMException && error.name === "AbortError";
   const normalized =
     error instanceof HttpError
       ? error
+      : wasAborted
+        ? new HttpError(499, "REQUEST_ABORTED", "请求已取消")
       : new HttpError(500, "INTERNAL_ERROR", "服务器内部错误");
-  if (!(error instanceof HttpError)) {
+  if (!(error instanceof HttpError) && !wasAborted) {
     console.error("[API] request failed", error);
   }
   return jsonResponse(
@@ -299,14 +319,24 @@ export const readJson = async (
   const reservedBytes = bodyMemoryBudget
     ? await bodyMemoryBudget.acquire(maxBytes, req.signal)
     : 0;
+  let retained = false;
   try {
     const text = await readBodyText(req, maxBytes);
     try {
-      return JSON.parse(text) as unknown;
+      const result = JSON.parse(text) as unknown;
+      if (bodyMemoryBudget && reservedBytes > 0) {
+        const leases = jsonBodyMemoryLeases.get(req) || [];
+        leases.push({ budget: bodyMemoryBudget, bytes: reservedBytes });
+        jsonBodyMemoryLeases.set(req, leases);
+        retained = true;
+      }
+      return result;
     } catch {
       throw new HttpError(400, "INVALID_JSON", "无效的请求格式");
     }
   } finally {
-    bodyMemoryBudget?.release(reservedBytes);
+    if (!retained) {
+      bodyMemoryBudget?.release(reservedBytes);
+    }
   }
 };

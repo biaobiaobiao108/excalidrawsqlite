@@ -10,9 +10,11 @@ import {
   createRuntime,
   createServerConfig,
   cleanupStaleFileArtifacts,
+  resolveServerHostname,
   type ServerRuntime,
 } from "../../server/server";
-import { readJson } from "../../server/http";
+import { readJson, releaseJsonBodyMemoryBudget } from "../../server/http";
+import { withStorageMutationLock } from "../../server/files";
 import { BodyMemoryBudget } from "../../server/types";
 import { cleanupExpiredTrashScenes } from "../../server/scenes";
 
@@ -95,13 +97,54 @@ describe("cloud persistence server", () => {
         headers: {
           Origin: "https://whiteboard.example",
           "Access-Control-Request-Method": "GET",
-          "Access-Control-Request-Headers": "x-thumbnail-version",
+          "Access-Control-Request-Headers":
+            "x-thumbnail-version, if-none-match",
         },
       }),
     );
     expect(response.status).toBe(204);
     expect(response.headers.get("access-control-allow-headers")).toContain(
       "X-Thumbnail-Version",
+    );
+    expect(response.headers.get("access-control-allow-headers")).toContain(
+      "If-None-Match",
+    );
+  });
+
+  it("exposes ETag on allowed cross-origin responses", async () => {
+    const { handler } = createTestRuntime({
+      CORS_ORIGIN: "https://whiteboard.example",
+    });
+    const cookie = await authenticate(handler);
+    const created = await jsonRequest(
+      handler,
+      "/api/scenes",
+      { id: "scene_cors_etag", name: "跨域缓存", elements: [] },
+      { headers: { Cookie: cookie } },
+    );
+    expect(created.status).toBe(201);
+
+    const headers = {
+      Cookie: cookie,
+      Origin: "https://whiteboard.example",
+    };
+    const scene = await request(handler, "/api/scenes/scene_cors_etag", {
+      headers,
+    });
+    const etag = scene.headers.get("etag");
+    expect(etag).toBeTruthy();
+    expect(scene.headers.get("access-control-expose-headers")).toContain(
+      "ETag",
+    );
+
+    const notModified = await request(
+      handler,
+      "/api/scenes/scene_cors_etag",
+      { headers: { ...headers, "If-None-Match": etag! } },
+    );
+    expect(notModified.status).toBe(304);
+    expect(notModified.headers.get("access-control-expose-headers")).toContain(
+      "ETag",
     );
   });
 
@@ -132,6 +175,12 @@ describe("cloud persistence server", () => {
       createServerConfig({ NODE_ENV: "production", ALLOW_ANONYMOUS: "true" })
         .allowAnonymous,
     ).toBe(true);
+  });
+
+  it("binds development servers locally and preserves explicit host overrides", () => {
+    expect(resolveServerHostname(true, "")).toBe("127.0.0.1");
+    expect(resolveServerHostname(false, "")).toBe("0.0.0.0");
+    expect(resolveServerHostname(true, "192.0.2.10")).toBe("192.0.2.10");
   });
 
   it("initializes the current SQLite schema without versioned migrations", () => {
@@ -335,8 +384,57 @@ describe("cloud persistence server", () => {
       ok: true,
       name: "白板",
     });
-    expect(budget.getStats().currentBytes).toBe(0);
+    expect(budget.getStats().currentBytes).toBe(128);
     expect(budget.getStats().peakBytes).toBe(128);
+    releaseJsonBodyMemoryBudget(req);
+    expect(budget.getStats().currentBytes).toBe(0);
+  });
+
+  it("holds parsed JSON memory while a write waits and releases it on cancel", async () => {
+    const { handler, runtime } = createTestRuntime({
+      MAX_SCENE_BODY_BYTES: "1024",
+      MAX_IN_FLIGHT_BODY_BYTES: "1024",
+    });
+    const cookie = await authenticate(handler);
+    let finishLock!: () => void;
+    let notifyLockStarted!: () => void;
+    const lockStarted = new Promise<void>((resolve) => {
+      notifyLockStarted = resolve;
+    });
+    const heldLock = new Promise<void>((resolve) => {
+      finishLock = resolve;
+    });
+    const lock = withStorageMutationLock(runtime, async () => {
+      notifyLockStarted();
+      await heldLock;
+    });
+    await lockStarted;
+
+    const controller = new AbortController();
+    const pendingRequest = request(handler, "/api/scenes", {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "等待取消", elements: [] }),
+      signal: controller.signal,
+    });
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      if (runtime.bodyMemoryBudget.getStats().currentBytes > 0) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(runtime.bodyMemoryBudget.getStats().currentBytes).toBe(1024);
+
+    controller.abort();
+    const canceled = await pendingRequest;
+    expect(canceled.status).toBe(499);
+    expect(runtime.bodyMemoryBudget.getStats().currentBytes).toBe(0);
+
+    finishLock();
+    await lock;
   });
 
   it("rejects unknown-length JSON once its byte limit is exceeded", async () => {
@@ -1477,6 +1575,25 @@ describe("cloud persistence server", () => {
     expect(await fs.readFile(filePath)).toEqual(Buffer.from(original));
   });
 
+  it("recovers a stale Windows replacement backup before artifact cleanup", async () => {
+    const { runtime } = createTestRuntime();
+    const id = "file_interrupted_replace";
+    const backupPath = path.join(
+      runtime.filesDir,
+      `${id}.0123456789abcdef.bak`,
+    );
+    const filePath = path.join(runtime.filesDir, id);
+    const original = new Uint8Array([4, 5, 6]);
+    await fs.writeFile(backupPath, original);
+    const staleTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.utimes(backupPath, staleTime, staleTime);
+
+    await cleanupStaleFileArtifacts(runtime);
+
+    expect(await fs.readFile(filePath)).toEqual(Buffer.from(original));
+    expect(await fs.stat(backupPath).catch(() => null)).toBeNull();
+  });
+
   it("does not serve the SPA shell for missing static assets", async () => {
     const { handler, runtime, directory } = createTestRuntime({
       ALLOW_ANONYMOUS: "true",
@@ -1682,7 +1799,7 @@ describe("cloud persistence server", () => {
   });
 
   it("exports a complete backup containing the database, manifest and attachments", async () => {
-    const { handler, runtime } = createTestRuntime();
+    const { handler, runtime, directory } = createTestRuntime();
     const cookie = await authenticate(handler);
     const upload = await request(handler, "/api/files/file_full_backup", {
       method: "PUT",
@@ -1753,6 +1870,10 @@ describe("cloud persistence server", () => {
       headers: { Cookie: cookie },
     });
     expect(tooLargeArchive.status).toBe(413);
+    const leftovers = (await fs.readdir(directory)).filter((name) =>
+      /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)/.test(name),
+    );
+    expect(leftovers).toHaveLength(0);
   });
 
   it("sanitizes isDeleted elements on creation and update to reduce stored size", async () => {
