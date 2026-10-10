@@ -117,6 +117,9 @@ describe("Excalidraw MCP endpoint", () => {
       );
       expect(created.name).toBe("Agent diagram");
       expect(created.revision).toBe(1);
+      expect(created).toHaveProperty("boardId", created.id);
+      expect(created).not.toHaveProperty("thumbnail_file_id");
+      expect(created).not.toHaveProperty("size");
 
       const added = toolResult<{
         boardId: string;
@@ -263,7 +266,9 @@ describe("Excalidraw MCP endpoint", () => {
         name: "get_board", arguments: { boardId: complete.id, view: "full" },
       }));
       expect(changed.name).toBe("已修改");
-      expect(changed.thumbnail_file_id).toBeNull();
+      expect(changed).not.toHaveProperty("thumbnail_file_id");
+      expect(await (await apiHandler(new Request(`http://test.local/api/scenes/${complete.id}`))).json())
+        .toHaveProperty("thumbnail_file_id", null);
       expect(changed.appState.viewBackgroundColor).toBe("#fefefe");
       expect(changed.elements).toHaveLength(601);
       expect(changed.elements.some((element) => element.id === complete.elementIds[1])).toBe(false);
@@ -342,10 +347,63 @@ describe("Excalidraw MCP endpoint", () => {
       }));
       expect(batch.truncated).toBe(true);
       expect(JSON.stringify(batch).length).toBeLessThanOrEqual(10_000);
-      const favorites = toolResult<{ items: Array<{ id: string }> }>(await client.callTool({
+      const favorites = toolResult<{ items: Array<{ id: string; boardId: string }> }>(await client.callTool({
         name: "list_boards", arguments: { view: "favorites", tag: "工作流" },
       }));
       expect(favorites.items.map((scene) => scene.id)).toContain(connected.id);
+
+      const canonicalFavorites = toolResult<{ items: Array<{ id: string; boardId: string }> }>(await client.callTool({
+        name: "list_boards", arguments: { view: "favorite", tag: "工作流" },
+      }));
+      expect(canonicalFavorites.items).toEqual(favorites.items);
+      expect(canonicalFavorites.items[0].boardId).toBe(connected.id);
+      expect(canonicalFavorites.items[0]).not.toHaveProperty("size");
+      const missingFolder = await client.callTool({ name: "list_boards", arguments: { folderId: "missing" } });
+      expect(missingFolder.structuredContent).toMatchObject({ ok: false, error: { code: "FOLDER_NOT_FOUND" } });
+
+      const summaryBatch = toolResult<{ partial: boolean; truncated: boolean; boards: Array<Record<string, unknown>> }>(await client.callTool({
+        name: "get_boards_batch", arguments: { boardIds: [complete.id, "missing", connected.id], view: "summary" },
+      }));
+      expect(summaryBatch).toMatchObject({ partial: true, truncated: false });
+      expect(summaryBatch.boards[1]).toMatchObject({ boardId: "missing", error: { code: "SCENE_NOT_FOUND" } });
+      const allMissing = toolResult<{ partial: boolean; truncated: boolean }>(await client.callTool({
+        name: "get_boards_batch", arguments: { boardIds: ["missing"], view: "summary" },
+      }));
+      expect(allMissing).toMatchObject({ partial: false, truncated: false });
+
+      const input = toolResult<{ elements: Array<Record<string, unknown>>; unsupportedElementIds: string[]; warnings: unknown[] }>(await client.callTool({
+        name: "get_board", arguments: { boardId: connected.id, view: "input" },
+      }));
+      expect(input.elements).toHaveLength(3);
+      expect(input.unsupportedElementIds).toEqual([]);
+      expect(input.warnings).toEqual([]);
+      const edge = input.elements.find((element) => element.id === "connector")!;
+      expect(edge).not.toHaveProperty("angle");
+      expect(edge).not.toHaveProperty("boundElements");
+      const clone = toolResult<{ boardId: string; requestedElementIds: string[]; generatedElementIds: string[]; elementMap: Array<{ inputIndex: number; elementId: string; labelId?: string }> }>(await client.callTool({
+        name: "create_board", arguments: { name: "直接复制可写输出", elements: input.elements },
+      }));
+      expect(clone.requestedElementIds).toEqual(["source", "target", "connector"]);
+      expect(clone.generatedElementIds).toHaveLength(2);
+      expect(clone.elementMap).toEqual([
+        { inputIndex: 0, elementId: "source", labelId: clone.generatedElementIds[0] },
+        { inputIndex: 1, elementId: "target", labelId: clone.generatedElementIds[1] },
+        { inputIndex: 2, elementId: "connector" },
+      ]);
+      const cloneInput = toolResult<{ elements: unknown[] }>(await client.callTool({
+        name: "get_board", arguments: { boardId: clone.boardId, view: "input" },
+      }));
+      expect(cloneInput.elements).toEqual(input.elements);
+      const emptyTarget = toolResult<{ boardId: string }>(await client.callTool({ name: "create_board", arguments: { name: "追加复制" } }));
+      const appended = toolResult<{ requestedElementIds: string[] }>(await client.callTool({
+        name: "add_elements", arguments: { boardId: emptyTarget.boardId, elements: input.elements },
+      }));
+      expect(appended.requestedElementIds).toEqual(clone.requestedElementIds);
+      const readable = toolResult<{ elements: Array<Record<string, unknown>>; pointCoordinateSystem: string }>(await client.callTool({
+        name: "get_board", arguments: { boardId: clone.boardId, elementIds: ["connector"] },
+      }));
+      expect(readable.pointCoordinateSystem).toBe("absolute");
+      expect(readable.elements[0].points).toEqual(edge.points);
     } finally {
       await client.close();
       await mcpHandler.close();
