@@ -71,7 +71,7 @@
         height: auto;
         max-height: 100%;
         overflow: hidden;
-        padding: 1.5rem;
+        padding: 1.5rem 1.5rem 0.75rem;
         background: var(--color-surface-lowest);
       }
 
@@ -173,7 +173,7 @@
         --icon-size: 1rem;
 
         &.command-item-large {
-          height: 2.75rem;
+          height: 2.5rem;
           --icon-size: 1.5rem;
 
           .icon {

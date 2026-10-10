@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import fuzzy from "fuzzy";
-import { useEffect, useRef, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   DEFAULT_SIDEBAR,
@@ -203,6 +203,7 @@ function CommandPaletteInner({
   >(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const commandListRef = useRef<HTMLDivElement>(null);
 
   const stableDeps = useStable({
     uiAppState,
@@ -850,12 +851,30 @@ function CommandPaletteInner({
     libraryCommands,
   ]);
 
+  useLayoutEffect(() => {
+    const commandList = commandListRef.current;
+    const selectedCommand = commandList?.querySelector<HTMLElement>(
+      ".command-item.item-selected",
+    );
+    if (!commandList || !selectedCommand) {
+      return;
+    }
+
+    const listBounds = commandList.getBoundingClientRect();
+    const commandBounds = selectedCommand.getBoundingClientRect();
+    if (commandBounds.top < listBounds.top) {
+      commandList.scrollTop -= listBounds.top - commandBounds.top;
+    } else if (commandBounds.bottom > listBounds.bottom) {
+      commandList.scrollTop += commandBounds.bottom - listBounds.bottom;
+    }
+  }, [commandsByCategory, currentCommand]);
+
   return (
     <Dialog
       onCloseRequest={() => closeCommandPalette()}
       closeOnClickOutside
       title={false}
-      size={600}
+      size={520}
       autofocus
       className="command-palette-dialog"
     >
@@ -883,7 +902,7 @@ function CommandPaletteInner({
         </div>
       )}
 
-      <div className="commands">
+      <div className="commands" ref={commandListRef}>
         {lastUsed && !commandSearch && (
           <div className="command-category">
             <div className="command-category-title">
@@ -982,13 +1001,6 @@ const CommandItem = ({
         "item-disabled": disabled,
         "command-item-large": size === "large",
       })}
-      ref={(ref) => {
-        if (isSelected && !disabled) {
-          ref?.scrollIntoView?.({
-            block: "nearest",
-          });
-        }
-      }}
       onClick={disabled ? noop : onClick}
       onMouseMove={disabled ? noop : onMouseMove}
       title={disabled ? t("commandPalette.itemNotAvailable") : ""}
