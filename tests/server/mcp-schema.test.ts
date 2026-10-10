@@ -1,9 +1,21 @@
 import { describe, expect, it } from "bun:test";
 import * as z from "zod/v4";
-import { drawingElementSchema } from "../../server/mcp-drawing";
+import { colorSchema, drawingElementSchema } from "../../server/mcp-drawing";
 import { compactMcpSchema } from "../../server/mcp-schema";
 
 describe("compact MCP schemas", () => {
+  it("advertises color case support without relying on unrepresentable regular-expression flags", () => {
+    const json = z.toJSONSchema(colorSchema, { io: "input" });
+    const advertised = new RegExp(json.pattern as string);
+    for (const color of ["#ABC", "#ABCF", "#AABBCC", "#AABBCCFF", "TRANSPARENT", "ReD"]) {
+      expect(advertised.test(color)).toBe(true);
+      expect(colorSchema.parse(color)).toBe(color.toLowerCase());
+    }
+    for (const color of ["#GGG", "#ABCDE", "not-a-color"]) {
+      expect(advertised.test(color)).toBe(false);
+      expect(colorSchema.safeParse(color).success).toBe(false);
+    }
+  });
   const schema = z.object({ elements: z.array(drawingElementSchema), expectedRevision: z.number().int().positive() }).strict();
   const wrapped = compactMcpSchema(schema)["~standard"];
   const box = { type: "rectangle", x: 0, y: 0, width: 100, height: 100 };

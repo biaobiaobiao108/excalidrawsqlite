@@ -41,6 +41,7 @@ const idSchema = z.string().min(1).max(128);
 export const colorSchema = z
   .string()
   .trim()
+  .toLowerCase()
   .max(64)
   .regex(COLOR_PATTERN, COLOR_DESCRIPTION);
 const roundness = z
