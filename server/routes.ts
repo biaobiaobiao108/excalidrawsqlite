@@ -1352,7 +1352,25 @@ export const createRequestHandler = (
         }
         const thumbnailId = `thumbnail_${sha256Hex(id)}`;
         const thumbnailVersion = parseThumbnailVersion(req);
+        const revisionParam = url.searchParams.get("revision");
+        const expectedRevision = revisionParam === null
+          ? undefined
+          : requireRevision(Number(revisionParam));
         return await withThumbnailWriteLock(thumbnailId, async () => {
+          if (expectedRevision !== undefined) {
+            const current = stmts.getSceneVersionById.get(id) as {
+              revision: number; thumbnail_file_id: string | null;
+            } | null;
+            if (!current || current.revision !== expectedRevision) {
+              throw new HttpError(409, "REVISION_CONFLICT", "画板内容已更新，请重新生成预览");
+            }
+            // Another tab may have repaired the same board while this upload waited.
+            if (current.thumbnail_file_id) {
+              return jsonResponse(runtime, req, {
+                success: true, id, thumbnail_file_id: current.thumbnail_file_id,
+              });
+            }
+          }
           const currentThumbnail = stmts.getFileUpdatedAt.get(thumbnailId) as
             | { updated_at: number }
             | null;
@@ -1377,10 +1395,14 @@ export const createRequestHandler = (
             undefined,
             thumbnailVersion,
           );
-          runtime.db.run(
-            "UPDATE scenes SET thumbnail_file_id = ? WHERE id = ?",
-            [thumbnailId, id],
+          const linked = runtime.db.run(
+            `UPDATE scenes SET thumbnail_file_id = ? WHERE id = ? AND deleted_at IS NULL
+             AND (? IS NULL OR revision = ?)`,
+            [thumbnailId, id, expectedRevision ?? null, expectedRevision ?? null],
           );
+          if (linked.changes !== 1) {
+            throw new HttpError(409, "REVISION_CONFLICT", "画板内容已更新，请重新生成预览");
+          }
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: id,
@@ -1576,6 +1598,7 @@ export const createRequestHandler = (
         const elementCount = elements.length;
         const contentBytes = Buffer.byteLength(elementsJson, "utf8");
         const contentSha256 = sha256Hex(elementsJson);
+        const contentChanged = existing.elements !== elementsJson || existing.app_state !== appStateJson;
         const isUnchanged =
           existing.name === name &&
           existing.elements === elementsJson &&
@@ -1599,7 +1622,8 @@ export const createRequestHandler = (
             `UPDATE scenes
              SET name = ?, elements = ?, app_state = ?, tags_json = ?,
                  is_favorite = ?, folder_id = ?, updated_at = ?, revision = ?,
-                 element_count = ?, content_bytes = ?, content_sha256 = ?
+                 element_count = ?, content_bytes = ?, content_sha256 = ?,
+                 thumbnail_file_id = CASE WHEN ? THEN NULL ELSE thumbnail_file_id END
              WHERE id = ? AND deleted_at IS NULL AND revision = ?`,
             [
               name,
@@ -1613,6 +1637,7 @@ export const createRequestHandler = (
               elementCount,
               contentBytes,
               contentSha256,
+              contentChanged ? 1 : 0,
               id,
               currentRevision,
             ],

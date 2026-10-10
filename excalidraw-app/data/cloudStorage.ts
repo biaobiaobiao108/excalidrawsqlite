@@ -574,6 +574,7 @@ export async function saveCloudSceneThumbnail(
   id: string,
   blob: Blob | null,
   thumbnailVersion?: number,
+  expectedRevision?: number,
 ): Promise<{
   success: boolean;
   id: string;
@@ -605,7 +606,7 @@ export async function saveCloudSceneThumbnail(
 
   headers["Content-Type"] = blob.type || "image/jpeg";
   const res = await fetchWithTimeout(
-    `/api/scenes/${encodeURIComponent(id)}/thumbnail`,
+    `/api/scenes/${encodeURIComponent(id)}/thumbnail${expectedRevision === undefined ? "" : `?revision=${expectedRevision}`}`,
     {
       method: "PUT",
       headers,

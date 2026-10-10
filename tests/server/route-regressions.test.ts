@@ -40,6 +40,25 @@ afterEach(async () => {
 });
 
 describe("route failure and realtime regressions", () => {
+  it("invalidates previews only on content changes and rejects stale repair uploads", async () => {
+    const { json, request } = setup();
+    await json("/api/scenes", { id: "repair_preview", elements: [{ id: "shape", type: "rectangle", x: 0, y: 0, width: 100, height: 100 }] });
+    const upload = (revision: number) => request(`/api/scenes/repair_preview/thumbnail?revision=${revision}`, {
+      method: "PUT", headers: { "Content-Type": "image/png" }, body: new Uint8Array([1, 2, 3]),
+    });
+    expect((await upload(1)).status).toBe(200);
+    const initial = await (await request("/api/scenes/repair_preview")).json() as { thumbnail_file_id: string };
+    expect(initial.thumbnail_file_id).toBeTruthy();
+    await json("/api/scenes/repair_preview", { name: "renamed", baseRevision: 1 }, "PUT");
+    expect(await (await request("/api/scenes/repair_preview")).json()).toMatchObject({ thumbnail_file_id: initial.thumbnail_file_id });
+    await json("/api/scenes/repair_preview", { elements: [{ id: "new", type: "rectangle" }], baseRevision: 2 }, "PUT");
+    expect(await (await request("/api/scenes/repair_preview")).json()).toMatchObject({ thumbnail_file_id: null, revision: 3 });
+    expect((await upload(1)).status).toBe(409);
+    expect(await (await request("/api/scenes/repair_preview")).json()).toMatchObject({ thumbnail_file_id: null });
+    expect((await upload(3)).status).toBe(200);
+    expect(await (await request("/api/scenes/repair_preview")).json()).toMatchObject({ thumbnail_file_id: initial.thumbnail_file_id });
+  });
+
   it("notifies every open scene after committed batch deletion, restoration and permanent deletion", async () => {
     const { runtime, json } = setup();
     const scenes = [{ id: "batch_a", revision: 1 }, { id: "batch_b", revision: 1 }];

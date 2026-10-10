@@ -47,6 +47,7 @@ import { WorkspaceDialog } from "./WorkspaceDialog";
 import { CustomSelect } from "./CustomSelect";
 import { WorkspaceCommandPalette } from "./WorkspaceCommandPalette";
 import { refreshWorkspacePage } from "./workspace-page-refresh";
+import { ThumbnailRepairQueue } from "../data/thumbnailRepairQueue";
 import {
   applyBoardSelectionClick,
   isBoardSelectionModifierClick,
@@ -560,14 +561,19 @@ const ExcalidrawMark = () => (
   </div>
 );
 
-const EmptyThumbnail = () => (
-  <div className="board-thumbnail board-thumbnail-empty">
+const thumbnailRepairQueue = new ThumbnailRepairQueue();
+
+const EmptyThumbnail = ({
+  label = "空白画板",
+  containerRef,
+}: { label?: string; containerRef?: React.Ref<HTMLDivElement> }) => (
+  <div ref={containerRef} className="board-thumbnail board-thumbnail-empty">
     <div className="empty-thumbnail-mark">
       <span />
       <span />
       <span />
     </div>
-    <span>空白画板</span>
+    <span>{label}</span>
   </div>
 );
 
@@ -578,13 +584,68 @@ const BoardThumbnail = ({
   scene: CloudSceneSummary;
   eager?: boolean;
 }) => {
-  if (!scene.thumbnail_file_id) {
-    return <EmptyThumbnail />;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [repaired, setRepaired] = useState<{ revision: number; id: string } | null>(null);
+  const [failed, setFailed] = useState(false);
+  const thumbnailId = scene.thumbnail_file_id ||
+    (repaired?.revision === scene.revision ? repaired.id : null);
+  const needsRepair = !thumbnailId && (scene.element_count || 0) > 0 && !scene.deleted_at;
+
+  useEffect(() => {
+    setFailed(false);
+    if (!needsRepair || !containerRef.current) {
+      return;
+    }
+    let cancelled = false;
+    let cancelQueued: (() => void) | undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) {
+        return;
+      }
+      observer.disconnect();
+      cancelQueued = thumbnailRepairQueue.schedule(async () => {
+        if (cancelled) {
+          return;
+        }
+        try {
+          const { repairSceneThumbnail } = await import("../data/repairSceneThumbnail");
+          const id = await repairSceneThumbnail(scene.id, scene.revision, () => cancelled);
+          if (!cancelled) {
+            if (id) {
+              setRepaired({ revision: scene.revision, id });
+            } else {
+              setFailed(true);
+            }
+          }
+        } catch {
+          if (!cancelled) {
+            setFailed(true);
+          }
+        }
+      });
+    });
+    observer.observe(containerRef.current);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+      cancelQueued?.();
+    };
+  }, [scene.id, scene.revision, needsRepair]);
+
+  if (!thumbnailId) {
+    return (
+      <EmptyThumbnail
+        containerRef={containerRef}
+        label={(scene.element_count || 0) > 0
+          ? (failed || scene.deleted_at ? "预览暂不可用" : "正在生成预览…")
+          : "空白画板"}
+      />
+    );
   }
   return (
-    <div className="board-thumbnail">
+    <div ref={containerRef} className="board-thumbnail">
       <img
-        src={`/api/files/${encodeURIComponent(scene.thumbnail_file_id)}?v=${
+        src={`/api/files/${encodeURIComponent(thumbnailId)}?v=${
           scene.updated_at
         }`}
         alt={`${scene.name} 预览`}

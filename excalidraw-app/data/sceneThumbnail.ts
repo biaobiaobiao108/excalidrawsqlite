@@ -10,7 +10,7 @@ export const createSceneThumbnail = async ({
   files,
 }: {
   elements: readonly ExcalidrawElement[];
-  appState: AppState;
+  appState: Partial<AppState>;
   files: BinaryFiles;
 }) => {
   const visibleElements = getNonDeletedElements(elements);
