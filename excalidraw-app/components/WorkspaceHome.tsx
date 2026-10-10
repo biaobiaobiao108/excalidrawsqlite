@@ -2489,7 +2489,22 @@ export const WorkspaceHome = ({
   );
 
   return (
-    <div className="workspace-home" ref={rootRef}>
+    <div
+      className="workspace-home"
+      ref={rootRef}
+      onKeyDownCapture={(event) => {
+        if (
+          event.key !== "Escape" ||
+          !sceneSelectionRef.current.ids.size ||
+          !(event.target instanceof Node) ||
+          !event.currentTarget.contains(event.target)
+        ) {
+          return;
+        }
+        event.preventDefault();
+        clearSceneSelection();
+      }}
+    >
       <div className="workspace-layout">
         <aside
           className="workspace-sidebar"

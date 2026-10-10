@@ -662,15 +662,15 @@
   inline-size: 30px;
   block-size: 30px;
   padding: 0;
-  border: 1px solid rgba(88, 105, 94, 0.35);
+  border: 0;
   border-radius: 50%;
-  background: rgba(255, 254, 250, 0.94);
+  background: transparent;
   color: #738178;
   cursor: pointer;
   opacity: 0;
   transform: scale(0.94);
   transition: opacity 140ms ease, transform 140ms ease,
-    background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+    background-color 140ms ease, color 140ms ease;
 
   svg {
     inline-size: 20px;
@@ -696,12 +696,14 @@
 }
 
 .board-card-selection-toggle:hover,
-.board-card-selection-toggle:focus-visible,
 .board-card-selection-toggle[aria-pressed="true"] {
-  border-color: var(--workspace-primary);
-  background: var(--workspace-primary-soft);
   color: var(--workspace-primary);
-  outline: 0;
+}
+
+.board-card-selection-toggle:focus-visible {
+  color: var(--workspace-primary);
+  outline: 2px solid var(--workspace-primary);
+  outline-offset: 2px;
 }
 
 .board-card-selection-toggle:disabled {
