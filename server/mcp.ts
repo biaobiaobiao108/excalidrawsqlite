@@ -7,6 +7,9 @@ import {
 } from "./mcp-drawing";
 import { compactDrawingElements } from "./mcp-read";
 import { registerManagementTools, resolveFolder } from "./mcp-management";
+import { measureMcpApi, measureMcpPhase, traceMcpTool } from "./mcp-trace";
+import { compactMcpSchema } from "./mcp-schema";
+import { buildDiagram, diagramSchema } from "./mcp-diagram";
 
 import { randomBase64Url, timingSafeEqual } from "./crypto";
 import { HttpError } from "./errors";
@@ -18,13 +21,13 @@ import type { ServerRuntime } from "./types";
 export const MCP_PATH = "/mcp";
 
 const MCP_SERVER_INSTRUCTIONS = [
-  "Excalidraw 白板支持搜索、读取及批量绘制。普通绘图优先 create_board 一次传入名称和全部 elements，不要先建空板再逐个绘制。",
+  "Excalidraw 白板支持搜索、读取及批量绘制。流程图/时间线优先 create_diagram 一次传 nodes/edges 自动排版；自定义绘图用 create_board 一次传入名称和全部 elements，不要先建空板再逐个绘制。",
   "每次最多 1,000 个图元描述；形状 text 自动绑定文字。可给节点指定 id，箭头 startBinding/endBinding.elementId 引用同批或已有节点，拖动节点时保持连接。折线 points 使用绝对画布坐标；二点仍可用 startX/startY/endX/endY。字段严格校验，不能输入原始内部字段。",
   "修改优先 update_board 一次合并添加、removeElementIds、updates 原地修改及元数据；只改一个图元用 update_element，保留 ID 和绑定。expectedRevision 是可选的已读修订号，服务端始终使用乐观锁；冲突后重新判断，禁止盲目重试。",
   "get_board 的 input 视图用于跨板复制：elements 保留原 ID，可传给 create_board 或其他画板的 add_elements；同板原地修改用 update_element/update_board.updates，追加已有 ID 会报错。绑定文字合并到形状，points 是绝对坐标，rotation 是度。truncated/nextOffset 表示分页或预算截断；仅 input 的 unsupportedElementIds/warnings 表示不可写投影省略，图元被省略不能视为空板。默认紧凑视图用于阅读，full 为内部格式且 points 是相对坐标。",
   "create_board 可同时设置 folderId/folderName、favorite、tags；folderName 会幂等获取或创建文件夹，重名歧义报错。文件夹用 list/ensure/create/update/delete_folder。manage_board 一次管理收藏、标签、移动和改名，batch_manage_boards 批量管理逐条返回结果。",
   "delete_board 只软删除，restore_board 还原；MCP 不提供永久删除或清空回收站。回收站受服务端保留期限约束。delete_folder 仅移画板至根目录，正式执行需 confirm=true，可先 dryRun 查看影响。",
-  "成功与业务结果位于 structuredContent，检查 ok 与 error.code；schema 拒绝可能只有 isError=true 和 text，客户端也必须读取该错误。画板标识统一 boardId，元数据使用 elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt。图元和文件夹仍使用 id。三个绘图写工具均返回 elementMap，按 inputIndex 对应本体与 labelId；requestedElementIds 是本体，generatedElementIds 是附属文字，addedCount 是两者总数，elementCount 是全板当前图元总数。批读 partial 表示成功失败混合，truncated 仅表示内容/预算截断。",
+  "成功与业务结果位于 structuredContent，检查 ok 与 error.code；schema 拒绝可能只有 isError=true 和 text，客户端也必须读取该错误。画板标识统一 boardId，元数据使用 elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt。图元和文件夹仍使用 id。绘图写工具默认 responseMode=minimal 仅回数量/修订号/URL；需要自动 ID 时设 ids 返回 elementMap（inputIndex 对应本体与 labelId）、requestedElementIds（本体）、generatedElementIds（附属文字）。addedCount 是本次 elements 新建的实际图元数，elementCount 是全板当前图元数。批读 partial 表示成功失败混合，truncated 仅表示内容/预算截断。",
   "不支持图片上传、自由绘制或直接输入原始 Excalidraw JSON；工具接受矩形、椭圆、菱形、文字、直线和箭头。输入必须为 JSON 对象，多行字符串遵循 JSON 转义规则。",
 ].join(" ");
 
@@ -71,7 +74,7 @@ const cleanBoardRecord = (value: Record<string, unknown>): Record<string, unknow
   return clean;
 };
 
-const result = (value: Record<string, unknown>) => ({
+const result = (value: Record<string, unknown>) => measureMcpPhase("responseBuildMs", () => ({
   structuredContent: { ok: !value.error, ...cleanBoardRecord(value),
     ...Object.fromEntries(["items", "boards", "results", "folders"].filter((key) => Array.isArray(value[key]))
       .map((key) => [key, (value[key] as Record<string, unknown>[]).map(cleanBoardRecord)])),
@@ -81,9 +84,13 @@ const result = (value: Record<string, unknown>) => ({
   content: [{ type: "text" as const, text: value.error
     ? `操作失败：${(value.error as { message: string }).message}`
     : "操作成功；详情见 structuredContent。" }],
-});
+}));
 
-const drawingReceipt = (created: readonly ExcalidrawElement[]) => {
+const responseModeSchema = z.enum(["minimal", "ids"]).optional()
+  .describe("默认 minimal 仅返回修订号/数量/URL；ids 另含图元 ID 与 inputIndex 映射");
+
+const drawingReceipt = (created: readonly ExcalidrawElement[], mode: "minimal" | "ids" = "minimal") => {
+  if (mode === "minimal") return { addedCount: created.length };
   const ids = new Set(created.map((element) => element.id));
   const generated = created.filter((element) => element.type === "text" && element.containerId && ids.has(element.containerId));
   const generatedIds = new Set(generated.map((element) => element.id));
@@ -99,8 +106,8 @@ const drawingReceipt = (created: readonly ExcalidrawElement[]) => {
   };
 };
 
-const safeTool = <T>(handler: (args: T) => Promise<ReturnType<typeof result>>) =>
-  async (args: T) => {
+const makeSafeTool = <T>(handler: (args: T) => Promise<ReturnType<typeof result>>, trace = false, operation = "tool") =>
+  async (args: T) => traceMcpTool(trace, operation, async () => {
     try {
       return await handler(args);
     } catch (error) {
@@ -109,7 +116,7 @@ const safeTool = <T>(handler: (args: T) => Promise<ReturnType<typeof result>>) =
       }
       throw error;
     }
-  };
+  });
 
 const expectedRevisionSchema = z.number().int().positive().optional()
   .describe("可选的读取时修订号；省略时读取最新版本，仍使用乐观锁保存");
@@ -145,7 +152,7 @@ const getPathToken = (req: Request) => {
 };
 
 const createInternalApi = (apiHandler: ApiHandler, sessionToken: string) =>
-  async <T>(path: string, method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown) => {
+  async <T>(path: string, method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown) => measureMcpApi(method, async () => {
     const req = new Request(`http://excalidraw-mcp.internal${path}`, {
       method,
       headers: {
@@ -171,7 +178,7 @@ const createInternalApi = (apiHandler: ApiHandler, sessionToken: string) =>
       );
     }
     return parsed as T;
-  };
+  });
 
 export const createMcpRequestHandler = (
   runtime: ServerRuntime,
@@ -197,6 +204,8 @@ export const createMcpRequestHandler = (
           { name: "excalidrawsqlite", version: "1.0.0" },
           { maxToolInputElements: 100_000, instructions: MCP_SERVER_INSTRUCTIONS },
         );
+        const safeTool = <T>(handler: (args: T) => Promise<ReturnType<typeof result>>, operation = "management") =>
+          makeSafeTool(handler, runtime.config.mcpTrace, operation);
         const boardUrl = (id: string) => {
           const origin = requestInfo ? getRequestOrigin(runtime, requestInfo) : "";
           return `${origin}/?id=${encodeURIComponent(id)}`;
@@ -221,8 +230,10 @@ export const createMcpRequestHandler = (
             return value;
           }
           const board = await api<SceneData>(`/api/scenes/${encodeURIComponent(boardId)}`, "GET");
-          const writable = view === "input" ? inputDrawingElements(board.elements) : null;
-          const compact = view === "compact" ? compactDrawingElements(board.elements) : null;
+          const { writable, compact } = measureMcpPhase("transformMs", () => ({
+            writable: view === "input" ? inputDrawingElements(board.elements) : null,
+            compact: view === "compact" ? compactDrawingElements(board.elements) : null,
+          }));
           // Semantic/input views collapse attached text before filtering/pagination.
           const source = (compact?.elements || writable?.elements || board.elements) as unknown as ExcalidrawElement[];
           const selected = elementIds ? new Set(elementIds.map((id) => compact?.labelOwners.get(id) || id)) : null;
@@ -272,7 +283,7 @@ export const createMcpRequestHandler = (
           {
             title: "列出画板",
             description: "搜索画板摘要；支持文件夹、收藏、精确标签、最近打开和回收站视图。query 匹配名称/标签/文件夹名；cursor 接续 nextCursor，不回传图元。trash 固定按删除时间倒序。",
-            inputSchema: z.object({
+            inputSchema: compactMcpSchema(z.object({
               query: z.string().max(120).optional(),
               limit: z.number().int().min(1).max(100).optional(),
               cursor: z.string().max(2_000).optional(),
@@ -281,7 +292,7 @@ export const createMcpRequestHandler = (
               tag: z.string().trim().min(1).max(32).optional(),
               view: z.enum(["all", "recent", "trash"]).optional(),
               sort: z.enum(["updated", "created", "opened"]).optional(),
-            }).strict(),
+            }).strict()),
             annotations: {
               readOnlyHint: true,
               idempotentHint: true,
@@ -310,7 +321,7 @@ export const createMcpRequestHandler = (
               "GET",
             );
             return result(boards);
-          }),
+          }, "list_boards"),
         );
 
         server.registerTool(
@@ -318,7 +329,7 @@ export const createMcpRequestHandler = (
           {
             title: "读取画板",
             description: "默认 compact 只读视图保留文字、几何、连接，标签折入本体且省略装饰样式；elements 含样式；input 用于跨板复制，保留 ID，不能直接追加到原板；原地改用 update_element/update_board.updates。truncated/nextOffset 表示分页截断；仅 input 返回 unsupportedElementIds/warnings 表示无法可写投影，省略图元不代表空板。input/紧凑 points 绝对坐标，full 相对坐标。",
-            inputSchema: z.object({
+            inputSchema: compactMcpSchema(z.object({
               boardId: z.string().min(1).max(128),
               view: z.enum(["summary", "compact", "elements", "full", "input"]).optional(),
               elementIds: z.array(z.string().min(1).max(128)).min(1).max(1_000).optional(),
@@ -327,14 +338,14 @@ export const createMcpRequestHandler = (
               offset: z.number().int().min(0).optional(),
               limit: z.number().int().min(1).max(1_000).optional(),
               maxChars: z.number().int().min(1_000).max(2_000_000).optional().describe("图元与元数据总字符预算，默认1,000,000"),
-            }).strict(),
+            }).strict()),
             annotations: {
               readOnlyHint: true,
               idempotentHint: true,
               openWorldHint: false,
             },
           },
-          safeTool(async (args) => result(await readBoard(args))),
+          safeTool(async (args) => result(await readBoard(args)), "get_board"),
         );
 
         server.registerTool(
@@ -342,20 +353,21 @@ export const createMcpRequestHandler = (
           {
             title: "创建画板",
             description: "一次创建画板并绘制全部内容。普通绘图直接传完整 elements，最多 1,000 个描述；省略 elements 创建空板。允许同名，不会覆盖已有画板。",
-            inputSchema: z.object({
+            inputSchema: compactMcpSchema(z.object({
               name: z.string().trim().min(1).max(120),
               elements: z.array(drawingElementSchema).max(1_000).optional(),
               backgroundColor: colorSchema.optional().describe("画布背景颜色，默认白色"),
+              responseMode: responseModeSchema,
               ...boardMetadataSchema,
-            }).strict(),
+            }).strict()),
             annotations: {
               destructiveHint: false,
               idempotentHint: false,
               openWorldHint: false,
             },
           },
-          safeTool(async ({ name, elements = [], backgroundColor, folderId, folderName, tags, favorite }) => {
-            const { elements: drawing, created } = createDrawingBatch(elements);
+          safeTool(async ({ name, elements = [], backgroundColor, folderId, folderName, tags, favorite, responseMode }) => {
+            const { elements: drawing, created } = measureMcpPhase("transformMs", () => createDrawingBatch(elements));
             const resolvedFolder = await resolveFolder({ folderId, folderName }, api);
             const board = await api<{ id: string; name: string; revision: number }>(
               "/api/scenes",
@@ -363,9 +375,31 @@ export const createMcpRequestHandler = (
               { name, elements: drawing, appState: { viewBackgroundColor: backgroundColor || "#ffffff" },
                 ...(resolvedFolder === undefined ? {} : { folder_id: resolvedFolder }), tags, favorite },
             );
-            return result({ ...board, ...drawingReceipt(created), url: boardUrl(board.id) });
-          }),
+            return result({ boardId: board.id, name: board.name, revision: board.revision,
+              elementCount: drawing.length, ...drawingReceipt(created, responseMode), url: boardUrl(board.id) });
+          }, "create_board"),
         );
+
+        server.registerTool("create_diagram", {
+          title: "自动绘制流程图或时间线",
+          description: "一次传节点标题/正文与连接，自动排版并创建画板，无需计算坐标。最多100节点/200连接，默认纵向流程图与forest主题；省略edges按顺序连接，[]不连线。节点id可直接用于后续更新。复杂自定义图元用create_board。",
+          inputSchema: compactMcpSchema(diagramSchema.extend({ ...boardMetadataSchema, responseMode: responseModeSchema })),
+          annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        }, safeTool(async (args) => {
+          const { diagram, drawing } = measureMcpPhase("transformMs", () => {
+            const diagram = buildDiagram(args);
+            return { diagram, drawing: createDrawingBatch(diagram.elements) };
+          });
+          const folder = await resolveFolder(args, api);
+          const board = await api<{ id: string; name: string; revision: number }>("/api/scenes", "POST", {
+            name: args.name, elements: drawing.elements, appState: { viewBackgroundColor: "#ffffff" },
+            ...(folder === undefined ? {} : { folder_id: folder }), tags: args.tags, favorite: args.favorite,
+          });
+          return result({ boardId: board.id, name: board.name, revision: board.revision,
+            nodeCount: diagram.nodeCount, edgeCount: diagram.edgeCount, layout: diagram.layout,
+            direction: diagram.direction, theme: diagram.theme, elementCount: drawing.elements.length,
+            ...drawingReceipt(drawing.created, args.responseMode), url: boardUrl(board.id) });
+        }, "create_diagram"));
 
         server.registerTool(
           "add_elements",
@@ -373,24 +407,25 @@ export const createMcpRequestHandler = (
             title: "向画板绘制图元",
             description:
               "一次追加最多 1,000 个描述，不要逐个调用。矩形/椭圆/菱形的 text 自动绑定居中文字。混合删除、添加和改名优先 update_board。",
-            inputSchema: z.object({
+            inputSchema: compactMcpSchema(z.object({
               boardId: z.string().min(1).max(128),
               elements: z.array(drawingElementSchema).min(1).max(1_000),
+              responseMode: responseModeSchema,
               expectedRevision: expectedRevisionSchema,
-            }).strict(),
+            }).strict()),
             annotations: {
               destructiveHint: false,
               idempotentHint: false,
               openWorldHint: false,
             },
           },
-          safeTool(async ({ boardId, elements, expectedRevision }) => {
+          safeTool(async ({ boardId, elements, expectedRevision, responseMode }) => {
             const current = await api<SceneData>(
               `/api/scenes/${encodeURIComponent(boardId)}`,
               "GET",
             );
             assertRevision(current, expectedRevision);
-            const { created, elements: merged } = createDrawingBatch(elements, current.elements);
+            const { created, elements: merged } = measureMcpPhase("transformMs", () => createDrawingBatch(elements, current.elements));
             const saved = await api<{ revision: number; updated_at: number }>(
               `/api/scenes/${encodeURIComponent(boardId)}`,
               "PUT",
@@ -402,11 +437,12 @@ export const createMcpRequestHandler = (
             );
             return result({
               boardId,
-              ...drawingReceipt(created),
+              elementCount: merged.length,
+              ...drawingReceipt(created, responseMode),
               revision: saved.revision,
               url: boardUrl(boardId),
             });
-          }),
+          }, "add_elements"),
         );
 
         server.registerTool(
@@ -414,11 +450,11 @@ export const createMcpRequestHandler = (
           {
             title: "从画板移除图元",
             description: "按图元 ID 永久移除指定画板中的图元。",
-            inputSchema: z.object({
+            inputSchema: compactMcpSchema(z.object({
               boardId: z.string().min(1).max(128),
               elementIds: z.array(z.string().min(1).max(128)).min(1).max(1_000),
               expectedRevision: expectedRevisionSchema,
-            }).strict(),
+            }).strict()),
             annotations: {
               destructiveHint: true,
               idempotentHint: true,
@@ -431,10 +467,10 @@ export const createMcpRequestHandler = (
               "GET",
             );
             assertRevision(current, expectedRevision);
-            const { elements, removedCount } = removeDrawingElements(
+            const { elements, removedCount } = measureMcpPhase("transformMs", () => removeDrawingElements(
               current.elements,
               elementIds,
-            );
+            ));
             if (!removedCount) {
               return result({ boardId, removedCount: 0, revision: current.revision });
             }
@@ -448,7 +484,7 @@ export const createMcpRequestHandler = (
               },
             );
             return result({ boardId, removedCount, revision: saved.revision });
-          }),
+          }, "remove_elements"),
         );
 
         server.registerTool(
@@ -456,28 +492,37 @@ export const createMcpRequestHandler = (
           {
             title: "批量修改画板",
             description: "一次原子保存：先删除 removeElementIds，再添加 elements，再按 updates 原地修改；还可同步改名、背景、收藏、标签及文件夹。修改保留图元ID与连接。新文件夹可用 folderName 自动获取或创建。",
-            inputSchema: z.object({
+            inputSchema: compactMcpSchema(z.object({
               boardId: z.string().min(1).max(128),
               expectedRevision: expectedRevisionSchema,
               elements: z.array(drawingElementSchema).min(1).max(1_000).optional(),
               removeElementIds: z.array(z.string().min(1).max(128)).min(1).max(1_000).optional(),
               updates: z.array(elementUpdateSchema).min(1).max(1_000).optional(),
+              responseMode: responseModeSchema,
               name: z.string().trim().min(1).max(120).optional(),
               backgroundColor: colorSchema.optional(),
               ...boardMetadataSchema,
-            }).strict(),
+            }).strict()),
             annotations: { destructiveHint: true, idempotentHint: false, openWorldHint: false },
           },
-          safeTool(async ({ boardId, expectedRevision, elements, removeElementIds, updates, name, backgroundColor, folderId, folderName, tags, favorite }) => {
+          safeTool(async ({ boardId, expectedRevision, elements, removeElementIds, updates, name, backgroundColor, folderId, folderName, tags, favorite, responseMode }) => {
             if (!elements && !removeElementIds && !updates && name === undefined && backgroundColor === undefined &&
                 folderId === undefined && folderName === undefined && tags === undefined && favorite === undefined) {
               throw new HttpError(400, "EMPTY_UPDATE", "请提供图元修改或画板元数据中至少一项。");
             }
             const current = await api<SceneData>(`/api/scenes/${encodeURIComponent(boardId)}`, "GET");
             assertRevision(current, expectedRevision);
-            const remaining = removeDrawingElements(current.elements, removeElementIds || []);
-            const { created, elements: merged } = createDrawingBatch(elements || [], remaining.elements);
-            const updated = updateDrawingElements(merged, updates || []);
+            const { remaining, created, updated } = measureMcpPhase("transformMs", () => {
+              const remaining = removeDrawingElements(current.elements, removeElementIds || []);
+              const { created, elements: merged } = createDrawingBatch(elements || [], remaining.elements);
+              return { remaining, created, updated: updateDrawingElements(merged, updates || []) };
+            });
+            if (!remaining.removedCount && !created.length && !updated.updatedCount && name === undefined &&
+                backgroundColor === undefined && folderId === undefined && folderName === undefined &&
+                tags === undefined && favorite === undefined) {
+              return result({ boardId, revision: current.revision, elementCount: current.elements.length,
+                ...drawingReceipt(created, responseMode), removedCount: 0, updatedCount: 0, noop: true, url: boardUrl(boardId) });
+            }
             const resolvedFolder = await resolveFolder({ folderId, folderName }, api);
             const saved = await api<{ revision: number }>(`/api/scenes/${encodeURIComponent(boardId)}`, "PUT", {
               baseRevision: current.revision,
@@ -486,24 +531,24 @@ export const createMcpRequestHandler = (
               appState: { ...current.appState, ...(backgroundColor === undefined ? {} : { viewBackgroundColor: backgroundColor }) },
               ...(resolvedFolder === undefined ? {} : { folder_id: resolvedFolder }), tags, favorite,
             });
-            return result({ boardId, revision: saved.revision, ...drawingReceipt(created), removedCount: remaining.removedCount, updatedCount: updated.updatedCount,
+            return result({ boardId, revision: saved.revision, elementCount: updated.elements.length, ...drawingReceipt(created, responseMode), removedCount: remaining.removedCount, updatedCount: updated.updatedCount,
               url: boardUrl(boardId) });
-          }),
+          }, "update_board"),
         );
 
         server.registerTool("update_element", {
           title: "原地修改图元",
           description: "按 update.id 原地修改，保留ID/连接/其余字段；形状text改绑定文字，labelStyle只改标签样式并保留未传字段。已有labelId仅用于核对，不能改名；新建标签可同时传text和labelId。批量用update_board.updates一次保存。",
-          inputSchema: z.strictObject({
+          inputSchema: compactMcpSchema(z.strictObject({
             boardId: z.string().min(1).max(128),
             update: elementUpdateSchema,
             expectedRevision: expectedRevisionSchema,
-          }),
+          })),
           annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
         }, safeTool(async ({ boardId, update, expectedRevision }) => {
           const current = await api<SceneData>(`/api/scenes/${encodeURIComponent(boardId)}`, "GET");
           assertRevision(current, expectedRevision);
-          const updated = updateDrawingElements(current.elements, [update]);
+          const updated = measureMcpPhase("transformMs", () => updateDrawingElements(current.elements, [update]));
           if (!updated.updatedCount) {
             return result({ boardId, revision: current.revision, updatedCount: 0, noop: true });
           }
@@ -511,16 +556,16 @@ export const createMcpRequestHandler = (
             baseRevision: current.revision, elements: updated.elements, appState: current.appState,
           });
           return result({ boardId, revision: saved.revision, updatedCount: updated.updatedCount, elementId: update.id, url: boardUrl(boardId) });
-        }));
+        }, "update_element"));
 
         server.registerTool("get_boards_batch", {
           title: "批量读取画板",
           description: "一次读取最多20块画板，默认compact语义阅读；支持input可写视图，共享字符预算。partial仅表示成功失败混合，truncated仅表示内容或预算截断；不存在的ID只报错，无需续读。不构成跨画板一致快照。",
-          inputSchema: z.strictObject({
+          inputSchema: compactMcpSchema(z.strictObject({
             boardIds: z.array(z.string().min(1).max(128)).min(1).max(20),
             view: z.enum(["summary", "compact", "elements", "full", "input"]).optional(),
             maxChars: z.number().int().min(1_000).max(2_000_000).optional().describe("含所有画板与逐项错误的总预算，最少1000；连结果元数据也放不下时报 READ_BUDGET_TOO_SMALL"),
-          }),
+          })),
           annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         }, safeTool(async ({ boardIds, view = "compact", maxChars = 1_000_000 }) => {
           const boards: Record<string, unknown>[] = boardIds.map((boardId) => ({ boardId, truncated: true,
@@ -545,7 +590,7 @@ export const createMcpRequestHandler = (
           const failed = boards.filter((board) => board.error).length;
           return result({ boards, maxChars, partial: failed > 0 && failed < boards.length,
             truncated: boards.some((board) => board.truncated === true) });
-        }));
+        }, "get_boards_batch"));
 
         registerManagementTools(server, { runtime, api, result, safeTool, boardUrl });
 

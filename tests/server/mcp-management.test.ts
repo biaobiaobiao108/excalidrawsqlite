@@ -16,7 +16,7 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
   const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/management-test"), { fetch: async (input, init) => handler.fetch(new Request(input, init)) });
   const call = async (name: string, args: Record<string, unknown>) => {
     const response = await client.callTool({ name, arguments: args });
-    expect(response.isError).not.toBe(true);
+    expect(response.isError, JSON.stringify(response)).not.toBe(true);
     const data = response.structuredContent as Record<string, any>;
     for (const folder of [data, ...(data.folders || []), ...(data.folder ? [data.folder] : [])]) {
       if (typeof folder.icon === "string") {
@@ -105,7 +105,9 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     expect(concurrent.filter((item) => item.created)).toHaveLength(1);
     expect(runtime.db.query("SELECT COUNT(*) AS count FROM folders WHERE name = ?").get("并发文件夹")).toEqual({ count: 1 });
     const newFolderBoard = await call("create_board", { name: "新文件夹一次创建", folderName: "新文件夹" });
-    expect(newFolderBoard).toMatchObject({ ok: true, folderId: expect.any(String) });
+    expect(newFolderBoard.ok).toBe(true);
+    expect(typeof newFolderBoard.boardId).toBe("string");
+    expect(await call("get_board", { boardId: newFolderBoard.boardId, view: "summary" })).toMatchObject({ folderId: expect.any(String) });
     expect(await call("manage_board", { boardId: newFolderBoard.boardId, folderId: null, tags: [], tagMode: "replace" })).toMatchObject({ ok: true, folderId: null, tags: [] });
     const taggedBoard = await call("create_board", { name: "分页边界", tags: ["cursor-a", "cursor-b"] });
     const tagPage = await call("list_tags", { limit: 1 });

@@ -198,6 +198,7 @@ AUTH_PASSWORD=your-password bun run dev
 | :-- | :-- | :-: | :-- |
 | `AUTH_PASSWORD` | _无_ | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。 |
 | `MCP_TOKEN` | _无_ | 否 | 设置后启用 `/mcp/<URL 编码后的 MCP_TOKEN>` MCP 服务，无需认证请求头。未设置时 MCP 端点关闭。 |
+| `MCP_TRACE` | `false` | 否 | 临时启用 MCP 业务处理分段计时；记录内部 API 读写、图元转换、回执构建耗时与读写次数，不记录令牌、参数或画板正文。 |
 | `ALLOW_ANONYMOUS` | `false` | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。 |
 | `TRUST_PROXY` | `false` | 否 | 仅在应用端口被可信反向代理隔离保护时设为 `true`，用于识别 HTTPS 并下发 Secure Cookie。代理需覆盖 `X-Forwarded-For` 为实际客户端 IP，且应用端口不得允许不可信客户端直连；直连部署应保持 `false`，以防伪造转发头绕过登录限流。 |
 | `PORT` | `8080` | 否 | 服务端监听端口。 |
@@ -272,9 +273,10 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 | 工具 | 用途 |
 | --- | --- |
 | `list_boards` | 名称搜索及文件夹、收藏、精确标签筛选；`view=all/recent/trash`，收藏统一使用 `favorite=true/false`（省略不限），支持排序和 `nextCursor` 分页；不存在的文件夹 ID 明确报错。 |
-| `get_board` | 默认紧凑图元及修订号；`summary` 元数据，`full` 内部字段，`input` 可写字段。按 `elementIds`、文字 `query`、`type` 定位，支持 `limit/offset/maxChars`，返回 `nextOffset/truncated`。 |
+| `get_board` | 默认 `compact` 只读文字、几何与连接，标签折入本体；`elements` 含样式，`summary` 元数据，`full` 内部字段，`input` 可写字段。按 `elementIds`、文字 `query`、`type` 定位，支持 `limit/offset/maxChars`，返回 `nextOffset/truncated`。 |
 | `get_boards_batch` | 一次读取最多 20 块画板，共享字符预算，逐条返回错误或分页信息；与单读一样 `maxChars` 最少 1000，连必要元数据也放不下则明确报错；不是跨画板一致快照。 |
 | `create_board` | 一次创建并绘制，可同时设置背景、收藏、标签和 `folderId/folderName`；允许同名，省略图元创建空板。 |
+| `create_diagram` | 传入节点标题、正文和连接，自动绘制横向或纵向时间线、流程图；支持分支、循环与主题，可同时设置文件夹、标签和收藏。 |
 | `update_board` | 一次合并删除、新增、`updates` 原地修改和画板元数据，原子保存一个修订；顺序为删除→新增→原地修改。 |
 | `update_element` | 传 `update.id` 与待修改字段，保留图元 ID、连接和其余字段，改颜色无需回传完整 JSON。 |
 | `add_elements` / `remove_elements` | 单纯追加或按 ID 移除图元；普通绘图无需先创建空板再调用追加。 |
@@ -285,15 +287,30 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 | `delete_board` / `restore_board` | 仅软删除或还原，没有永久删除参数；回收站受 `TRASH_RETENTION_DAYS` 保留期限约束。 |
 | `batch_manage_boards` | 最多 100 项 `manage/delete/restore`，每项必传 `expectedRevision`；独立执行，返回逐项结果、`noop` 和 `partial`。 |
 
-每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字，ID 按本体与自动文字分别返回。可指定稳定 `id`，箭头的 `startBinding/endBinding.elementId` 能引用同批或已有节点，移动/缩放节点时保留连接；`points` 是绝对画布坐标，支持多段折线，不与二点坐标字段混用。删除形状同时删除绑定文字并清理引用。
+每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字；需要 ID 时传 `responseMode=ids`，按本体与自动文字分别返回。可指定稳定 `id`，箭头的 `startBinding/endBinding.elementId` 能引用同批或已有节点，移动/缩放节点时保留连接；`points` 是绝对画布坐标，支持多段折线，不与二点坐标字段混用。删除形状同时删除绑定文字并清理引用。
 
-跨板复制使用 `get_board.view=input` 或批读的 `input` 视图：返回的 `elements` 严格符合写入 schema，可交给 `create_board` 或其他画板的 `add_elements`。形状标签折叠为 `text/labelId/labelStyle`，保留标签 ID 和独立样式。图元视图（elements/input/full）的 `truncated/nextOffset` 表示分页或字符预算截断；summary 只返回元数据；仅 input 返回的 `unsupportedElementIds/warnings` 表示不可写图元或属性被省略，与分页无关。图片、自由画笔及分组、框架等不能通过这个视图完整复制；跳过图元时警告说明原因，省略不代表空画板，原始内容未删除。向同一画板追加已有 ID 会报冲突，原地修改应使用 `update_element` 或 `update_board.updates`。紧凑视图与 `input` 的折线点均为绝对坐标；`full` 为内部相对坐标，需加图元 `x/y`，返回的 `pointCoordinateSystem` 明确标注。`rotation` 单位为度，input 输出舍入至 10 位小数，文字 `x/y` 是左上角。绑定的 `fixedPoint` 允许越出 `[0,1]`，遵循原生绑定归一化范围，支持回读回写。
+流程图与时间线优先 `create_diagram`，只需表达内容与关系，不需要计算坐标。最多 100 个节点、200 条连接，默认 `layout=flowchart`、`direction=vertical`、`theme=forest`；可选 `timeline`、`horizontal` 和 `paper/ocean`。节点 `id` 可直接用于后续原地修改；省略 `edges` 自动依节点顺序连接，显式 `[]` 则不连线。分支按关系分层，循环节点同层，返回连线在外侧绕行；自动测量文字高度，所有箭头真实绑定到节点。最终仍使用普通 Excalidraw 图元并一次保存，不构成另一套数据模型。示例：
 
-绘图回执返回 `requestedElementIds`（输入图元本体）、`generatedElementIds`（自动生成的绑定文字）和 `elementMap`（按 `inputIndex` 对应本体及 `labelId`），不再提供混合两种角色的 `elementIds` 回执；读取筛选和移除操作的 `elementIds` 入参仍表示待操作的图元。MCP 画板输入和结果统一使用 `boardId`，不提供 `id` 别名，包括列表、单读、批读、创建及管理结果；图元和文件夹各自的 `id` 不变。画板元数据统一为 `elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt`；文件夹使用 `boardCount/createdAt/updatedAt`，不透传对应数据库命名字段。省略内部缩略图哈希和存储大小。批读的 `partial` 表示成功与失败混合，`truncated` 仅表示内容或字符预算截断；画板不存在不会触发 `truncated`，无需续读。
+```json
+{
+  "name": "事件时间线",
+  "layout": "timeline",
+  "nodes": [
+    { "id": "early", "title": "2022 年", "body": "发布早期作品" },
+    { "id": "later", "title": "2025 年", "body": "新的发展阶段" }
+  ]
+}
+```
+
+`compact` 保留图元 ID、类型、位置、尺寸、文字、非零旋转、折线点与箭头绑定目标，省略装饰样式；坐标字段仍为 `width/height`，不引入缩写。绑定标签 ID 筛选会返回其本体；文字搜索和类型筛选针对合并后的对象。它只用于理解内容，不能用来无损复制；精确复制请显式选择 `input`。
+
+跨板复制使用 `get_board.view=input` 或批读的 `input` 视图：返回的 `elements` 严格符合写入 schema，可交给 `create_board` 或其他画板的 `add_elements`。形状标签折叠为 `text/labelId/labelStyle`，保留标签 ID 和独立样式。图元视图（compact/elements/input/full）的 `truncated/nextOffset` 表示分页或字符预算截断；summary 只返回元数据；仅 input 返回的 `unsupportedElementIds/warnings` 表示不可写图元或属性被省略，与分页无关。图片、自由画笔及分组、框架等不能通过这个视图完整复制；跳过图元时警告说明原因，省略不代表空画板，原始内容未删除。向同一画板追加已有 ID 会报冲突，原地修改应使用 `update_element` 或 `update_board.updates`。紧凑视图与 `input` 的折线点均为绝对坐标；`full` 为内部相对坐标，需加图元 `x/y`，返回的 `pointCoordinateSystem` 明确标注。`rotation` 单位为度，input 输出舍入至 10 位小数，文字 `x/y` 是左上角。绑定的 `fixedPoint` 允许越出 `[0,1]`，遵循原生绑定归一化范围，支持回读回写。
+
+绘图回执在 `responseMode=ids` 时返回 `requestedElementIds`（输入图元本体）、`generatedElementIds`（自动生成的绑定文字）和 `elementMap`（按 `inputIndex` 对应本体及 `labelId`），不再提供混合两种角色的 `elementIds` 回执；读取筛选和移除操作的 `elementIds` 入参仍表示待操作的图元。MCP 画板输入和结果统一使用 `boardId`，不提供 `id` 别名，包括列表、单读、批读、创建及管理结果；图元和文件夹各自的 `id` 不变。画板元数据统一为 `elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt`；文件夹使用 `boardCount/createdAt/updatedAt`，不透传对应数据库命名字段。省略内部缩略图哈希和存储大小。批读的 `partial` 表示成功与失败混合，`truncated` 仅表示内容或字符预算截断；画板不存在不会触发 `truncated`，无需续读。
 
 图元和嵌套对象严格拒绝未知字段，`strokeColour`、`fillStyles`、`zIndex` 等错误不会写库。颜色接受十六进制、`transparent` 和 schema 列出的常见 CSS 颜色名；`opacity` 为 0–100 百分比，可带小数；`rotation` 以度为单位；`roundness` 支持像素半径或圆角对象；文字可指定 `fontSize/fontFamily/textAlign`。读取或修改已有场景时保留图片及自由画笔图元，但不提供图片上传、自由画笔生成、原始场景覆盖、备份、永久删除或清空回收站工具。
 
-形状及其绑定文字的标签在创建、追加、原地修改时统一最多 2000 字符，直接按绑定文字 ID 修改也遵守此限制；独立文字最多 10000 字符。超限更新返回明确错误，保持原内容和修订号不变。文件夹和图元共用颜色规则，支持 `#RGB/#RGBA/#RRGGBB/#RRGGBBAA`、常见 CSS 名和 `transparent`。批量管理的必填参数错误会定位到 `items.0.expectedRevision/action` 等具体字段。
+形状及其绑定文字的标签在创建、追加、原地修改时统一最多 2000 字符，直接按绑定文字 ID 修改也遵守此限制；独立文字最多 10000 字符。超限更新返回明确错误，保持原内容和修订号不变。文件夹和图元共用颜色规则，客户端 schema 与服务端均接受大小写并规范为小写，支持 `#RGB/#RGBA/#RRGGBB/#RRGGBBAA`、常见 CSS 名和 `transparent`。批量管理的必填参数错误会定位到 `items.0.expectedRevision/action` 等具体字段。
 
 修改形状标签样式可传 `update_element.update.labelStyle`，或通过 `update_board.updates` 一次修改多个标签；只合并传入的标签字段，不改形状样式，不需要删除重建。标签字体字段同时出现于顶层和 `labelStyle` 时，嵌套值优先。已有 `labelId` 只用于核对稳定身份，传不同 ID 明确报错；给无标签形状新增文字时可同时指定 `text/labelId/labelStyle`。绑定标签跟随容器旋转，不支持独立于容器的旋转。
 
@@ -303,9 +320,21 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 软删除和还原的实际状态变化也递增 `revision` 并更新 `updated_at`；重复相同状态返回 `noop`，不递增。删除后还原会使旧的 `expectedRevision` 失效，调用方应使用最新回执版本。`list_tags.nextCursor` 是按标签名排序的边界，SQL 读取名称大于该边界的标签，不要求该标签仍存在；分页不是一致快照，期间改名或新增可能影响后续页，完整重新核对时从第一页读取。
 
-成功及业务结果的完整机器数据在 `structuredContent`，文本 `content` 给简短说明；客户端须检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。写入默认返回修订号、数量、生成的 ID 和画板 URL，无需再次读取全文确认成功。`create_board/add_elements/update_board` 对新增图元使用同一套 `elementMap` 回执；`addedCount` 是本次 `elements` 描述实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是输入描述数量，`elementCount` 是全画板当前图元数量。需要完整原始场景时显式设置 `get_board.view=full`。
+成功及业务结果的完整机器数据在 `structuredContent`，文本 `content` 给简短说明；客户端须检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。绘图写入默认 `responseMode=minimal`，返回修订号、数量和画板 URL，省略 ID 列表和映射，无需再次读取全文确认成功。`create_board/add_elements/update_board/create_diagram` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是本次 `elements` 描述实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是输入描述数量，`elementCount` 是全画板当前图元数量。需要完整原始场景时显式设置 `get_board.view=full`。
 
 增量修改可传读取时的 `expectedRevision`；省略时服务端读取最新版本并用乐观锁保存。画板写入沿用现有的校验、冲突保护和实时通知，已打开且没有未保存本地修改的画板会自动刷新。发生 `REVISION_CONFLICT` 时重新读取并判断如何合并，不要盲目重试；业务错误返回 `ok=false`，不会标记为工具异常。
+
+工具定义使用 JSON Schema `$defs` 复用公共字段，三种形状共享相同字段结构，仍严格检查每种图元允许的属性。客户端可能再次展开引用，实际模型上下文大小取决于客户端实现。重复批量校验错误按字段与原因聚合，保留前三个具体位置、错误处数，最多展示八类，不回显完整 schema；实际校验仍检查全部输入。`update_board` 中纯图元修改没有任何实际变化时直接返回 `noop`，不再序列化完整画板并发起保存；仅改元数据应优先使用 `manage_board`。
+
+需要排查写入延迟时临时设置 `MCP_TRACE=true`，Compose 已转发该变量。`[MCP timing]` 记录 `apiReadMs/apiWriteMs`（内部 API 调用全过程，包含路由校验、序列化及存储）、`transformMs`（图元生成、更新或投影）、`responseBuildMs`（业务回执构建）、`handlerMs` 和 `apiReads/apiWrites`。这些不是纯 SQLite 执行时间；也不包含模型生成、客户端校验、外部网络、令牌鉴权或 SDK 响应传输。计时默认关闭，无常驻历史缓存，不记录参数、正文或令牌。常见绘图工具按工具名记录，管理操作记录为 `management` 类别。
+
+运行固定性能基准：
+
+```bash
+bun scripts/benchmark-mcp.ts
+```
+
+脚本通过真实 MCP SDK、路由和临时 SQLite，比较读取视图、工具定义与回执字符数；创建 100 张卡片、追加 100 张卡片、修改 20 个图元、无变化修改、修订冲突及 8 节点时间线各执行 30 次，输出 P50/P95，结束后清理临时数据库和附件。基准隔离写入频控；属于本机进程内测量，不代表 VPS 反代、多人并发或模型思考耗时，不设容易波动的绝对耗时门禁。
 
 例如创建带文字的流程图节点，只需一次调用 `create_board`：
 

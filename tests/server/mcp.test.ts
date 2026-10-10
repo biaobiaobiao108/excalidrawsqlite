@@ -37,7 +37,7 @@ const toolResult = <T>(result: {
         expect(record).not.toHaveProperty(key);
     }
   }
-  if (typeof data.addedCount === "number") {
+  if (typeof data.addedCount === "number" && data.elementMap !== undefined) {
     expect(data).not.toHaveProperty("elementIds");
     expect(Array.isArray(data.elementMap)).toBe(true);
     expect(data.elementMap).toHaveLength((data.requestedElementIds as unknown[]).length);
@@ -201,6 +201,7 @@ describe("Excalidraw MCP endpoint", () => {
         await client.callTool({
           name: "add_elements",
           arguments: {
+            responseMode: "ids",
             boardId: created.boardId,
             elements: [
               {
@@ -304,7 +305,7 @@ describe("Excalidraw MCP endpoint", () => {
       const complete = toolResult<{ boardId: string; revision: number; addedCount: number; requestedElementIds: string[]; generatedElementIds: string[] }>(
         await client.callTool({
           name: "create_board",
-          arguments: { name: "一次完成", backgroundColor: "#fefefe", elements: Array.from({ length: 301 }, (_, index) => ({
+          arguments: { responseMode: "ids", name: "一次完成", backgroundColor: "#fefefe", elements: Array.from({ length: 301 }, (_, index) => ({
             type: "rectangle", x: index * 120, y: 0, width: 100, height: 60, text: "节点",
           })) },
         }),
@@ -338,7 +339,7 @@ describe("Excalidraw MCP endpoint", () => {
       expect(withThumbnail.thumbnail_file_id).toBeTruthy();
 
       const updated = toolResult<{ revision: number; addedCount: number; removedCount: number; elementMap: Array<{ inputIndex: number; elementId: string }> }>(await client.callTool({
-        name: "update_board", arguments: { boardId: complete.boardId, expectedRevision: 1, name: "已修改",
+        name: "update_board", arguments: { responseMode: "ids", boardId: complete.boardId, expectedRevision: 1, name: "已修改",
           removeElementIds: [complete.requestedElementIds[0]], elements: [{ id: "replacement", type: "text", x: 0, y: 0, text: "替换内容" }] },
       }));
       expect(updated).toMatchObject({ revision: 2, addedCount: 1, removedCount: 2 });
@@ -489,7 +490,7 @@ describe("Excalidraw MCP endpoint", () => {
       expect(edge).not.toHaveProperty("angle");
       expect(edge).not.toHaveProperty("boundElements");
       const clone = toolResult<{ boardId: string; requestedElementIds: string[]; generatedElementIds: string[]; elementMap: Array<{ inputIndex: number; elementId: string; labelId?: string }> }>(await client.callTool({
-        name: "create_board", arguments: { name: "直接复制可写输出", elements: input.elements },
+        name: "create_board", arguments: { responseMode: "ids", name: "直接复制可写输出", elements: input.elements },
       }));
       expect(clone.requestedElementIds).toEqual(["source", "target", "connector"]);
       expect(clone.generatedElementIds).toHaveLength(2);
@@ -504,7 +505,7 @@ describe("Excalidraw MCP endpoint", () => {
       expect(cloneInput.elements).toEqual(input.elements);
       const emptyTarget = toolResult<{ boardId: string }>(await client.callTool({ name: "create_board", arguments: { name: "追加复制" } }));
       const appended = toolResult<{ requestedElementIds: string[] }>(await client.callTool({
-        name: "add_elements", arguments: { boardId: emptyTarget.boardId, elements: input.elements },
+        name: "add_elements", arguments: { responseMode: "ids", boardId: emptyTarget.boardId, elements: input.elements },
       }));
       expect(appended.requestedElementIds).toEqual(clone.requestedElementIds);
       const readable = toolResult<{ elements: Array<Record<string, unknown>>; pointCoordinateSystem: string }>(await client.callTool({
@@ -513,7 +514,7 @@ describe("Excalidraw MCP endpoint", () => {
       expect(readable.pointCoordinateSystem).toBe("absolute");
       expect(readable.elements[0].points).toEqual(edge.points);
       const labelBoard = toolResult<{ boardId: string; revision: number; generatedElementIds: string[] }>(await client.callTool({
-        name: "create_board", arguments: { name: "标签边界", elements: [{ id: "rr", type: "rectangle", x: 0, y: 0, width: 100, height: 80, text: "短标签" }] },
+        name: "create_board", arguments: { responseMode: "ids", name: "标签边界", elements: [{ id: "rr", type: "rectangle", x: 0, y: 0, width: 100, height: 80, text: "短标签" }] },
       }));
       const labelStyleUpdate = toolResult<{ revision: number }>(await client.callTool({ name: "update_element", arguments: {
         boardId: labelBoard.boardId, update: { id: "rr", labelId: labelBoard.generatedElementIds[0],

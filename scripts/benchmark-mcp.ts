@@ -57,6 +57,9 @@ try {
   await client.connect(transport);
   const tools = await client.listTools();
   const schemaChars = JSON.stringify(tools).length;
+  const toolSchemaChars = Object.fromEntries(tools.tools.filter((tool) =>
+    ["create_board", "add_elements", "update_board", "create_diagram"].includes(tool.name))
+    .map((tool) => [tool.name, JSON.stringify(tool.inputSchema).length]));
   const instructionsChars = client.getInstructions()?.length || 0;
   const initial = await call("create_board", { name: "基准画板", elements: specs("node") });
   const views = Object.fromEntries(await Promise.all(["compact", "elements", "input", "full"].map(async (view) =>
@@ -65,6 +68,8 @@ try {
     [responseMode, JSON.stringify(await call("create_board", { name: "回执基准", elements: specs("receipt"), responseMode })).length])));
   await measure("create_board 100 / minimal", (i) => call("create_board", { name: `创建 ${i}`, elements: specs("node") }));
   await measure("create_board 100 / ids", (i) => call("create_board", { name: `创建映射 ${i}`, elements: specs("node"), responseMode: "ids" }));
+  await measure("create_diagram 8", (i) => call("create_diagram", { name: `时间线 ${i}`, layout: "timeline",
+    nodes: Array.from({ length: 8 }, (_, n) => ({ id: `step${n}`, title: `阶段 ${n}`, body: "阶段说明" })) }));
   // Each add sample starts with the same size scene, so scene growth does not distort latency.
   const addBoards = await Promise.all(Array.from({ length: samples }, (_, i) =>
     call("create_board", { name: `追加目标 ${i}`, elements: specs("node") })));
@@ -85,7 +90,7 @@ try {
     boardId: initial.boardId, expectedRevision: 1, updates: [{ id: "node_0", x: 0 }],
   }, "REVISION_CONFLICT"));
   console.log(JSON.stringify({ scope: "本机进程内 SDK + SQLite，隔离写入频控窗口；不包含模型思考或反代网络；字符数为 structuredContent JSON 长度",
-    schemaChars, instructionsChars, viewResponseChars: views, receiptResponseChars: receipts, measurements }, null, 2));
+    schemaChars, toolSchemaChars, instructionsChars, viewResponseChars: views, receiptResponseChars: receipts, measurements }, null, 2));
 } finally {
   await client.close();
   await handler.close();
