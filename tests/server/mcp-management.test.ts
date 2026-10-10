@@ -27,6 +27,13 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     expect(folder).toMatchObject({ ok: true, created: true, color: "#123456", icon: "book" });
     expect(await call("ensure_folder", { name: "项目", color: "#abcdef", icon: "star" })).toMatchObject({ id: folder.id, created: false, color: "#123456", icon: "book" });
     expect(await call("update_folder", { folderId: folder.id, color: "#654321" })).toMatchObject({ ok: true, name: "项目", color: "#654321" });
+    for (const color of ["#f00", "#f008", "#ff000080", "red", "transparent"]) {
+      const colored = await call("create_folder", { name: `颜色 ${color}`, color });
+      expect(colored).toMatchObject({ ok: true, color });
+      expect(await call("update_folder", { folderId: colored.id, color: "  NAVY  " })).toMatchObject({ ok: true, color: "navy" });
+    }
+    const invalidColor = await client.callTool({ name: "create_folder", arguments: { name: "非法颜色", color: "url(https://example.com)" } });
+    expect(invalidColor.isError).toBe(true);
     const board = await call("create_board", { name: "管理测试", folderName: "项目", tags: ["计划"], favorite: true });
     const managed = await call("manage_board", { boardId: board.id, expectedRevision: board.revision, name: "重命名", favorite: false, tags: ["进展"], tagMode: "add" });
     expect(managed).toMatchObject({ ok: true, name: "重命名", favorite: false, tags: ["计划", "进展"], revision: board.revision + 1 });
@@ -41,6 +48,15 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     expect(invalidMetadata.isError).toBe(true);
     const invalidNested = await client.callTool({ name: "batch_manage_boards", arguments: { items: [{ action: "manage", boardId: board.id, expectedRevision: managed.revision, favorite: true, unknown: true }] } });
     expect(invalidNested.isError).toBe(true);
+    const missingRevision = await client.callTool({ name: "batch_manage_boards", arguments: { items: [{ action: "manage", boardId: board.id, favorite: true }] } });
+    expect(missingRevision.isError).toBe(true);
+    expect(JSON.stringify(missingRevision.content)).toContain("items.0.expectedRevision");
+    const invalidAction = await client.callTool({ name: "batch_manage_boards", arguments: { items: [{ action: "destroy", boardId: board.id, expectedRevision: managed.revision }] } });
+    expect(invalidAction.isError).toBe(true);
+    expect(JSON.stringify(invalidAction.content)).toContain("items.0.action");
+    const forbiddenMetadata = await client.callTool({ name: "batch_manage_boards", arguments: { items: [{ action: "delete", boardId: board.id, expectedRevision: managed.revision, favorite: true }] } });
+    expect(forbiddenMetadata.isError).toBe(true);
+    expect(JSON.stringify(forbiddenMetadata.content)).toContain("items.0.favorite");
     expect(runtime.db.query("SELECT revision FROM scenes WHERE id = ?").get(board.id)).toMatchObject({ revision: managed.revision });
     expect(await call("list_tags", { limit: 1 })).toMatchObject({ ok: true, tags: [expect.objectContaining({ boardCount: 1 })], nextCursor: expect.any(String) });
     const deleted = await call("delete_board", { boardId: board.id, expectedRevision: managed.revision });
@@ -52,7 +68,8 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     expect(await call("delete_folder", { folderId: folder.id, confirm: true, expectedBoardCount: 1 })).toMatchObject({ ok: true, movedBoards: 1 });
     expect(await call("restore_board", { boardId: board.id, expectedRevision: deleted.revision })).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
     const restored = await call("restore_board", { boardId: board.id });
-    expect(restored).toMatchObject({ ok: true, deleted: false, folder_id: null, revision: deleted.revision + 1 });
+    // Moving out of the deleted folder and restoring each advance revision.
+    expect(restored).toMatchObject({ ok: true, deleted: false, folder_id: null, revision: deleted.revision + 2 });
     const batch = await call("batch_manage_boards", { items: [{ action: "manage", boardId: board.id, expectedRevision: restored.revision, favorite: true }, { action: "restore", boardId: "nonexistent", expectedRevision: 1 }, { action: "restore", boardId: board.id, expectedRevision: restored.revision + 1 }] });
     expect(batch).toMatchObject({ ok: true, succeeded: 2, failed: 1, partial: true, results: [{ ok: true, favorite: true }, { ok: false, error: { code: "SCENE_NOT_FOUND" } }, { ok: true, noop: true }] });
     const originalDuplicate = await call("create_folder", { name: "重复" });
@@ -71,6 +88,13 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     const newFolderBoard = await call("create_board", { name: "新文件夹一次创建", folderName: "新文件夹" });
     expect(newFolderBoard).toMatchObject({ ok: true, folder_id: expect.any(String) });
     expect(await call("manage_board", { boardId: newFolderBoard.id, folderId: null, tags: [], tagMode: "replace" })).toMatchObject({ ok: true, folder_id: null, tags: [] });
+    const taggedBoard = await call("create_board", { name: "分页边界", tags: ["cursor-a", "cursor-b"] });
+    const tagPage = await call("list_tags", { limit: 1 });
+    expect(tagPage).toMatchObject({ tags: [{ name: "cursor-a", boardCount: 1 }], nextCursor: "cursor-a" });
+    await call("manage_board", { boardId: taggedBoard.boardId, tags: ["cursor-b"], tagMode: "replace" });
+    expect(await call("list_tags", { cursor: tagPage.nextCursor, limit: 1 })).toMatchObject({ tags: [{ name: "cursor-b", boardCount: 1 }] });
+    await call("manage_board", { boardId: taggedBoard.boardId, tags: ["cursor-a-renamed", "cursor-b"], tagMode: "replace" });
+    expect(await call("list_tags", { cursor: tagPage.nextCursor, limit: 2 })).toMatchObject({ tags: [{ name: "cursor-a-renamed", boardCount: 1 }, { name: "cursor-b", boardCount: 1 }] });
   } finally {
     await client.close();
     await handler.close();

@@ -8,6 +8,7 @@ import {
   SCENE_ID_PATTERN,
 } from "./config";
 import { HttpError } from "./errors";
+import { COLOR_DESCRIPTION, isValidColor } from "./color";
 
 export const hasOwn = (value: object, key: string) =>
   Object.prototype.hasOwnProperty.call(value, key);
@@ -77,14 +78,14 @@ export const validateFolderIcon = (value: unknown) => {
 };
 
 export const validateFolderColor = (value: unknown) => {
-  if (typeof value !== "string" || !/^#[\da-f]{6}$/i.test(value)) {
+  if (!isValidColor(value)) {
     throw new HttpError(
       400,
       "INVALID_FOLDER_COLOR",
-      "文件夹颜色必须是十六进制颜色值",
+      COLOR_DESCRIPTION,
     );
   }
-  return value.toLowerCase();
+  return value.trim().toLowerCase();
 };
 
 export const validateTags = (value: unknown) => {

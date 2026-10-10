@@ -4,6 +4,7 @@ import { HttpError } from "./errors";
 import { getSceneSummary } from "./scenes";
 import { validateTags } from "./validation";
 import type { ServerRuntime } from "./types";
+import { COLOR_PATTERN, COLOR_DESCRIPTION } from "./color";
 
 export type ManagementApi = <T>(path: string, method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown) => Promise<T>;
 type ToolResult = { structuredContent: Record<string, unknown> & { ok: boolean }; content: Array<{ type: "text"; text: string }> };
@@ -20,7 +21,7 @@ const folderFields = {
   folderName: z.string().trim().min(1).max(80).optional(),
 };
 const iconSchema = z.enum(["folder", "book", "palette", "lightbulb", "layers", "star", "image", "code", "bookmark", "file", "tag", "heart", "compass", "briefcase"]);
-const colorSchema = z.string().regex(/^#[\da-f]{6}$/i);
+const colorSchema = z.string().trim().max(64).regex(COLOR_PATTERN, COLOR_DESCRIPTION);
 const tagsSchema = z.array(z.string().trim().min(1).max(32)).max(12);
 const expectedRevisionSchema = z.number().int().positive().optional().describe("读取时修订号；省略则基于最新版本管理，冲突需重新读取判断");
 
@@ -129,7 +130,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
     tagQueryCache.set(runtime, tagQuery);
   }
   const tagsStatement = tagQuery;
-  server.registerTool("list_tags", { description: "列出在用标签及画板数量，返回有界分页；标签直接在 create_board/manage_board 使用，无需单独创建。", inputSchema: z.strictObject({ cursor: z.string().max(32).optional(), limit: z.number().int().min(1).max(100).default(50) }), annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ cursor, limit }) => {
+  server.registerTool("list_tags", { description: "列出在用标签及画板数量，按名称排序；cursor 是上一页最后名称的排序边界，即使该标签删除或改名仍可继续，非快照分页不保证包含分页期间移到边界前的新名称。标签直接在 create_board/manage_board 使用，无需单独创建。", inputSchema: z.strictObject({ cursor: z.string().max(32).optional(), limit: z.number().int().min(1).max(100).default(50) }), annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ cursor, limit }) => {
     const rows = tagsStatement.all(cursor ?? "", limit + 1) as Array<{ name: string; boardCount: number }>;
     const tags = rows.slice(0, limit);
     return result({ tags, nextCursor: rows.length > limit ? tags.at(-1)!.name : null });
@@ -161,7 +162,12 @@ export function registerManagementTools(server: McpServer, context: Context) {
   server.registerTool("delete_board", { description: "将画板软删除到回收站，保留内容和附件，可用 restore_board 还原；没有永久删除选项。", inputSchema: stateSchema, annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ boardId, expectedRevision }) => result(await setDeleted(boardId, true, expectedRevision))));
   server.registerTool("restore_board", { description: "从回收站恢复画板；已恢复时返回 noop，可传 expectedRevision。", inputSchema: stateSchema, annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ boardId, expectedRevision }) => result(await setDeleted(boardId, false, expectedRevision))));
   const batchRevision = z.number().int().positive().describe("每项必须提供当前修订号，可来自 list_boards 或上次写入返回");
-  const batchItemSchema = z.union([metadataSchema.extend({ action: z.literal("manage"), expectedRevision: batchRevision }), stateSchema.extend({ action: z.enum(["delete", "restore"]), expectedRevision: batchRevision })]);
+  const batchItemSchema = metadataSchema.extend({ action: z.enum(["manage", "delete", "restore"]), expectedRevision: batchRevision }).superRefine((item, ctx) => {
+    if (item.action === "manage") return;
+    for (const field of ["name", "favorite", "folderId", "folderName", "tags", "tagMode"] as const) {
+      if (item[field] !== undefined) ctx.addIssue({ code: "custom", path: [field], message: `${field} 仅允许 action=manage；${item.action} 只接受 boardId 和 expectedRevision` });
+    }
+  });
   server.registerTool("batch_manage_boards", { description: "一次管理最多 100 个画板，每项必须传 expectedRevision，独立执行并返回成功/错误、revision 和 noop；支持 manage、delete(软删除)、restore。部分失败不回滚其他项，partial=true 表示部分成功，冲突项重新读取后判断。", inputSchema: z.strictObject({ items: z.array(batchItemSchema).min(1).max(100) }), annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ items }) => {
     const outcomes: Record<string, unknown>[] = [];
     for (const item of items) {
