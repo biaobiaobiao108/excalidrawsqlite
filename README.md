@@ -243,7 +243,34 @@ bun run dev
 }
 ```
 
-提供的工具包括 `list_boards`、`get_board`、`create_board`、`add_elements` 和 `remove_elements`。绘制工具接受矩形、椭圆、菱形、文字、直线和箭头等结构化描述；Agent 不需要自行拼装 Excalidraw 的内部图元字段。画板写入沿用项目现有的校验、修订号冲突保护和实时通知，已打开且没有未保存本地修改的画板会自动刷新；检测到本地并发修改时会返回修订冲突，避免覆盖用户的编辑。
+工具按“尽量一次完成”安排：
+
+| 工具 | 用途 |
+| --- | --- |
+| `list_boards` | 按名称、标签、文件夹搜索画板摘要，使用 `nextCursor` 接续分页。 |
+| `get_board` | 默认读取紧凑图元及修订号；`view=summary` 只读元数据，`view=full` 读取内部字段，`elementIds` 限定待查看图元。 |
+| `create_board` | 一次传入 `name` 和全部 `elements` 创建完整画板，可指定 `backgroundColor`；省略图元时创建空板，允许同名。 |
+| `update_board` | 一次合并 `removeElementIds`、新增 `elements`、`name` 和 `backgroundColor`，原子保存一个修订，保留其余图元。 |
+| `add_elements` / `remove_elements` | 单纯追加或按 ID 移除图元；普通绘图无需先创建空板再调用追加。 |
+
+每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 会自动生成居中绑定文字，回执的 `addedCount` 与 `elementIds` 包含这些文字。Agent 不需要拼装 Excalidraw 的内部字段；仅超过数量或请求体限制时才需要分批。删除形状时会同时删除其绑定文字并清理引用。
+
+工具结果的完整机器数据在 `structuredContent`，文本 `content` 只给简短说明；客户端须保留结构化结果并检查 `ok`、`error.code`。写入默认返回修订号、数量、生成的 ID 和画板 URL，无需再次读取全文确认成功。旧客户端如只解析文本 JSON，需改为读取 `structuredContent`；需要完整原始场景的调用需显式设置 `get_board.view=full`。
+
+增量修改可传读取时的 `expectedRevision`；省略时服务端读取最新版本并用乐观锁保存。画板写入沿用现有的校验、冲突保护和实时通知，已打开且没有未保存本地修改的画板会自动刷新。发生 `REVISION_CONFLICT` 时重新读取并判断如何合并，不要盲目重试；业务错误返回 `ok=false`，不会标记为工具异常。
+
+例如创建带文字的流程图节点，只需一次调用 `create_board`：
+
+```json
+{
+  "name": "流程示意",
+  "elements": [
+    { "type": "rectangle", "x": 0, "y": 0, "width": 180, "height": 80, "text": "开始" },
+    { "type": "arrow", "startX": 180, "startY": 40, "endX": 280, "endY": 40 },
+    { "type": "diamond", "x": 280, "y": 0, "width": 160, "height": 80, "text": "是否完成" }
+  ]
+}
+```
 
 MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提交到仓库或暴露在浏览器端代码中。
 
