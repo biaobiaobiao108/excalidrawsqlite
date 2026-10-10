@@ -57,7 +57,7 @@
 - 后端模块按以下方向依赖：共享类型/错误/校验/HTTP 基础能力 → 鉴权、数据库、附件、画板和备份模块 → `routes.ts` → `server.ts`。业务模块不得反向导入 `server.ts`，不得引入不必要的循环依赖。
 - 控制台输出一律使用 `console.log` / `console.info`（调用 Windows 宽字符 API），禁止使用原始字节流写入的 `process.stdout.write`，防止在非 UTF-8 代码页终端下出现乱码。
 - SQLite 只初始化当前 schema，不维护 schema 版本、数据库迁移或旧库兼容分支。附件使用二进制流式写入、原子替换与失败回滚，相关改动必须覆盖当前行为和失败场景。
-- Docker 生产运行阶段必须复制完整的 `server/` 目录；容器环境使用 `oven/bun:1.4.2-alpine`，确保运行镜像内零 Node.js 残留。
+- Docker 生产运行阶段必须复制完整的 `server/` 目录；容器环境使用 `oven/bun:1.4.3-alpine`，确保运行镜像内零 Node.js 残留。
 
 ## 7. 容器运行身份与 rootless 兼容性
 
@@ -68,15 +68,15 @@
 
 测试按层级运行，普通单元测试不得加载浏览器环境：
 
-- `bun test` / `bun run test:unit`：运行 `tests/unit` 中基于 `bun:test` 的纯逻辑测试；不得依赖 JSDOM、React 全局 setup 或大规模快照。
+- `bun test --check` / `bun run test:unit`：运行 `tests/unit` 中基于 `bun:test` 的纯逻辑测试并检查 TypeScript；不得依赖 JSDOM、React 全局 setup 或大规模快照。
 - `bun run test:server`：运行 `tests/server` 中基于 Bun 原生 SQLite/API 的集成测试；测试必须清理临时数据库、附件和锁文件。
-- `bun run test:all`：依次执行单元、服务端、类型检查，以及生产构建和体积门禁（`test:size`）。仓库目前没有配置独立的 lint/格式化脚本。
+- `bun run test:all`：依次执行带 `--check` 的单元与服务端测试、全局 `bun check` 类型检查，以及生产构建和体积门禁（`test:size`）。仓库目前没有配置独立的 lint/格式化脚本。
 
 按改动范围选择验证：
 
 1. 文档或注释：可跳过自动化测试，但必须检查链接、示例和格式，然后直接提交。
 2. `server/` 或持久化：运行 `bun run test:server`。
-3. 局部前端或算法：运行 `bun test` 或 `bun run test:typecheck`；涉及 UI 行为时运行 `bun run build` 并进行必要的手动冒烟检查。
+3. 局部前端或算法：运行 `bun test --check` 或 `bun run test:typecheck`；涉及 UI 行为时运行 `bun run build` 并进行必要的手动冒烟检查。
 4. 依赖、构建配置、跨模块接口或发布级改动：运行 `bun run test:all`；其中生产构建由 `test:size` 执行。
 
 每次代码或文档修改后立即执行一次带中文主题的 Conventional Commit。
@@ -90,4 +90,4 @@
 - 云端保存队列：同一场景只保留最新待保存快照，成功保存、取消、释放或冲突处理后及时清理已无引用的快照；不得静默丢弃最新未保存数据。保存队列应维持当前的版本/冲突语义，并在前一次保存成功后对仍待保存的快照重新基于最新版本合并，避免无意义的 409。若后续增加字节或场景数量上限，必须采用刷新、背压或显式错误处理，不能直接淘汰最新快照。开发/测试统计至少覆盖文件、元素、快照和队列引用。
 - 服务端请求、附件与备份：使用 `MAX_IN_FLIGHT_BODY_BYTES`（默认 64 MiB）限制聚合请求体；已知 `Content-Length` 只用于提前拒绝或安全预分配，不能为了计算哈希把二进制整体读入内存。二进制上传必须流式写临时文件、增量计算 SHA-256/大小，成功后原子替换；超限、校验失败或数据库失败时清理并回滚。附件垃圾回收必须分批执行（当前默认每批 100 个），通过 `.gc` 隔离/删除临时产物并清理过期 `.tmp`、`.bak`、`.gc` 文件。完整备份应从磁盘流式打包；数据库快照接口如需返回 `ArrayBuffer`，必须先进行大小限制并在测试中覆盖失败清理。备份内容遵循当前 schema 与备份契约。
 - 原生 WebSocket：实时通道只传递轻量事件和版本信息，不发送完整场景或附件；客户端控制消息限制为 8 KiB，连接回压限制为 256 KiB，空闲连接超时为 120 秒。重连计时器、可见性监听和订阅必须在编辑器/页面卸载时清理；重连后使用当前场景版本进行增量对账，避免重复拉取大对象或无限重试。
-- 统计与验证：内存统计仅用于开发/测试，不进入生产日志；至少覆盖 History、`files`、解码图片、缓存条目、Canvas 像素、云端待保存快照和服务端 body 当前/峰值占用。内存相关改动运行 `bun test`、`bun run test:typecheck`、`bun run test:server`；涉及渲染、实时同步或交互时追加 `bun run build` 和必要的浏览器冒烟检查，跨模块或发布级改动运行 `bun run test:all`。
+- 统计与验证：内存统计仅用于开发/测试，不进入生产日志；至少覆盖 History、`files`、解码图片、缓存条目、Canvas 像素、云端待保存快照和服务端 body 当前/峰值占用。内存相关改动运行 `bun test --check`、`bun run test:typecheck`、`bun run test:server`；涉及渲染、实时同步或交互时追加 `bun run build` 和必要的浏览器冒烟检查，跨模块或发布级改动运行 `bun run test:all`。

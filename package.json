@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "excalidraw-monorepo",
-  "packageManager": "bun@1.4.2",
+  "packageManager": "bun@1.4.3",
   "workspaces": [
     "excalidraw-app",
     "packages/*"
@@ -27,7 +27,7 @@
     "picomatch@^2.3.1": "2.3.2"
   },
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.3"
   },
   "homepage": ".",
   "scripts": {
@@ -36,12 +36,12 @@
     "build": "bun run build:frontend && bun run build:server",
     "build:frontend": "bun --cwd ./excalidraw-app build",
     "build:server": "bun scripts/build-server.ts",
-    "test": "bun test --max-concurrency=1",
-    "test:unit": "bun test --max-concurrency=1",
-    "test:server": "bun test --max-concurrency=1 ./tests/server",
+    "test": "bun test --check --max-concurrency=1",
+    "test:unit": "bun test --check --max-concurrency=1",
+    "test:server": "bun test --check --max-concurrency=1 ./tests/server",
     "test:size": "bun run build && bun scripts/check-bundle-size.ts",
     "test:all": "bun run test:unit && bun run test:server && bun run test:typecheck && bun run test:size",
-    "test:typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.tests.json",
+    "test:typecheck": "bun check -p tsconfig.json && bun check -p tsconfig.tests.json",
     "build:packages": "bun run --cwd packages/common build:esm && bun run --cwd packages/fractional-indexing build:esm && bun run --cwd packages/laser-pointer build:esm && bun run --cwd packages/math build:esm && bun run --cwd packages/element build:esm && bun run --cwd packages/excalidraw build:esm"
   }
 }
