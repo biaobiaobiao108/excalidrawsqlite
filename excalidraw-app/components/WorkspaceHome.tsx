@@ -7,6 +7,7 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { isDarwin } from "@excalidraw/common";
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { FileId } from "@excalidraw/element/types";
@@ -142,6 +143,23 @@ const TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   minute: "2-digit",
   hour12: false,
 });
+
+const BOARD_GRID_VIRTUALIZATION_THRESHOLD = 40;
+const BOARD_GRID_VIRTUAL_OVERSCAN_ROWS = 2;
+const BOARD_GRID_ESTIMATED_ROW_HEIGHT = 360;
+const BOARD_GRID_INITIAL_GAP = 18.4;
+const BOARD_GRID_FOCUSABLE_SELECTOR =
+  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+type PendingBoardGridFocus = {
+  rowIndex: number;
+  direction: 1 | -1;
+};
+
+const getBoardGridFocusableElements = (row: HTMLElement) =>
+  Array.from(
+    row.querySelectorAll<HTMLElement>(BOARD_GRID_FOCUSABLE_SELECTOR),
+  ).filter((element) => element.getClientRects().length > 0);
 
 const getOwnerWindow = (node: HTMLDivElement | null) =>
   node?.ownerDocument.defaultView || window;
@@ -1063,7 +1081,14 @@ export const WorkspaceHome = ({
   onPreloadScene?: () => void;
 }) => {
   const rootRef = useRef<HTMLDivElement>(null);
+  const boardGridRef = useRef<HTMLDivElement>(null);
+  const pendingBoardGridFocusRef = useRef<PendingBoardGridFocus | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [boardGridMetrics, setBoardGridMetrics] = useState({
+    columns: 1,
+    rowGap: BOARD_GRID_INITIAL_GAP,
+    scrollMargin: 0,
+  });
   const [scenes, setScenes] = useState<CloudSceneSummary[]>(
     () => workspaceSnapshot?.scenes || [],
   );
@@ -1510,9 +1535,201 @@ export const WorkspaceHome = ({
     view,
   ]);
 
+  const updateBoardGridMetrics = useCallback(() => {
+    const root = rootRef.current;
+    const grid = boardGridRef.current;
+    const ownerWindow = root?.ownerDocument.defaultView;
+    if (!root || !grid || !ownerWindow) {
+      return;
+    }
+
+    const style = ownerWindow.getComputedStyle(grid);
+    const gridWidth = grid.clientWidth;
+    const rowGap = Number.parseFloat(style.rowGap) || 0;
+    const columnGap = Number.parseFloat(style.columnGap) || rowGap;
+    const minimumWidthSetting = style
+      .getPropertyValue("--board-grid-min-card-width")
+      .trim();
+    const parsedMinimumWidth = Number.parseFloat(minimumWidthSetting);
+    const minimumWidth = minimumWidthSetting.endsWith("%")
+      ? (gridWidth * parsedMinimumWidth) / 100
+      : parsedMinimumWidth;
+    const columns =
+      gridWidth > 0 && Number.isFinite(minimumWidth) && minimumWidth > 0
+        ? Math.max(
+            1,
+            Math.floor(
+              (gridWidth + columnGap) / (minimumWidth + columnGap),
+            ),
+          )
+        : 1;
+    const rootRect = root.getBoundingClientRect();
+    const gridRect = grid.getBoundingClientRect();
+    const scrollMargin = Math.max(
+      0,
+      gridRect.top - rootRect.top - root.clientTop + root.scrollTop,
+    );
+
+    setBoardGridMetrics((current) => {
+      if (
+        current.columns === columns &&
+        Math.abs(current.rowGap - rowGap) < 0.1 &&
+        Math.abs(current.scrollMargin - scrollMargin) < 0.5
+      ) {
+        return current;
+      }
+      return { columns, rowGap, scrollMargin };
+    });
+  }, []);
+
   const hasMoreScenes = Boolean(
     view === "trash" ? trashSceneCursor : sceneCursor,
   );
+
+  const shouldVirtualizeBoardGrid =
+    filteredScenes.length > BOARD_GRID_VIRTUALIZATION_THRESHOLD;
+  const boardGridRowCount = Math.ceil(
+    filteredScenes.length / boardGridMetrics.columns,
+  );
+  const getBoardGridRowKey = useCallback(
+    (index: number) =>
+      `${boardGridMetrics.columns}:${filteredScenes[index * boardGridMetrics.columns]?.id || index}`,
+    [boardGridMetrics.columns, filteredScenes],
+  );
+  const boardGridVirtualizer = useVirtualizer({
+    count: shouldVirtualizeBoardGrid ? boardGridRowCount : 0,
+    getScrollElement: () => rootRef.current,
+    estimateSize: () => BOARD_GRID_ESTIMATED_ROW_HEIGHT,
+    getItemKey: getBoardGridRowKey,
+    overscan: BOARD_GRID_VIRTUAL_OVERSCAN_ROWS,
+    gap: boardGridMetrics.rowGap,
+    scrollMargin: boardGridMetrics.scrollMargin,
+  });
+
+  const handleBoardGridKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!shouldVirtualizeBoardGrid || event.key !== "Tab") {
+        return;
+      }
+
+      const grid = boardGridRef.current;
+      const activeElement = grid?.ownerDocument.activeElement;
+      const activeRow =
+        activeElement instanceof HTMLElement
+          ? activeElement.closest<HTMLElement>(".board-grid-virtual-row")
+          : null;
+      if (!grid || !activeRow) {
+        return;
+      }
+
+      const focusableElements = getBoardGridFocusableElements(activeRow);
+      const activeIndex = focusableElements.indexOf(activeElement as HTMLElement);
+      const direction: 1 | -1 = event.shiftKey ? -1 : 1;
+      const atRowBoundary =
+        direction === 1
+          ? activeIndex === focusableElements.length - 1
+          : activeIndex === 0;
+      const rowIndex = Number(activeRow.dataset.index);
+      const targetRowIndex = rowIndex + direction;
+
+      if (
+        activeIndex < 0 ||
+        !atRowBoundary ||
+        targetRowIndex < 0 ||
+        targetRowIndex >= boardGridRowCount
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      pendingBoardGridFocusRef.current = {
+        rowIndex: targetRowIndex,
+        direction,
+      };
+
+      const focusTargetRow = () => {
+        const targetRow = grid.querySelector<HTMLElement>(
+          `[data-index="${targetRowIndex}"]`,
+        );
+        if (!targetRow) {
+          return false;
+        }
+        const targetElements = getBoardGridFocusableElements(targetRow);
+        const targetElement =
+          direction === 1 ? targetElements[0] : targetElements.at(-1);
+        if (!targetElement) {
+          return false;
+        }
+        pendingBoardGridFocusRef.current = null;
+        targetElement.focus();
+        return true;
+      };
+
+      if (!focusTargetRow()) {
+        boardGridVirtualizer.scrollToIndex(targetRowIndex, { align: "auto" });
+      }
+    },
+    [boardGridRowCount, boardGridVirtualizer, shouldVirtualizeBoardGrid],
+  );
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const grid = boardGridRef.current;
+    if (!root || !grid) {
+      return;
+    }
+
+    updateBoardGridMetrics();
+    const resizeObserver = new ResizeObserver(updateBoardGridMetrics);
+    resizeObserver.observe(root);
+    resizeObserver.observe(grid);
+    const ownerWindow = root.ownerDocument.defaultView;
+    ownerWindow?.addEventListener("resize", updateBoardGridMetrics, {
+      passive: true,
+    });
+
+    return () => {
+      resizeObserver.disconnect();
+      ownerWindow?.removeEventListener("resize", updateBoardGridMetrics);
+    };
+  }, [
+    error,
+    filteredScenes.length,
+    loading,
+    pageQueryKey,
+    searchQuery,
+    selectedFolderId,
+    selectedTag,
+    sort,
+    shouldVirtualizeBoardGrid,
+    updateBoardGridMetrics,
+    view,
+  ]);
+
+  useLayoutEffect(() => {
+    const pendingFocus = pendingBoardGridFocusRef.current;
+    if (!pendingFocus || !shouldVirtualizeBoardGrid) {
+      return;
+    }
+
+    const grid = boardGridRef.current;
+    const targetRow = grid?.querySelector<HTMLElement>(
+      `[data-index="${pendingFocus.rowIndex}"]`,
+    );
+    if (!targetRow) {
+      return;
+    }
+
+    const focusableElements = getBoardGridFocusableElements(targetRow);
+    const targetElement =
+      pendingFocus.direction === 1
+        ? focusableElements[0]
+        : focusableElements.at(-1);
+    if (targetElement) {
+      pendingBoardGridFocusRef.current = null;
+      targetElement.focus();
+    }
+  });
 
   const navigateToScene = (scene: CloudSceneSummary, newTab = false) => {
     const ownerWindow = getOwnerWindow(rootRef.current);
@@ -1889,6 +2106,28 @@ export const WorkspaceHome = ({
     showContextMenu(event, items);
   };
 
+  const renderBoardCard = (scene: CloudSceneSummary) => (
+    <BoardCard
+      key={scene.id}
+      scene={scene}
+      isTrash={view === "trash"}
+      onOpen={navigateToScene}
+      onPreload={onPreloadScene}
+      onToggleFavorite={handleToggleFavorite}
+      onEdit={openMetadataDialog}
+      onDelete={handleDeleteScene}
+      onRestore={handleRestoreScene}
+      onOpenContextMenu={openBoardContextMenu}
+      folderAppearance={
+        scene.folder_id
+          ? folders.find((folder) => folder.id === scene.folder_id) ||
+            DEFAULT_FOLDER_APPEARANCE
+          : DEFAULT_FOLDER_APPEARANCE
+      }
+      actionPending={!!pendingAction}
+    />
+  );
+
   return (
     <div className="workspace-home" ref={rootRef}>
       <div className="workspace-layout">
@@ -2177,30 +2416,44 @@ export const WorkspaceHome = ({
                   )}
               </div>
             ) : (
-              <div className="board-grid">
-                {filteredScenes.map((scene) => (
-                  <BoardCard
-                    key={scene.id}
-                    scene={scene}
-                    isTrash={view === "trash"}
-                    onOpen={navigateToScene}
-                    onPreload={onPreloadScene}
-                    onToggleFavorite={handleToggleFavorite}
-                    onEdit={openMetadataDialog}
-                    onDelete={handleDeleteScene}
-                    onRestore={handleRestoreScene}
-                    onOpenContextMenu={openBoardContextMenu}
-                    folderAppearance={
-                      scene.folder_id
-                        ? folders.find(
-                            (folder) => folder.id === scene.folder_id,
-                          ) || DEFAULT_FOLDER_APPEARANCE
-                        : DEFAULT_FOLDER_APPEARANCE
-                    }
-                    actionPending={!!pendingAction}
-                  />
-                ))}
-              </div>
+              shouldVirtualizeBoardGrid ? (
+                <div
+                  ref={boardGridRef}
+                  className="board-grid board-grid-virtualized"
+                  style={{ height: boardGridVirtualizer.getTotalSize() }}
+                  onKeyDown={handleBoardGridKeyDown}
+                >
+                  {boardGridVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const startIndex =
+                      virtualRow.index * boardGridMetrics.columns;
+                    return (
+                      <div
+                        key={virtualRow.key}
+                        ref={boardGridVirtualizer.measureElement}
+                        data-index={virtualRow.index}
+                        className="board-grid-virtual-row"
+                        style={
+                          {
+                            "--board-grid-columns": boardGridMetrics.columns,
+                            transform: `translateY(${virtualRow.start - boardGridMetrics.scrollMargin}px)`,
+                          } as React.CSSProperties
+                        }
+                      >
+                        {filteredScenes
+                          .slice(
+                            startIndex,
+                            startIndex + boardGridMetrics.columns,
+                          )
+                          .map(renderBoardCard)}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div ref={boardGridRef} className="board-grid">
+                  {filteredScenes.map(renderBoardCard)}
+                </div>
+              )
             )}
             {hasMoreScenes && (
               <div className="workspace-load-more">

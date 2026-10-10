@@ -534,8 +534,31 @@
 
 .board-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
+  --board-grid-min-card-width: 400px;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, var(--board-grid-min-card-width)), 1fr)
+  );
   gap: 1.15rem;
+}
+
+.board-grid-virtualized {
+  display: block;
+  position: relative;
+}
+
+.board-grid-virtual-row {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--board-grid-columns), minmax(0, 1fr));
+  gap: inherit;
+  will-change: transform;
+}
+
+.board-grid-virtualized .board-card {
+  animation: none;
 }
 
 .workspace-load-more {
@@ -1420,7 +1443,7 @@
   }
 
   .board-grid {
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
+    --board-grid-min-card-width: 290px;
   }
 }
 
@@ -1565,6 +1588,7 @@
   }
 
   .board-grid {
+    --board-grid-min-card-width: 100%;
     grid-template-columns: 1fr;
     gap: 0.8rem;
   }
