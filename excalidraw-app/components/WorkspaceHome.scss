@@ -302,23 +302,34 @@
   background: transparent;
   color: #4f5e55;
   cursor: pointer;
-  font-size: 0.92rem;
+  font-size: 1rem;
   text-align: start;
   transition: background-color 160ms ease, color 160ms ease,
-    transform 160ms ease;
+    box-shadow 160ms ease, transform 160ms ease;
 }
 
 .workspace-nav button:hover,
-.workspace-nav button.is-selected,
 .folder-row:hover {
-  background: var(--workspace-primary-soft);
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--workspace-text);
+}
+
+.workspace-nav button.is-selected {
+  background: #fffdfa;
+  box-shadow: 0 4px 12px rgba(40, 62, 49, 0.07);
+  color: var(--workspace-text);
+  font-weight: 650;
+}
+
+.workspace-nav button.is-selected > svg {
   color: var(--workspace-primary);
 }
 
 .folder-row.is-selected {
-  background: var(--workspace-primary-soft);
-  box-shadow: inset 0 0 0 1px rgba(49, 95, 76, 0.2);
-  color: var(--workspace-primary);
+  background: #fffdfa;
+  box-shadow: 0 4px 12px rgba(40, 62, 49, 0.07);
+  color: var(--workspace-text);
+  font-weight: 600;
 }
 
 .folder-row.is-selected > button:first-child {
@@ -328,9 +339,20 @@
 
 .workspace-nav button span,
 .folder-row small {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   margin-inline-start: auto;
-  color: #8b978f;
+  min-inline-size: 23px;
+  block-size: 23px;
+  padding-inline: 0.3rem;
+  border-radius: 999px;
+  background: var(--workspace-surface-hover);
+  color: #78847c;
   font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
 }
 
 .folder-heading {
@@ -406,8 +428,7 @@
   place-items: center;
   inline-size: 25px;
   block-size: 25px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--folder-accent) 13%, transparent);
+  background: transparent;
   color: var(--folder-accent);
 }
 
@@ -422,16 +443,11 @@
 }
 
 .folder-row small {
-  flex: 0 0 auto;
-  margin-inline-start: auto;
-  color: #a1a0ae;
-  font-size: 0.75rem;
+  color: #78847c;
 }
 
-.folder-row:hover,
-.folder-row.is-selected {
-  background: color-mix(in srgb, var(--folder-accent) 10%, transparent);
-  color: var(--workspace-primary);
+.folder-row.is-selected .folder-row-icon {
+  color: var(--folder-accent);
 }
 
 .workspace-main {
@@ -1498,7 +1514,7 @@
   }
 
   .workspace-nav button.is-selected {
-    background: var(--workspace-primary-soft);
+    background: #fffdfa;
   }
 
   .workspace-nav button span,
