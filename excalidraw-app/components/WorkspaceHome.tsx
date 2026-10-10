@@ -121,6 +121,7 @@ type WorkspaceContextMenuState = {
   x: number;
   y: number;
   items: WorkspaceContextMenuItem[];
+  portalTarget: HTMLElement;
 };
 
 const FOLDER_ICON_OPTIONS: Array<{ id: FolderIconName; label: string }> = [
@@ -1113,6 +1114,7 @@ const WorkspaceContextMenu = ({
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: state.x, y: state.y });
+  const [activeItem, setActiveItem] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     const bounds = menuRef.current?.getBoundingClientRect();
@@ -1156,43 +1158,69 @@ const WorkspaceContextMenu = ({
       buttons[nextIndex]?.focus();
     };
     document.addEventListener("pointerdown", handlePointerDown, true);
-    document.addEventListener("keydown", handleKeyDown);
-    menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    document.addEventListener("keydown", handleKeyDown, true);
+    setActiveItem(null);
+    menuRef.current?.focus({ preventScroll: true });
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown, true);
-      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [onClose]);
+  }, [onClose, state]);
 
   return createPortal(
     <div
       ref={menuRef}
       className="workspace-context-menu"
       role="menu"
+      tabIndex={-1}
       aria-label="操作菜单"
-      onContextMenu={(event) => event.preventDefault()}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onPointerLeave={() => setActiveItem(null)}
+      onPointerMove={(event) => {
+        if (!(event.target instanceof Element) || !event.target.closest("button:not(:disabled)")) {
+          setActiveItem(null);
+        }
+      }}
       style={{ left: position.x, top: position.y }}
     >
       {state.items.map((item) => (
-        <button
-          key={item.label}
-          type="button"
-          role="menuitem"
-          className={`${item.danger ? "is-danger" : ""} ${
-            item.separatorBefore ? "has-separator" : ""
-          }`.trim()}
-          disabled={item.disabled}
-          onClick={() => {
-            onClose();
-            item.onSelect();
-          }}
-        >
-          <WorkspaceContextMenuIcon icon={item.icon} />
-          {item.label}
-        </button>
+        <React.Fragment key={item.label}>
+          {item.separatorBefore && (
+            <div className="workspace-context-menu-separator" role="separator" />
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            className={`${item.danger ? "is-danger" : ""} ${
+              activeItem === item.label ? "is-active" : ""
+            }`.trim()}
+            disabled={item.disabled}
+            onPointerMove={(event) => {
+              if (!item.disabled) {
+                if (document.activeElement !== event.currentTarget) {
+                  event.currentTarget.focus({ preventScroll: true });
+                }
+                setActiveItem(item.label);
+              } else {
+                setActiveItem(null);
+              }
+            }}
+            onFocus={() => setActiveItem(item.label)}
+            onClick={() => {
+              onClose();
+              item.onSelect();
+            }}
+          >
+            <WorkspaceContextMenuIcon icon={item.icon} />
+            {item.label}
+          </button>
+        </React.Fragment>
       ))}
     </div>,
-    document.body,
+    state.portalTarget,
   );
 };
 
@@ -1364,7 +1392,13 @@ export const WorkspaceHome = ({
     (event: React.MouseEvent<HTMLElement>, items: WorkspaceContextMenuItem[]) => {
       event.preventDefault();
       event.stopPropagation();
-      setContextMenu({ x: event.clientX, y: event.clientY, items });
+      const target = event.target instanceof Element ? event.target : event.currentTarget;
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        items,
+        portalTarget: target.closest<HTMLElement>('dialog, [role="dialog"]') || event.currentTarget.ownerDocument.body,
+      });
     },
     [],
   );
@@ -2536,14 +2570,108 @@ export const WorkspaceHome = ({
 
   const openBackgroundContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target;
-    // Portaled dialogs bubble through this component, but are not page backgrounds.
-    if (
-      !(target instanceof Element) ||
-      !event.currentTarget.contains(target) ||
-      target.closest(
-        'button, a, input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="listbox"], [role="option"]',
-      )
-    ) {
+    event.preventDefault();
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    const input = target.closest<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
+    if (input) {
+      const items: WorkspaceContextMenuItem[] = [{
+        label: "全选文本",
+        icon: "check",
+        disabled:
+          input.disabled ||
+          (!(["text", "search", "url", "tel", "password", "email"].includes(input.type)) &&
+            input.tagName !== "TEXTAREA"),
+        onSelect: () => {
+          input.focus();
+          input.select();
+        },
+      }];
+      if (input === searchInputRef.current) {
+        items.push({
+          label: "清空搜索",
+          icon: "close",
+          disabled: !searchQuery,
+          onSelect: () => {
+            setSearchQuery("");
+            input.focus();
+          },
+        });
+      }
+      showContextMenu(event, items);
+      return;
+    }
+
+    // Keep portaled dialogs and the command palette in their own context.
+    if (!event.currentTarget.contains(target)) {
+      const dialog = target.closest('dialog, [role="dialog"]');
+      showContextMenu(event, [{
+        label: "返回当前窗口",
+        icon: "open",
+        onSelect: () => dialog?.querySelector<HTMLElement>('input, button:not(:disabled), [tabindex="0"]')?.focus(),
+      }]);
+      return;
+    }
+
+    const navigation = target.closest<HTMLElement>("[data-workspace-view]");
+    if (navigation) {
+      const nextView = navigation.dataset.workspaceView as BoardView;
+      const labels = { all: "所有画板", recent: "最近打开", favorites: "收藏", trash: "回收站" };
+      const items: WorkspaceContextMenuItem[] = [{
+        label: `打开${labels[nextView]}`,
+        icon: nextView === "favorites" ? "star" : nextView === "trash" ? "trash" : "open",
+        onSelect: () => {
+          setView(nextView);
+          setSelectedFolderId(null);
+        },
+      }, {
+        label: "命令菜单",
+        icon: "commands",
+        onSelect: () => setCommandPaletteOpen(true),
+      }];
+      if (nextView === "trash") {
+        items.push({
+          label: "清空回收站",
+          icon: "trash",
+          separatorBefore: true,
+          danger: true,
+          disabled: !workspaceStats?.trashCount || !!pendingAction,
+          onSelect: handleEmptyTrash,
+        });
+      } else {
+        items.push({
+          label: "新建画板",
+          icon: "plus",
+          separatorBefore: true,
+          disabled: !!pendingAction,
+          onSelect: () => void handleCreateScene(null),
+        });
+      }
+      showContextMenu(event, items);
+      return;
+    }
+
+    const clickedControl = target.closest<HTMLButtonElement>("button");
+    // Dropdown options can unmount when the context menu is clicked; reopen via
+    // their persistent trigger instead of invoking a detached option button.
+    const control = clickedControl?.closest(".custom-select")
+      ?.querySelector<HTMLButtonElement>(".custom-select__trigger") || clickedControl;
+    if (control) {
+      const label = control.getAttribute("aria-label") || control.textContent?.trim() || control.title || "打开选项";
+      showContextMenu(event, [{
+        label,
+        icon: control.classList.contains("empty-trash-button") ? "trash" : "open",
+        danger: control.classList.contains("empty-trash-button"),
+        disabled: control.disabled,
+        onSelect: () => control.click(),
+      }, {
+        label: "命令菜单",
+        icon: "commands",
+        separatorBefore: true,
+        onSelect: () => setCommandPaletteOpen(true),
+      }]);
       return;
     }
 
@@ -2736,6 +2864,7 @@ export const WorkspaceHome = ({
           </header>
           <nav className="workspace-nav" aria-label="画板导航">
             <button
+              data-workspace-view="all"
               className={
                 view === "all" && !selectedFolderId ? "is-selected" : ""
               }
@@ -2750,6 +2879,7 @@ export const WorkspaceHome = ({
               <span>{workspaceStats?.sceneCount ?? "…"}</span>
             </button>
             <button
+              data-workspace-view="recent"
               className={view === "recent" ? "is-selected" : ""}
               onClick={() => {
                 setView("recent");
@@ -2761,6 +2891,7 @@ export const WorkspaceHome = ({
               最近打开
             </button>
             <button
+              data-workspace-view="favorites"
               className={view === "favorites" ? "is-selected" : ""}
               onClick={() => {
                 setView("favorites");
@@ -2773,6 +2904,7 @@ export const WorkspaceHome = ({
               <span>{workspaceStats?.favoriteCount ?? "…"}</span>
             </button>
             <button
+              data-workspace-view="trash"
               className={view === "trash" ? "is-selected" : ""}
               onClick={() => {
                 setView("trash");

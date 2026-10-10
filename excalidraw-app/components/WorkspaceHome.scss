@@ -1398,6 +1398,9 @@
   display: grid;
   min-inline-size: 210px;
   max-inline-size: min(280px, calc(100vw - 16px));
+  max-block-size: calc(100dvh - 16px);
+  overflow-y: auto;
+  outline: none;
   gap: 2px;
   padding: 5px;
   border: 1px solid var(--workspace-border);
@@ -1435,16 +1438,16 @@
   stroke-width: 1.8;
 }
 
-.workspace-context-menu button.has-separator {
-  margin-block-start: 3px;
-  padding-block-start: 0.65rem;
+.workspace-context-menu-separator {
+  margin-block: 3px;
   border-block-start: 1px solid var(--workspace-border);
-  border-radius: 0;
 }
 
-.workspace-context-menu button:hover,
-.workspace-context-menu button:focus-visible {
+.workspace-context-menu button {
   outline: 0;
+}
+
+.workspace-context-menu button.is-active:not(:disabled) {
   background: var(--workspace-primary-soft);
   color: var(--workspace-primary);
 }
@@ -1453,8 +1456,7 @@
   color: #a54242;
 }
 
-.workspace-context-menu button.is-danger:hover,
-.workspace-context-menu button.is-danger:focus-visible {
+.workspace-context-menu button.is-danger.is-active:not(:disabled) {
   background: #fdf0ee;
   color: #a54242;
 }
