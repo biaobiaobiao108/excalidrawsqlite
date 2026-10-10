@@ -224,17 +224,45 @@
 }
 
 .empty-trash-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-weight: 550;
-  font-size: 0.88rem;
-  transition: all 140ms ease;
+  appearance: none;
+  -webkit-appearance: none;
+  display: grid;
+  place-items: center;
+  inline-size: 36px;
+  block-size: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #b24a4a;
+  cursor: pointer;
+  transition: color 140ms ease, transform 140ms ease, opacity 140ms ease;
 
   svg {
-    inline-size: 16px;
-    block-size: 16px;
+    inline-size: 19px;
+    block-size: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
   }
+}
+
+.empty-trash-button:hover:not(:disabled) {
+  background: transparent;
+  color: #c92a2a;
+  transform: scale(1.06);
+}
+
+.empty-trash-button:focus-visible {
+  outline: 2px solid #b24a4a;
+  outline-offset: 2px;
+}
+
+.empty-trash-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .header-create-button {
@@ -458,7 +486,7 @@
 
 .workspace-main-heading {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   max-inline-size: 1720px;
@@ -473,12 +501,6 @@
   font-size: clamp(1.9rem, 2.6vw, 2.45rem);
   font-weight: 600;
   letter-spacing: -0.045em;
-}
-
-.workspace-main-heading p {
-  margin: 0.55rem 0 0;
-  color: var(--workspace-muted);
-  font-size: 0.94rem;
 }
 
 .workspace-error {
@@ -1139,6 +1161,16 @@
   background: var(--workspace-primary-soft);
 }
 
+.empty-state-icon > svg {
+  inline-size: 29px;
+  block-size: 29px;
+  fill: none;
+  stroke: var(--workspace-primary);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
 .empty-state-icon .workspace-mark {
   inline-size: 30px;
   block-size: 30px;
@@ -1638,15 +1670,12 @@
   }
 
   .workspace-main-heading {
-    display: block;
+    display: flex;
+    align-items: center;
   }
 
   .workspace-main-heading h1 {
     font-size: 2rem;
-  }
-
-  .workspace-main-heading p {
-    font-size: 0.82rem;
   }
 
   .all-boards-section {

@@ -466,6 +466,15 @@ const TrashIcon = () => (
   </svg>
 );
 
+const EmptyTrashIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 7h16" />
+    <path d="M10 3h4a2 2 0 0 1 2 2v2H8V5a2 2 0 0 1 2-2Z" />
+    <path d="M6 7v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7" />
+    <path d="M10 11v6M14 11v6" />
+  </svg>
+);
+
 const EditIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -2722,21 +2731,17 @@ export const WorkspaceHome = ({
           <div className="workspace-main-heading">
             <div>
               <h1>{view === "trash" ? "回收站" : "我的画板"}</h1>
-              <p>
-                {view === "trash"
-                  ? "管理已删除的画板，支持一键还原或彻底清除。"
-                  : "把想法留在画布上，随时继续。"}
-              </p>
             </div>
             {view === "trash" && (
               <button
                 type="button"
-                className="danger-button empty-trash-button"
+                className="empty-trash-button"
                 disabled={!workspaceStats?.trashCount || !!pendingAction}
                 onClick={handleEmptyTrash}
+                aria-label="清空回收站"
+                title="清空回收站"
               >
                 <TrashIcon />
-                清空回收站
               </button>
             )}
           </div>
@@ -2813,7 +2818,7 @@ export const WorkspaceHome = ({
             ) : filteredScenes.length === 0 ? (
               <div className="workspace-empty-state">
                 <div className="empty-state-icon">
-                  {view === "trash" ? <TrashIcon /> : <ExcalidrawMark />}
+                  {view === "trash" ? <EmptyTrashIcon /> : <ExcalidrawMark />}
                 </div>
                 <h3>
                   {view === "trash"
