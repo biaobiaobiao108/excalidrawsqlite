@@ -97,6 +97,7 @@ jobs:
           docker run --detach \
             --name "$container_name" \
             --publish 127.0.0.1:18080:8080 \
+            --env AUTH_PASSWORD=release-smoke-password \
             excalidraw:release-smoke
 
           for attempt in $(seq 1 30); do
