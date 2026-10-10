@@ -4,7 +4,7 @@ import { HttpError } from "./errors";
 import { getSceneSummary } from "./scenes";
 import { validateTags } from "./validation";
 import type { ServerRuntime } from "./types";
-import { COLOR_PATTERN, COLOR_DESCRIPTION } from "./color";
+import { colorSchema } from "./color";
 import { compactMcpSchema } from "./mcp-schema";
 
 export type ManagementApi = <T>(path: string, method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown) => Promise<T>;
@@ -22,7 +22,6 @@ const folderFields = {
   folderName: z.string().trim().min(1).max(80).optional(),
 };
 const iconSchema = z.enum(["folder", "book", "palette", "lightbulb", "layers", "star", "image", "code", "bookmark", "file", "tag", "heart", "compass", "briefcase"]);
-const colorSchema = z.string().trim().toLowerCase().max(64).regex(COLOR_PATTERN, COLOR_DESCRIPTION);
 const tagsSchema = z.array(z.string().trim().min(1).max(32)).max(12);
 const expectedRevisionSchema = z.number().int().positive().optional().describe("读取时修订号；省略则基于最新版本管理，冲突需重新读取判断");
 

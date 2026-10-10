@@ -4,15 +4,15 @@ import { colorSchema, drawingElementSchema } from "../../server/mcp-drawing";
 import { compactMcpSchema } from "../../server/mcp-schema";
 
 describe("compact MCP schemas", () => {
-  it("advertises color case support without relying on unrepresentable regular-expression flags", () => {
+  it("advertises concise color guidance and validates case-insensitive formats at the server boundary", () => {
     const json = z.toJSONSchema(colorSchema, { io: "input" });
-    const advertised = new RegExp(json.pattern as string);
+    expect(json).toMatchObject({ type: "string", maxLength: 64 });
+    expect(json).not.toHaveProperty("pattern");
+    expect(json.description).toContain("#RRGGBB");
     for (const color of ["#ABC", "#ABCF", "#AABBCC", "#AABBCCFF", "TRANSPARENT", "ReD"]) {
-      expect(advertised.test(color)).toBe(true);
       expect(colorSchema.parse(color)).toBe(color.toLowerCase());
     }
     for (const color of ["#GGG", "#ABCDE", "not-a-color"]) {
-      expect(advertised.test(color)).toBe(false);
       expect(colorSchema.safeParse(color).success).toBe(false);
     }
   });

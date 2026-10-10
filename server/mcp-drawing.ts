@@ -33,17 +33,12 @@ import type {
   NonDeleted,
 } from "@excalidraw/element/types";
 import { HttpError } from "./errors";
-import { COLOR_PATTERN, COLOR_DESCRIPTION } from "./color";
+import { colorSchema } from "./color";
+export { colorSchema } from "./color";
 
 const coordinate = z.number().finite().min(-1_000_000).max(1_000_000);
 const dimension = z.number().finite().positive().max(1_000_000);
 const idSchema = z.string().min(1).max(128);
-export const colorSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .max(64)
-  .regex(COLOR_PATTERN, COLOR_DESCRIPTION);
 const roundness = z
   .union([
     z.number().finite().min(0).max(1_000),
