@@ -57,6 +57,7 @@ import {
 } from "./board-list-selection";
 
 import "./WorkspaceHome.scss";
+import { BoardCardBadges } from "./BoardCardBadges";
 
 type BoardView = "all" | "recent" | "favorites" | "trash";
 type SortMode = "updated" | "opened" | "created";
@@ -690,9 +691,6 @@ const BoardCard = React.memo(({
   eager?: boolean;
 }) => {
   const sceneName = scene.name || "未命名白板";
-  const maxVisibleTags = scene.folder_name ? 1 : 2;
-  const visibleTags = !isTrash ? scene.tags.slice(0, maxVisibleTags) : [];
-  const overflowTags = !isTrash ? scene.tags.slice(maxVisibleTags) : [];
   const hasBadges =
     !isTrash && (Boolean(scene.folder_name) || scene.tags.length > 0);
 
@@ -828,40 +826,12 @@ const BoardCard = React.memo(({
             </button>
           )}
           {hasBadges && (
-            <div className="board-card-badges">
-              {scene.folder_name && (
-                <span
-                  className="board-card-badge board-card-folder"
-                  title={`所属文件夹：${scene.folder_name}`}
-                  style={
-                    { "--folder-accent": folderAppearance.color } as React.CSSProperties
-                  }
-                >
-                  <FolderAppearanceIcon icon={folderAppearance.icon} />
-                  {scene.folder_name}
-                </span>
-              )}
-              {visibleTags.map((tag) => (
-                <span
-                  key={tag}
-                  className="board-card-badge board-card-tag"
-                  title={tag}
-                >
-                  {tag}
-                </span>
-              ))}
-              {overflowTags.length > 0 && (
-                <span
-                  className="board-card-badge board-card-tag-more"
-                  title={`更多标签：${overflowTags.join("、")}`}
-                  aria-label={`更多 ${
-                    overflowTags.length
-                  } 个标签：${overflowTags.join("、")}`}
-                >
-                  +{overflowTags.length}
-                </span>
-              )}
-            </div>
+            <BoardCardBadges
+              tags={scene.tags}
+              folderName={scene.folder_name}
+              folderIcon={<FolderAppearanceIcon icon={folderAppearance.icon} />}
+              folderColor={folderAppearance.color}
+            />
           )}
           <div className="board-card-meta-row">
             <span
