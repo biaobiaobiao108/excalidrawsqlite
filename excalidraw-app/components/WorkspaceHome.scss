@@ -670,7 +670,7 @@
   opacity: 0;
   transform: scale(0.94);
   transition: opacity 140ms ease, transform 140ms ease,
-    background-color 140ms ease, color 140ms ease;
+    color 140ms ease;
 
   svg {
     inline-size: 20px;
@@ -688,6 +688,19 @@
   }
 }
 
+.board-card-selection-toggle,
+.board-card-selection-toggle:hover,
+.board-card-selection-toggle:active,
+.board-card-selection-toggle:focus,
+.board-card-selection-toggle[aria-pressed="true"] {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
 .board-card:hover .board-card-selection-toggle,
 .board-card:focus-within .board-card-selection-toggle,
 .board-card.is-selected .board-card-selection-toggle {
@@ -702,8 +715,12 @@
 
 .board-card-selection-toggle:focus-visible {
   color: var(--workspace-primary);
-  outline: 2px solid var(--workspace-primary);
-  outline-offset: 2px;
+  outline: none;
+
+  svg {
+    stroke-width: 2.5;
+    transform: scale(1.08);
+  }
 }
 
 .board-card-selection-toggle:disabled {
