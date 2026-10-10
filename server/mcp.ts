@@ -5,6 +5,7 @@ import {
   colorSchema, drawingElementSchema, createDrawingBatch, removeDrawingElements,
   compactElement, elementUpdateSchema, updateDrawingElements, inputDrawingElements,
 } from "./mcp-drawing";
+import { compactDrawingElements } from "./mcp-read";
 import { registerManagementTools, resolveFolder } from "./mcp-management";
 
 import { randomBase64Url, timingSafeEqual } from "./crypto";
@@ -202,10 +203,10 @@ export const createMcpRequestHandler = (
         };
 
         const readBoard = async ({
-          boardId, view = "elements", elementIds, query, type, offset = 0,
+          boardId, view = "compact", elementIds, query, type, offset = 0,
           limit = 1_000, maxChars = 1_000_000,
         }: {
-          boardId: string; view?: "summary" | "elements" | "full" | "input"; elementIds?: string[];
+          boardId: string; view?: "summary" | "compact" | "elements" | "full" | "input"; elementIds?: string[];
           query?: string; type?: string; offset?: number; limit?: number; maxChars?: number;
         }) => {
           if (view === "summary") {
@@ -221,9 +222,10 @@ export const createMcpRequestHandler = (
           }
           const board = await api<SceneData>(`/api/scenes/${encodeURIComponent(boardId)}`, "GET");
           const writable = view === "input" ? inputDrawingElements(board.elements) : null;
-          // Input view collapses attached text into its owner before filtering/pagination.
-          const source = writable ? writable.elements as unknown as ExcalidrawElement[] : board.elements;
-          const selected = elementIds ? new Set(elementIds) : null;
+          const compact = view === "compact" ? compactDrawingElements(board.elements) : null;
+          // Semantic/input views collapse attached text before filtering/pagination.
+          const source = (compact?.elements || writable?.elements || board.elements) as unknown as ExcalidrawElement[];
+          const selected = elementIds ? new Set(elementIds.map((id) => compact?.labelOwners.get(id) || id)) : null;
           const needle = query?.toLocaleLowerCase();
           const matches = source.filter((element) =>
             (!selected || selected.has(element.id)) && (!type || element.type === type) &&
@@ -233,7 +235,7 @@ export const createMcpRequestHandler = (
             ? { ...cleanBoardRecord(board), elements: [] as Record<string, unknown>[], elementCount: board.elements.length, url: boardUrl(board.id) }
             : { boardId: board.id, name: board.name, revision: board.revision, elementCount: board.elements.length,
                 elements: [] as Record<string, unknown>[], url: boardUrl(board.id) };
-          const allIds = selected ? new Set(source.map((element) => element.id)) : null;
+          const allIds = selected ? new Set([...source.map((element) => element.id), ...compact?.labelOwners.keys() || []]) : null;
           const metadata = { ...base, matchedCount: matches.length, nextOffset: null, truncated: false,
             pointCoordinateSystem: view === "full" ? "relative" : "absolute",
             ...(writable ? { unsupportedElementIds: writable.unsupportedElementIds, warnings: writable.warnings } : {}),
@@ -248,7 +250,7 @@ export const createMcpRequestHandler = (
           let index = offset;
           while (index < matches.length && elements.length < limit) {
             const current = matches[index];
-            const element = view === "full" || view === "input" ? current : {
+            const element = view === "full" || view === "input" || view === "compact" ? current : {
               ...compactElement(current),
               ...(current.type === "arrow" || current.type === "line"
                 ? { points: current.points.map((point) => [point[0] + current.x, point[1] + current.y]) } : {}),
@@ -315,12 +317,12 @@ export const createMcpRequestHandler = (
           "get_board",
           {
             title: "读取画板",
-            description: "读取修订号与图元；input 用于跨板复制，保留 ID，不能直接追加到原板；原地改用 update_element/update_board.updates。truncated/nextOffset 表示分页截断；仅 input 返回 unsupportedElementIds/warnings 表示无法可写投影，省略图元不代表空板。input/紧凑 points 绝对坐标，full 相对坐标。",
+            description: "默认 compact 只读视图保留文字、几何、连接，标签折入本体且省略装饰样式；elements 含样式；input 用于跨板复制，保留 ID，不能直接追加到原板；原地改用 update_element/update_board.updates。truncated/nextOffset 表示分页截断；仅 input 返回 unsupportedElementIds/warnings 表示无法可写投影，省略图元不代表空板。input/紧凑 points 绝对坐标，full 相对坐标。",
             inputSchema: z.object({
               boardId: z.string().min(1).max(128),
-              view: z.enum(["summary", "elements", "full", "input"]).optional(),
+              view: z.enum(["summary", "compact", "elements", "full", "input"]).optional(),
               elementIds: z.array(z.string().min(1).max(128)).min(1).max(1_000).optional(),
-              query: z.string().trim().min(1).max(120).optional().describe("搜索文字；input 视图匹配合并后的形状标签，其他视图匹配独立文字图元"),
+              query: z.string().trim().min(1).max(120).optional().describe("搜索文字；compact/input 匹配合并后的标签，type 筛选合并后的本体类型；elements/full 匹配独立文字"),
               type: z.enum(["rectangle", "ellipse", "diamond", "text", "line", "arrow", "image", "freedraw", "frame", "magicframe", "embeddable", "iframe"]).optional(),
               offset: z.number().int().min(0).optional(),
               limit: z.number().int().min(1).max(1_000).optional(),
@@ -513,14 +515,14 @@ export const createMcpRequestHandler = (
 
         server.registerTool("get_boards_batch", {
           title: "批量读取画板",
-          description: "一次读取最多20块画板，支持input可写视图，共享字符预算。partial仅表示成功失败混合，truncated仅表示内容或预算截断；不存在的ID只报错，无需续读。不构成跨画板一致快照。",
+          description: "一次读取最多20块画板，默认compact语义阅读；支持input可写视图，共享字符预算。partial仅表示成功失败混合，truncated仅表示内容或预算截断；不存在的ID只报错，无需续读。不构成跨画板一致快照。",
           inputSchema: z.strictObject({
             boardIds: z.array(z.string().min(1).max(128)).min(1).max(20),
-            view: z.enum(["summary", "elements", "full", "input"]).optional(),
+            view: z.enum(["summary", "compact", "elements", "full", "input"]).optional(),
             maxChars: z.number().int().min(1_000).max(2_000_000).optional().describe("含所有画板与逐项错误的总预算，最少1000；连结果元数据也放不下时报 READ_BUDGET_TOO_SMALL"),
           }),
           annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
-        }, safeTool(async ({ boardIds, view = "elements", maxChars = 1_000_000 }) => {
+        }, safeTool(async ({ boardIds, view = "compact", maxChars = 1_000_000 }) => {
           const boards: Record<string, unknown>[] = boardIds.map((boardId) => ({ boardId, truncated: true,
             error: { code: "READ_BUDGET_EXHAUSTED", message: "预算不足，请单独读取该画板。" } }));
           const envelopeSize = () => JSON.stringify({ ok: true, boards, maxChars, partial: false, truncated: false }).length;
