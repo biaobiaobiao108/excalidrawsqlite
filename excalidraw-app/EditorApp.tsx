@@ -104,6 +104,7 @@ import {
   CloudSaveQueue,
   getCloudPersistenceSignature,
   getCloudSceneLoadSignatures,
+  getCloudSceneRecoveryData,
   subscribeCloudRealtime,
   subscribeCloudTabSync,
   type CloudSaveStatus,
@@ -467,7 +468,9 @@ const ExcalidrawWrapper = (props: {
       if (!excalidrawAPI) {
         return;
       }
-      const fileIds = getCloudFileIds(elements);
+      const fileIds = getCloudFileIds(elements).filter(
+        (fileId) => !excalidrawAPI.getFiles()[fileId]?.dataURL,
+      );
       if (!fileIds.length) {
         return;
       }
@@ -586,6 +589,7 @@ const ExcalidrawWrapper = (props: {
       sceneId: string,
       updateUrl = true,
       prefetchedCloudScene?: CloudSceneData,
+      recoveredSnapshot?: CloudSaveSnapshot | null,
     ) => {
       const loadId = ++cloudSceneLoadIdRef.current;
       cloudSceneLoadingRef.current = null;
@@ -594,10 +598,14 @@ const ExcalidrawWrapper = (props: {
         clearTimeout(cloudSceneViewportTimerRef.current);
         cloudSceneViewportTimerRef.current = null;
       }
-      const cloudData =
+      const remoteData =
         prefetchedCloudScene?.id === sceneId
           ? prefetchedCloudScene
           : await fetchCloudScene(sceneId);
+      // The pending local edit is the scene the user must continue editing.
+      // Loading only the server baseline would let the next edit overwrite
+      // the recovered save, even after that save succeeds.
+      const cloudData = getCloudSceneRecoveryData(remoteData, recoveredSnapshot);
       if (!excalidrawAPI || excalidrawAPI.isDestroyed) {
         throw new Error("编辑器尚未初始化");
       }
@@ -627,7 +635,10 @@ const ExcalidrawWrapper = (props: {
       }
 
       isApplyingCloudSceneRef.current = true;
-      cloudSaveQueue.setRevision(sceneId, cloudData.revision);
+      cloudSaveQueue.setRevision(
+        sceneId,
+        recoveredSnapshot?.baseRevision ?? cloudData.revision,
+      );
       setActiveCloudScene(sceneId);
       const initialContentSignature = getCloudSceneContentSignature(
         cloudData.name,
@@ -653,6 +664,9 @@ const ExcalidrawWrapper = (props: {
           appState: restoredAppState,
           captureUpdate: CaptureUpdateAction.NEVER,
         });
+        if (recoveredSnapshot) {
+          excalidrawAPI.addFiles(Object.values(recoveredSnapshot.files));
+        }
         await loadCloudFilesIntoScene(elements, sceneId, loadId);
         editedDuringLoad = Boolean(
           cloudSceneLoadingRef.current?.loadId === loadId &&
@@ -843,6 +857,7 @@ const ExcalidrawWrapper = (props: {
             requestedId,
             false,
             initialSceneDataRef.current?.cloudScene,
+            cloudSaveQueue.getPendingSnapshot(requestedId),
           );
           cloudSaveQueue.resumePending();
           return;
@@ -876,7 +891,12 @@ const ExcalidrawWrapper = (props: {
           },
         });
       }
-      await loadSelectedCloudScene(scene.id, true);
+      await loadSelectedCloudScene(
+        scene.id,
+        true,
+        undefined,
+        cloudSaveQueue.getPendingSnapshot(scene.id),
+      );
       cloudSaveQueue.resumePending();
     })();
 

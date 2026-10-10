@@ -3,6 +3,8 @@ import { describe, expect, it } from "bun:test";
 import {
   CloudSaveQueue,
   getCloudSceneLoadSignatures,
+  getCloudSceneRecoveryData,
+  matchesPersistedCloudSnapshot,
   type CloudSavePersistence,
   type CloudSaveSnapshot,
 } from "../../excalidraw-app/data/cloudSync";
@@ -30,14 +32,109 @@ const createPersistence = () => {
     save: async (value) => {
       snapshots.set(value.sceneId, value);
     },
-    remove: async (sceneId) => {
-      snapshots.delete(sceneId);
+    remove: async (sceneId, expectedSnapshot) => {
+      if (!expectedSnapshot || matchesPersistedCloudSnapshot(snapshots.get(sceneId), expectedSnapshot)) {
+        snapshots.delete(sceneId);
+      }
     },
   };
   return { persistence, snapshots };
 };
 
 describe("cloud save queue", () => {
+  it("exposes recovered content and retains its original revision for the next edit", async () => {
+    const { persistence, snapshots } = createPersistence();
+    snapshots.set("scene", snapshot("offline content"));
+    const revisions: Array<number | undefined> = [];
+    const names: string[] = [];
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async (id, data) => {
+        revisions.push(data.baseRevision);
+        names.push(data.name!);
+        return { success: true, id, updated_at: 1, revision: 2 };
+      },
+    });
+    await queue.ready();
+    const recovered = queue.getPendingSnapshot("scene")!;
+    expect(recovered.name).toBe("offline content");
+    queue.setRevision("scene", recovered.baseRevision!);
+    queue.enqueue({ ...recovered, name: `${recovered.name} + next edit`, baseRevision: undefined });
+    await queue.flush("scene");
+    expect(names).toEqual(["offline content + next edit"]);
+    expect(revisions).toEqual([1]);
+    queue.dispose();
+  });
+
+  it("keeps recovered canvas elements after saving and editing again", async () => {
+    const { persistence, snapshots } = createPersistence();
+    const old = { id: "old", version: 1 };
+    const offline = { id: "offline", version: 1 };
+    let remote: any = {
+      id: "scene", name: "board", elements: [old],
+      appState: { viewBackgroundColor: "#ffffff", gridSize: 20 }, revision: 1,
+    };
+    snapshots.set("scene", { ...snapshot("board"), elements: [old, offline] as any });
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async (id, data) => {
+        remote = { ...remote, ...data, revision: remote.revision + 1 };
+        return { success: true, id, updated_at: 1, revision: remote.revision };
+      },
+    });
+    await queue.ready();
+    const recovered = queue.getPendingSnapshot("scene")!;
+    const loaded = getCloudSceneRecoveryData(remote, recovered);
+    let canvas = loaded.elements;
+    queue.setRevision("scene", recovered.baseRevision!);
+    await queue.flush("scene");
+    expect(canvas.map((element) => element.id)).toEqual(["old", "offline"]);
+    canvas = [...canvas, { id: "new", version: 1 }];
+    queue.enqueue({ sceneId: "scene", name: loaded.name, elements: canvas as any, appState: recovered.appState, files: {} });
+    await queue.flush("scene");
+    expect(remote.elements.map((element: any) => element.id)).toEqual(["old", "offline", "new"]);
+    queue.dispose();
+  });
+
+  for (const disposeOlder of [false, true]) {
+    it(`protects another editor's newer snapshot when an older save finishes (disposed=${disposeOlder})`, async () => {
+      const { persistence, snapshots } = createPersistence();
+      let started!: () => void;
+      let release!: () => void;
+      const saving = new Promise<void>((resolve) => { started = resolve; });
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const statuses: string[] = [];
+      const older = new CloudSaveQueue({ ...callbacks, onStatusChange: (_, status) => { statuses.push(status); } }, {
+        persistence,
+        saveFilesToCloud: async () => {},
+        saveCloudScene: async (id) => {
+          started();
+          await held;
+          return { success: true, id, updated_at: 1, revision: 2 };
+        },
+      });
+      await older.ready();
+      older.enqueue(snapshot("older"));
+      const flushing = older.flush("scene");
+      await saving;
+      if (disposeOlder) older.dispose();
+      const newer = new CloudSaveQueue(callbacks, { persistence });
+      await newer.ready();
+      newer.enqueue(snapshot("newer offline edit"));
+      await Promise.resolve();
+      const statusCount = statuses.length;
+      release();
+      await flushing;
+      expect(snapshots.get("scene")?.name).toBe("newer offline edit");
+      expect(newer.hasPending("scene")).toBe(true);
+      if (disposeOlder) expect(statuses.length).toBe(statusCount);
+      older.dispose();
+      newer.dispose();
+    });
+  }
+
   it("compares load-time edits with the remote baseline after files load", () => {
     const remoteImage = {
       id: "image",
