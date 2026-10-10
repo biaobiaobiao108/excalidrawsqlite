@@ -1,4 +1,11 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 
 import "./CustomSelect.scss";
 
@@ -32,6 +39,18 @@ const CheckIcon = () => (
   </svg>
 );
 
+type MenuPosition = {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+  placement: "bottom" | "top";
+};
+
+const MENU_VIEWPORT_PADDING = 8;
+const MENU_GAP = 6;
+const MENU_MAX_HEIGHT = 256;
+
 export const CustomSelect = ({
   value,
   options,
@@ -47,6 +66,8 @@ export const CustomSelect = ({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const listboxId = useId();
 
   const selectedIndex = options.findIndex((option) => option.value === value);
@@ -66,7 +87,8 @@ export const CustomSelect = ({
     const handlePointerDown = (event: PointerEvent) => {
       if (
         event.target instanceof Node &&
-        !rootRef.current?.contains(event.target)
+        !rootRef.current?.contains(event.target) &&
+        !menuRef.current?.contains(event.target)
       ) {
         setOpen(false);
       }
@@ -77,6 +99,97 @@ export const CustomSelect = ({
       ownerDocument.removeEventListener("pointerdown", handlePointerDown);
     };
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuPosition(null);
+      return;
+    }
+
+    const trigger = triggerRef.current;
+    const menu = menuRef.current;
+    const ownerDocument = rootRef.current?.ownerDocument;
+    const ownerWindow = ownerDocument?.defaultView;
+    if (!trigger || !menu || !ownerWindow) {
+      return;
+    }
+
+    const updatePosition = () => {
+      const triggerRect = trigger.getBoundingClientRect();
+      const viewportWidth = ownerDocument.documentElement.clientWidth ||
+        ownerWindow.innerWidth;
+      const viewportHeight = ownerDocument.documentElement.clientHeight ||
+        ownerWindow.innerHeight;
+      const availableAbove = Math.max(
+        0,
+        triggerRect.top - MENU_GAP - MENU_VIEWPORT_PADDING,
+      );
+      const availableBelow = Math.max(
+        0,
+        viewportHeight - triggerRect.bottom - MENU_GAP - MENU_VIEWPORT_PADDING,
+      );
+      const desiredHeight = Math.min(menu.scrollHeight, MENU_MAX_HEIGHT);
+      let placement = menuPlacement;
+
+      if (
+        (placement === "bottom" &&
+          availableBelow < desiredHeight &&
+          availableAbove > availableBelow) ||
+        (placement === "top" &&
+          availableAbove < desiredHeight &&
+          availableBelow > availableAbove)
+      ) {
+        placement = placement === "bottom" ? "top" : "bottom";
+      }
+
+      const availableHeight =
+        placement === "top" ? availableAbove : availableBelow;
+      const maxHeight = Math.min(MENU_MAX_HEIGHT, availableHeight);
+      const renderedHeight = Math.min(menu.scrollHeight, maxHeight);
+      const width = Math.min(
+        triggerRect.width,
+        Math.max(0, viewportWidth - MENU_VIEWPORT_PADDING * 2),
+      );
+      const left = Math.min(
+        Math.max(triggerRect.left, MENU_VIEWPORT_PADDING),
+        Math.max(
+          MENU_VIEWPORT_PADDING,
+          viewportWidth - MENU_VIEWPORT_PADDING - width,
+        ),
+      );
+      const top = placement === "top"
+        ? triggerRect.top - MENU_GAP - renderedHeight
+        : triggerRect.bottom + MENU_GAP;
+
+      setMenuPosition((previous) => {
+        if (
+          previous?.top === top &&
+          previous.left === left &&
+          previous.width === width &&
+          previous.maxHeight === maxHeight &&
+          previous.placement === placement
+        ) {
+          return previous;
+        }
+        return { top, left, width, maxHeight, placement };
+      });
+    };
+
+    updatePosition();
+    const animationFrame = ownerWindow.requestAnimationFrame(updatePosition);
+    ownerWindow.addEventListener("resize", updatePosition);
+    ownerWindow.addEventListener("scroll", updatePosition, true);
+    ownerWindow.visualViewport?.addEventListener("resize", updatePosition);
+    ownerWindow.visualViewport?.addEventListener("scroll", updatePosition);
+
+    return () => {
+      ownerWindow.cancelAnimationFrame(animationFrame);
+      ownerWindow.removeEventListener("resize", updatePosition);
+      ownerWindow.removeEventListener("scroll", updatePosition, true);
+      ownerWindow.visualViewport?.removeEventListener("resize", updatePosition);
+      ownerWindow.visualViewport?.removeEventListener("scroll", updatePosition);
+    };
+  }, [open, menuPlacement, options.length]);
 
   const focusTrigger = () => {
     triggerRef.current?.focus();
@@ -183,6 +296,57 @@ export const CustomSelect = ({
     }
   };
 
+  const portalTarget =
+    rootRef.current?.closest("dialog") || rootRef.current?.ownerDocument.body;
+  const menu = open && options.length > 0 && (
+    <div
+      ref={menuRef}
+      id={listboxId}
+      className={`custom-select__menu custom-select__menu--${
+        menuPosition?.placement || menuPlacement
+      }`}
+      role="listbox"
+      aria-label={ariaLabel}
+      aria-hidden={!menuPosition}
+      style={{
+        top: menuPosition?.top ?? 0,
+        left: menuPosition?.left ?? 0,
+        width: menuPosition?.width ?? 0,
+        maxHeight: menuPosition?.maxHeight ?? 0,
+        visibility: menuPosition ? "visible" : "hidden",
+      }}
+    >
+      {options.map((option, index) => (
+        <button
+          key={option.value}
+          id={`${listboxId}-option-${option.value}`}
+          type="button"
+          role="option"
+          tabIndex={-1}
+          aria-selected={option.value === value}
+          className={`custom-select__option ${
+            option.value === value ? "is-selected" : ""
+          } ${
+            index === highlightedIndex ? "is-highlighted" : ""
+          }`.trim()}
+          disabled={option.disabled}
+          onMouseEnter={() => setHighlightedIndex(index)}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => selectOption(option)}
+        >
+          <span className="custom-select__option-label">
+            {option.label}
+          </span>
+          {option.value === value && (
+            <span className="custom-select__check">
+              <CheckIcon />
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div
       ref={rootRef}
@@ -210,43 +374,7 @@ export const CustomSelect = ({
           <ChevronIcon />
         </span>
       </button>
-      {open && options.length > 0 && (
-        <div
-          id={listboxId}
-          className={`custom-select__menu custom-select__menu--${menuPlacement}`}
-          role="listbox"
-          aria-label={ariaLabel}
-        >
-          {options.map((option, index) => (
-            <button
-              key={option.value}
-              id={`${listboxId}-option-${option.value}`}
-              type="button"
-              role="option"
-              tabIndex={-1}
-              aria-selected={option.value === value}
-              className={`custom-select__option ${
-                option.value === value ? "is-selected" : ""
-              } ${
-                index === highlightedIndex ? "is-highlighted" : ""
-              }`.trim()}
-              disabled={option.disabled}
-              onMouseEnter={() => setHighlightedIndex(index)}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => selectOption(option)}
-            >
-              <span className="custom-select__option-label">
-                {option.label}
-              </span>
-              {option.value === value && (
-                <span className="custom-select__check">
-                  <CheckIcon />
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+      {menu && portalTarget ? createPortal(menu, portalTarget) : null}
     </div>
   );
 };
