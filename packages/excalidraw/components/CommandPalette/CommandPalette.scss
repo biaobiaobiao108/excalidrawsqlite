@@ -1,4 +1,15 @@
 .excalidraw {
+  // Use the viewport as the positioning reference so document scrollbars cannot
+  // shift the palette while the command list scrolls.
+  .Modal.command-palette-dialog {
+    position: fixed;
+    inset: 0 auto auto 0;
+    inline-size: 100vw;
+    block-size: 100dvh;
+    box-sizing: border-box;
+    padding: 0;
+  }
+
   .command-palette-dialog {
     user-select: none;
 
