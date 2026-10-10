@@ -23,7 +23,7 @@ const MCP_SERVER_INSTRUCTIONS = [
   "get_board 的 input 视图用于跨板复制：elements 保留原 ID，可传给 create_board 或其他画板的 add_elements；同板原地修改用 update_element/update_board.updates，追加已有 ID 会报错。绑定文字合并到形状，points 是绝对坐标，rotation 是度。检查 unsupportedElementIds/warnings/projectionIncomplete，图元被省略不能视为空板。默认紧凑视图用于阅读，full 为内部格式且 points 是相对坐标。",
   "create_board 可同时设置 folderId/folderName、favorite、tags；folderName 会幂等获取或创建文件夹，重名歧义报错。文件夹用 list/ensure/create/update/delete_folder。manage_board 一次管理收藏、标签、移动和改名，batch_manage_boards 批量管理逐条返回结果。",
   "delete_board 只软删除，restore_board 还原；MCP 不提供永久删除或清空回收站。回收站受服务端保留期限约束。delete_folder 仅移画板至根目录，正式执行需 confirm=true，可先 dryRun 查看影响。",
-  "完整机器结果位于 structuredContent，检查 ok 与 error.code；画板结果统一带 boardId，兼容 id。绘图回执的 requestedElementIds 是每个输入描述的本体，generatedElementIds 是附属文字，elementMap 按 inputIndex 对应本体与 labelId；elementIds 保留全部 ID。批读 partial 表示成功失败混合，truncated 仅表示内容/预算截断，not found 不需要续读。",
+  "完整机器结果位于 structuredContent，检查 ok 与 error.code；画板标识统一使用 boardId，不返回 id 别名。图元和文件夹仍使用各自的 id。绘图回执的 requestedElementIds 是每个输入描述的本体，generatedElementIds 是附属文字，elementMap 按 inputIndex 对应本体与 labelId；elementIds 保留全部 ID。批读 partial 表示成功失败混合，truncated 仅表示内容/预算截断，not found 不需要续读。",
   "不支持图片上传、自由绘制或直接输入原始 Excalidraw JSON；工具接受矩形、椭圆、菱形、文字、直线和箭头。输入必须为 JSON 对象，多行字符串遵循 JSON 转义规则。",
 ].join(" ");
 
@@ -45,6 +45,7 @@ const cleanBoardRecord = (value: Record<string, unknown>): Record<string, unknow
   const { thumbnail_file_id: _thumbnail, size: _size, ...clean } = value;
   if (typeof value.id === "string" && typeof value.revision === "number") {
     clean.boardId = value.id;
+    delete clean.id;
   }
   return clean;
 };
@@ -209,7 +210,7 @@ export const createMcpRequestHandler = (
           );
           const base = view === "full"
             ? { ...cleanBoardRecord(board), elements: [] as Record<string, unknown>[], elementCount: board.elements.length, url: boardUrl(board.id) }
-            : { id: board.id, boardId: board.id, name: board.name, revision: board.revision, elementCount: board.elements.length,
+            : { boardId: board.id, name: board.name, revision: board.revision, elementCount: board.elements.length,
                 elements: [] as Record<string, unknown>[], url: boardUrl(board.id) };
           const allIds = selected ? new Set(source.map((element) => element.id)) : null;
           const metadata = { ...base, matchedCount: matches.length, nextOffset: null, truncated: false,

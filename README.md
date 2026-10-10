@@ -287,7 +287,7 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 跨板复制使用 `get_board.view=input` 或批读的 `input` 视图：返回的 `elements` 严格符合写入 schema，可交给 `create_board` 或其他画板的 `add_elements`。形状标签折叠为 `text/labelId/labelStyle`，保留标签 ID 和独立样式。先检查 `unsupportedElementIds/warnings/projectionIncomplete`，图片、自由画笔及分组、框架等不能通过这个视图完整复制；跳过图元时警告说明原因，省略不代表空画板，原始内容未删除。向同一画板追加已有 ID 会报冲突，原地修改应使用 `update_element` 或 `update_board.updates`。紧凑视图与 `input` 的折线点均为绝对坐标；`full` 为内部相对坐标，需加图元 `x/y`，返回的 `pointCoordinateSystem` 明确标注。`rotation` 单位为度，input 输出舍入至 10 位小数，文字 `x/y` 是左上角。绑定的 `fixedPoint` 允许越出 `[0,1]`，遵循原生绑定归一化范围，支持回读回写。
 
-绘图回执同时返回 `requestedElementIds`（输入图元本体）、`generatedElementIds`（自动生成的绑定文字）和 `elementMap`（按 `inputIndex` 对应本体及 `labelId`）；旧的 `elementIds` 继续包含全部 ID。画板结果统一提供 `boardId` 并保留 `id`，省略内部缩略图哈希和存储大小。批读的 `partial` 表示成功与失败混合，`truncated` 仅表示内容或字符预算截断；画板不存在不会触发 `truncated`，无需续读。
+绘图回执同时返回 `requestedElementIds`（输入图元本体）、`generatedElementIds`（自动生成的绑定文字）和 `elementMap`（按 `inputIndex` 对应本体及 `labelId`）；`elementIds` 包含全部 ID。MCP 画板输入和结果统一使用 `boardId`，不提供 `id` 别名，包括列表、单读、批读、创建及管理结果；图元和文件夹各自的 `id` 不变。省略内部缩略图哈希和存储大小。批读的 `partial` 表示成功与失败混合，`truncated` 仅表示内容或字符预算截断；画板不存在不会触发 `truncated`，无需续读。
 
 图元和嵌套对象严格拒绝未知字段，`strokeColour`、`fillStyles`、`zIndex` 等错误不会写库。颜色接受十六进制、`transparent` 和 schema 列出的常见 CSS 颜色名；`opacity` 为 0–100 百分比，可带小数；`rotation` 以度为单位；`roundness` 支持像素半径或圆角对象；文字可指定 `fontSize/fontFamily/textAlign`。读取或修改已有场景时保留图片及自由画笔图元，但不提供图片上传、自由画笔生成、原始场景覆盖、备份、永久删除或清空回收站工具。
 

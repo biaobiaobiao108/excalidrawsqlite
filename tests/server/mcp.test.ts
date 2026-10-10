@@ -28,6 +28,12 @@ const toolResult = <T>(result: {
 }) => {
   expect(result.isError).not.toBe(true);
   expect(result.structuredContent).toMatchObject({ ok: true });
+  const data = result.structuredContent as Record<string, unknown>;
+  const records = [data, ...["items", "boards", "results"].flatMap((key) =>
+    Array.isArray(data[key]) ? data[key] as Record<string, unknown>[] : [])];
+  for (const record of records) {
+    if (typeof record.boardId === "string") expect(record).not.toHaveProperty("id");
+  }
   return result.structuredContent as T;
 };
 
@@ -163,7 +169,7 @@ describe("Excalidraw MCP endpoint", () => {
       expect(tools.tools.map((tool) => tool.name).some((name) => /clear_trash|purge|permanent/.test(name))).toBe(false);
       expect(client.getInstructions()).toContain("一次传入名称和全部 elements");
 
-      const created = toolResult<{ id: string; name: string; revision: number }>(
+      const created = toolResult<{ boardId: string; name: string; revision: number }>(
         await client.callTool({
           name: "create_board",
           arguments: { name: "Agent diagram" },
@@ -171,7 +177,7 @@ describe("Excalidraw MCP endpoint", () => {
       );
       expect(created.name).toBe("Agent diagram");
       expect(created.revision).toBe(1);
-      expect(created).toHaveProperty("boardId", created.id);
+      expect(created.boardId).toStartWith("scene_");
       expect(created).not.toHaveProperty("thumbnail_file_id");
       expect(created).not.toHaveProperty("size");
 
@@ -184,7 +190,7 @@ describe("Excalidraw MCP endpoint", () => {
         await client.callTool({
           name: "add_elements",
           arguments: {
-            boardId: created.id,
+            boardId: created.boardId,
             elements: [
               {
                 type: "rectangle",
@@ -213,19 +219,19 @@ describe("Excalidraw MCP endpoint", () => {
           },
         }),
       );
-      expect(added.boardId).toBe(created.id);
+      expect(added.boardId).toBe(created.boardId);
       expect(added.addedCount).toBe(4);
       expect(added.elementIds).toHaveLength(4);
       expect(added.revision).toBe(2);
 
       const board = toolResult<{
-        id: string;
+        boardId: string;
         revision: number;
         elements: Array<{ id: string; type: string; index: string | null }>;
       }>(
         await client.callTool({
           name: "get_board",
-          arguments: { boardId: created.id, view: "full" },
+          arguments: { boardId: created.boardId, view: "full" },
         }),
       );
       expect(board.elements.map((element) => element.type)).toEqual([
@@ -235,13 +241,13 @@ describe("Excalidraw MCP endpoint", () => {
         "text",
       ]);
       expect(board.elements.every((element) => Boolean(element.index))).toBe(true);
-      expect(events).toContainEqual({ sceneId: created.id, revision: 2 });
+      expect(events).toContainEqual({ sceneId: created.boardId, revision: 2 });
 
       const removed = toolResult<{ removedCount: number; revision: number }>(
         await client.callTool({
           name: "remove_elements",
           arguments: {
-            boardId: created.id,
+            boardId: created.boardId,
             elementIds: [added.elementIds[3]],
           },
         }),
@@ -256,7 +262,7 @@ describe("Excalidraw MCP endpoint", () => {
         await client.callTool({
           name: "remove_elements",
           arguments: {
-            boardId: created.id,
+            boardId: created.boardId,
             elementIds: [added.elementIds[0]],
           },
         }),
@@ -269,7 +275,7 @@ describe("Excalidraw MCP endpoint", () => {
       }>(
         await client.callTool({
           name: "get_board",
-          arguments: { boardId: created.id },
+          arguments: { boardId: created.boardId },
         }),
       );
       expect(remaining.elements.map((element) => element.type)).toEqual([
@@ -278,7 +284,7 @@ describe("Excalidraw MCP endpoint", () => {
 
       // A whole drawing is created in one tool call, including more than the
       // old 300-spec limit, with a compact receipt instead of duplicate geometry.
-      const complete = toolResult<{ id: string; revision: number; addedCount: number; elementIds: string[] }>(
+      const complete = toolResult<{ boardId: string; revision: number; addedCount: number; elementIds: string[] }>(
         await client.callTool({
           name: "create_board",
           arguments: { name: "一次完成", backgroundColor: "#fefefe", elements: Array.from({ length: 301 }, (_, index) => ({
@@ -292,55 +298,55 @@ describe("Excalidraw MCP endpoint", () => {
       expect(complete).not.toHaveProperty("elements");
 
       const summary = toolResult<{ element_count: number; revision: number }>(await client.callTool({
-        name: "get_board", arguments: { boardId: complete.id, view: "summary" },
+        name: "get_board", arguments: { boardId: complete.boardId, view: "summary" },
       }));
       expect(summary.element_count).toBe(602);
       expect(summary).not.toHaveProperty("elements");
 
       const selected = toolResult<{ elements: Array<{ id: string; seed?: number }>; notFoundIds: string[] }>(await client.callTool({
-        name: "get_board", arguments: { boardId: complete.id, elementIds: [complete.elementIds[0], "missing"] },
+        name: "get_board", arguments: { boardId: complete.boardId, elementIds: [complete.elementIds[0], "missing"] },
       }));
       expect(selected.elements).toHaveLength(1);
       expect(selected.elements[0]).not.toHaveProperty("seed");
       expect(selected.notFoundIds).toEqual(["missing"]);
 
-      const thumbnail = await apiHandler(new Request(`http://test.local/api/scenes/${complete.id}/thumbnail?revision=1`, {
+      const thumbnail = await apiHandler(new Request(`http://test.local/api/scenes/${complete.boardId}/thumbnail?revision=1`, {
         method: "PUT", headers: { "Content-Type": "image/png" }, body: new Uint8Array([1, 2, 3]),
       }));
       expect(thumbnail.status).toBe(200);
-      const withThumbnail = await (await apiHandler(new Request(`http://test.local/api/scenes/${complete.id}`))).json() as { thumbnail_file_id: string };
+      const withThumbnail = await (await apiHandler(new Request(`http://test.local/api/scenes/${complete.boardId}`))).json() as { thumbnail_file_id: string };
       expect(withThumbnail.thumbnail_file_id).toBeTruthy();
 
       const updated = toolResult<{ revision: number; addedCount: number; removedCount: number }>(await client.callTool({
-        name: "update_board", arguments: { boardId: complete.id, expectedRevision: 1, name: "已修改",
+        name: "update_board", arguments: { boardId: complete.boardId, expectedRevision: 1, name: "已修改",
           removeElementIds: [complete.elementIds[0]], elements: [{ type: "text", x: 0, y: 0, text: "替换内容" }] },
       }));
       expect(updated).toMatchObject({ revision: 2, addedCount: 1, removedCount: 2 });
       const changed = toolResult<{ name: string; thumbnail_file_id: string | null; appState: { viewBackgroundColor: string }; elements: Array<{ id: string }> }>(await client.callTool({
-        name: "get_board", arguments: { boardId: complete.id, view: "full" },
+        name: "get_board", arguments: { boardId: complete.boardId, view: "full" },
       }));
       expect(changed.name).toBe("已修改");
       expect(changed).not.toHaveProperty("thumbnail_file_id");
-      expect(await (await apiHandler(new Request(`http://test.local/api/scenes/${complete.id}`))).json())
+      expect(await (await apiHandler(new Request(`http://test.local/api/scenes/${complete.boardId}`))).json())
         .toHaveProperty("thumbnail_file_id", null);
       expect(changed.appState.viewBackgroundColor).toBe("#fefefe");
       expect(changed.elements).toHaveLength(601);
       expect(changed.elements.some((element) => element.id === complete.elementIds[1])).toBe(false);
 
       for (const name of ["add_elements", "remove_elements", "update_board"]) {
-        const conflict = await client.callTool({ name, arguments: { boardId: complete.id, expectedRevision: 1,
+        const conflict = await client.callTool({ name, arguments: { boardId: complete.boardId, expectedRevision: 1,
           ...(name === "remove_elements" ? { elementIds: [complete.elementIds[2]] }
             : { elements: [{ type: "text", x: 0, y: 0, text: "不会写入" }] }) } });
         expect(conflict.isError).not.toBe(true);
         expect(conflict.structuredContent).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
       }
-      const emptyUpdate = await client.callTool({ name: "update_board", arguments: { boardId: complete.id } });
+      const emptyUpdate = await client.callTool({ name: "update_board", arguments: { boardId: complete.boardId } });
       expect(emptyUpdate.structuredContent).toMatchObject({ ok: false, error: { code: "EMPTY_UPDATE" } });
       const notFound = await client.callTool({ name: "get_board", arguments: { boardId: "missing" } });
       expect(notFound.structuredContent).toMatchObject({ ok: false });
       expect(notFound.content[0]).toMatchObject({ type: "text" });
       const unchanged = toolResult<{ revision: number }>(await client.callTool({
-        name: "get_board", arguments: { boardId: complete.id, view: "summary" },
+        name: "get_board", arguments: { boardId: complete.boardId, view: "summary" },
       }));
       expect(unchanged.revision).toBe(2);
 
@@ -351,7 +357,7 @@ describe("Excalidraw MCP endpoint", () => {
             method: "POST",
             headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
             body: JSON.stringify({ jsonrpc: "2.0", id: 91, method: "tools/call", params: {
-              name: "add_elements", arguments: { boardId: complete.id, elements: [{
+              name: "add_elements", arguments: { boardId: complete.boardId, elements: [{
                 type: "rectangle", x: 0, y: 0, width: 100, height: 60, [typo]: 999,
               }] },
             } }),
@@ -360,11 +366,11 @@ describe("Excalidraw MCP endpoint", () => {
         expect(await invalidResponse.text()).toContain("Unrecognized key");
       }
       const afterInvalid = toolResult<{ revision: number }>(await client.callTool({
-        name: "get_board", arguments: { boardId: complete.id, view: "summary" },
+        name: "get_board", arguments: { boardId: complete.boardId, view: "summary" },
       }));
       expect(afterInvalid.revision).toBe(2);
 
-      const connected = toolResult<{ id: string; revision: number }>(await client.callTool({
+      const connected = toolResult<{ boardId: string; revision: number }>(await client.callTool({
         name: "create_board", arguments: {
           name: "完整工作流", folderName: "流程文件夹", tags: ["工作流"], favorite: true,
           elements: [
@@ -376,53 +382,53 @@ describe("Excalidraw MCP endpoint", () => {
         },
       }));
       const moved = toolResult<{ revision: number; updatedCount: number }>(await client.callTool({
-        name: "update_element", arguments: { boardId: connected.id, expectedRevision: 1,
+        name: "update_element", arguments: { boardId: connected.boardId, expectedRevision: 1,
           update: { id: "source", x: 100, strokeColor: "#f00", opacity: 50.5, rotation: 15, roundness: 12 } },
       }));
       expect(moved.revision).toBe(2);
       const styled = toolResult<{ elements: Array<Record<string, unknown>> }>(await client.callTool({
-        name: "get_board", arguments: { boardId: connected.id, elementIds: ["source", "connector"], view: "full" },
+        name: "get_board", arguments: { boardId: connected.boardId, elementIds: ["source", "connector"], view: "full" },
       }));
       expect(styled.elements.find((element) => element.id === "source")).toMatchObject({ strokeColor: "#f00", opacity: 50.5, x: 100 });
       expect(styled.elements.find((element) => element.id === "connector")).toMatchObject({
         startBinding: { elementId: "source" }, endBinding: { elementId: "target" },
       });
       const noop = toolResult<{ revision: number; noop: boolean }>(await client.callTool({
-        name: "update_element", arguments: { boardId: connected.id, update: { id: "source", strokeColor: "#f00" } },
+        name: "update_element", arguments: { boardId: connected.boardId, update: { id: "source", strokeColor: "#f00" } },
       }));
       expect(noop).toMatchObject({ revision: 2, noop: true });
       const page = toolResult<{ elements: unknown[]; nextOffset: number; truncated: boolean }>(await client.callTool({
-        name: "get_board", arguments: { boardId: complete.id, limit: 2 },
+        name: "get_board", arguments: { boardId: complete.boardId, limit: 2 },
       }));
       expect(page).toMatchObject({ nextOffset: 2, truncated: true });
       expect(page.elements).toHaveLength(2);
       const batch = toolResult<{ boards: Array<Record<string, unknown>>; truncated: boolean }>(await client.callTool({
-        name: "get_boards_batch", arguments: { boardIds: [complete.id, connected.id], maxChars: 10_000 },
+        name: "get_boards_batch", arguments: { boardIds: [complete.boardId, connected.boardId], maxChars: 10_000 },
       }));
       expect(batch.truncated).toBe(true);
       expect(JSON.stringify(batch).length).toBeLessThanOrEqual(10_000);
-      const favorites = toolResult<{ items: Array<{ id: string; boardId: string }> }>(await client.callTool({
+      const favorites = toolResult<{ items: Array<{ boardId: string }> }>(await client.callTool({
         name: "list_boards", arguments: { favorite: true, tag: "工作流" },
       }));
-      expect(favorites.items.map((scene) => scene.id)).toContain(connected.id);
+      expect(favorites.items.map((scene) => scene.boardId)).toContain(connected.boardId);
 
-      const canonicalFavorites = toolResult<{ items: Array<{ id: string; boardId: string }> }>(await client.callTool({
+      const canonicalFavorites = toolResult<{ items: Array<{ boardId: string }> }>(await client.callTool({
         name: "list_boards", arguments: { view: "all", favorite: true, tag: "工作流" },
       }));
       expect(canonicalFavorites.items).toEqual(favorites.items);
-      expect(canonicalFavorites.items[0].boardId).toBe(connected.id);
+      expect(canonicalFavorites.items[0].boardId).toBe(connected.boardId);
       expect(canonicalFavorites.items[0]).not.toHaveProperty("size");
       const favoriteViewSchema = tools.tools.find((tool) => tool.name === "list_boards")!.inputSchema;
       expect((favoriteViewSchema.properties!.view as { enum: string[] }).enum).toEqual(["all", "recent", "trash"]);
-      const unfavorites = toolResult<{ items: Array<{ id: string }> }>(await client.callTool({
+      const unfavorites = toolResult<{ items: Array<{ boardId: string }> }>(await client.callTool({
         name: "list_boards", arguments: { favorite: false },
       }));
-      expect(unfavorites.items.some((board) => board.id === connected.id)).toBe(false);
+      expect(unfavorites.items.some((board) => board.boardId === connected.boardId)).toBe(false);
       const missingFolder = await client.callTool({ name: "list_boards", arguments: { folderId: "missing" } });
       expect(missingFolder.structuredContent).toMatchObject({ ok: false, error: { code: "FOLDER_NOT_FOUND" } });
 
       const summaryBatch = toolResult<{ partial: boolean; truncated: boolean; boards: Array<Record<string, unknown>> }>(await client.callTool({
-        name: "get_boards_batch", arguments: { boardIds: [complete.id, "missing", connected.id], view: "summary" },
+        name: "get_boards_batch", arguments: { boardIds: [complete.boardId, "missing", connected.boardId], view: "summary" },
       }));
       expect(summaryBatch).toMatchObject({ partial: true, truncated: false });
       expect(summaryBatch.boards[1]).toMatchObject({ boardId: "missing", error: { code: "SCENE_NOT_FOUND" } });
@@ -431,13 +437,13 @@ describe("Excalidraw MCP endpoint", () => {
       }));
       expect(allMissing).toMatchObject({ partial: false, truncated: false });
       const smallSummary = toolResult<{ boards: Array<Record<string, unknown>>; truncated: boolean }>(await client.callTool({
-        name: "get_boards_batch", arguments: { boardIds: [connected.id], view: "summary", maxChars: 1_000 },
+        name: "get_boards_batch", arguments: { boardIds: [connected.boardId], view: "summary", maxChars: 1_000 },
       }));
       expect(smallSummary.truncated).toBe(false);
-      expect(smallSummary.boards[0]).toMatchObject({ boardId: connected.id });
+      expect(smallSummary.boards[0]).toMatchObject({ boardId: connected.boardId });
       expect(JSON.stringify(smallSummary).length).toBeLessThanOrEqual(1_000);
       const constrainedBatch = toolResult<{ boards: unknown[]; truncated: boolean }>(await client.callTool({
-        name: "get_boards_batch", arguments: { boardIds: [complete.id, connected.id], maxChars: 1_000 },
+        name: "get_boards_batch", arguments: { boardIds: [complete.boardId, connected.boardId], maxChars: 1_000 },
       }));
       expect(constrainedBatch.truncated).toBe(true);
       expect(JSON.stringify(constrainedBatch).length).toBeLessThanOrEqual(1_000);
@@ -446,13 +452,13 @@ describe("Excalidraw MCP endpoint", () => {
       } });
       expect(impossibleBudget.structuredContent).toMatchObject({ ok: false, error: { code: "READ_BUDGET_TOO_SMALL" } });
       for (const view of ["summary", "elements", "full", "input"]) {
-        const clean = toolResult<Record<string, unknown>>(await client.callTool({ name: "get_board", arguments: { boardId: complete.id, view } }));
+        const clean = toolResult<Record<string, unknown>>(await client.callTool({ name: "get_board", arguments: { boardId: complete.boardId, view } }));
         expect(clean).not.toHaveProperty("thumbnail_file_id");
         expect(clean).not.toHaveProperty("size");
       }
 
       const input = toolResult<{ elements: Array<Record<string, unknown>>; unsupportedElementIds: string[]; warnings: unknown[] }>(await client.callTool({
-        name: "get_board", arguments: { boardId: connected.id, view: "input" },
+        name: "get_board", arguments: { boardId: connected.boardId, view: "input" },
       }));
       expect(input.elements).toHaveLength(3);
       expect(input.unsupportedElementIds).toEqual([]);
