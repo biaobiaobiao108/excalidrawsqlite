@@ -197,7 +197,7 @@ AUTH_PASSWORD=your-password bun run dev
 | 环境变量 | 默认值 | 必填项 | 说明 |
 | :-- | :-- | :-: | :-- |
 | `AUTH_PASSWORD` | _无_ | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。 |
-| `MCP_TOKEN` | _无_ | 否 | 设置后启用 `POST /mcp` MCP 服务；客户端使用 `Authorization: Bearer <MCP_TOKEN>`。未设置时 MCP 端点关闭。 |
+| `MCP_TOKEN` | _无_ | 否 | 设置后启用 `/mcp/<URL 编码后的 MCP_TOKEN>` MCP 服务，无需认证请求头。未设置时 MCP 端点关闭。 |
 | `ALLOW_ANONYMOUS` | `false` | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。 |
 | `TRUST_PROXY` | `false` | 否 | 仅在应用端口被可信反向代理隔离保护时设为 `true`，用于识别 HTTPS 并下发 Secure Cookie。代理需覆盖 `X-Forwarded-For` 为实际客户端 IP，且应用端口不得允许不可信客户端直连；直连部署应保持 `false`，以防伪造转发头绕过登录限流。 |
 | `PORT` | `8080` | 否 | 服务端监听端口。 |
@@ -214,7 +214,7 @@ AUTH_PASSWORD=your-password bun run dev
 
 ## 🤖 MCP：让 Agent 读取和绘制画板
 
-MCP 使用标准 Streamable HTTP 传输，端点为 `http://你的服务地址:8080/mcp`。设置高强度随机令牌后重启服务：
+MCP 使用标准 Streamable HTTP 传输，端点为 `http://你的服务地址:8080/mcp/<URL 编码后的令牌>`。设置高强度随机令牌后重启服务：
 
 ```bash
 MCP_TOKEN=replace-with-a-long-random-secret bun run dev
@@ -234,14 +234,13 @@ bun run dev
   "mcpServers": {
     "excalidrawsqlite": {
       "type": "http",
-      "url": "http://127.0.0.1:8080/mcp",
-      "headers": {
-        "Authorization": "Bearer replace-with-a-long-random-secret"
-      }
+      "url": "http://127.0.0.1:8080/mcp/replace-with-a-long-random-secret"
     }
   }
 }
 ```
+
+只接受路径令牌，旧的 `Authorization: Bearer` 和 `?token=...` 均不生效。令牌使用 `encodeURIComponent` 编码后放在 `/mcp/` 后面；无需额外配置请求头。远程连接使用 HTTPS，并在反向代理访问日志中对 MCP 令牌路径脱敏。
 
 工具按“尽量一次完成”安排：
 

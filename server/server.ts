@@ -263,7 +263,7 @@ export const startServer = async () => {
       if (pathname === REALTIME_PATH) {
         return realtime.upgrade(req, websocketServer);
       }
-      if (pathname === MCP_PATH) {
+      if (pathname === MCP_PATH || pathname.startsWith(`${MCP_PATH}/`)) {
         return mcpHandler.fetch(req);
       }
       return handler(req);

@@ -32,7 +32,7 @@ const toolResult = <T>(result: {
 };
 
 describe("Excalidraw MCP endpoint", () => {
-  it("requires its bearer token and supports drawing through normal scene routes", async () => {
+  it("requires its URL path token and supports drawing through normal scene routes", async () => {
     const directory = path.join(
       os.tmpdir(),
       `excalidraw-mcp-${crypto.randomUUID()}`,
@@ -43,7 +43,7 @@ describe("Excalidraw MCP endpoint", () => {
       config: createServerConfig({
         NODE_ENV: "test",
         ALLOW_ANONYMOUS: "true",
-        MCP_TOKEN: "mcp-test-secret",
+        MCP_TOKEN: "mcp-test-secret/+?%",
       }),
     });
     resources.push({ runtime, directory });
@@ -54,6 +54,23 @@ describe("Excalidraw MCP endpoint", () => {
       new Request("http://test.local/mcp", { method: "POST" }),
     );
     expect(denied.status).toBe(401);
+    expect(denied.headers.get("www-authenticate")).toBeNull();
+    for (const method of ["GET", "POST", "DELETE"]) {
+      for (const pathname of [
+        "/mcp",
+        "/mcp/",
+        "/mcp/wrong-token",
+        "/mcp/%ZZ",
+        "/mcp/token/extra",
+        "/mcp?token=mcp-test-secret%2F%2B%3F%25",
+      ]) {
+        const rejected = await mcpHandler.fetch(new Request(`http://test.local${pathname}`, {
+          method,
+          headers: { Authorization: "Bearer mcp-test-secret/+?%" },
+        }));
+        expect(rejected.status).toBe(401);
+      }
+    }
 
     const events: Array<{ sceneId: string; revision: number }> = [];
     runtime.realtime = {
@@ -64,12 +81,10 @@ describe("Excalidraw MCP endpoint", () => {
     };
 
     const transport = new StreamableHTTPClientTransport(
-      new URL("http://test.local/mcp"),
+      new URL(`http://test.local/mcp/${encodeURIComponent(runtime.config.mcpToken!)}`),
       {
         fetch: async (input, init) => {
-          const headers = new Headers(init?.headers);
-          headers.set("Authorization", "Bearer mcp-test-secret");
-          return mcpHandler.fetch(new Request(input, { ...init, headers }));
+          return mcpHandler.fetch(new Request(input, init));
         },
       },
     );

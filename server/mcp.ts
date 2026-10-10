@@ -169,10 +169,21 @@ const compactElement = (element: ExcalidrawElement) => {
   ].filter((key) => fields[key] !== undefined).map((key) => [key, fields[key]]));
 };
 
-const getBearerToken = (req: Request) => {
-  const header = req.headers.get("authorization") || "";
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  return match?.[1] || "";
+const getPathToken = (req: Request) => {
+  const pathname = new URL(req.url).pathname;
+  const prefix = `${MCP_PATH}/`;
+  if (!pathname.startsWith(prefix)) {
+    return "";
+  }
+  const encodedToken = pathname.slice(prefix.length);
+  if (!encodedToken || encodedToken.includes("/")) {
+    return "";
+  }
+  try {
+    return decodeURIComponent(encodedToken);
+  } catch {
+    return "";
+  }
 };
 
 const createInternalApi = (apiHandler: ApiHandler, sessionToken: string) =>
@@ -632,7 +643,7 @@ export const createMcpRequestHandler = (
         const headers = new Headers({
           "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
           "Access-Control-Allow-Headers":
-            "Accept, Authorization, Content-Type, Last-Event-Id, Mcp-Method, Mcp-Name, Mcp-Protocol-Version, Mcp-Session-Id",
+            "Accept, Content-Type, Last-Event-Id, Mcp-Method, Mcp-Name, Mcp-Protocol-Version, Mcp-Session-Id",
           "Access-Control-Max-Age": "600",
         });
         const origin = req.headers.get("origin");
@@ -643,15 +654,14 @@ export const createMcpRequestHandler = (
         return response(runtime, req, null, { status: 204, headers });
       }
 
-      const providedToken = new TextEncoder().encode(getBearerToken(req));
+      const providedToken = new TextEncoder().encode(getPathToken(req));
       const tokenBytes = new TextEncoder().encode(expectedToken);
       if (!timingSafeEqual(providedToken, tokenBytes)) {
         return jsonResponse(
           runtime,
           req,
-          { error: "MCP 访问令牌无效", code: "MCP_UNAUTHORIZED" },
+          { error: "MCP URL 令牌无效或缺失", code: "MCP_UNAUTHORIZED" },
           401,
-          { "WWW-Authenticate": "Bearer" },
         );
       }
 
