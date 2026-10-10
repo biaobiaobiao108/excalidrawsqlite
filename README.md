@@ -287,7 +287,7 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字，ID 按本体与自动文字分别返回。可指定稳定 `id`，箭头的 `startBinding/endBinding.elementId` 能引用同批或已有节点，移动/缩放节点时保留连接；`points` 是绝对画布坐标，支持多段折线，不与二点坐标字段混用。删除形状同时删除绑定文字并清理引用。
 
-跨板复制使用 `get_board.view=input` 或批读的 `input` 视图：返回的 `elements` 严格符合写入 schema，可交给 `create_board` 或其他画板的 `add_elements`。形状标签折叠为 `text/labelId/labelStyle`，保留标签 ID 和独立样式。先检查 `unsupportedElementIds/warnings/projectionIncomplete`，图片、自由画笔及分组、框架等不能通过这个视图完整复制；跳过图元时警告说明原因，省略不代表空画板，原始内容未删除。向同一画板追加已有 ID 会报冲突，原地修改应使用 `update_element` 或 `update_board.updates`。紧凑视图与 `input` 的折线点均为绝对坐标；`full` 为内部相对坐标，需加图元 `x/y`，返回的 `pointCoordinateSystem` 明确标注。`rotation` 单位为度，input 输出舍入至 10 位小数，文字 `x/y` 是左上角。绑定的 `fixedPoint` 允许越出 `[0,1]`，遵循原生绑定归一化范围，支持回读回写。
+跨板复制使用 `get_board.view=input` 或批读的 `input` 视图：返回的 `elements` 严格符合写入 schema，可交给 `create_board` 或其他画板的 `add_elements`。形状标签折叠为 `text/labelId/labelStyle`，保留标签 ID 和独立样式。图元视图（elements/input/full）的 `truncated/nextOffset` 表示分页或字符预算截断；summary 只返回元数据；仅 input 返回的 `unsupportedElementIds/warnings` 表示不可写图元或属性被省略，与分页无关。图片、自由画笔及分组、框架等不能通过这个视图完整复制；跳过图元时警告说明原因，省略不代表空画板，原始内容未删除。向同一画板追加已有 ID 会报冲突，原地修改应使用 `update_element` 或 `update_board.updates`。紧凑视图与 `input` 的折线点均为绝对坐标；`full` 为内部相对坐标，需加图元 `x/y`，返回的 `pointCoordinateSystem` 明确标注。`rotation` 单位为度，input 输出舍入至 10 位小数，文字 `x/y` 是左上角。绑定的 `fixedPoint` 允许越出 `[0,1]`，遵循原生绑定归一化范围，支持回读回写。
 
 绘图回执返回 `requestedElementIds`（输入图元本体）、`generatedElementIds`（自动生成的绑定文字）和 `elementMap`（按 `inputIndex` 对应本体及 `labelId`），不再提供混合两种角色的 `elementIds` 回执；读取筛选和移除操作的 `elementIds` 入参仍表示待操作的图元。MCP 画板输入和结果统一使用 `boardId`，不提供 `id` 别名，包括列表、单读、批读、创建及管理结果；图元和文件夹各自的 `id` 不变。画板元数据统一为 `elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt`；文件夹使用 `boardCount/createdAt/updatedAt`，不透传对应数据库命名字段。省略内部缩略图哈希和存储大小。批读的 `partial` 表示成功与失败混合，`truncated` 仅表示内容或字符预算截断；画板不存在不会触发 `truncated`，无需续读。
 
@@ -295,13 +295,15 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 形状及其绑定文字的标签在创建、追加、原地修改时统一最多 2000 字符，直接按绑定文字 ID 修改也遵守此限制；独立文字最多 10000 字符。超限更新返回明确错误，保持原内容和修订号不变。文件夹和图元共用颜色规则，支持 `#RGB/#RGBA/#RRGGBB/#RRGGBBAA`、常见 CSS 名和 `transparent`。批量管理的必填参数错误会定位到 `items.0.expectedRevision/action` 等具体字段。
 
+修改形状标签样式可传 `update_element.update.labelStyle`，或通过 `update_board.updates` 一次修改多个标签；只合并传入的标签字段，不改形状样式，不需要删除重建。标签字体字段同时出现于顶层和 `labelStyle` 时，嵌套值优先。已有 `labelId` 只用于核对稳定身份，传不同 ID 明确报错；给无标签形状新增文字时可同时指定 `text/labelId/labelStyle`。绑定标签跟随容器旋转，不支持独立于容器的旋转。
+
 创建或移动时 `folderId` 与 `folderName` 二选一，`folderId=null` 表示根目录，`folderName` 自动获取或创建文件夹；已有文件夹不修改外观，同名歧义报错。`create_board/update_board.tags` 表示完整标签列表，增删标签使用 `manage_board`。不修改内容地打开画板、保存或返回主页不再产生内容修订；恢复未保存草稿和真实编辑仍正常保存。
 
 文件夹名称去除首尾空白后按大小写敏感的精确名称匹配；新建或改名不允许重复，并发 `ensure_folder` 也只创建一条记录。历史重名文件夹保留，按名称操作返回歧义错误，需指定 ID。相同画板元数据的 `noop` 同时保持 `revision` 和 `updated_at`，包括 HTTP API 的同内容更新。
 
 软删除和还原的实际状态变化也递增 `revision` 并更新 `updated_at`；重复相同状态返回 `noop`，不递增。删除后还原会使旧的 `expectedRevision` 失效，调用方应使用最新回执版本。`list_tags.nextCursor` 是按标签名排序的边界，SQL 读取名称大于该边界的标签，不要求该标签仍存在；分页不是一致快照，期间改名或新增可能影响后续页，完整重新核对时从第一页读取。
 
-工具结果的完整机器数据在 `structuredContent`，文本 `content` 只给简短说明；客户端须保留结构化结果并检查 `ok`、`error.code`。写入默认返回修订号、数量、生成的 ID 和画板 URL，无需再次读取全文确认成功。旧客户端如只解析文本 JSON，需改为读取 `structuredContent`；需要完整原始场景的调用需显式设置 `get_board.view=full`。
+成功及业务结果的完整机器数据在 `structuredContent`，文本 `content` 给简短说明；客户端须检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。写入默认返回修订号、数量、生成的 ID 和画板 URL，无需再次读取全文确认成功。`create_board/add_elements/update_board` 对新增图元使用同一套 `elementMap` 回执；`addedCount` 是本次 `elements` 描述实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是输入描述数量，`elementCount` 是全画板当前图元数量。需要完整原始场景时显式设置 `get_board.view=full`。
 
 增量修改可传读取时的 `expectedRevision`；省略时服务端读取最新版本并用乐观锁保存。画板写入沿用现有的校验、冲突保护和实时通知，已打开且没有未保存本地修改的画板会自动刷新。发生 `REVISION_CONFLICT` 时重新读取并判断如何合并，不要盲目重试；业务错误返回 `ok=false`，不会标记为工具异常。
 

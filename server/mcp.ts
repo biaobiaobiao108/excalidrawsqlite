@@ -20,10 +20,10 @@ const MCP_SERVER_INSTRUCTIONS = [
   "Excalidraw 白板支持搜索、读取及批量绘制。普通绘图优先 create_board 一次传入名称和全部 elements，不要先建空板再逐个绘制。",
   "每次最多 1,000 个图元描述；形状 text 自动绑定文字。可给节点指定 id，箭头 startBinding/endBinding.elementId 引用同批或已有节点，拖动节点时保持连接。折线 points 使用绝对画布坐标；二点仍可用 startX/startY/endX/endY。字段严格校验，不能输入原始内部字段。",
   "修改优先 update_board 一次合并添加、removeElementIds、updates 原地修改及元数据；只改一个图元用 update_element，保留 ID 和绑定。expectedRevision 是可选的已读修订号，服务端始终使用乐观锁；冲突后重新判断，禁止盲目重试。",
-  "get_board 的 input 视图用于跨板复制：elements 保留原 ID，可传给 create_board 或其他画板的 add_elements；同板原地修改用 update_element/update_board.updates，追加已有 ID 会报错。绑定文字合并到形状，points 是绝对坐标，rotation 是度。检查 unsupportedElementIds/warnings/projectionIncomplete，图元被省略不能视为空板。默认紧凑视图用于阅读，full 为内部格式且 points 是相对坐标。",
+  "get_board 的 input 视图用于跨板复制：elements 保留原 ID，可传给 create_board 或其他画板的 add_elements；同板原地修改用 update_element/update_board.updates，追加已有 ID 会报错。绑定文字合并到形状，points 是绝对坐标，rotation 是度。truncated/nextOffset 表示分页或预算截断；仅 input 的 unsupportedElementIds/warnings 表示不可写投影省略，图元被省略不能视为空板。默认紧凑视图用于阅读，full 为内部格式且 points 是相对坐标。",
   "create_board 可同时设置 folderId/folderName、favorite、tags；folderName 会幂等获取或创建文件夹，重名歧义报错。文件夹用 list/ensure/create/update/delete_folder。manage_board 一次管理收藏、标签、移动和改名，batch_manage_boards 批量管理逐条返回结果。",
   "delete_board 只软删除，restore_board 还原；MCP 不提供永久删除或清空回收站。回收站受服务端保留期限约束。delete_folder 仅移画板至根目录，正式执行需 confirm=true，可先 dryRun 查看影响。",
-  "完整机器结果位于 structuredContent，检查 ok 与 error.code；画板标识统一使用 boardId，元数据使用 elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt，不返回内部字段或别名。图元和文件夹仍使用各自的 id。绘图回执的 requestedElementIds 是每个输入描述的本体，generatedElementIds 是附属文字，elementMap 按 inputIndex 对应本体与 labelId。批读 partial 表示成功失败混合，truncated 仅表示内容/预算截断，not found 不需要续读。",
+  "成功与业务结果位于 structuredContent，检查 ok 与 error.code；schema 拒绝可能只有 isError=true 和 text，客户端也必须读取该错误。画板标识统一 boardId，元数据使用 elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt。图元和文件夹仍使用 id。三个绘图写工具均返回 elementMap，按 inputIndex 对应本体与 labelId；requestedElementIds 是本体，generatedElementIds 是附属文字，addedCount 是两者总数，elementCount 是全板当前图元总数。批读 partial 表示成功失败混合，truncated 仅表示内容/预算截断。",
   "不支持图片上传、自由绘制或直接输入原始 Excalidraw JSON；工具接受矩形、椭圆、菱形、文字、直线和箭头。输入必须为 JSON 对象，多行字符串遵循 JSON 转义规则。",
 ].join(" ");
 
@@ -236,8 +236,7 @@ export const createMcpRequestHandler = (
           const allIds = selected ? new Set(source.map((element) => element.id)) : null;
           const metadata = { ...base, matchedCount: matches.length, nextOffset: null, truncated: false,
             pointCoordinateSystem: view === "full" ? "relative" : "absolute",
-            ...(writable ? { unsupportedElementIds: writable.unsupportedElementIds, warnings: writable.warnings,
-              projectionIncomplete: writable.unsupportedElementIds.length > 0 || writable.warnings.length > 0 } : {}),
+            ...(writable ? { unsupportedElementIds: writable.unsupportedElementIds, warnings: writable.warnings } : {}),
             ...(selected ? { notFoundIds: elementIds!.filter((id) => !allIds!.has(id)) } : {}) };
           // Budget is charged per element rather than serializing another complete scene.
           // Reserve digits for the pagination offset and the outer structured result.
@@ -316,7 +315,7 @@ export const createMcpRequestHandler = (
           "get_board",
           {
             title: "读取画板",
-            description: "读取修订号与图元；input 用于跨板复制，保留 ID，不能直接追加到原板；原地改用 update_element/update_board.updates。检查 unsupportedElementIds/warnings/projectionIncomplete，省略图元不代表空板。input/紧凑 points 绝对坐标，full 相对坐标。支持筛选分页。",
+            description: "读取修订号与图元；input 用于跨板复制，保留 ID，不能直接追加到原板；原地改用 update_element/update_board.updates。truncated/nextOffset 表示分页截断；仅 input 返回 unsupportedElementIds/warnings 表示无法可写投影，省略图元不代表空板。input/紧凑 points 绝对坐标，full 相对坐标。",
             inputSchema: z.object({
               boardId: z.string().min(1).max(128),
               view: z.enum(["summary", "elements", "full", "input"]).optional(),
@@ -492,7 +491,7 @@ export const createMcpRequestHandler = (
 
         server.registerTool("update_element", {
           title: "原地修改图元",
-          description: "只传待改字段，按 update.id 原地修改，保留ID/连接/其余字段；形状text修改绑定文字。批量改多个图元用 update_board.updates，一次保存。",
+          description: "按 update.id 原地修改，保留ID/连接/其余字段；形状text改绑定文字，labelStyle只改标签样式并保留未传字段。已有labelId仅用于核对，不能改名；新建标签可同时传text和labelId。批量用update_board.updates一次保存。",
           inputSchema: z.strictObject({
             boardId: z.string().min(1).max(128),
             update: elementUpdateSchema,

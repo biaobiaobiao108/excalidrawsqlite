@@ -37,7 +37,12 @@ const toolResult = <T>(result: {
         expect(record).not.toHaveProperty(key);
     }
   }
-  if (typeof data.addedCount === "number") expect(data).not.toHaveProperty("elementIds");
+  if (typeof data.addedCount === "number") {
+    expect(data).not.toHaveProperty("elementIds");
+    expect(Array.isArray(data.elementMap)).toBe(true);
+    expect(data.elementMap).toHaveLength((data.requestedElementIds as unknown[]).length);
+    expect(data.addedCount).toBe((data.requestedElementIds as unknown[]).length + (data.generatedElementIds as unknown[]).length);
+  }
   return result.structuredContent as T;
 };
 
@@ -190,6 +195,7 @@ describe("Excalidraw MCP endpoint", () => {
         addedCount: number;
         requestedElementIds: string[];
         generatedElementIds: string[];
+        elementMap: Array<{ inputIndex: number; elementId: string; labelId?: string }>;
         revision: number;
       }>(
         await client.callTool({
@@ -228,6 +234,11 @@ describe("Excalidraw MCP endpoint", () => {
       expect(added.addedCount).toBe(4);
       expect(added.requestedElementIds).toHaveLength(3);
       expect(added.generatedElementIds).toHaveLength(1);
+      expect(added.elementMap).toEqual([
+        { inputIndex: 0, elementId: added.requestedElementIds[0], labelId: added.generatedElementIds[0] },
+        { inputIndex: 1, elementId: added.requestedElementIds[1] },
+        { inputIndex: 2, elementId: added.requestedElementIds[2] },
+      ]);
       expect(added.revision).toBe(2);
 
       const board = toolResult<{
@@ -326,11 +337,12 @@ describe("Excalidraw MCP endpoint", () => {
       const withThumbnail = await (await apiHandler(new Request(`http://test.local/api/scenes/${complete.boardId}`))).json() as { thumbnail_file_id: string };
       expect(withThumbnail.thumbnail_file_id).toBeTruthy();
 
-      const updated = toolResult<{ revision: number; addedCount: number; removedCount: number }>(await client.callTool({
+      const updated = toolResult<{ revision: number; addedCount: number; removedCount: number; elementMap: Array<{ inputIndex: number; elementId: string }> }>(await client.callTool({
         name: "update_board", arguments: { boardId: complete.boardId, expectedRevision: 1, name: "已修改",
-          removeElementIds: [complete.requestedElementIds[0]], elements: [{ type: "text", x: 0, y: 0, text: "替换内容" }] },
+          removeElementIds: [complete.requestedElementIds[0]], elements: [{ id: "replacement", type: "text", x: 0, y: 0, text: "替换内容" }] },
       }));
       expect(updated).toMatchObject({ revision: 2, addedCount: 1, removedCount: 2 });
+      expect(updated.elementMap).toEqual([{ inputIndex: 0, elementId: "replacement" }]);
       const changed = toolResult<{ name: string; thumbnail_file_id: string | null; appState: { viewBackgroundColor: string }; elements: Array<{ id: string }> }>(await client.callTool({
         name: "get_board", arguments: { boardId: complete.boardId, view: "full" },
       }));
@@ -464,6 +476,7 @@ describe("Excalidraw MCP endpoint", () => {
         const clean = toolResult<Record<string, unknown>>(await client.callTool({ name: "get_board", arguments: { boardId: complete.boardId, view } }));
         expect(clean).not.toHaveProperty("thumbnail_file_id");
         expect(clean).not.toHaveProperty("size");
+        expect(clean).not.toHaveProperty("projectionIncomplete");
       }
 
       const input = toolResult<{ elements: Array<Record<string, unknown>>; unsupportedElementIds: string[]; warnings: unknown[] }>(await client.callTool({
@@ -502,8 +515,30 @@ describe("Excalidraw MCP endpoint", () => {
       const labelBoard = toolResult<{ boardId: string; revision: number; generatedElementIds: string[] }>(await client.callTool({
         name: "create_board", arguments: { name: "标签边界", elements: [{ id: "rr", type: "rectangle", x: 0, y: 0, width: 100, height: 80, text: "短标签" }] },
       }));
+      const labelStyleUpdate = toolResult<{ revision: number }>(await client.callTool({ name: "update_element", arguments: {
+        boardId: labelBoard.boardId, update: { id: "rr", labelId: labelBoard.generatedElementIds[0],
+          labelStyle: { fontSize: 24, strokeColor: "#f00", opacity: 70 } }, expectedRevision: labelBoard.revision,
+      } }));
+      const styledLabel = toolResult<{ elements: Array<Record<string, unknown>> }>(await client.callTool({ name: "get_board", arguments: {
+        boardId: labelBoard.boardId, view: "input",
+      } }));
+      expect(styledLabel.elements[0]).toMatchObject({ id: "rr", labelId: labelBoard.generatedElementIds[0],
+        labelStyle: { fontSize: 24, strokeColor: "#f00", opacity: 70 } });
+      expect(styledLabel.elements[0].strokeColor).not.toBe("#f00");
+      const labelNoop = toolResult<{ revision: number; noop: boolean }>(await client.callTool({ name: "update_element", arguments: {
+        boardId: labelBoard.boardId, update: { id: "rr", labelStyle: { fontSize: 24, strokeColor: "#f00", opacity: 70 } },
+      } }));
+      expect(labelNoop).toMatchObject({ revision: labelStyleUpdate.revision, noop: true });
+      const labelViaBoard = toolResult<{ revision: number; updatedCount: number }>(await client.callTool({ name: "update_board", arguments: {
+        boardId: labelBoard.boardId, updates: [{ id: "rr", labelStyle: { fontSize: 20 } }], expectedRevision: labelStyleUpdate.revision,
+      } }));
+      expect(labelViaBoard.updatedCount).toBe(1);
+      const wrongLabelId = await client.callTool({ name: "update_element", arguments: {
+        boardId: labelBoard.boardId, update: { id: "rr", labelId: "rename-is-not-an-update" },
+      } });
+      expect(wrongLabelId.structuredContent).toMatchObject({ ok: false, error: { code: "INVALID_ELEMENT_UPDATE" } });
       const labelUpdate = toolResult<{ revision: number }>(await client.callTool({ name: "update_element", arguments: {
-        boardId: labelBoard.boardId, update: { id: "rr", text: "字".repeat(2_000) }, expectedRevision: labelBoard.revision,
+        boardId: labelBoard.boardId, update: { id: "rr", text: "字".repeat(2_000) }, expectedRevision: labelViaBoard.revision,
       } }));
       for (const id of ["rr", labelBoard.generatedElementIds[0]]) {
         const tooLong = await client.callTool({ name: "update_element", arguments: {
@@ -511,20 +546,22 @@ describe("Excalidraw MCP endpoint", () => {
         } });
         expect(tooLong.structuredContent).toMatchObject({ ok: false, error: { code: "INVALID_ELEMENT_UPDATE" } });
       }
-      const validLabel = toolResult<{ revision: number; elements: unknown[]; projectionIncomplete: boolean }>(await client.callTool({
+      const validLabel = toolResult<{ revision: number; elements: unknown[]; unsupportedElementIds: string[]; warnings: unknown[] }>(await client.callTool({
         name: "get_board", arguments: { boardId: labelBoard.boardId, view: "input" },
       }));
       expect(validLabel.revision).toBe(labelUpdate.revision);
       expect(validLabel.elements).toHaveLength(1);
-      expect(validLabel.projectionIncomplete).toBe(false);
+      expect(validLabel.unsupportedElementIds).toEqual([]);
+      expect(validLabel.warnings).toEqual([]);
       const legacy = await (await apiHandler(new Request(`http://test.local/api/scenes/${labelBoard.boardId}`))).json() as { elements: Array<Record<string, unknown>> };
       for (const element of legacy.elements) if (element.type === "text") element.originalText = "字".repeat(2_001);
       runtime.db.query("UPDATE scenes SET elements = ? WHERE id = ?").run(JSON.stringify(legacy.elements), labelBoard.boardId);
-      const incompleteLabel = toolResult<{ elements: unknown[]; projectionIncomplete: boolean; warnings: Array<{ message: string }> }>(await client.callTool({
+      const incompleteLabel = toolResult<{ elements: unknown[]; unsupportedElementIds: string[]; warnings: Array<{ message: string }>; truncated: boolean }>(await client.callTool({
         name: "get_board", arguments: { boardId: labelBoard.boardId, view: "input" },
       }));
       expect(incompleteLabel.elements).toHaveLength(0);
-      expect(incompleteLabel.projectionIncomplete).toBe(true);
+      expect(incompleteLabel.unsupportedElementIds).toContain("rr");
+      expect(incompleteLabel.truncated).toBe(false);
       expect(incompleteLabel.warnings.some((warning) => warning.message.includes("2000"))).toBe(true);
     } finally {
       await client.close();
