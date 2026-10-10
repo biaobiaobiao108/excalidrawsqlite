@@ -262,10 +262,9 @@ const upsertPreparedFile = async (
       previous.mime_type.toLowerCase() === mimeType.toLowerCase() &&
       (await fileExists(filePath))
     ) {
-      const nextUpdatedAt =
-        Number.isFinite(updatedAt) && Number(updatedAt) > previous.updated_at
-          ? Number(updatedAt)
-          : previous.updated_at;
+      // An identical upload still renews the orphan grace period; explicit
+      // thumbnail versions retain their monotonic ordering instead.
+      const nextUpdatedAt = Math.max(previous.updated_at, now);
       if (nextUpdatedAt !== previous.updated_at) {
         runtime.db.run("UPDATE files SET updated_at = ? WHERE id = ?", [
           nextUpdatedAt,

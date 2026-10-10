@@ -357,8 +357,6 @@ export const createFullBackup = async (
             throw new Error(`附件文件缺失：${row.id}`);
           }
           const file = Bun.file(filePath);
-          archiveBytes += tarEntrySize(`files/${row.id}`, file.size);
-          ensureBackupWithinLimit(archiveBytes, runtime.config.maxBackupBytes);
           await writeTarFile(writer, `files/${row.id}`, filePath, file.size);
         }
         await writer.write(new Uint8Array(TAR_BLOCK_SIZE * 2));
