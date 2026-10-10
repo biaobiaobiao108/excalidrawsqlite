@@ -1248,6 +1248,90 @@ describe("cloud persistence server", () => {
     ).toEqual([]);
   });
 
+  it("performs revision-checked scene batch trash, restore, and permanent deletion atomically", async () => {
+    const { handler } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const ids = ["scene_batch_a", "scene_batch_b"];
+    for (const id of ids) {
+      const created = await jsonRequest(
+        handler,
+        "/api/scenes",
+        { id, name: id, elements: [] },
+        { headers: { Cookie: cookie } },
+      );
+      expect(created.status).toBe(201);
+    }
+    const entries = ids.map((id) => ({ id, revision: 1 }));
+
+    const staleBatch = await jsonRequest(
+      handler,
+      "/api/scenes/batch",
+      { scenes: [entries[0], { ...entries[1], revision: 2 }] },
+      { method: "PATCH", headers: { Cookie: cookie } },
+    );
+    expect(staleBatch.status).toBe(409);
+    const trashAfterStaleAttempt = await request(
+      handler,
+      "/api/scenes/trash?limit=100",
+      { headers: { Cookie: cookie } },
+    );
+    expect(
+      (await responseJson<{ items: Array<{ id: string }> }>(
+        trashAfterStaleAttempt,
+      )).items,
+    ).toEqual([]);
+
+    const trashed = await jsonRequest(
+      handler,
+      "/api/scenes/batch",
+      { scenes: entries },
+      { method: "PATCH", headers: { Cookie: cookie } },
+    );
+    expect(trashed.status).toBe(200);
+    expect(
+      await responseJson<{ ids: string[]; deleted: boolean }>(trashed),
+    ).toMatchObject({ ids, deleted: true });
+
+    const restored = await jsonRequest(
+      handler,
+      "/api/scenes/batch",
+      { scenes: entries, deleted: false },
+      { method: "PATCH", headers: { Cookie: cookie } },
+    );
+    expect(restored.status).toBe(200);
+    expect(
+      await responseJson<{ ids: string[]; deleted: boolean }>(restored),
+    ).toMatchObject({ ids, deleted: false });
+
+    const invalidPermanentDelete = await jsonRequest(
+      handler,
+      "/api/scenes/batch",
+      { scenes: entries },
+      { method: "DELETE", headers: { Cookie: cookie } },
+    );
+    expect(invalidPermanentDelete.status).toBe(409);
+
+    const trashedAgain = await jsonRequest(
+      handler,
+      "/api/scenes/batch",
+      { scenes: entries },
+      { method: "PATCH", headers: { Cookie: cookie } },
+    );
+    expect(trashedAgain.status).toBe(200);
+    const permanentlyDeleted = await jsonRequest(
+      handler,
+      "/api/scenes/batch",
+      { scenes: entries },
+      { method: "DELETE", headers: { Cookie: cookie } },
+    );
+    expect(permanentlyDeleted.status).toBe(200);
+    expect(
+      await responseJson<{ ids: string[]; permanent: boolean }>(
+        permanentlyDeleted,
+      ),
+    ).toMatchObject({ ids, permanent: true });
+  });
+
   it("persists board metadata, folders, recent opens and thumbnails", async () => {
     const { handler, runtime } = createTestRuntime();
     const cookie = await authenticate(handler);

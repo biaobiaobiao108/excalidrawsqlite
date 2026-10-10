@@ -76,9 +76,39 @@ import type { RequestAddressResolver, ServerRuntime } from "./types";
 
 const DEFAULT_SCENE_PAGE_SIZE = 50;
 const MAX_SCENE_PAGE_SIZE = 100;
+const MAX_SCENE_BATCH_SIZE = 500;
 const MAX_THUMBNAIL_VERSION_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const sceneCursorEncoder = new TextEncoder();
 const sceneCursorDecoder = new TextDecoder();
+
+const parseSceneBatchEntries = (body: Record<string, unknown>) => {
+  if (
+    !Array.isArray(body.scenes) ||
+    body.scenes.length < 1 ||
+    body.scenes.length > MAX_SCENE_BATCH_SIZE
+  ) {
+    throw new HttpError(
+      400,
+      "INVALID_SCENE_BATCH",
+      `批量操作必须包含 1-${MAX_SCENE_BATCH_SIZE} 个画板`,
+    );
+  }
+  const entries = body.scenes.map((value) => {
+    const entry = requireJsonObject(value);
+    const revision = requireRevision(entry.revision);
+    if (revision === undefined) {
+      throw new HttpError(400, "INVALID_REVISION", "revision 必须是正整数");
+    }
+    return {
+      id: validateId(entry.id, "scene"),
+      revision,
+    };
+  });
+  if (new Set(entries.map((entry) => entry.id)).size !== entries.length) {
+    throw new HttpError(400, "INVALID_SCENE_BATCH", "批量操作不能包含重复画板");
+  }
+  return entries;
+};
 
 const parseThumbnailVersion = (req: Request) => {
   const header = req.headers.get("x-thumbnail-version");
@@ -377,6 +407,10 @@ const preparedStatementsMap = new WeakMap<
     getSceneVersionById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneMetadataById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneStateById: ReturnType<ServerRuntime["db"]["query"]>;
+    softDeleteScene: ReturnType<ServerRuntime["db"]["query"]>;
+    restoreScene: ReturnType<ServerRuntime["db"]["query"]>;
+    deleteSceneFileReferences: ReturnType<ServerRuntime["db"]["query"]>;
+    deleteTrashedScene: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneRevision: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneThumbnailById: ReturnType<ServerRuntime["db"]["query"]>;
     getSceneSummaryById: ReturnType<ServerRuntime["db"]["query"]>;
@@ -411,6 +445,20 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
       ),
       getSceneStateById: runtime.db.query(
         "SELECT id, deleted_at, revision FROM scenes WHERE id = ?",
+      ),
+      softDeleteScene: runtime.db.query(
+        `UPDATE scenes SET deleted_at = ?
+         WHERE id = ? AND revision = ? AND deleted_at IS NULL`,
+      ),
+      restoreScene: runtime.db.query(
+        `UPDATE scenes SET deleted_at = NULL
+         WHERE id = ? AND revision = ? AND deleted_at IS NOT NULL`,
+      ),
+      deleteSceneFileReferences: runtime.db.query(
+        "DELETE FROM scene_files WHERE scene_id = ?",
+      ),
+      deleteTrashedScene: runtime.db.query(
+        "DELETE FROM scenes WHERE id = ? AND revision = ? AND deleted_at IS NOT NULL",
       ),
       getSceneRevision: runtime.db.query(
         "SELECT revision FROM scenes WHERE id = ?",
@@ -743,6 +791,100 @@ export const createRequestHandler = (
 
       if (pathname === "/api/scenes/trash" && req.method === "GET") {
         return jsonResponse(runtime, req, listScenePage(runtime, url, true));
+      }
+
+      if (
+        pathname === "/api/scenes/batch" &&
+        (req.method === "PATCH" || req.method === "DELETE")
+      ) {
+        const body = requireJsonObject(
+          await readJson(
+            req,
+            runtime.config.maxSceneBodyBytes,
+            runtime.bodyMemoryBudget,
+          ),
+        );
+        if (
+          req.method === "PATCH" &&
+          body.deleted !== undefined &&
+          typeof body.deleted !== "boolean"
+        ) {
+          throw new HttpError(400, "INVALID_DELETED", "deleted 必须是布尔值");
+        }
+        const entries = parseSceneBatchEntries(body);
+        const isPermanent = req.method === "DELETE";
+        const isRestore = !isPermanent && body.deleted === false;
+        const now = Date.now();
+        const transaction = runtime.db.transaction(() => {
+          for (const entry of entries) {
+            const existing = stmts.getSceneStateById.get(entry.id) as {
+              id: string;
+              deleted_at: number | null;
+              revision: number;
+            } | null;
+            if (
+              !existing ||
+              (Number(existing.revision) || 1) !== entry.revision ||
+              (isPermanent && existing.deleted_at === null) ||
+              (isRestore && existing.deleted_at === null) ||
+              (!isPermanent && !isRestore && existing.deleted_at !== null)
+            ) {
+              throw new HttpError(
+                409,
+                "SCENE_SELECTION_STALE",
+                "选中的画板已发生变化，请刷新列表后重新选择",
+              );
+            }
+          }
+
+          for (const entry of entries) {
+            if (isPermanent) {
+              stmts.deleteSceneFileReferences.run(entry.id);
+              const result = stmts.deleteTrashedScene.run(
+                entry.id,
+                entry.revision,
+              );
+              if (result.changes !== 1) {
+                throw new HttpError(
+                  409,
+                  "SCENE_SELECTION_STALE",
+                  "选中的画板已发生变化，请刷新列表后重新选择",
+                );
+              }
+            } else if (isRestore) {
+              const result = stmts.restoreScene.run(entry.id, entry.revision);
+              if (result.changes !== 1) {
+                throw new HttpError(
+                  409,
+                  "SCENE_SELECTION_STALE",
+                  "选中的画板已发生变化，请刷新列表后重新选择",
+                );
+              }
+            } else {
+              const result = stmts.softDeleteScene.run(
+                now,
+                entry.id,
+                entry.revision,
+              );
+              if (result.changes !== 1) {
+                throw new HttpError(
+                  409,
+                  "SCENE_SELECTION_STALE",
+                  "选中的画板已发生变化，请刷新列表后重新选择",
+                );
+              }
+            }
+          }
+        });
+        transaction.immediate();
+        publishWorkspaceChanged(runtime, now);
+        return jsonResponse(runtime, req, {
+          success: true,
+          ids: entries.map((entry) => entry.id),
+          deleted: !isRestore,
+          permanent: isPermanent,
+          deleted_at: isPermanent || isRestore ? null : now,
+        });
       }
 
       if (pathname === "/api/scenes" && req.method === "POST") {

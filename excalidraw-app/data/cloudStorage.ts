@@ -50,6 +50,9 @@ export interface CloudSceneSummary {
   deleted_at?: number | null;
 }
 
+export type CloudSceneBatchEntry = Pick<CloudSceneSummary, "id" | "revision">;
+export const CLOUD_SCENE_BATCH_SIZE = 500;
+
 export interface CloudSceneData {
   id: string;
   name: string;
@@ -722,6 +725,51 @@ export async function deleteCloudScene(
     permanent ? "彻底删除画板失败" : "删除画板失败",
   );
   return result.success;
+}
+
+export async function trashCloudScenes(
+  scenes: CloudSceneBatchEntry[],
+): Promise<string[]> {
+  const result = await fetchJson<{ success: boolean; ids: string[] }>(
+    "/api/scenes/batch",
+    {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify({ scenes }),
+    },
+    "批量移至回收站失败",
+  );
+  return result.ids;
+}
+
+export async function restoreCloudScenes(
+  scenes: CloudSceneBatchEntry[],
+): Promise<string[]> {
+  const result = await fetchJson<{ success: boolean; ids: string[] }>(
+    "/api/scenes/batch",
+    {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify({ scenes, deleted: false }),
+    },
+    "批量还原画板失败",
+  );
+  return result.ids;
+}
+
+export async function permanentlyDeleteCloudScenes(
+  scenes: CloudSceneBatchEntry[],
+): Promise<string[]> {
+  const result = await fetchJson<{ success: boolean; ids: string[] }>(
+    "/api/scenes/batch",
+    {
+      method: "DELETE",
+      headers: getHeaders(),
+      body: JSON.stringify({ scenes }),
+    },
+    "批量彻底删除画板失败",
+  );
+  return result.ids;
 }
 
 export async function clearCloudTrash(): Promise<{
