@@ -130,6 +130,7 @@ const points = z
   .describe(
     "按顺序给出绝对画布坐标，支持多段折线；不能与 startX/startY/endX/endY 混用",
   );
+const labelStyleSchema = z.object({ ...typography, ...style }).strict();
 const shapeFields = {
   id: idSchema.optional().describe("可选稳定 ID，供同批箭头 binding 引用"),
   x: coordinate,
@@ -138,7 +139,7 @@ const shapeFields = {
   height: dimension,
   text: z.string().max(2_000).optional(),
   labelId: idSchema.optional().describe("绑定文字图元的稳定 ID；复制 input 视图时保留，通常无需指定"),
-  labelStyle: z.object({ ...typography, ...style }).strict().optional().describe("绑定文字的独立样式；省略时继承形状样式"),
+  labelStyle: labelStyleSchema.optional().describe("绑定文字的独立样式；省略时继承形状样式"),
   ...typography,
   ...style,
 };
@@ -202,6 +203,8 @@ export const elementUpdateSchema = z
     width: dimension.optional(),
     height: dimension.optional(),
     text: z.string().max(10_000).optional().describe("形状及其绑定标签最多 2000 字符；独立文字最多 10000 字符，空字符串清除形状标签"),
+    labelId: idSchema.optional().describe("仅形状使用；新建标签可指定稳定 ID，已有标签只能传相同 ID，不能重命名"),
+    labelStyle: labelStyleSchema.optional().describe("仅形状的绑定文字使用；按字段合并独立样式，不修改形状样式；无标签时须同时提供非空 text"),
     ...typography,
     ...style,
     points: points.optional(),
@@ -491,6 +494,19 @@ export const updateDrawingElements = (
       : undefined;
     const isShapeLabel = ["rectangle", "ellipse", "diamond"].includes(element.type) ||
       !!labelContainer && ["rectangle", "ellipse", "diamond"].includes(labelContainer.type);
+    const shape = ["rectangle", "ellipse", "diamond"].includes(element.type);
+    const existingLabelId = element.boundElements?.find((b) => b.type === "text")?.id;
+    const existingLabel = existingLabelId ? map.get(existingLabelId) : undefined;
+    if (patch.labelId !== undefined || patch.labelStyle !== undefined) {
+      if (!shape)
+        throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "只有形状支持 labelId 和 labelStyle；独立文字请直接修改文字字段");
+      if (patch.text === "" || (existingLabel?.type !== "text" && !patch.text))
+        throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "labelId 和 labelStyle 需要已有标签或同时提供非空 text");
+      if (existingLabelId && patch.labelId !== undefined && patch.labelId !== existingLabelId)
+        throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "已有标签不能重命名 labelId，请保留原 ID");
+      if (!existingLabelId && patch.labelId && map.has(patch.labelId))
+        throw new HttpError(400, "DUPLICATE_ELEMENT_ID", `标签 ID 已存在：${patch.labelId}`);
+    }
     if (isShapeLabel && patch.text !== undefined && patch.text.length > 2_000)
       throw new HttpError(
         400,
@@ -585,6 +601,12 @@ export const updateDrawingElements = (
         fontId(patch.fontFamily) === textComparison?.fontFamily) &&
       (patch.textAlign === undefined ||
         patch.textAlign === textComparison?.textAlign);
+    const nestedLabelChanges = props(patch.labelStyle || {});
+    const sameLabelStyle = Object.entries(nestedLabelChanges).every(([key, value]) =>
+      JSON.stringify((textComparison as unknown as Record<string, unknown> | undefined)?.[key]) === JSON.stringify(value)) &&
+      (patch.labelStyle?.fontSize === undefined || patch.labelStyle.fontSize === textComparison?.fontSize) &&
+      (patch.labelStyle?.fontFamily === undefined || fontId(patch.labelStyle.fontFamily) === textComparison?.fontFamily) &&
+      (patch.labelStyle?.textAlign === undefined || patch.labelStyle.textAlign === textComparison?.textAlign);
     const sameBindings = (["startBinding", "endBinding"] as const).every(
       (key) => {
         if (!(key in patch)) return true;
@@ -600,7 +622,7 @@ export const updateDrawingElements = (
         );
       },
     );
-    if (sameGeometry && sameText && sameBindings) continue;
+    if (sameGeometry && sameText && sameBindings && sameLabelStyle) continue;
     applied.push(patch);
     let next = newElementWith(element, changes as never);
     if (element.type === "text") {
@@ -634,6 +656,7 @@ export const updateDrawingElements = (
           existing?.type === "text"
             ? existing
             : newTextElement({
+                ...(patch.labelId ? { id: patch.labelId } : {}),
                 x: 0,
                 y: 0,
                 text: patch.text!,
@@ -651,16 +674,17 @@ export const updateDrawingElements = (
           const refreshed = newTextElement({
             ...label,
             ...props(patch),
+            ...nestedLabelChanges,
             x: 0,
             y: 0,
             text: patch.text ?? label.originalText,
             originalText: patch.text ?? label.originalText,
-            fontSize: patch.fontSize ?? label.fontSize,
+            fontSize: patch.labelStyle?.fontSize ?? patch.fontSize ?? label.fontSize,
             fontFamily:
-              patch.fontFamily === undefined
+              (patch.labelStyle?.fontFamily ?? patch.fontFamily) === undefined
                 ? label.fontFamily
-                : fontId(patch.fontFamily),
-            textAlign: patch.textAlign ?? label.textAlign,
+                : fontId(patch.labelStyle?.fontFamily ?? patch.fontFamily),
+            textAlign: patch.labelStyle?.textAlign ?? patch.textAlign ?? label.textAlign,
           });
           map.set(label.id, layoutLabel(next, refreshed));
           if (!labelId)

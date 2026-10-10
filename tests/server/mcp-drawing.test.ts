@@ -36,6 +36,43 @@ const flow = () =>
     }),
   ]).elements;
 describe("MCP drawing contracts", () => {
+  it("updates label styles independently, merges fields and preserves stable label IDs", () => {
+    const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"), text: "label",
+      labelId: "caption", strokeColor: "blue", labelStyle: { strokeColor: "red", fontSize: 16, textAlign: "left" } })]).elements;
+    const before = structuredClone(current);
+    const changed = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "box", labelId: "caption",
+      labelStyle: { fontSize: 24, opacity: 40 } })]);
+    expect(changed.updatedCount).toBe(1);
+    expect(changed.elements.find((e) => e.id === "box")).toMatchObject({ strokeColor: "blue", opacity: 100 });
+    expect(changed.elements.find((e) => e.id === "caption")).toMatchObject({ strokeColor: "red", fontSize: 24, textAlign: "left", opacity: 40, containerId: "box" });
+    expect(inputDrawingElements(changed.elements).elements[0]).toMatchObject({ labelId: "caption", labelStyle: { fontSize: 24, strokeColor: "red" } });
+    const unchanged = updateDrawingElements(changed.elements, [elementUpdateSchema.parse({ id: "box", labelId: "caption", labelStyle: { fontSize: 24, opacity: 40 } })]);
+    expect(unchanged.updatedCount).toBe(0);
+    expect(unchanged.elements).toEqual(changed.elements);
+    expect(current).toEqual(before);
+  });
+  it("creates stable labels through updates and rejects invalid label operations atomically", () => {
+    const current = createDrawingBatch([shape("box"), shape("other"),
+      drawingElementSchema.parse({ type: "text", id: "free", x: 200, y: 200, text: "free" })]).elements;
+    const before = structuredClone(current);
+    const changed = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "box", text: "new", labelId: "caption", labelStyle: { fontFamily: "system", fontSize: 30 } })]);
+    expect(changed.elements.find((e) => e.id === "box")).toMatchObject({ boundElements: [{ id: "caption", type: "text" }] });
+    expect(changed.elements.find((e) => e.id === "caption")).toMatchObject({ fontFamily: 13, fontSize: 30, originalText: "new" });
+    expect(() => updateDrawingElements(changed.elements, [elementUpdateSchema.parse({ id: "box", labelId: "renamed" })])).toThrow("不能重命名");
+    for (const patch of [
+      { id: "free", labelStyle: { fontSize: 30 } },
+      { id: "box", labelStyle: { fontSize: 30 } },
+      { id: "box", labelId: "caption" },
+      { id: "box", text: "new", labelId: "other" },
+      { id: "box", text: "", labelStyle: { fontSize: 30 } },
+    ]) expect(() => updateDrawingElements(current, [elementUpdateSchema.parse(patch)])).toThrow();
+    expect(() => updateDrawingElements(current, [
+      elementUpdateSchema.parse({ id: "box", text: "new", labelId: "caption" }),
+      elementUpdateSchema.parse({ id: "other", text: "second", labelId: "caption" }),
+    ])).toThrow("标签 ID 已存在");
+    expect(current).toEqual(before);
+    expect(elementUpdateSchema.safeParse({ id: "box", labelStyle: { fontSzie: 30 } }).success).toBe(false);
+  });
   it("roundtrips writable input with absolute bends, rotation, bindings and stable label IDs", () => {
     const current = createDrawingBatch([
       drawingElementSchema.parse({ ...shape("a"), x: 50, y: 60, rotation: 30,
