@@ -74,21 +74,17 @@ export const DefaultSidebar = Object.assign(
 
       const { DefaultSidebarTabTriggersTunnel } = useTunnels();
 
-      const isForceDocked = appState.openSidebar?.tab === CANVAS_SEARCH_TAB;
-
       return (
         <Sidebar
           {...rest}
           name="default"
           key="default"
           className={clsx("default-sidebar", className)}
-          docked={
-            isForceDocked || (docked ?? appState.defaultSidebarDockedPreference)
-          }
+          docked={docked ?? appState.defaultSidebarDockedPreference}
           onDock={
             // `onDock=false` disables docking.
             // if `docked` passed, but no onDock passed, disable manual docking.
-            isForceDocked || onDock === false || (!onDock && docked != null)
+            onDock === false || (!onDock && docked != null)
               ? undefined
               : // compose to allow the host app to listen on default behavior
                 composeEventHandlers(onDock, (docked) => {

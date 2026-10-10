@@ -86,9 +86,11 @@ type FolderAppearance = {
 
 type WorkspaceContextMenuItem = {
   label: string;
+  icon: "open" | "plus" | "settings" | "star" | "edit" | "restore" | "trash";
   onSelect: () => void;
   danger?: boolean;
   disabled?: boolean;
+  separatorBefore?: boolean;
 };
 
 type WorkspaceContextMenuState = {
@@ -382,6 +384,40 @@ const RestoreIcon = () => (
     <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
   </svg>
 );
+
+const WorkspaceContextMenuIcon = ({
+  icon,
+}: {
+  icon: WorkspaceContextMenuItem["icon"];
+}) => {
+  if (icon === "star") {
+    return <StarIcon />;
+  }
+  if (icon === "edit") {
+    return <EditIcon />;
+  }
+  if (icon === "restore") {
+    return <RestoreIcon />;
+  }
+  if (icon === "trash") {
+    return <TrashIcon />;
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      {icon === "open" && <path d="M7 17 17 7M8 7h9v9" />}
+      {icon === "plus" && <path d="M12 5v14M5 12h14" />}
+      {icon === "settings" && (
+        <>
+          <path d="M4 6h16M4 12h16M4 18h16" />
+          <circle cx="8" cy="6" r="2" fill="currentColor" />
+          <circle cx="16" cy="12" r="2" fill="currentColor" />
+          <circle cx="10" cy="18" r="2" fill="currentColor" />
+        </>
+      )}
+    </svg>
+  );
+};
 
 const ExcalidrawMark = () => (
   <div className="workspace-mark" aria-hidden="true">
@@ -773,26 +809,27 @@ const FolderDialog = ({
   ) => void;
 }) => (
   <WorkspaceModal
-    title={state.id ? "重命名文件夹" : "新建文件夹"}
+    className="folder-dialog"
+    title={state.id ? "编辑文件夹" : "新建文件夹"}
     onClose={onClose}
   >
     <form
-      className="metadata-form"
+      className="metadata-form folder-metadata-form"
       onSubmit={(event) => {
         event.preventDefault();
         onSave();
       }}
     >
       <label>
-        <span>文件夹名称</span>
+        <span>名称</span>
         <input
           value={state.name}
           maxLength={80}
           onChange={(event) => onChange(event.target.value)}
         />
       </label>
-      <fieldset className="folder-appearance-fieldset">
-        <legend>文件夹图标</legend>
+      <fieldset className="folder-appearance-fieldset folder-icon-fieldset">
+        <legend>图标</legend>
         <div className="folder-icon-options">
           {FOLDER_ICON_OPTIONS.map((option) => (
             <button
@@ -812,8 +849,8 @@ const FolderDialog = ({
           ))}
         </div>
       </fieldset>
-      <fieldset className="folder-appearance-fieldset">
-        <legend>文件夹颜色</legend>
+      <fieldset className="folder-appearance-fieldset folder-color-fieldset">
+        <legend>颜色</legend>
         <div className="folder-color-options">
           {FOLDER_COLOR_OPTIONS.map((option) => (
             <button
@@ -832,41 +869,25 @@ const FolderDialog = ({
               disabled={pending}
             />
           ))}
-          <label className="folder-custom-color">
-            <input
-              type="color"
-              value={state.color}
-              aria-label="选择自定义颜色"
-              onChange={(event) =>
-                onChangeAppearance({ color: event.target.value })
-              }
-              disabled={pending}
-            />
-            <span>自定义</span>
-          </label>
         </div>
       </fieldset>
-      <div className="dialog-actions">
+      <div className="dialog-actions folder-dialog-actions">
         {state.id && onDelete && (
           <button
             type="button"
-            className="danger-button"
+            className="danger-button folder-delete-button"
             onClick={onDelete}
             disabled={pending}
           >
             删除文件夹
           </button>
         )}
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={onClose}
-          disabled={pending}
-        >
-          取消
-        </button>
         <button type="submit" className="primary-button" disabled={pending}>
-          {pending ? "保存中..." : "保存"}
+          {pending
+            ? "保存中..."
+            : state.id
+            ? "保存修改"
+            : "创建文件夹"}
         </button>
       </div>
     </form>
@@ -946,13 +967,16 @@ const WorkspaceContextMenu = ({
           key={item.label}
           type="button"
           role="menuitem"
-          className={item.danger ? "is-danger" : ""}
+          className={`${item.danger ? "is-danger" : ""} ${
+            item.separatorBefore ? "has-separator" : ""
+          }`.trim()}
           disabled={item.disabled}
           onClick={() => {
             onClose();
             item.onSelect();
           }}
         >
+          <WorkspaceContextMenuIcon icon={item.icon} />
           {item.label}
         </button>
       ))}
@@ -1758,6 +1782,7 @@ export const WorkspaceHome = ({
     showContextMenu(event, [
       {
         label: "打开文件夹",
+        icon: "open",
         onSelect: () => {
           setSelectedFolderId(folder.id);
           setView("all");
@@ -1765,16 +1790,21 @@ export const WorkspaceHome = ({
       },
       {
         label: "在此文件夹中新建画板",
+        icon: "plus",
         disabled: !!pendingAction,
         onSelect: () => void handleCreateScene(folder.id),
       },
       {
         label: "重命名与自定义外观",
+        icon: "settings",
+        separatorBefore: true,
         onSelect: () => openFolderDialog(folder),
       },
       {
         label: "删除文件夹",
+        icon: "trash",
         danger: true,
+        separatorBefore: true,
         disabled: !!pendingAction,
         onSelect: () => handleDeleteFolder(folder),
       },
@@ -1785,35 +1815,47 @@ export const WorkspaceHome = ({
     scene: CloudSceneSummary,
     event: React.MouseEvent<HTMLElement>,
   ) => {
-    const items =
+    const items: WorkspaceContextMenuItem[] =
       view === "trash"
         ? [
             {
               label: "还原画板",
+              icon: "restore",
               disabled: !!pendingAction,
               onSelect: () => void handleRestoreScene(scene),
             },
             {
               label: "彻底删除",
+              icon: "trash",
               danger: true,
+              separatorBefore: true,
               disabled: !!pendingAction,
               onSelect: () => handleDeleteScene(scene),
             },
           ]
         : [
-            { label: "打开画板", onSelect: () => navigateToScene(scene) },
+            {
+              label: "打开画板",
+              icon: "open",
+              onSelect: () => navigateToScene(scene),
+            },
             {
               label: scene.favorite ? "取消收藏" : "收藏画板",
+              icon: "star",
               disabled: !!pendingAction,
               onSelect: () => void handleToggleFavorite(scene),
             },
             {
               label: "编辑画板信息",
+              icon: "edit",
+              separatorBefore: true,
               onSelect: () => openMetadataDialog(scene),
             },
             {
               label: "移至回收站",
+              icon: "trash",
               danger: true,
+              separatorBefore: true,
               disabled: !!pendingAction,
               onSelect: () => handleDeleteScene(scene),
             },
@@ -1979,16 +2021,6 @@ export const WorkspaceHome = ({
                   </span>
                   <span>{folder.name}</span>
                   <small>{folderSceneCounts.get(folder.id) || 0}</small>
-                </button>
-                <button
-                  type="button"
-                  className="folder-more"
-                  aria-label={`${folder.name} 文件夹操作`}
-                  onClick={(event) =>
-                    openFolderContextMenu(folder, event)
-                  }
-                >
-                  <MoreIcon />
                 </button>
               </div>
             ))}

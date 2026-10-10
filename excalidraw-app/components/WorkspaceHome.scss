@@ -29,7 +29,11 @@
 
 .workspace-header {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.4rem;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
   padding: 0;
 }
 
@@ -84,6 +88,8 @@
   gap: 0.75rem;
   min-inline-size: 0;
   inline-size: 100%;
+  max-inline-size: 100%;
+  box-sizing: border-box;
 }
 
 .workspace-search {
@@ -340,8 +346,7 @@
   text-transform: uppercase;
 }
 
-.folder-heading button,
-.folder-more {
+.folder-heading button {
   display: grid;
   place-items: center;
   inline-size: 28px;
@@ -354,8 +359,7 @@
   cursor: pointer;
 }
 
-.folder-heading button:hover,
-.folder-more:hover {
+.folder-heading button:hover {
   background: var(--workspace-surface-hover);
   color: var(--workspace-primary);
 }
@@ -427,34 +431,6 @@
 .folder-row.is-selected {
   background: color-mix(in srgb, var(--folder-accent) 10%, transparent);
   color: var(--workspace-primary);
-}
-
-.folder-more {
-  flex: 0 0 28px;
-  inline-size: 28px;
-  block-size: 28px;
-  margin-inline-start: 0.25rem;
-  margin-inline-end: 0.25rem;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 140ms ease, background-color 140ms ease, color 140ms ease;
-}
-
-.folder-row.is-selected .folder-more {
-  opacity: 1;
-  pointer-events: auto;
-  color: var(--folder-accent);
-}
-
-.folder-row:hover .folder-more,
-.folder-more:focus-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.folder-more svg {
-  inline-size: 17px;
-  block-size: 17px;
 }
 
 .workspace-main {
@@ -668,7 +644,8 @@
   display: block;
   inline-size: 100%;
   block-size: 100%;
-  object-fit: contain;
+  object-fit: cover;
+  object-position: center;
   background: #fff;
 }
 
@@ -1155,12 +1132,22 @@
   animation: workspace-dialog-enter 220ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
+.folder-dialog .workspace-dialog-content-shell {
+  border-radius: 20px;
+  background: #fbfaf7;
+}
+
 .workspace-dialog-title {
   margin: 0 0 1.35rem;
   color: var(--workspace-text);
   font-family: var(--font-family, system-ui, sans-serif);
   font-size: 1.2rem;
   font-weight: 650;
+}
+
+.folder-dialog .workspace-dialog-title {
+  margin-block-end: 1.45rem;
+  font-size: 1.5rem;
 }
 
 .workspace-dialog-form-content {
@@ -1211,28 +1198,49 @@
   font-weight: 600;
 }
 
-.folder-icon-options,
-.folder-color-options {
-  display: flex;
-  flex-wrap: wrap;
+.folder-metadata-form {
+  gap: 1.15rem;
+}
+
+.folder-metadata-form label {
+  color: var(--workspace-text);
+  font-size: 0.88rem;
+}
+
+.folder-metadata-form input {
+  min-block-size: 48px;
+  border-radius: 11px;
+  font-size: 1rem;
+}
+
+.folder-appearance-fieldset legend {
+  color: var(--workspace-text);
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.folder-icon-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.45rem;
 }
 
 .folder-icon-options button {
   display: grid;
   place-items: center;
-  inline-size: 38px;
-  block-size: 38px;
+  inline-size: 100%;
+  min-block-size: 48px;
+  box-sizing: border-box;
   border: 1px solid var(--workspace-border);
-  border-radius: 9px;
+  border-radius: 11px;
   background: #fffefa;
   color: var(--workspace-muted);
   cursor: pointer;
 }
 
 .folder-icon-options button svg {
-  inline-size: 19px;
-  block-size: 19px;
+  inline-size: 22px;
+  block-size: 22px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
@@ -1247,9 +1255,23 @@
   color: var(--workspace-primary);
 }
 
+.folder-icon-options button:focus-visible {
+  outline: 2px solid var(--workspace-primary);
+  outline-offset: 2px;
+}
+
+.folder-color-options {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  align-items: center;
+  justify-items: center;
+  gap: 0.35rem;
+}
+
 .folder-color-options > button {
-  inline-size: 27px;
-  block-size: 27px;
+  inline-size: 34px;
+  max-inline-size: 100%;
+  aspect-ratio: 1;
   border: 2px solid #fffefa;
   border-radius: 50%;
   background: var(--swatch-color);
@@ -1261,25 +1283,9 @@
   box-shadow: 0 0 0 2px var(--swatch-color);
 }
 
-.folder-custom-color {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-block-size: 30px;
-  color: var(--workspace-muted);
-  font-size: 0.74rem;
-  cursor: pointer;
-}
-
-.folder-custom-color input {
-  inline-size: 27px;
-  block-size: 27px;
-  min-block-size: 0;
-  padding: 2px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 50%;
-  background: #fffefa;
-  cursor: pointer;
+.folder-color-options > button:focus-visible {
+  outline: 2px solid var(--workspace-primary);
+  outline-offset: 3px;
 }
 
 .workspace-context-menu {
@@ -1303,16 +1309,37 @@
 }
 
 .workspace-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
   min-inline-size: 0;
-  min-block-size: 38px;
-  padding: 0.45rem 0.65rem;
+  min-block-size: 42px;
+  padding: 0.45rem 0.7rem;
   border: 0;
   border-radius: 7px;
   background: transparent;
   color: var(--workspace-text);
   cursor: pointer;
-  font-size: 0.84rem;
+  font-size: 0.88rem;
   text-align: start;
+}
+
+.workspace-context-menu button svg {
+  inline-size: 20px;
+  block-size: 20px;
+  flex: 0 0 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.workspace-context-menu button.has-separator {
+  margin-block-start: 3px;
+  padding-block-start: 0.65rem;
+  border-block-start: 1px solid var(--workspace-border);
+  border-radius: 0;
 }
 
 .workspace-context-menu button:hover,
@@ -1349,6 +1376,43 @@
   justify-content: end;
   gap: 0.55rem;
   margin-block-start: 0.4rem;
+}
+
+.folder-dialog-actions {
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-block-start: 0.45rem;
+}
+
+.folder-dialog-actions .primary-button {
+  flex: 1 1 50%;
+  min-block-size: 48px;
+  border-radius: 12px;
+}
+
+.folder-delete-button {
+  flex: 1 1 50%;
+  min-block-size: 48px;
+  padding-inline: 0.4rem;
+  border: 0;
+  background: transparent;
+  color: #cf4b32;
+  font-size: 0.92rem;
+  font-weight: 650;
+  text-align: center;
+}
+
+.folder-delete-button:hover {
+  border-color: transparent;
+  background: transparent;
+  color: #b93828;
+  text-decoration: underline;
+}
+
+.folder-delete-button:focus-visible {
+  outline: 2px solid #cf4b32;
+  outline-offset: 3px;
 }
 
 .confirm-dialog .workspace-dialog-content-shell {

@@ -4,6 +4,8 @@ import { t } from "../i18n";
 
 import type { ExcalidrawProps, UIAppState } from "../types";
 
+const DEFAULT_LIBRARY_URL = "https://libraries.excalidraw.com";
+
 const LibraryMenuBrowseButton = ({
   theme,
   id,
@@ -13,7 +15,12 @@ const LibraryMenuBrowseButton = ({
   theme: UIAppState["theme"];
   id: string;
 }) => {
-  const libraryUrl = import.meta.env.VITE_APP_LIBRARY_URL;
+  // Keep the official public library available in clean builds that do not
+  // define a custom library URL. An explicit empty value can still disable it.
+  const libraryUrl =
+    import.meta.env.VITE_APP_LIBRARY_URL === undefined
+      ? DEFAULT_LIBRARY_URL
+      : import.meta.env.VITE_APP_LIBRARY_URL;
   if (!libraryUrl) {
     return null;
   }
