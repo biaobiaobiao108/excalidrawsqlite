@@ -856,12 +856,15 @@ describe("cloud persistence server", () => {
     const cookie = await authenticate(handler);
     const initialBytes = new Uint8Array([1, 2, 3]);
     const replacementBytes = new Uint8Array([9, 8, 7, 6]);
-    const upload = (body: Uint8Array) =>
-      request(handler, "/api/files/file_cache_validation", {
+    const upload = (body: Uint8Array) => {
+      const payload = new ArrayBuffer(body.byteLength);
+      new Uint8Array(payload).set(body);
+      return request(handler, "/api/files/file_cache_validation", {
         method: "PUT",
         headers: { Cookie: cookie, "Content-Type": "image/png" },
-        body,
+        body: payload,
       });
+    };
 
     expect((await upload(initialBytes)).status).toBe(201);
     const original = await request(
