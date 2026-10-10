@@ -177,8 +177,8 @@ describe("cloud persistence server", () => {
     ).toBe(true);
   });
 
-  it("binds development servers locally and preserves explicit host overrides", () => {
-    expect(resolveServerHostname(true, "")).toBe("127.0.0.1");
+  it("binds development servers to all interfaces and preserves explicit host overrides", () => {
+    expect(resolveServerHostname(true, "")).toBe("0.0.0.0");
     expect(resolveServerHostname(false, "")).toBe("0.0.0.0");
     expect(resolveServerHostname(true, "192.0.2.10")).toBe("192.0.2.10");
   });
