@@ -102,6 +102,7 @@ export class BodyMemoryBudget {
 export type ServerConfig = {
   authPassword: string;
   mcpToken: string;
+  mcpTrace: boolean;
   allowAnonymous: boolean;
   nodeEnv: string;
   trustProxy: boolean;
