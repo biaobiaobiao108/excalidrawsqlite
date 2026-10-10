@@ -8,6 +8,14 @@ import React, {
 } from "react";
 
 import type { CloudFolder, CloudSceneSummary } from "../data/cloudStorage";
+import { InlineIcon } from "../../packages/excalidraw/components/InlineIcon";
+import {
+  createIcon,
+  PlusIcon as nativePlusIcon,
+  TrashIcon as nativeTrashIcon,
+  historyCommandIcon,
+  searchIcon,
+} from "../../packages/excalidraw/components/icons";
 import { scrollCommandIntoView } from "../../packages/excalidraw/components/CommandPalette/scrollCommandIntoView";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 
@@ -185,91 +193,78 @@ const parseCreateIntent = (
   };
 };
 
-const searchIcon = (
-  <svg
-    viewBox="0 0 24 24"
-    aria-hidden="true"
-    stroke="currentColor"
-    strokeWidth={2}
-    fill="none"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <circle cx="11" cy="11" r="7" />
-    <line x1="21" y1="21" x2="16.5" y2="16.5" />
-  </svg>
-);
+const createPaletteIcon = (paths: React.ReactNode) =>
+  createIcon(paths, {
+    width: 24,
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.5,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+  });
 
-const PlusIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-);
+const PlusIcon = () => nativePlusIcon;
 
-const FolderPlusIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M3.5 6.5h6l2 2H20.5v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5v-11Z" />
-    <path d="M12 11v6M9 14h6" />
-  </svg>
-);
+const FolderPlusIcon = () =>
+  createPaletteIcon(
+    <>
+      <path d="M3.5 6.5h6l2 2H20.5v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5v-11Z" />
+      <path d="M12 11v6M9 14h6" />
+    </>,
+  );
 
-const SceneIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-    <path d="M8 2v4M16 2v4M2 10h20" />
-  </svg>
-);
+const SceneIcon = () =>
+  createPaletteIcon(
+    <>
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+      <path d="M8 2v4M16 2v4M2 10h20" />
+    </>,
+  );
 
-const RefreshIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M21 2v6h-6" />
-    <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
-    <path d="M3 22v-6h6" />
-    <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
-  </svg>
-);
+const RefreshIcon = () =>
+  createPaletteIcon(
+    <>
+      <path d="M21 2v6h-6" />
+      <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
+      <path d="M3 22v-6h6" />
+      <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
+    </>,
+  );
 
-const TrashIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M3 6h18" />
-    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-  </svg>
-);
+const TrashIcon = () => nativeTrashIcon;
 
-const GridIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <rect x="4" y="4" width="6" height="6" rx="1" />
-    <rect x="14" y="4" width="6" height="6" rx="1" />
-    <rect x="4" y="14" width="6" height="6" rx="1" />
-    <rect x="14" y="14" width="6" height="6" rx="1" />
-  </svg>
-);
+const GridIcon = () =>
+  createPaletteIcon(
+    <>
+      <rect x="4" y="4" width="6" height="6" rx="1" />
+      <rect x="14" y="4" width="6" height="6" rx="1" />
+      <rect x="4" y="14" width="6" height="6" rx="1" />
+      <rect x="14" y="14" width="6" height="6" rx="1" />
+    </>,
+  );
 
-const ClockIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="12" cy="12" r="8" />
-    <path d="M12 7v5l3 2" />
-  </svg>
-);
+const ClockIcon = () => historyCommandIcon;
 
-const StarIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" />
-  </svg>
-);
+const StarIcon = () =>
+  createPaletteIcon(
+    <>
+      <path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" />
+    </>,
+  );
 
-const FolderIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M3.5 6.5h6l2 2H20.5v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5v-11Z" />
-  </svg>
-);
+const FolderIcon = () =>
+  createPaletteIcon(
+    <>
+      <path d="M3.5 6.5h6l2 2H20.5v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5v-11Z" />
+    </>,
+  );
 
-const SortIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M11 5h10M11 9h7M11 13h4M3 17l3 3 3-3M6 4v16" />
-  </svg>
-);
+const SortIcon = () =>
+  createPaletteIcon(
+    <>
+      <path d="M11 5h10M11 9h7M11 13h4M3 17l3 3 3-3M6 4v16" />
+    </>,
+  );
 
 const CommandShortcutHint = ({
   shortcut,
@@ -446,8 +441,8 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
         perform: () => {
           recordRecent("view-all");
           onClose();
-          onChangeView("all");
           onSelectFolder(null);
+          onChangeView("all");
         },
       },
       {
@@ -460,8 +455,8 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
         perform: () => {
           recordRecent("view-recent");
           onClose();
-          onChangeView("recent");
           onSelectFolder(null);
+          onChangeView("recent");
         },
       },
       {
@@ -474,8 +469,8 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
         perform: () => {
           recordRecent("view-favorites");
           onClose();
-          onChangeView("favorites");
           onSelectFolder(null);
+          onChangeView("favorites");
         },
       },
       {
@@ -488,8 +483,8 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
         perform: () => {
           recordRecent("view-trash");
           onClose();
-          onChangeView("trash");
           onSelectFolder(null);
+          onChangeView("trash");
         },
       },
     );
@@ -865,7 +860,11 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
                   onMouseMove={() => setActiveIndex(itemIndex)}
                 >
                   <div className="name">
-                    <div className="icon">{item.icon}</div>
+                    <InlineIcon
+                      className="icon"
+                      size="var(--icon-size, 1rem)"
+                      icon={item.icon}
+                    />
                     <span className="label-text">{item.label}</span>
                     {item.meta && (
                       <div className="item-meta">

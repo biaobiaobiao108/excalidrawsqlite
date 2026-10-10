@@ -1,16 +1,7 @@
+@use "../../packages/excalidraw/components/CommandPalette/palette-style" as palette;
+
 .workspace-command-palette-dialog {
-  // 继承并定义 Excalidraw 原生调色板与组件变量（严格限定在本弹窗内）
-  --color-surface-low: #f7f6f1;
-  --color-surface-mid: #eeeee8;
-  --color-surface-lowest: #fffefa;
-  --color-gray-20: #e7e5dd;
-  --color-gray-40: #cfd6cf;
-  --color-gray-50: #727d76;
-  --color-brand-hover: #315f4c;
-  --color-brand-active: #294f40;
-  --color-primary-light: #e7efe9;
-  --color-primary-darker: #294f40;
-  --popup-text-color: #252e29;
+  @include palette.light-colors;
 
   .workspace-dialog-content-shell {
     inline-size: min(520px, 100%);
@@ -36,273 +27,69 @@
   }
 
   .palette-dialog-inner {
+    @include palette.content;
     display: flex;
     flex-direction: column;
     min-block-size: 0;
-    block-size: auto;
     color: var(--popup-text-color);
 
-    // 1:1 照搬 Excalidraw 原生 ExcTextField 结构与悬停/聚焦变色
-    .ExcTextField {
-      position: relative;
-      width: 100%;
+    .command-item {
+      border: 0;
+      background: transparent;
+      text-align: start;
+      flex-shrink: 0;
 
-      &__input {
-        box-sizing: border-box;
-        display: flex;
-        flex-direction: row;
+      .name {
+        flex: 1 1 auto;
+      }
+
+      .label-text {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .item-meta {
+        display: inline-flex;
         align-items: center;
-        height: 3rem;
-        background: var(--color-surface-low);
-        border: 1px solid var(--color-gray-20);
-        border-radius: 0.5rem;
-        padding: 0 0.75rem;
-        transition: border-color 150ms ease;
+        gap: 0.35rem;
+        min-inline-size: 0;
+        margin-inline-start: 0.25rem;
+        color: var(--color-gray-50);
+        font-size: 0.75rem;
+        white-space: nowrap;
+        overflow: hidden;
 
-        &:hover {
-          border-color: var(--color-brand-hover);
-        }
-
-        &:active,
-        &:focus-within {
-          border-color: var(--color-brand-active);
-        }
-
-        input {
-          display: flex;
-          align-items: center;
-          border: none;
-          outline: none;
-          padding: 0;
-          margin: 0;
-          height: 1.5rem;
-          color: var(--popup-text-color);
-          font-family: inherit;
-          font-style: normal;
-          font-weight: 400;
-          font-size: 1rem;
-          line-height: 150%;
-          text-overflow: ellipsis;
-          background: transparent;
-          width: 100%;
-
-          &::placeholder {
-            color: var(--color-gray-50);
-            opacity: 0.8;
-          }
-        }
-      }
-    }
-
-    .shortcut {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 16px;
-      font-size: 10px;
-      gap: 0.25rem;
-
-      .shortcut-wrapper {
-        display: flex;
-      }
-
-      .shortcut-key {
-        padding: 0 4px;
-        height: 16px;
-        border-radius: 4px;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        background-color: var(--color-primary-light);
-        color: var(--color-primary-darker);
-        font-weight: 600;
-      }
-
-    }
-
-    // 固定列表视口上限和行高，键盘移动选中项时只滚动列表本身。
-    .commands {
-      --command-list-bottom-inset: 8px;
-      overflow-y: auto;
-      box-sizing: border-box;
-      margin-block-start: 12px;
-      padding-inline-end: 4px;
-      min-block-size: 0;
-      // 七行命令（40px）、六个间隔（2px）和底部留白（8px）。
-      max-block-size: min(300px, 60dvh);
-      padding-block-end: var(--command-list-bottom-inset);
-      scroll-padding-block-end: var(--command-list-bottom-inset);
-      flex: 0 1 auto;
-      display: grid;
-      grid-auto-rows: max-content;
-      align-content: start;
-      gap: 2px;
-      color: var(--popup-text-color);
-      user-select: none;
-      scrollbar-gutter: stable;
-
-      &::-webkit-scrollbar {
-        inline-size: 6px;
-      }
-
-      &::-webkit-scrollbar-track {
-        background: transparent;
-      }
-
-      &::-webkit-scrollbar-thumb {
-        background: rgba(49, 95, 76, 0.24);
-        border-radius: 999px;
-
-        &:hover {
-          background: rgba(49, 95, 76, 0.4);
-        }
-      }
-
-      .command-item {
-        color: var(--popup-text-color);
-        height: 2.5rem;
-        flex-shrink: 0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        box-sizing: border-box;
-        padding: 0 0.5rem;
-        border: 0;
-        border-radius: 8px;
-        background: transparent;
-        cursor: pointer;
-        font-size: 0.92rem;
-        font-family: inherit;
-        inline-size: 100%;
-        text-align: start;
-        transition: background-color 100ms ease;
-
-        --icon-size: 1rem;
-
-        // 原生选中态：浅灰底，字体颜色保持中性深色
-        &.item-selected {
-          background-color: var(--color-surface-mid);
-        }
-
-        // 原生点击激活态：略深一档的浅灰底
-        &:active {
-          background-color: var(--color-surface-low);
-        }
-
-        .name {
-          display: flex;
-          align-items: center;
-          gap: 0.25rem;
-          overflow: hidden;
-          flex: 1 1 auto;
-          min-inline-size: 0;
-
-          .label-text {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-          }
-
-          .item-meta {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            font-size: 0.75rem;
-            color: var(--color-gray-50);
-            margin-inline-start: 0.25rem;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-
-            .item-folder {
-              display: inline-flex;
-              align-items: center;
-              gap: 0.2rem;
-              padding: 0.05rem 0.3rem;
-              border-radius: 4px;
-              background: rgba(49, 95, 76, 0.08);
-              border: 1px solid var(--color-gray-20);
-              font-size: 0.7rem;
-            }
-
-            .item-tag {
-              display: inline-flex;
-              align-items: center;
-              padding: 0.05rem 0.3rem;
-              border-radius: 4px;
-              background: rgba(49, 95, 76, 0.08);
-              color: var(--color-brand-hover);
-              font-size: 0.7rem;
-            }
-
-            .item-time {
-              opacity: 0.85;
-            }
-          }
-        }
-
-        .icon {
-          inline-size: var(--icon-size);
-          block-size: var(--icon-size);
-          margin-inline-end: 0.375rem;
-          flex-shrink: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--color-gray-50);
-
-          svg {
-            inline-size: 100%;
-            block-size: 100%;
-            stroke: currentColor;
-            stroke-width: 2;
-            fill: none;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-          }
-        }
-
-        .item-trailing {
+        .item-folder {
           display: inline-flex;
           align-items: center;
-          gap: 0.35rem;
-          flex-shrink: 0;
+          gap: 0.2rem;
 
-          .active-pill {
-            padding: 0.1rem 0.35rem;
-            border-radius: 4px;
-            background: var(--color-surface-low);
-            color: var(--color-brand-hover);
-            font-size: 0.72rem;
-            font-weight: 600;
+          svg {
+            inline-size: 0.75rem;
+            block-size: 0.75rem;
+            flex-shrink: 0;
           }
+        }
+
+        .item-tag,
+        .item-folder {
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
       }
 
-      .no-match {
-        display: flex;
-        justify-content: center;
+      .item-trailing {
+        display: inline-flex;
         align-items: center;
-        margin-block-start: 36px;
-        gap: 0.5rem;
+        gap: 0.35rem;
+        flex-shrink: 0;
+        margin-inline-start: 0.5rem;
+      }
+
+      .active-pill {
         color: var(--color-gray-50);
-        font-size: 0.95rem;
-
-        .icon {
-          inline-size: 1.25rem;
-          block-size: 1.25rem;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-
-          svg {
-            inline-size: 100%;
-            block-size: 100%;
-            stroke: currentColor;
-            stroke-width: 2;
-            fill: none;
-          }
-        }
+        font-size: 0.75rem;
       }
     }
   }
@@ -329,9 +116,9 @@
       block-size: 100%;
     }
 
-    .commands {
+    .palette-dialog-inner .commands {
       flex: 1 1 auto;
-      max-block-size: none;
+      max-height: none;
     }
   }
 }

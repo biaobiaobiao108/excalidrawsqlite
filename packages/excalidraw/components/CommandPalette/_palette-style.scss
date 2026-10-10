@@ -1,0 +1,226 @@
+// The editor palette is the visual source for both editor and workspace menus.
+@mixin light-colors {
+  --color-surface-low: #f7f6f1;
+  --color-surface-mid: #eeeee8;
+  --color-surface-lowest: #fffefa;
+  --color-gray-20: #e7e5dd;
+  --color-gray-50: #727d76;
+  --color-brand-hover: #315f4c;
+  --color-brand-active: #294f40;
+  --color-primary-light: #e7efe9;
+  --color-primary-darker: #294f40;
+  --popup-text-color: #252e29;
+}
+
+@mixin content {
+  --command-palette-font: system-ui, BlinkMacSystemFont, -apple-system, Segoe UI,
+    Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--command-palette-font);
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: normal;
+
+  .ExcTextField {
+    position: relative;
+    width: 100%;
+
+    &__input {
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      height: 3rem;
+      background: var(--color-surface-low);
+      border: 1px solid var(--color-gray-20);
+      border-radius: 0.5rem;
+      padding: 0 0.75rem;
+      transition: border-color 150ms ease;
+
+      &:hover {
+        border-color: var(--color-brand-hover);
+      }
+
+      &:active,
+      &:focus-within {
+        border-color: var(--color-brand-active);
+      }
+
+      input {
+        display: flex;
+        align-items: center;
+        border: none;
+        outline: none;
+        padding: 0;
+        margin: 0;
+        height: 1.5rem;
+        color: var(--popup-text-color);
+        font-family: inherit;
+        font-style: normal;
+        font-weight: 400;
+        font-size: 1rem;
+        line-height: 150%;
+        text-overflow: ellipsis;
+        background: transparent;
+        width: 100%;
+
+        &::placeholder {
+          color: var(--color-gray-50);
+          opacity: 0.8;
+        }
+      }
+    }
+  }
+
+  // 主页和画板菜单使用相同的扁平列表与输入区域，不展示分类或输入框下方的按键说明。
+  .shortcuts-wrapper,
+  .command-category-title {
+    display: none;
+  }
+
+  .shortcut {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 16px;
+    gap: 0.25rem;
+    font-size: 10px;
+
+    .shortcut-wrapper {
+      display: flex;
+    }
+
+    .shortcut-key {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 4px;
+      background-color: var(--color-primary-light);
+      color: var(--color-primary-darker);
+      font-weight: 600;
+    }
+
+    .shortcut-desc {
+      margin-left: 4px;
+      color: var(--color-gray-50);
+    }
+  }
+
+  .commands {
+    --command-list-bottom-inset: 8px;
+    display: grid;
+    grid-auto-rows: max-content;
+    align-content: start;
+    gap: 2px;
+    overflow-y: auto;
+    box-sizing: border-box;
+    min-height: 0;
+    // 七行命令（40px）、六个间隔（2px）和底部留白（8px）。
+    max-height: min(300px, 60dvh);
+    flex: 0 1 auto;
+    margin-top: 12px;
+    padding-right: 4px;
+    padding-block-end: var(--command-list-bottom-inset);
+    scroll-padding-block-end: var(--command-list-bottom-inset);
+    color: var(--popup-text-color);
+    user-select: none;
+    scrollbar-gutter: stable;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: rgba(49, 95, 76, 0.24);
+
+      &:hover {
+        background: rgba(49, 95, 76, 0.4);
+      }
+    }
+
+    .command-category {
+      display: contents;
+      padding: 0;
+      margin: 0;
+    }
+
+    .command-item {
+      display: flex;
+      box-sizing: border-box;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      height: 2.5rem;
+      padding: 0 0.5rem;
+      border-radius: var(--border-radius-lg, 8px);
+      color: var(--popup-text-color);
+      cursor: pointer;
+      font: inherit;
+      --icon-size: 1rem;
+
+      &.command-item-large {
+        height: 2.5rem;
+        --icon-size: 1.5rem;
+
+        .icon {
+          width: var(--icon-size);
+          height: var(--icon-size);
+          margin-right: 0.625rem;
+        }
+      }
+
+      &:active {
+        background-color: var(--color-surface-low);
+      }
+
+      .name {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        overflow: hidden;
+        min-width: 0;
+      }
+    }
+
+    .item-selected {
+      background-color: var(--color-surface-mid);
+    }
+
+    .item-disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .no-match {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 36px;
+    }
+  }
+
+  .icon {
+    width: var(--icon-size, 1rem);
+    height: var(--icon-size, 1rem);
+    margin-right: 0.375rem;
+
+    > svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .library-item-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+    }
+  }
+}
