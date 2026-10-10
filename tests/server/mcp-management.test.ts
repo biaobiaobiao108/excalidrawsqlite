@@ -18,7 +18,16 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     const response = await client.callTool({ name, arguments: args });
     expect(response.isError).not.toBe(true);
     const data = response.structuredContent as Record<string, any>;
-    if (typeof data.boardId === "string") expect(data).not.toHaveProperty("id");
+    for (const folder of [data, ...(data.folders || []), ...(data.folder ? [data.folder] : [])]) {
+      if (typeof folder.icon === "string") {
+        for (const key of ["scene_count", "created_at", "updated_at"])
+          expect(folder).not.toHaveProperty(key);
+      }
+    }
+    if (typeof data.boardId === "string") {
+      for (const key of ["id", "folder_id", "created_at", "updated_at", "deleted_at", "element_count"])
+        expect(data).not.toHaveProperty(key);
+    }
     for (const item of data.results || []) {
       if (typeof item.boardId === "string") expect(item).not.toHaveProperty("id");
     }
@@ -32,6 +41,9 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     expect(folder).toMatchObject({ ok: true, created: true, color: "#123456", icon: "book" });
     expect(folder.id).toStartWith("folder_");
     expect(folder).not.toHaveProperty("boardId");
+    expect(folder.createdAt).toBeGreaterThan(0);
+    const folderList = await call("list_folders", {});
+    expect(folderList.folders[0]).toMatchObject({ id: folder.id, boardCount: 0 });
     expect(await call("ensure_folder", { name: "项目", color: "#abcdef", icon: "star" })).toMatchObject({ id: folder.id, created: false, color: "#123456", icon: "book" });
     expect(await call("update_folder", { folderId: folder.id, color: "#654321" })).toMatchObject({ ok: true, name: "项目", color: "#654321" });
     for (const color of ["#f00", "#f008", "#ff000080", "red", "transparent"]) {
@@ -76,7 +88,7 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     expect(await call("restore_board", { boardId: board.boardId, expectedRevision: deleted.revision })).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
     const restored = await call("restore_board", { boardId: board.boardId });
     // Moving out of the deleted folder and restoring each advance revision.
-    expect(restored).toMatchObject({ ok: true, deleted: false, folder_id: null, revision: deleted.revision + 2 });
+    expect(restored).toMatchObject({ ok: true, deleted: false, folderId: null, revision: deleted.revision + 2 });
     const batch = await call("batch_manage_boards", { items: [{ action: "manage", boardId: board.boardId, expectedRevision: restored.revision, favorite: true }, { action: "restore", boardId: "nonexistent", expectedRevision: 1 }, { action: "restore", boardId: board.boardId, expectedRevision: restored.revision + 1 }] });
     expect(batch).toMatchObject({ ok: true, succeeded: 2, failed: 1, partial: true, results: [{ ok: true, favorite: true }, { ok: false, error: { code: "SCENE_NOT_FOUND" } }, { ok: true, noop: true }] });
     const originalDuplicate = await call("create_folder", { name: "重复" });
@@ -87,14 +99,14 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     runtime.db.run("INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", ["folder_legacy_duplicate", "重复", "folder", "#315f4c", 1, 1]);
     expect(await call("ensure_folder", { name: "重复" })).toMatchObject({ ok: false, error: { code: "AMBIGUOUS_FOLDER" } });
     expect(await call("manage_board", { boardId: board.boardId, folderName: "重复" })).toMatchObject({ ok: false, error: { code: "AMBIGUOUS_FOLDER" } });
-    expect(await call("manage_board", { boardId: board.boardId, folderId: originalDuplicate.id })).toMatchObject({ ok: true, folder_id: originalDuplicate.id });
+    expect(await call("manage_board", { boardId: board.boardId, folderId: originalDuplicate.id })).toMatchObject({ ok: true, folderId: originalDuplicate.id });
     const concurrent = await Promise.all(Array.from({ length: 4 }, () => call("ensure_folder", { name: "并发文件夹" })));
     expect(new Set(concurrent.map((item) => item.id)).size).toBe(1);
     expect(concurrent.filter((item) => item.created)).toHaveLength(1);
     expect(runtime.db.query("SELECT COUNT(*) AS count FROM folders WHERE name = ?").get("并发文件夹")).toEqual({ count: 1 });
     const newFolderBoard = await call("create_board", { name: "新文件夹一次创建", folderName: "新文件夹" });
-    expect(newFolderBoard).toMatchObject({ ok: true, folder_id: expect.any(String) });
-    expect(await call("manage_board", { boardId: newFolderBoard.boardId, folderId: null, tags: [], tagMode: "replace" })).toMatchObject({ ok: true, folder_id: null, tags: [] });
+    expect(newFolderBoard).toMatchObject({ ok: true, folderId: expect.any(String) });
+    expect(await call("manage_board", { boardId: newFolderBoard.boardId, folderId: null, tags: [], tagMode: "replace" })).toMatchObject({ ok: true, folderId: null, tags: [] });
     const taggedBoard = await call("create_board", { name: "分页边界", tags: ["cursor-a", "cursor-b"] });
     const tagPage = await call("list_tags", { limit: 1 });
     expect(tagPage).toMatchObject({ tags: [{ name: "cursor-a", boardCount: 1 }], nextCursor: "cursor-a" });

@@ -30,7 +30,6 @@ COPY . .
 # CI so the generated frontend version still identifies the published image.
 ARG BUILD_SHA=local
 ENV BUILD_SHA=$BUILD_SHA
-ENV VITE_APP_GIT_SHA=$BUILD_SHA
 # This is the only other VITE option currently used by the app. Keep public
 # client configuration explicit instead of copying local .env files into the
 # Docker build context.

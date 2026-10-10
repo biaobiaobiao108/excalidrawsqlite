@@ -32,8 +32,12 @@ const toolResult = <T>(result: {
   const records = [data, ...["items", "boards", "results"].flatMap((key) =>
     Array.isArray(data[key]) ? data[key] as Record<string, unknown>[] : [])];
   for (const record of records) {
-    if (typeof record.boardId === "string") expect(record).not.toHaveProperty("id");
+    if (typeof record.boardId === "string") {
+      for (const key of ["id", "element_count", "folder_id", "folder_name", "created_at", "updated_at", "last_opened_at", "deleted_at"])
+        expect(record).not.toHaveProperty(key);
+    }
   }
+  if (typeof data.addedCount === "number") expect(data).not.toHaveProperty("elementIds");
   return result.structuredContent as T;
 };
 
@@ -184,7 +188,8 @@ describe("Excalidraw MCP endpoint", () => {
       const added = toolResult<{
         boardId: string;
         addedCount: number;
-        elementIds: string[];
+        requestedElementIds: string[];
+        generatedElementIds: string[];
         revision: number;
       }>(
         await client.callTool({
@@ -221,7 +226,8 @@ describe("Excalidraw MCP endpoint", () => {
       );
       expect(added.boardId).toBe(created.boardId);
       expect(added.addedCount).toBe(4);
-      expect(added.elementIds).toHaveLength(4);
+      expect(added.requestedElementIds).toHaveLength(3);
+      expect(added.generatedElementIds).toHaveLength(1);
       expect(added.revision).toBe(2);
 
       const board = toolResult<{
@@ -248,7 +254,7 @@ describe("Excalidraw MCP endpoint", () => {
           name: "remove_elements",
           arguments: {
             boardId: created.boardId,
-            elementIds: [added.elementIds[3]],
+            elementIds: [added.requestedElementIds[2]],
           },
         }),
       );
@@ -263,7 +269,7 @@ describe("Excalidraw MCP endpoint", () => {
           name: "remove_elements",
           arguments: {
             boardId: created.boardId,
-            elementIds: [added.elementIds[0]],
+            elementIds: [added.requestedElementIds[0]],
           },
         }),
       );
@@ -284,7 +290,7 @@ describe("Excalidraw MCP endpoint", () => {
 
       // A whole drawing is created in one tool call, including more than the
       // old 300-spec limit, with a compact receipt instead of duplicate geometry.
-      const complete = toolResult<{ boardId: string; revision: number; addedCount: number; elementIds: string[] }>(
+      const complete = toolResult<{ boardId: string; revision: number; addedCount: number; requestedElementIds: string[]; generatedElementIds: string[] }>(
         await client.callTool({
           name: "create_board",
           arguments: { name: "一次完成", backgroundColor: "#fefefe", elements: Array.from({ length: 301 }, (_, index) => ({
@@ -294,17 +300,20 @@ describe("Excalidraw MCP endpoint", () => {
       );
       expect(complete.revision).toBe(1);
       expect(complete.addedCount).toBe(602);
-      expect(complete.elementIds).toHaveLength(602);
+      expect(complete.requestedElementIds).toHaveLength(301);
+      expect(complete.generatedElementIds).toHaveLength(301);
       expect(complete).not.toHaveProperty("elements");
 
-      const summary = toolResult<{ element_count: number; revision: number }>(await client.callTool({
+      const summary = toolResult<{ elementCount: number; revision: number; createdAt: number; updatedAt: number }>(await client.callTool({
         name: "get_board", arguments: { boardId: complete.boardId, view: "summary" },
       }));
-      expect(summary.element_count).toBe(602);
+      expect(summary.elementCount).toBe(602);
+      expect(summary.createdAt).toBeGreaterThan(0);
+      expect(summary.updatedAt).toBeGreaterThan(0);
       expect(summary).not.toHaveProperty("elements");
 
       const selected = toolResult<{ elements: Array<{ id: string; seed?: number }>; notFoundIds: string[] }>(await client.callTool({
-        name: "get_board", arguments: { boardId: complete.boardId, elementIds: [complete.elementIds[0], "missing"] },
+        name: "get_board", arguments: { boardId: complete.boardId, elementIds: [complete.requestedElementIds[0], "missing"] },
       }));
       expect(selected.elements).toHaveLength(1);
       expect(selected.elements[0]).not.toHaveProperty("seed");
@@ -319,7 +328,7 @@ describe("Excalidraw MCP endpoint", () => {
 
       const updated = toolResult<{ revision: number; addedCount: number; removedCount: number }>(await client.callTool({
         name: "update_board", arguments: { boardId: complete.boardId, expectedRevision: 1, name: "已修改",
-          removeElementIds: [complete.elementIds[0]], elements: [{ type: "text", x: 0, y: 0, text: "替换内容" }] },
+          removeElementIds: [complete.requestedElementIds[0]], elements: [{ type: "text", x: 0, y: 0, text: "替换内容" }] },
       }));
       expect(updated).toMatchObject({ revision: 2, addedCount: 1, removedCount: 2 });
       const changed = toolResult<{ name: string; thumbnail_file_id: string | null; appState: { viewBackgroundColor: string }; elements: Array<{ id: string }> }>(await client.callTool({
@@ -331,11 +340,11 @@ describe("Excalidraw MCP endpoint", () => {
         .toHaveProperty("thumbnail_file_id", null);
       expect(changed.appState.viewBackgroundColor).toBe("#fefefe");
       expect(changed.elements).toHaveLength(601);
-      expect(changed.elements.some((element) => element.id === complete.elementIds[1])).toBe(false);
+      expect(changed.elements.some((element) => element.id === complete.generatedElementIds[0])).toBe(false);
 
       for (const name of ["add_elements", "remove_elements", "update_board"]) {
         const conflict = await client.callTool({ name, arguments: { boardId: complete.boardId, expectedRevision: 1,
-          ...(name === "remove_elements" ? { elementIds: [complete.elementIds[2]] }
+          ...(name === "remove_elements" ? { elementIds: [complete.requestedElementIds[1]] }
             : { elements: [{ type: "text", x: 0, y: 0, text: "不会写入" }] }) } });
         expect(conflict.isError).not.toBe(true);
         expect(conflict.structuredContent).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });

@@ -23,7 +23,7 @@ const MCP_SERVER_INSTRUCTIONS = [
   "get_board 的 input 视图用于跨板复制：elements 保留原 ID，可传给 create_board 或其他画板的 add_elements；同板原地修改用 update_element/update_board.updates，追加已有 ID 会报错。绑定文字合并到形状，points 是绝对坐标，rotation 是度。检查 unsupportedElementIds/warnings/projectionIncomplete，图元被省略不能视为空板。默认紧凑视图用于阅读，full 为内部格式且 points 是相对坐标。",
   "create_board 可同时设置 folderId/folderName、favorite、tags；folderName 会幂等获取或创建文件夹，重名歧义报错。文件夹用 list/ensure/create/update/delete_folder。manage_board 一次管理收藏、标签、移动和改名，batch_manage_boards 批量管理逐条返回结果。",
   "delete_board 只软删除，restore_board 还原；MCP 不提供永久删除或清空回收站。回收站受服务端保留期限约束。delete_folder 仅移画板至根目录，正式执行需 confirm=true，可先 dryRun 查看影响。",
-  "完整机器结果位于 structuredContent，检查 ok 与 error.code；画板标识统一使用 boardId，不返回 id 别名。图元和文件夹仍使用各自的 id。绘图回执的 requestedElementIds 是每个输入描述的本体，generatedElementIds 是附属文字，elementMap 按 inputIndex 对应本体与 labelId；elementIds 保留全部 ID。批读 partial 表示成功失败混合，truncated 仅表示内容/预算截断，not found 不需要续读。",
+  "完整机器结果位于 structuredContent，检查 ok 与 error.code；画板标识统一使用 boardId，元数据使用 elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt，不返回内部字段或别名。图元和文件夹仍使用各自的 id。绘图回执的 requestedElementIds 是每个输入描述的本体，generatedElementIds 是附属文字，elementMap 按 inputIndex 对应本体与 labelId。批读 partial 表示成功失败混合，truncated 仅表示内容/预算截断，not found 不需要续读。",
   "不支持图片上传、自由绘制或直接输入原始 Excalidraw JSON；工具接受矩形、椭圆、菱形、文字、直线和箭头。输入必须为 JSON 对象，多行字符串遵循 JSON 转义规则。",
 ].join(" ");
 
@@ -47,13 +47,35 @@ const cleanBoardRecord = (value: Record<string, unknown>): Record<string, unknow
     clean.boardId = value.id;
     delete clean.id;
   }
+  if (typeof clean.boardId === "string") {
+    for (const [stored, exposed] of [
+      ["element_count", "elementCount"], ["folder_id", "folderId"], ["folder_name", "folderName"],
+      ["created_at", "createdAt"], ["updated_at", "updatedAt"], ["last_opened_at", "lastOpenedAt"],
+      ["deleted_at", "deletedAt"],
+    ]) {
+      if (Object.hasOwn(clean, stored)) {
+        clean[exposed] = clean[stored];
+        delete clean[stored];
+      }
+    }
+  }
+  if (typeof clean.icon === "string" && typeof clean.id === "string") {
+    for (const [stored, exposed] of [["scene_count", "boardCount"], ["created_at", "createdAt"], ["updated_at", "updatedAt"]]) {
+      if (Object.hasOwn(clean, stored)) {
+        clean[exposed] = clean[stored];
+        delete clean[stored];
+      }
+    }
+  }
   return clean;
 };
 
 const result = (value: Record<string, unknown>) => ({
   structuredContent: { ok: !value.error, ...cleanBoardRecord(value),
-    ...Object.fromEntries(["items", "boards", "results"].filter((key) => Array.isArray(value[key]))
+    ...Object.fromEntries(["items", "boards", "results", "folders"].filter((key) => Array.isArray(value[key]))
       .map((key) => [key, (value[key] as Record<string, unknown>[]).map(cleanBoardRecord)])),
+    ...(value.folder && typeof value.folder === "object"
+      ? { folder: cleanBoardRecord(value.folder as Record<string, unknown>) } : {}),
   },
   content: [{ type: "text" as const, text: value.error
     ? `操作失败：${(value.error as { message: string }).message}`
@@ -67,7 +89,6 @@ const drawingReceipt = (created: readonly ExcalidrawElement[]) => {
   const requested = created.filter((element) => !generatedIds.has(element.id));
   return {
     addedCount: created.length,
-    elementIds: created.map((element) => element.id),
     requestedElementIds: requested.map((element) => element.id),
     generatedElementIds: generated.map((element) => element.id),
     elementMap: requested.map((element, inputIndex) => ({ inputIndex, elementId: element.id,
