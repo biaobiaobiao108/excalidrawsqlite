@@ -402,16 +402,22 @@ describe("Excalidraw MCP endpoint", () => {
       expect(batch.truncated).toBe(true);
       expect(JSON.stringify(batch).length).toBeLessThanOrEqual(10_000);
       const favorites = toolResult<{ items: Array<{ id: string; boardId: string }> }>(await client.callTool({
-        name: "list_boards", arguments: { view: "favorites", tag: "工作流" },
+        name: "list_boards", arguments: { favorite: true, tag: "工作流" },
       }));
       expect(favorites.items.map((scene) => scene.id)).toContain(connected.id);
 
       const canonicalFavorites = toolResult<{ items: Array<{ id: string; boardId: string }> }>(await client.callTool({
-        name: "list_boards", arguments: { view: "favorite", tag: "工作流" },
+        name: "list_boards", arguments: { view: "all", favorite: true, tag: "工作流" },
       }));
       expect(canonicalFavorites.items).toEqual(favorites.items);
       expect(canonicalFavorites.items[0].boardId).toBe(connected.id);
       expect(canonicalFavorites.items[0]).not.toHaveProperty("size");
+      const favoriteViewSchema = tools.tools.find((tool) => tool.name === "list_boards")!.inputSchema;
+      expect((favoriteViewSchema.properties!.view as { enum: string[] }).enum).toEqual(["all", "recent", "trash"]);
+      const unfavorites = toolResult<{ items: Array<{ id: string }> }>(await client.callTool({
+        name: "list_boards", arguments: { favorite: false },
+      }));
+      expect(unfavorites.items.some((board) => board.id === connected.id)).toBe(false);
       const missingFolder = await client.callTool({ name: "list_boards", arguments: { folderId: "missing" } });
       expect(missingFolder.structuredContent).toMatchObject({ ok: false, error: { code: "FOLDER_NOT_FOUND" } });
 
@@ -424,6 +430,26 @@ describe("Excalidraw MCP endpoint", () => {
         name: "get_boards_batch", arguments: { boardIds: ["missing"], view: "summary" },
       }));
       expect(allMissing).toMatchObject({ partial: false, truncated: false });
+      const smallSummary = toolResult<{ boards: Array<Record<string, unknown>>; truncated: boolean }>(await client.callTool({
+        name: "get_boards_batch", arguments: { boardIds: [connected.id], view: "summary", maxChars: 1_000 },
+      }));
+      expect(smallSummary.truncated).toBe(false);
+      expect(smallSummary.boards[0]).toMatchObject({ boardId: connected.id });
+      expect(JSON.stringify(smallSummary).length).toBeLessThanOrEqual(1_000);
+      const constrainedBatch = toolResult<{ boards: unknown[]; truncated: boolean }>(await client.callTool({
+        name: "get_boards_batch", arguments: { boardIds: [complete.id, connected.id], maxChars: 1_000 },
+      }));
+      expect(constrainedBatch.truncated).toBe(true);
+      expect(JSON.stringify(constrainedBatch).length).toBeLessThanOrEqual(1_000);
+      const impossibleBudget = await client.callTool({ name: "get_boards_batch", arguments: {
+        boardIds: Array.from({ length: 20 }, (_, i) => `${i}_${"x".repeat(120)}`), maxChars: 1_000,
+      } });
+      expect(impossibleBudget.structuredContent).toMatchObject({ ok: false, error: { code: "READ_BUDGET_TOO_SMALL" } });
+      for (const view of ["summary", "elements", "full", "input"]) {
+        const clean = toolResult<Record<string, unknown>>(await client.callTool({ name: "get_board", arguments: { boardId: complete.id, view } }));
+        expect(clean).not.toHaveProperty("thumbnail_file_id");
+        expect(clean).not.toHaveProperty("size");
+      }
 
       const input = toolResult<{ elements: Array<Record<string, unknown>>; unsupportedElementIds: string[]; warnings: unknown[] }>(await client.callTool({
         name: "get_board", arguments: { boardId: connected.id, view: "input" },
@@ -458,6 +484,33 @@ describe("Excalidraw MCP endpoint", () => {
       }));
       expect(readable.pointCoordinateSystem).toBe("absolute");
       expect(readable.elements[0].points).toEqual(edge.points);
+      const labelBoard = toolResult<{ boardId: string; revision: number; generatedElementIds: string[] }>(await client.callTool({
+        name: "create_board", arguments: { name: "标签边界", elements: [{ id: "rr", type: "rectangle", x: 0, y: 0, width: 100, height: 80, text: "短标签" }] },
+      }));
+      const labelUpdate = toolResult<{ revision: number }>(await client.callTool({ name: "update_element", arguments: {
+        boardId: labelBoard.boardId, update: { id: "rr", text: "字".repeat(2_000) }, expectedRevision: labelBoard.revision,
+      } }));
+      for (const id of ["rr", labelBoard.generatedElementIds[0]]) {
+        const tooLong = await client.callTool({ name: "update_element", arguments: {
+          boardId: labelBoard.boardId, update: { id, text: "字".repeat(2_001) }, expectedRevision: labelUpdate.revision,
+        } });
+        expect(tooLong.structuredContent).toMatchObject({ ok: false, error: { code: "INVALID_ELEMENT_UPDATE" } });
+      }
+      const validLabel = toolResult<{ revision: number; elements: unknown[]; projectionIncomplete: boolean }>(await client.callTool({
+        name: "get_board", arguments: { boardId: labelBoard.boardId, view: "input" },
+      }));
+      expect(validLabel.revision).toBe(labelUpdate.revision);
+      expect(validLabel.elements).toHaveLength(1);
+      expect(validLabel.projectionIncomplete).toBe(false);
+      const legacy = await (await apiHandler(new Request(`http://test.local/api/scenes/${labelBoard.boardId}`))).json() as { elements: Array<Record<string, unknown>> };
+      for (const element of legacy.elements) if (element.type === "text") element.originalText = "字".repeat(2_001);
+      runtime.db.query("UPDATE scenes SET elements = ? WHERE id = ?").run(JSON.stringify(legacy.elements), labelBoard.boardId);
+      const incompleteLabel = toolResult<{ elements: unknown[]; projectionIncomplete: boolean; warnings: Array<{ message: string }> }>(await client.callTool({
+        name: "get_board", arguments: { boardId: labelBoard.boardId, view: "input" },
+      }));
+      expect(incompleteLabel.elements).toHaveLength(0);
+      expect(incompleteLabel.projectionIncomplete).toBe(true);
+      expect(incompleteLabel.warnings.some((warning) => warning.message.includes("2000"))).toBe(true);
     } finally {
       await client.close();
       await mcpHandler.close();

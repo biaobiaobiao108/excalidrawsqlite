@@ -20,7 +20,7 @@ const MCP_SERVER_INSTRUCTIONS = [
   "Excalidraw 白板支持搜索、读取及批量绘制。普通绘图优先 create_board 一次传入名称和全部 elements，不要先建空板再逐个绘制。",
   "每次最多 1,000 个图元描述；形状 text 自动绑定文字。可给节点指定 id，箭头 startBinding/endBinding.elementId 引用同批或已有节点，拖动节点时保持连接。折线 points 使用绝对画布坐标；二点仍可用 startX/startY/endX/endY。字段严格校验，不能输入原始内部字段。",
   "修改优先 update_board 一次合并添加、removeElementIds、updates 原地修改及元数据；只改一个图元用 update_element，保留 ID 和绑定。expectedRevision 是可选的已读修订号，服务端始终使用乐观锁；冲突后重新判断，禁止盲目重试。",
-  "get_board 的 input 视图用于读改写：elements 可直接传给 create_board/add_elements，绑定文字合并到形状；points 是绝对坐标，rotation 是度。unsupportedElementIds/warnings 必须检查，不能声称完整复制不支持的图元或分组。默认紧凑视图只用于阅读，full 为内部格式且 points 是相对坐标。批读支持 input、分页和总字符预算。",
+  "get_board 的 input 视图用于跨板复制：elements 保留原 ID，可传给 create_board 或其他画板的 add_elements；同板原地修改用 update_element/update_board.updates，追加已有 ID 会报错。绑定文字合并到形状，points 是绝对坐标，rotation 是度。检查 unsupportedElementIds/warnings/projectionIncomplete，图元被省略不能视为空板。默认紧凑视图用于阅读，full 为内部格式且 points 是相对坐标。",
   "create_board 可同时设置 folderId/folderName、favorite、tags；folderName 会幂等获取或创建文件夹，重名歧义报错。文件夹用 list/ensure/create/update/delete_folder。manage_board 一次管理收藏、标签、移动和改名，batch_manage_boards 批量管理逐条返回结果。",
   "delete_board 只软删除，restore_board 还原；MCP 不提供永久删除或清空回收站。回收站受服务端保留期限约束。delete_folder 仅移画板至根目录，正式执行需 confirm=true，可先 dryRun 查看影响。",
   "完整机器结果位于 structuredContent，检查 ok 与 error.code；画板结果统一带 boardId，兼容 id。绘图回执的 requestedElementIds 是每个输入描述的本体，generatedElementIds 是附属文字，elementMap 按 inputIndex 对应本体与 labelId；elementIds 保留全部 ID。批读 partial 表示成功失败混合，truncated 仅表示内容/预算截断，not found 不需要续读。",
@@ -191,7 +191,11 @@ export const createMcpRequestHandler = (
               throw new HttpError(400, "INVALID_ARGUMENT", "summary 不读取图元，请省略图元筛选与 offset。");
             }
             const summary = await api<Record<string, unknown>>(`/api/scenes/${encodeURIComponent(boardId)}/summary`, "GET");
-            return { ...summary, url: boardUrl(boardId) };
+            const value = { ...cleanBoardRecord(summary), url: boardUrl(boardId) };
+            if (JSON.stringify(value).length + 64 > maxChars) {
+              throw new HttpError(400, "READ_BUDGET_TOO_SMALL", "画板摘要超过字符预算，请增加 maxChars。");
+            }
+            return value;
           }
           const board = await api<SceneData>(`/api/scenes/${encodeURIComponent(boardId)}`, "GET");
           const writable = view === "input" ? inputDrawingElements(board.elements) : null;
@@ -205,12 +209,13 @@ export const createMcpRequestHandler = (
           );
           const base = view === "full"
             ? { ...cleanBoardRecord(board), elements: [] as Record<string, unknown>[], elementCount: board.elements.length, url: boardUrl(board.id) }
-            : { id: board.id, name: board.name, revision: board.revision, elementCount: board.elements.length,
+            : { id: board.id, boardId: board.id, name: board.name, revision: board.revision, elementCount: board.elements.length,
                 elements: [] as Record<string, unknown>[], url: boardUrl(board.id) };
           const allIds = selected ? new Set(source.map((element) => element.id)) : null;
           const metadata = { ...base, matchedCount: matches.length, nextOffset: null, truncated: false,
             pointCoordinateSystem: view === "full" ? "relative" : "absolute",
-            ...(writable ? { unsupportedElementIds: writable.unsupportedElementIds, warnings: writable.warnings } : {}),
+            ...(writable ? { unsupportedElementIds: writable.unsupportedElementIds, warnings: writable.warnings,
+              projectionIncomplete: writable.unsupportedElementIds.length > 0 || writable.warnings.length > 0 } : {}),
             ...(selected ? { notFoundIds: elementIds!.filter((id) => !allIds!.has(id)) } : {}) };
           // Budget is charged per element rather than serializing another complete scene.
           // Reserve digits for the pagination offset and the outer structured result.
@@ -249,9 +254,9 @@ export const createMcpRequestHandler = (
               limit: z.number().int().min(1).max(100).optional(),
               cursor: z.string().max(2_000).optional(),
               folderId: z.string().min(1).max(128).nullable().optional().describe("null 仅根目录；省略则不限目录"),
-              favorite: z.boolean().optional(),
+              favorite: z.boolean().optional().describe("唯一的收藏筛选：true 仅收藏，false 仅未收藏，省略不限"),
               tag: z.string().trim().min(1).max(32).optional(),
-              view: z.enum(["all", "recent", "favorite", "favorites", "trash"]).optional().describe("收藏视图使用 favorite；favorites 是兼容别名，也可直接用 favorite=true 筛选"),
+              view: z.enum(["all", "recent", "trash"]).optional(),
               sort: z.enum(["updated", "created", "opened"]).optional(),
             }).strict(),
             annotations: {
@@ -261,10 +266,6 @@ export const createMcpRequestHandler = (
             },
           },
           safeTool(async ({ query, limit, cursor, folderId, favorite, tag, view = "all", sort }) => {
-            const isFavoriteView = view === "favorite" || view === "favorites";
-            if (isFavoriteView && favorite === false) {
-              throw new HttpError(400, "INVALID_ARGUMENT", "favorite 视图不能同时指定 favorite=false。");
-            }
             if (folderId && !folderExists!.get(folderId)) {
               throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在，请使用 list_folders 确认 ID。");
             }
@@ -277,7 +278,7 @@ export const createMcpRequestHandler = (
             if (query?.trim()) params.set("q", query.trim());
             if (cursor) params.set("cursor", cursor);
             if (folderId !== undefined) params.set("folder_id", folderId || "");
-            if (favorite !== undefined || isFavoriteView) params.set("favorite", String(favorite ?? true));
+            if (favorite !== undefined) params.set("favorite", String(favorite));
             if (tag) params.set("tag", tag);
             if (view === "recent") params.set("opened", "true");
             if (sort || view === "recent") params.set("sort", sort || "opened");
@@ -293,7 +294,7 @@ export const createMcpRequestHandler = (
           "get_board",
           {
             title: "读取画板",
-            description: "读取修订号与图元；input 输出可直接写入的 elements（绑定文字合并到形状，points绝对坐标），检查unsupportedElementIds/warnings。默认紧凑用于阅读，full内部格式points相对坐标。支持ID/文字/type筛选及nextOffset分页。",
+            description: "读取修订号与图元；input 用于跨板复制，保留 ID，不能直接追加到原板；原地改用 update_element/update_board.updates。检查 unsupportedElementIds/warnings/projectionIncomplete，省略图元不代表空板。input/紧凑 points 绝对坐标，full 相对坐标。支持筛选分页。",
             inputSchema: z.object({
               boardId: z.string().min(1).max(128),
               view: z.enum(["summary", "elements", "full", "input"]).optional(),
@@ -495,26 +496,27 @@ export const createMcpRequestHandler = (
           inputSchema: z.strictObject({
             boardIds: z.array(z.string().min(1).max(128)).min(1).max(20),
             view: z.enum(["summary", "elements", "full", "input"]).optional(),
-            maxChars: z.number().int().min(10_000).max(2_000_000).optional(),
+            maxChars: z.number().int().min(1_000).max(2_000_000).optional().describe("含所有画板与逐项错误的总预算，最少1000；连结果元数据也放不下时报 READ_BUDGET_TOO_SMALL"),
           }),
           annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         }, safeTool(async ({ boardIds, view = "elements", maxChars = 1_000_000 }) => {
-          const boards: Record<string, unknown>[] = [];
-          // Reserve space for per-board errors, pagination flags and the result envelope.
-          let remaining = maxChars - 5_000;
-          for (const boardId of boardIds) {
-            if (remaining < 1_000) {
-              boards.push({ boardId, truncated: true, error: { code: "READ_BUDGET_EXHAUSTED", message: "总字符预算已用完，请单独读取该画板。" } });
-              continue;
-            }
+          const boards: Record<string, unknown>[] = boardIds.map((boardId) => ({ boardId, truncated: true,
+            error: { code: "READ_BUDGET_EXHAUSTED", message: "预算不足，请单独读取该画板。" } }));
+          const envelopeSize = () => JSON.stringify({ ok: true, boards, maxChars, partial: false, truncated: false }).length;
+          if (envelopeSize() > maxChars) {
+            throw new HttpError(400, "READ_BUDGET_TOO_SMALL", "批量结果的必要元数据超过预算，请增加 maxChars 或减少 boardIds。");
+          }
+          for (const [index, boardId] of boardIds.entries()) {
+            // Charge the complete envelope while reserving a bounded outcome for every remaining board.
+            const available = maxChars - envelopeSize() + JSON.stringify(boards[index]).length - 16;
+            if (available < 128) continue;
             try {
-              const board = await readBoard({ boardId, view, maxChars: Math.max(1_000, remaining - 500) });
-              remaining -= JSON.stringify(board).length;
-              boards.push(board);
+              boards[index] = await readBoard({ boardId, view, maxChars: available });
             } catch (error) {
               if (!(error instanceof HttpError)) throw error;
-              boards.push({ boardId, ...(error.code === "READ_BUDGET_TOO_SMALL" ? { truncated: true } : {}),
-                error: { code: error.code, message: error.message } });
+              const outcome = { boardId, ...(error.code === "READ_BUDGET_TOO_SMALL" ? { truncated: true } : {}),
+                error: { code: error.code, message: error.message } };
+              if (JSON.stringify(outcome).length <= available) boards[index] = outcome;
             }
           }
           const failed = boards.filter((board) => board.error).length;
