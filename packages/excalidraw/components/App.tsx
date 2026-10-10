@@ -3973,6 +3973,7 @@ class App extends React.Component<AppProps, AppState> {
     this.fonts = new Fonts(this.scene, this.ownerDocument);
     this.renderer = new Renderer(this.scene);
     this.history.clear();
+    this.history.onHistoryChangedEmitter.clear();
     this.store.clear();
     this.files = {};
     this.imageCache.clear();

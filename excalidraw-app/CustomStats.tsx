@@ -100,6 +100,13 @@ const CustomStats = (props: Props) => {
             <div>{nFormatter(memoryStats.imageCache.decodedBytes, 1)}</div>
           </Stats.StatsRow>
           <Stats.StatsRow columns={2}>
+            <div>Pending image decodes</div>
+            <div>
+              {memoryStats.imageCache.pendingDecodes} /{" "}
+              {nFormatter(memoryStats.imageCache.pendingDecodeBytes, 1)}
+            </div>
+          </Stats.StatsRow>
+          <Stats.StatsRow columns={2}>
             <div>History</div>
             <div>
               {nFormatter(

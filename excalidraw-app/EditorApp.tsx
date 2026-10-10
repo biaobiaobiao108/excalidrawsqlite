@@ -64,8 +64,8 @@ import {
   checkAuthStatus,
   saveFilesToCloud,
   fetchCloudScene,
+  fetchCloudScenePage,
   fetchCloudFiles,
-  fetchCloudScenes,
   createCloudScene,
   markCloudSceneOpened,
   saveCloudSceneThumbnail,
@@ -442,6 +442,7 @@ const ExcalidrawWrapper = (props: {
 
   useEffect(() => {
     const retryCloudSave = () => {
+      cloudSaveQueue.retryPending();
       const sceneId = currentSceneIdRef.current;
       if (sceneId) {
         void cloudSaveQueue.flush(sceneId);
@@ -702,6 +703,7 @@ const ExcalidrawWrapper = (props: {
 
       setCloudBootstrapError("");
       await initialStatePromiseRef.current.promise;
+      await cloudSaveQueue.ready();
       const status = await checkAuthStatus();
       if (status.authRequired && !status.authenticated) {
         setIsAuthOpen(true);
@@ -716,6 +718,7 @@ const ExcalidrawWrapper = (props: {
             false,
             initialSceneDataRef.current?.cloudScene,
           );
+          cloudSaveQueue.resumePending();
           return;
         } catch (error: any) {
           if (error?.status !== 400 && error?.status !== 404) {
@@ -725,8 +728,8 @@ const ExcalidrawWrapper = (props: {
         }
       }
 
-      const scenes = await fetchCloudScenes();
-      let scene = scenes[0];
+      const page = await fetchCloudScenePage({ limit: 1 });
+      let scene = page.items[0];
       if (!scene) {
         const elements = excalidrawAPI.getSceneElementsIncludingDeleted();
         const files: BinaryFiles = {};
@@ -748,6 +751,7 @@ const ExcalidrawWrapper = (props: {
         });
       }
       await loadSelectedCloudScene(scene.id, true);
+      cloudSaveQueue.resumePending();
     })();
 
     cloudBootstrapPromiseRef.current = run;
@@ -765,7 +769,7 @@ const ExcalidrawWrapper = (props: {
         }
       });
     return run;
-  }, [excalidrawAPI, loadSelectedCloudScene]);
+  }, [cloudSaveQueue, excalidrawAPI, loadSelectedCloudScene]);
 
   useEffect(() => {
     if (!excalidrawAPI) {
@@ -810,9 +814,9 @@ const ExcalidrawWrapper = (props: {
       setActiveCloudScene(null);
       window.history.replaceState({}, "", window.location.pathname);
       try {
-        const scenes = await fetchCloudScenes();
+        const page = await fetchCloudScenePage({ limit: 1 });
         const nextScene =
-          scenes[0] || (await createCloudScene({ name: "我的画板" }));
+          page.items[0] || (await createCloudScene({ name: "我的画板" }));
         await loadSelectedCloudScene(nextScene.id);
       } catch (error: any) {
         if (error?.status === 401) {
@@ -1120,6 +1124,10 @@ const ExcalidrawWrapper = (props: {
         void cloudSaveQueue.flush(sceneId);
       }
 
+      if (sceneId && cloudSaveQueue.hasPending(sceneId)) {
+        preventUnload(event);
+      }
+
       if (
         excalidrawAPI &&
         LocalData.fileStorage.shouldPreventUnload(
@@ -1320,11 +1328,15 @@ const ExcalidrawWrapper = (props: {
   // };
 
   const navigateHomeAfterSave = useCallback(async () => {
-    if (currentSceneIdRef.current) {
+    const sceneId = currentSceneIdRef.current;
+    if (sceneId) {
       const saved = await saveCurrentCloudScene();
       if (!saved) {
+        const persistError = cloudSaveQueue.getPersistenceError(sceneId);
         const shouldLeave = window.confirm(
-          "云端画板保存未完成（可能处于离线或网络异常状态）。是否放弃未保存的更改并返回主页？",
+          persistError
+            ? "云端保存失败，且浏览器未能暂存恢复快照。离开可能丢失更改，仍要返回主页吗？"
+            : "云端保存未完成。最新更改已暂存在本机，联网后会继续重试；仍要返回主页吗？",
         );
         if (!shouldLeave) {
           return;
@@ -1336,7 +1348,7 @@ const ExcalidrawWrapper = (props: {
       return;
     }
     window.location.assign(window.location.pathname);
-  }, [onNavigateHome, saveCurrentCloudScene]);
+  }, [cloudSaveQueue, onNavigateHome, saveCurrentCloudScene]);
 
   // browsers generally prevent infinite self-embedding, there are
   // cases where it still happens, and while we disallow self-embedding

@@ -112,6 +112,25 @@ describe("memory budgets", () => {
     expect(history.getMemoryStats().undoEstimatedBytes).toBeGreaterThan(1);
   });
 
+  it("notifies history subscribers when clear empties both stacks", () => {
+    const history = new History({} as Store);
+    const changes: Array<[boolean, boolean]> = [];
+    const unsubscribe = history.onHistoryChangedEmitter.on((event) => {
+      changes.push([event.isUndoStackEmpty, event.isRedoStackEmpty]);
+    });
+
+    history.record(appStateDelta("before", "after"));
+    history.clear();
+    history.record(appStateDelta("again", "changed"));
+
+    expect(changes).toEqual([
+      [false, true],
+      [true, true],
+      [false, true],
+    ]);
+    unsubscribe();
+  });
+
   it("retains file ids referenced by history deltas", () => {
     const elementDelta = Delta.create<any>(
       { isDeleted: true, version: 0, versionNonce: 1 },
@@ -148,6 +167,24 @@ describe("memory budgets", () => {
     expect(cache.has(fileId("image-b"))).toBe(false);
     expect(cache.has(fileId("image-c"))).toBe(true);
     expect(cache.getMemoryStats().decodedBytes).toBe(272);
+  });
+
+  it("includes pending image decode reservations in the cache budget", () => {
+    const cache = new ImageCache(512);
+    cache.set(fileId("old-image"), imageEntry(8, 8));
+    cache.set(fileId("pending-image"), {
+      image: Promise.resolve({} as HTMLImageElement),
+      mimeType: "image/png" as any,
+      estimatedDecodedBytes: 512,
+    });
+
+    expect(cache.getMemoryStats()).toMatchObject({
+      decodedBytes: 0,
+      pendingDecodes: 1,
+      pendingDecodeBytes: 512,
+      maxDecodedBytes: 512,
+    });
+    expect(cache.has(fileId("old-image"))).toBe(false);
   });
 
   it("reduces editor render scale when the active canvas budget is exceeded", () => {

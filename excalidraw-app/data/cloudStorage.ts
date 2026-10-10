@@ -90,30 +90,94 @@ const getHeaders = (extraHeaders: Record<string, string> = {}) => ({
   ...extraHeaders,
 });
 
-const fetchWithTimeout = async (
+export const fetchWithTimeout = async (
   input: RequestInfo | URL,
   init: RequestInit,
   fallback: string,
+  timeoutMs = CLOUD_API_TIMEOUT_MS,
 ) => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), CLOUD_API_TIMEOUT_MS);
+  let timedOut = false;
+  let responseBody: ReadableStream<Uint8Array> | null = null;
+  let timeout: ReturnType<typeof setTimeout>;
+  let rejectTimeout!: (reason: CloudApiError) => void;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    rejectTimeout = reject;
+  });
+  void timeoutPromise.catch(() => {});
+  const clearTimeoutIfNeeded = () => clearTimeout(timeout);
+  timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+    void responseBody?.cancel().catch(() => {});
+    rejectTimeout(
+      new CloudApiError(`${fallback}（请求超时）`, 0, "NETWORK_TIMEOUT"),
+    );
+  }, timeoutMs);
   try {
-    return await fetch(input, {
-      // Cloud API calls may pass through a same-origin reverse proxy or a
-      // separately hosted development server. Include the session cookie in
-      // both cases, while the server still controls cross-origin access.
-      credentials: "include",
-      cache: "no-store",
-      ...init,
-      signal: controller.signal,
+    const response = await Promise.race([
+      fetch(input, {
+        // Cloud API calls may pass through a same-origin reverse proxy or a
+        // separately hosted development server. Include the session cookie in
+        // both cases, while the server still controls cross-origin access.
+        credentials: "include",
+        cache: "no-store",
+        ...init,
+        signal: controller.signal,
+      }),
+      timeoutPromise,
+    ]);
+    responseBody = response.body;
+    if (!response.body) {
+      clearTimeoutIfNeeded();
+    }
+    return new Proxy(response, {
+      get(target, property) {
+        const value = Reflect.get(target, property, target);
+        if (
+          ["arrayBuffer", "blob", "formData", "json", "text"].includes(
+            String(property),
+          ) &&
+          typeof value === "function"
+        ) {
+          return async (...args: unknown[]) => {
+            try {
+              return await Promise.race([
+                value.apply(target, args),
+                timeoutPromise,
+              ]);
+            } catch (error: any) {
+              if (
+                error instanceof CloudApiError &&
+                error.code === "NETWORK_TIMEOUT"
+              ) {
+                throw error;
+              }
+              if (timedOut || error?.name === "AbortError") {
+                throw new CloudApiError(
+                  `${fallback}（请求超时）`,
+                  0,
+                  "NETWORK_TIMEOUT",
+                );
+              }
+              throw error;
+            } finally {
+              clearTimeoutIfNeeded();
+            }
+          };
+        }
+        return typeof value === "function" ? value.bind(target) : value;
+      },
     });
   } catch (error: any) {
-    if (error?.name === "AbortError") {
+    clearTimeoutIfNeeded();
+    if (error instanceof CloudApiError && error.code === "NETWORK_TIMEOUT") {
+      throw error;
+    }
+    if (timedOut || error?.name === "AbortError") {
       throw new CloudApiError(`${fallback}（请求超时）`, 0, "NETWORK_TIMEOUT");
     }
     throw new CloudApiError(fallback, 0, "NETWORK_ERROR");
-  } finally {
-    clearTimeout(timeout);
   }
 };
 
@@ -125,7 +189,10 @@ const parseError = async (res: Response, fallback: string) => {
       res.status,
       body.code || "HTTP_ERROR",
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof CloudApiError && error.code === "NETWORK_TIMEOUT") {
+      return error;
+    }
     return new CloudApiError(fallback, res.status, "HTTP_ERROR");
   }
 };
@@ -372,7 +439,13 @@ const fetchCloudScenePages = async (
   return items;
 };
 
-export async function fetchCloudScene(id: string): Promise<CloudSceneData> {
+export async function fetchCloudScene(
+  id: string,
+  options: { forceRefresh?: boolean } = {},
+): Promise<CloudSceneData> {
+  if (options.forceRefresh) {
+    cloudSceneCache.delete(id);
+  }
   const cached = cloudSceneCache.get(id);
   const headers = cached?.etag
     ? getHeaders({ "If-None-Match": cached.etag })

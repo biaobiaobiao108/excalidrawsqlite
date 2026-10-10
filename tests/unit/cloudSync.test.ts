@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   CloudSaveQueue,
+  type CloudSavePersistence,
   type CloudSaveSnapshot,
 } from "../../excalidraw-app/data/cloudSync";
 import { CloudApiError } from "../../excalidraw-app/data/cloudStorage";
@@ -21,8 +22,23 @@ const callbacks = {
   onError: () => {},
 };
 
+const createPersistence = () => {
+  const snapshots = new Map<string, CloudSaveSnapshot>();
+  const persistence: CloudSavePersistence = {
+    load: async () => [...snapshots.values()],
+    save: async (value) => {
+      snapshots.set(value.sceneId, value);
+    },
+    remove: async (sceneId) => {
+      snapshots.delete(sceneId);
+    },
+  };
+  return { persistence, snapshots };
+};
+
 describe("cloud save queue", () => {
   it("keeps the latest edit when an in-flight save requires authentication", async () => {
+    const { persistence } = createPersistence();
     const savedNames: string[] = [];
     let signalFirstSave!: () => void;
     let rejectFirstSave!: (reason: Error) => void;
@@ -30,6 +46,7 @@ describe("cloud save queue", () => {
       signalFirstSave = resolve;
     });
     const queue = new CloudSaveQueue(callbacks, {
+      persistence,
       saveFilesToCloud: async () => {},
       saveCloudScene: async (id, data) => {
         savedNames.push(data.name || "");
@@ -57,12 +74,14 @@ describe("cloud save queue", () => {
   });
 
   it("keeps the latest edit after an in-flight save exhausts retries", async () => {
+    const { persistence } = createPersistence();
     const savedNames: string[] = [];
     let signalFirstSave!: () => void;
     const firstSaveStarted = new Promise<void>((resolve) => {
       signalFirstSave = resolve;
     });
     const queue = new CloudSaveQueue(callbacks, {
+      persistence,
       saveFilesToCloud: async () => {},
       saveCloudScene: async (id, data) => {
         savedNames.push(data.name || "");
@@ -106,6 +125,7 @@ describe("cloud save queue", () => {
           onError: () => callbacksSeen.error++,
         },
         {
+          persistence: createPersistence().persistence,
           saveFilesToCloud: async () => {},
           saveCloudScene: async () => {
             signalSaveStarted();
@@ -133,5 +153,185 @@ describe("cloud save queue", () => {
       expect(queue.getMemoryStats().snapshotCount).toBe(0);
       expect(callbacksSeen).toEqual({ auth: 0, conflict: 0, error: 0 });
     }
+  });
+
+  it("restores the latest failed snapshot from persistence and retries it", async () => {
+    const { persistence, snapshots } = createPersistence();
+    const failedQueue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async () => {
+        throw new Error("network unavailable");
+      },
+    });
+
+    failedQueue.enqueue(snapshot("recover me"));
+    expect(await failedQueue.flush("scene")).toBe("error");
+    expect(snapshots.get("scene")?.name).toBe("recover me");
+
+    const recoveredNames: string[] = [];
+    const recoveredQueue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async (id, data) => {
+        recoveredNames.push(data.name || "");
+        return { success: true, id, updated_at: Date.now(), revision: 2 };
+      },
+    });
+    await recoveredQueue.ready();
+    expect(recoveredQueue.hasPending("scene")).toBe(true);
+    expect(await recoveredQueue.flush("scene")).toBe("saved");
+    expect(recoveredNames).toEqual(["recover me"]);
+    expect(snapshots.size).toBe(0);
+  });
+
+  it("recognizes a save that committed before the persisted snapshot was cleared", async () => {
+    const { persistence, snapshots } = createPersistence();
+    let failFirstRemove = true;
+    const flakyPersistence: CloudSavePersistence = {
+      ...persistence,
+      remove: async (sceneId) => {
+        if (failFirstRemove) {
+          failFirstRemove = false;
+          throw new Error("storage temporarily unavailable");
+        }
+        await persistence.remove(sceneId);
+      },
+    };
+    const committed = snapshot("already committed");
+    const firstQueue = new CloudSaveQueue(callbacks, {
+      persistence: flakyPersistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async (id) => ({
+        success: true,
+        id,
+        updated_at: Date.now(),
+        revision: 2,
+      }),
+    });
+    firstQueue.enqueue(committed);
+    expect(await firstQueue.flush("scene")).toBe("saved");
+    expect(snapshots.has("scene")).toBe(true);
+
+    const recoveredQueue = new CloudSaveQueue(callbacks, {
+      persistence: flakyPersistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async () => {
+        throw new CloudApiError("revision conflict", 409, "REVISION_CONFLICT");
+      },
+      fetchCloudScene: async () => ({
+        id: "scene",
+        name: committed.name,
+        elements: committed.elements,
+        appState: committed.appState,
+        created_at: 1,
+        updated_at: 2,
+        revision: 2,
+        tags: [],
+        favorite: false,
+        folder_id: null,
+        last_opened_at: null,
+        thumbnail_file_id: null,
+      }),
+    });
+    await recoveredQueue.ready();
+    expect(await recoveredQueue.flush("scene")).toBe("saved");
+    expect(recoveredQueue.hasPending("scene")).toBe(false);
+    expect(snapshots.size).toBe(0);
+  });
+
+  it("rebases a fast follow-up snapshot onto the revision from the active save", async () => {
+    const { persistence } = createPersistence();
+    let releaseFirstSave!: () => void;
+    let signalFirstSave!: () => void;
+    const firstSaveStarted = new Promise<void>((resolve) => {
+      signalFirstSave = resolve;
+    });
+    const baseRevisions: Array<number | undefined> = [];
+    let saveCount = 0;
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async (id, data) => {
+        baseRevisions.push(data.baseRevision);
+        saveCount += 1;
+        if (saveCount === 1) {
+          signalFirstSave();
+          await new Promise<void>((resolve) => {
+            releaseFirstSave = resolve;
+          });
+          return { success: true, id, updated_at: Date.now(), revision: 2 };
+        }
+        return { success: true, id, updated_at: Date.now(), revision: 3 };
+      },
+    });
+    queue.enqueue(snapshot("first"));
+    const flushing = queue.flush("scene");
+    await firstSaveStarted;
+    queue.enqueue(snapshot("latest"));
+    releaseFirstSave();
+
+    expect(await flushing).toBe("saved");
+    expect(baseRevisions).toEqual([1, 2]);
+    queue.cancel("scene");
+  });
+
+  it("coalesces slow persistence writes and flush waits for the latest snapshot", async () => {
+    const persistedNames: string[] = [];
+    let releaseFirstWrite!: () => void;
+    let signalFirstWrite!: () => void;
+    const firstWriteStarted = new Promise<void>((resolve) => {
+      signalFirstWrite = resolve;
+    });
+    let releaseLatestWrite!: () => void;
+    let signalLatestWrite!: () => void;
+    const latestWriteStarted = new Promise<void>((resolve) => {
+      signalLatestWrite = resolve;
+    });
+    const persistence: CloudSavePersistence = {
+      load: async () => [],
+      save: async (value) => {
+        persistedNames.push(value.name);
+        if (value.name === "first") {
+          signalFirstWrite();
+          await new Promise<void>((resolve) => {
+            releaseFirstWrite = resolve;
+          });
+        }
+        if (value.name === "latest") {
+          signalLatestWrite();
+          await new Promise<void>((resolve) => {
+            releaseLatestWrite = resolve;
+          });
+        }
+      },
+      remove: async () => {},
+    };
+    let cloudSaveCount = 0;
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async (id) => {
+        cloudSaveCount += 1;
+        return { success: true, id, updated_at: Date.now(), revision: 2 };
+      },
+    });
+
+    queue.enqueue(snapshot("first"));
+    await firstWriteStarted;
+    queue.enqueue(snapshot("intermediate"));
+    queue.enqueue(snapshot("latest"));
+    const flushing = queue.flush("scene");
+    expect(cloudSaveCount).toBe(0);
+
+    releaseFirstWrite();
+    await latestWriteStarted;
+    expect(persistedNames).toEqual(["first", "latest"]);
+    expect(cloudSaveCount).toBe(0);
+
+    releaseLatestWrite();
+    expect(await flushing).toBe("saved");
+    expect(cloudSaveCount).toBe(1);
+    queue.cancel("scene");
   });
 });

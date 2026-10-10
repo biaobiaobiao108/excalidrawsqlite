@@ -1117,6 +1117,7 @@ export type AppClassProperties = {
     {
       image: HTMLImageElement | Promise<HTMLImageElement>;
       mimeType: ValueOf<typeof IMAGE_MIME_TYPES>;
+      estimatedDecodedBytes?: number;
     }
   >;
   files: BinaryFiles;
@@ -1146,6 +1147,8 @@ export type AppClassProperties = {
     imageCache: {
       entries: number;
       decodedBytes: number;
+      pendingDecodes: number;
+      pendingDecodeBytes: number;
       maxDecodedBytes: number;
       pinnedEntries: number;
     };

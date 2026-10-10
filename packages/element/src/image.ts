@@ -2,7 +2,7 @@
 // ExcalidrawImageElement & related helpers
 // -----------------------------------------------------------------------------
 
-import { MIME_TYPES, SVG_NS } from "@excalidraw/common";
+import { getDeviceMemoryTier, MIME_TYPES, SVG_NS } from "@excalidraw/common";
 
 import type {
   AppClassProperties,
@@ -31,6 +31,98 @@ export const loadHTMLImageElement = (dataURL: DataURL) => {
   });
 };
 
+const FALLBACK_IMAGE_DECODE_BUDGET_BYTES = 128 * 1024 * 1024;
+const MIN_IMAGE_DECODE_RESERVATION_BYTES = 4 * 1024 * 1024;
+
+type DecodeLimiter = {
+  budgetBytes: number;
+  concurrency: number;
+  activeBytes: number;
+  activeCount: number;
+  waiting: Array<{
+    bytes: number;
+    resolve: (release: () => void) => void;
+  }>;
+};
+
+const imageDecodeLimiters = new WeakMap<object, DecodeLimiter>();
+
+const getImageDecodeLimiter = (
+  imageCache: AppClassProperties["imageCache"],
+) => {
+  const key = imageCache as object;
+  let limiter = imageDecodeLimiters.get(key);
+  if (!limiter) {
+    const stats = (
+      imageCache as AppClassProperties["imageCache"] & {
+        getMemoryStats?: () => { maxDecodedBytes?: number };
+      }
+    ).getMemoryStats?.();
+    const deviceMemory =
+      typeof navigator === "undefined"
+        ? undefined
+        : (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+    const userAgent =
+      typeof navigator === "undefined" ? "" : navigator.userAgent;
+    const tier = getDeviceMemoryTier(deviceMemory, userAgent);
+    limiter = {
+      budgetBytes: stats?.maxDecodedBytes || FALLBACK_IMAGE_DECODE_BUDGET_BYTES,
+      concurrency: tier === "standard" ? 4 : 2,
+      activeBytes: 0,
+      activeCount: 0,
+      waiting: [],
+    };
+    imageDecodeLimiters.set(key, limiter);
+  }
+  return limiter;
+};
+
+const acquireImageDecodeBudget = (
+  limiter: DecodeLimiter,
+  bytes: number,
+) =>
+  new Promise<() => void>((resolve) => {
+    limiter.waiting.push({ bytes, resolve });
+    const drain = () => {
+      while (limiter.activeCount < limiter.concurrency) {
+        const index = limiter.waiting.findIndex(
+          (request) =>
+            limiter.activeCount === 0 ||
+            limiter.activeBytes + request.bytes <= limiter.budgetBytes,
+        );
+        if (index < 0) {
+          return;
+        }
+        const [request] = limiter.waiting.splice(index, 1);
+        if (!request) {
+          return;
+        }
+        limiter.activeCount += 1;
+        limiter.activeBytes += request.bytes;
+        let released = false;
+        request.resolve(() => {
+          if (released) {
+            return;
+          }
+          released = true;
+          limiter.activeCount -= 1;
+          limiter.activeBytes -= request.bytes;
+          drain();
+        });
+      }
+    };
+    drain();
+  });
+
+const estimateImageDecodeBytes = (
+  dataURL: DataURL,
+  budgetBytes: number,
+) =>
+  Math.min(
+    budgetBytes,
+    Math.max(MIN_IMAGE_DECODE_RESERVATION_BYTES, dataURL.length * 8),
+  );
+
 /** NOTE: updates cache even if already populated with given image. Thus,
  * you should filter out the images upstream if you want to optimize this. */
 export const updateImageCache = async ({
@@ -44,39 +136,60 @@ export const updateImageCache = async ({
 }) => {
   const updatedFiles = new Map<FileId, true>();
   const erroredFiles = new Map<FileId, true>();
-
-  await Promise.all(
-    fileIds.reduce((promises, fileId) => {
+  const limiter = getImageDecodeLimiter(imageCache);
+  const budgetBytes = limiter.budgetBytes;
+  const uniqueFileIds = [...new Set(fileIds)];
+  let nextIndex = 0;
+  const loadNext = async () => {
+    while (nextIndex < uniqueFileIds.length) {
+      const fileId = uniqueFileIds[nextIndex++];
       const fileData = files[fileId as string];
-      if (fileData && !updatedFiles.has(fileId)) {
-        updatedFiles.set(fileId, true);
-        return promises.concat(
-          (async () => {
-            try {
-              if (fileData.mimeType === MIME_TYPES.binary) {
-                throw new Error("Only images can be added to ImageCache");
-              }
-
-              const imagePromise = loadHTMLImageElement(fileData.dataURL);
-              const data = {
-                image: imagePromise,
-                mimeType: fileData.mimeType,
-              } as const;
-              // store the promise immediately to indicate there's an in-progress
-              // initialization
-              imageCache.set(fileId, data);
-
-              const image = await imagePromise;
-
-              imageCache.set(fileId, { ...data, image });
-            } catch (error: any) {
-              erroredFiles.set(fileId, true);
-            }
-          })(),
-        );
+      if (!fileData) {
+        continue;
       }
-      return promises;
-    }, [] as Promise<any>[]),
+
+      updatedFiles.set(fileId, true);
+      let release: (() => void) | null = null;
+      let pendingImagePromise: Promise<HTMLImageElement> | null = null;
+      try {
+        if (fileData.mimeType === MIME_TYPES.binary) {
+          throw new Error("Only images can be added to ImageCache");
+        }
+
+        const estimatedDecodedBytes = estimateImageDecodeBytes(
+          fileData.dataURL,
+          budgetBytes,
+        );
+        release = await acquireImageDecodeBudget(
+          limiter,
+          estimatedDecodedBytes,
+        );
+        const imagePromise = loadHTMLImageElement(fileData.dataURL);
+        pendingImagePromise = imagePromise;
+        const data = {
+          image: imagePromise,
+          mimeType: fileData.mimeType,
+          estimatedDecodedBytes,
+        } as const;
+        // Reserve memory while decoding so pending image promises participate
+        // in the cache budget and are visible in development memory stats.
+        imageCache.set(fileId, data);
+        const image = await imagePromise;
+        imageCache.set(fileId, { image, mimeType: fileData.mimeType });
+      } catch {
+        erroredFiles.set(fileId, true);
+        if (imageCache.get(fileId)?.image === pendingImagePromise) {
+          imageCache.delete(fileId);
+        }
+      } finally {
+        release?.();
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limiter.concurrency, uniqueFileIds.length) }, () =>
+      loadNext(),
+    ),
   );
 
   return {

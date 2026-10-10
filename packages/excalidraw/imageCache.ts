@@ -6,6 +6,8 @@ import type { FileId } from "@excalidraw/element/types";
 export type ImageCacheEntry = {
   image: HTMLImageElement | Promise<HTMLImageElement>;
   mimeType: ValueOf<typeof IMAGE_MIME_TYPES>;
+  /** Estimated decoded bytes reserved while the image is being decoded. */
+  estimatedDecodedBytes?: number;
 };
 
 const BYTES_PER_DECODED_PIXEL = 4;
@@ -50,6 +52,11 @@ const getDecodedImageBytes = (entry: ImageCacheEntry) => {
   return Math.max(0, width * height * BYTES_PER_DECODED_PIXEL);
 };
 
+const getPendingImageBytes = (entry: ImageCacheEntry) =>
+  entry.image instanceof Promise
+    ? Math.max(0, entry.estimatedDecodedBytes || 0)
+    : 0;
+
 /**
  * Map-compatible image cache with a bounded decoded-pixel budget.
  *
@@ -58,10 +65,12 @@ const getDecodedImageBytes = (entry: ImageCacheEntry) => {
  */
 export class ImageCache extends Map<FileId, ImageCacheEntry> {
   private readonly entryBytes = new Map<FileId, number>();
+  private readonly entryPendingBytes = new Map<FileId, number>();
   private readonly lastUsed = new Map<FileId, number>();
   private pinnedFileIds = new Set<FileId>();
   private accessCounter = 0;
   private decodedBytes = 0;
+  private pendingDecodeBytes = 0;
 
   constructor(private readonly maxDecodedBytes = getDefaultImageCacheBytes()) {
     super();
@@ -77,10 +86,14 @@ export class ImageCache extends Map<FileId, ImageCacheEntry> {
 
   override set(fileId: FileId, entry: ImageCacheEntry) {
     const previousBytes = this.entryBytes.get(fileId) || 0;
+    const previousPendingBytes = this.entryPendingBytes.get(fileId) || 0;
     this.decodedBytes -= previousBytes;
+    this.pendingDecodeBytes -= previousPendingBytes;
     super.set(fileId, entry);
     this.entryBytes.set(fileId, getDecodedImageBytes(entry));
+    this.entryPendingBytes.set(fileId, getPendingImageBytes(entry));
     this.decodedBytes += this.entryBytes.get(fileId)!;
+    this.pendingDecodeBytes += this.entryPendingBytes.get(fileId)!;
     this.lastUsed.set(fileId, ++this.accessCounter);
     this.trim();
     return this;
@@ -90,7 +103,9 @@ export class ImageCache extends Map<FileId, ImageCacheEntry> {
     const deleted = super.delete(fileId);
     if (deleted) {
       this.decodedBytes -= this.entryBytes.get(fileId) || 0;
+      this.pendingDecodeBytes -= this.entryPendingBytes.get(fileId) || 0;
       this.entryBytes.delete(fileId);
+      this.entryPendingBytes.delete(fileId);
       this.lastUsed.delete(fileId);
       this.pinnedFileIds.delete(fileId);
     }
@@ -100,9 +115,11 @@ export class ImageCache extends Map<FileId, ImageCacheEntry> {
   override clear() {
     super.clear();
     this.entryBytes.clear();
+    this.entryPendingBytes.clear();
     this.lastUsed.clear();
     this.pinnedFileIds.clear();
     this.decodedBytes = 0;
+    this.pendingDecodeBytes = 0;
   }
 
   public setPinnedFileIds(fileIds: Iterable<FileId>) {
@@ -111,7 +128,10 @@ export class ImageCache extends Map<FileId, ImageCacheEntry> {
   }
 
   public trim() {
-    while (this.decodedBytes > this.maxDecodedBytes) {
+    while (
+      this.decodedBytes + this.pendingDecodeBytes >
+      this.maxDecodedBytes
+    ) {
       let candidate: FileId | undefined;
       let candidateLastUsed = Number.POSITIVE_INFINITY;
 
@@ -138,6 +158,10 @@ export class ImageCache extends Map<FileId, ImageCacheEntry> {
     return {
       entries: this.size,
       decodedBytes: this.decodedBytes,
+      pendingDecodes: this.entryPendingBytes.size
+        ? [...this.entryPendingBytes.values()].filter((bytes) => bytes > 0).length
+        : 0,
+      pendingDecodeBytes: this.pendingDecodeBytes,
       maxDecodedBytes: this.maxDecodedBytes,
       pinnedEntries: this.pinnedFileIds.size,
     };
