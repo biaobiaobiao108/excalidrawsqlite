@@ -242,6 +242,29 @@ bun run dev
 
 只接受路径令牌，旧的 `Authorization: Bearer` 和 `?token=...` 均不生效。令牌使用 `encodeURIComponent` 编码后放在 `/mcp/` 后面；无需额外配置请求头。远程连接使用 HTTPS，并在反向代理访问日志中对 MCP 令牌路径脱敏。
 
+容器经 HTTPS 反代部署时，在 Compose 同目录的 `.env` 设置 `MCP_TOKEN` 和 `TRUST_PROXY=true`，然后执行 `docker compose up -d --build`。默认 Compose 已将这两个变量传给容器，并只把应用端口绑定到 `127.0.0.1`。MCP 客户端填写公网地址 `https://boards.example.com/mcp/<URL 编码后的令牌>`；无需登录网页，也无需 `Authorization` 请求头。建议用独立域名的根路径部署，当前应用不支持通过 `X-Forwarded-Prefix` 挂载到任意子路径。
+
+下面的 Nginx 配置放在已有的 HTTPS `server` 块内，专门代理 MCP；网页仍沿用原有的 `location /` 配置。`proxy_pass` 不添加 URI，保留完整令牌路径；转发实际域名、协议及客户端 IP。启用 `TRUST_PROXY` 后，MCP 回执中的画板链接会使用这个公网 HTTPS 地址。
+
+```nginx
+location ^~ /mcp/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-Host $http_host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header Connection "";
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+    access_log off;
+}
+```
+
+MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/POST/DELETE/OPTIONS`，保留 `Accept`、`Content-Type`、`Mcp-*`、`Last-Event-Id` 请求头；不要套用网页登录跳转或验证码。关闭响应缓冲让 SSE 及时送达，设置适当读超时避免代理提前断开连接（[Nginx 代理模块文档](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffering)）。示例关闭该路径的访问日志以避免记录令牌；如需日志，使用脱敏格式。若反代也运行在容器中，应在私有容器网络中转发到应用服务名及端口，而非代理容器自身的 `127.0.0.1`。
+
 工具按“尽量一次完成”安排：
 
 | 工具 | 用途 |

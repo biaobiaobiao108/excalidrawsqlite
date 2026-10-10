@@ -32,6 +32,60 @@ const toolResult = <T>(result: {
 };
 
 describe("Excalidraw MCP endpoint", () => {
+  it("supports trusted HTTPS proxy origins and does not trust forwarded hosts on direct connections", async () => {
+    for (const trustProxy of [false, true]) {
+      const directory = path.join(os.tmpdir(), `excalidraw-mcp-proxy-${crypto.randomUUID()}`);
+      const runtime = createRuntime({
+        dbPath: path.join(directory, "database.db"),
+        filesDir: path.join(directory, "files"),
+        config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true",
+          MCP_TOKEN: "proxy-test-token", TRUST_PROXY: String(trustProxy) }),
+      });
+      resources.push({ runtime, directory });
+      const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
+      const headers = {
+        "X-Forwarded-Proto": "https", "X-Forwarded-Host": "boards.example.com",
+        "X-Forwarded-For": "203.0.113.20", Origin: "https://boards.example.com",
+      };
+      const preflight = await handler.fetch(new Request("http://container:8080/mcp/proxy-test-token", {
+        method: "OPTIONS", headers,
+      }));
+      expect(preflight.status).toBe(trustProxy ? 204 : 403);
+      const client = new Client({ name: "proxy-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+      const transport = new StreamableHTTPClientTransport(new URL("https://boards.example.com/mcp/proxy-test-token"), {
+        fetch: async (input, init) => {
+          const incoming = new Request(input, init);
+          const upstreamHeaders = new Headers(incoming.headers);
+          for (const [key, value] of Object.entries(headers)) {
+            if (key !== "Origin" || trustProxy) upstreamHeaders.set(key, value);
+          }
+          const upstreamUrl = new URL(incoming.url);
+          upstreamUrl.protocol = "http:";
+          upstreamUrl.host = "container:8080";
+          return handler.fetch(new Request(upstreamUrl, {
+            method: incoming.method, headers: upstreamHeaders, signal: incoming.signal,
+            ...(incoming.body ? { body: incoming.body, duplex: "half" } : {}),
+          }));
+        },
+      });
+      try {
+        await client.connect(transport);
+        const created = toolResult<{ boardId: string; url: string }>(await client.callTool({
+          name: "create_board", arguments: { name: "反代画板" },
+        }));
+        const origin = trustProxy ? "https://boards.example.com" : "http://container:8080";
+        expect(created.url).toBe(`${origin}/?id=${created.boardId}`);
+        const read = toolResult<{ url: string }>(await client.callTool({
+          name: "get_board", arguments: { boardId: created.boardId, view: "summary" },
+        }));
+        expect(read.url).toBe(created.url);
+      } finally {
+        await client.close();
+        await handler.close();
+      }
+    }
+  });
+
   it("requires its URL path token and supports drawing through normal scene routes", async () => {
     const directory = path.join(
       os.tmpdir(),

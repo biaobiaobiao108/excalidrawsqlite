@@ -9,7 +9,7 @@ import { registerManagementTools, resolveFolder } from "./mcp-management";
 
 import { randomBase64Url, timingSafeEqual } from "./crypto";
 import { HttpError } from "./errors";
-import { isAllowedOrigin, jsonResponse, response } from "./http";
+import { getRequestOrigin, isAllowedOrigin, jsonResponse, response } from "./http";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { ServerRuntime } from "./types";
@@ -175,7 +175,7 @@ export const createMcpRequestHandler = (
           { maxToolInputElements: 100_000, instructions: MCP_SERVER_INSTRUCTIONS },
         );
         const boardUrl = (id: string) => {
-          const origin = requestInfo ? new URL(requestInfo.url).origin : "";
+          const origin = requestInfo ? getRequestOrigin(runtime, requestInfo) : "";
           return `${origin}/?id=${encodeURIComponent(id)}`;
         };
 

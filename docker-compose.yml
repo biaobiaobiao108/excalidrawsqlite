@@ -17,6 +17,7 @@ services:
       FILES_DIR: /app/data/files
       STATIC_DIR: /app/excalidraw-app/build
       TRUST_PROXY: ${TRUST_PROXY:-false}
+      MCP_TOKEN: ${MCP_TOKEN:-}
       # 留空时可与 ALLOW_ANONYMOUS=true 配合使用；服务端负责校验生产配置。
       AUTH_PASSWORD: ${AUTH_PASSWORD:-}
       ALLOW_ANONYMOUS: ${ALLOW_ANONYMOUS:-false}
