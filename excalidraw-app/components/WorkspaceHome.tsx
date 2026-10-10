@@ -1,10 +1,12 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { isDarwin } from "@excalidraw/common";
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { FileId } from "@excalidraw/element/types";
@@ -63,6 +65,63 @@ type SceneMetadataDialogState = {
 type FolderDialogState = {
   id: string | null;
   name: string;
+  icon: FolderIconName;
+  color: string;
+};
+
+type FolderIconName =
+  | "folder"
+  | "book"
+  | "palette"
+  | "lightbulb"
+  | "layers"
+  | "star"
+  | "image"
+  | "code";
+
+type FolderAppearance = {
+  icon: FolderIconName;
+  color: string;
+};
+
+type WorkspaceContextMenuItem = {
+  label: string;
+  onSelect: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+};
+
+type WorkspaceContextMenuState = {
+  x: number;
+  y: number;
+  items: WorkspaceContextMenuItem[];
+};
+
+const FOLDER_ICON_OPTIONS: Array<{ id: FolderIconName; label: string }> = [
+  { id: "folder", label: "文件夹" },
+  { id: "book", label: "笔记本" },
+  { id: "palette", label: "调色盘" },
+  { id: "lightbulb", label: "灵感" },
+  { id: "layers", label: "图层" },
+  { id: "star", label: "星标" },
+  { id: "image", label: "图片" },
+  { id: "code", label: "代码" },
+];
+
+const FOLDER_COLOR_OPTIONS = [
+  { color: "#315f4c", label: "松柏绿" },
+  { color: "#668f78", label: "鼠尾草绿" },
+  { color: "#4e8290", label: "湖水蓝" },
+  { color: "#bd8054", label: "陶土橙" },
+  { color: "#a65f65", label: "莓果红" },
+  { color: "#9675a6", label: "薰衣草紫" },
+  { color: "#aa8b37", label: "麦穗黄" },
+  { color: "#66717d", label: "石板灰" },
+];
+
+const DEFAULT_FOLDER_APPEARANCE: FolderAppearance = {
+  icon: "folder",
+  color: FOLDER_COLOR_OPTIONS[0].color,
 };
 
 type ConfirmDialogState = {
@@ -242,6 +301,58 @@ const FolderIcon = () => (
   </svg>
 );
 
+const FolderAppearanceIcon = ({
+  icon,
+}: {
+  icon: FolderIconName;
+}) => {
+  if (icon === "folder") {
+    return <FolderIcon />;
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      {icon === "book" && (
+        <>
+          <path d="M5 4.5h12a2 2 0 0 1 2 2v13H7a2 2 0 0 1-2-2v-13Z" />
+          <path d="M5 4.5v13a2 2 0 0 0 2 2M9 8h6M9 11h6" />
+        </>
+      )}
+      {icon === "palette" && (
+        <>
+          <path d="M12 3.5a8.5 8.5 0 1 0 0 17h1.2a2 2 0 0 0 1.1-3.7 1.2 1.2 0 0 1 .7-2.2h1.4a4.1 4.1 0 0 0 4.1-4.1A8.5 8.5 0 0 0 12 3.5Z" />
+          <circle cx="7.8" cy="10" r=".8" />
+          <circle cx="11" cy="7.4" r=".8" />
+          <circle cx="15" cy="8" r=".8" />
+        </>
+      )}
+      {icon === "lightbulb" && (
+        <>
+          <path d="M9 18h6M10 21h4M8.6 14.5A6 6 0 1 1 15.4 14.5c-.8.6-1.4 1.4-1.4 2.5h-4c0-1.1-.6-1.9-1.4-2.5Z" />
+          <path d="M12 2v1.5M4.9 4.9 6 6M19.1 4.9 18 6" />
+        </>
+      )}
+      {icon === "layers" && (
+        <>
+          <path d="m12 3 9 5-9 5-9-5 9-5Z" />
+          <path d="m3 12 9 5 9-5M3 16l9 5 9-5" />
+        </>
+      )}
+      {icon === "star" && (
+        <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z" />
+      )}
+      {icon === "image" && (
+        <>
+          <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+          <circle cx="9" cy="10" r="1.5" />
+          <path d="m5 17 4.5-4 3.2 2.5 2.3-2 4 3.5" />
+        </>
+      )}
+      {icon === "code" && <path d="m8 7-5 5 5 5m8-10 5 5-5 5m-2-13-4 16" />}
+    </svg>
+  );
+};
+
 const MoreIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="5" cy="12" r="1.4" />
@@ -274,11 +385,7 @@ const RestoreIcon = () => (
 
 const ExcalidrawMark = () => (
   <div className="workspace-mark" aria-hidden="true">
-    <svg viewBox="0 0 32 32">
-      <path d="M4 7.5 10 2l8 8-6 5.5-8-8Z" />
-      <path d="m22 2 6 5.5-16 16L6 18l16-16Z" />
-      <path d="m18 20.5 6-5.5 4 4.5-6 5.5-4-4.5Z" />
-    </svg>
+    <img src="/brand-icon.jpg" alt="" width="512" height="512" />
   </div>
 );
 
@@ -327,6 +434,8 @@ const BoardCard = React.memo(({
   onEdit,
   onDelete,
   onRestore,
+  onOpenContextMenu,
+  folderAppearance = DEFAULT_FOLDER_APPEARANCE,
   isTrash = false,
   actionPending = false,
   eager,
@@ -338,6 +447,11 @@ const BoardCard = React.memo(({
   onEdit: (scene: CloudSceneSummary) => void;
   onDelete: (scene: CloudSceneSummary) => void;
   onRestore?: (scene: CloudSceneSummary) => void;
+  onOpenContextMenu: (
+    scene: CloudSceneSummary,
+    event: React.MouseEvent<HTMLElement>,
+  ) => void;
+  folderAppearance?: FolderAppearance;
   isTrash?: boolean;
   actionPending?: boolean;
   eager?: boolean;
@@ -369,6 +483,7 @@ const BoardCard = React.memo(({
       className={`board-card ${isTrash ? "is-trash-card" : ""}`}
       onMouseEnter={onPreload}
       onFocusCapture={onPreload}
+      onContextMenu={(event) => onOpenContextMenu(scene, event)}
     >
       {isTrash ? (
         <div
@@ -427,8 +542,11 @@ const BoardCard = React.memo(({
                 <span
                   className="board-card-badge board-card-folder"
                   title={`所属文件夹：${scene.folder_name}`}
+                  style={
+                    { "--folder-accent": folderAppearance.color } as React.CSSProperties
+                  }
                 >
-                  <FolderIcon />
+                  <FolderAppearanceIcon icon={folderAppearance.icon} />
                   {scene.folder_name}
                 </span>
               )}
@@ -536,6 +654,16 @@ const BoardCard = React.memo(({
               >
                 <TrashIcon />
               </button>
+              <button
+                type="button"
+                className="icon-button board-more-button"
+                aria-label={`更多画板操作：${sceneName}`}
+                title="更多操作"
+                onClick={(event) => onOpenContextMenu(scene, event)}
+                disabled={actionPending}
+              >
+                <MoreIcon />
+              </button>
             </>
           )}
         </div>
@@ -546,7 +674,9 @@ const BoardCard = React.memo(({
   previous.scene === next.scene &&
   previous.isTrash === next.isTrash &&
   previous.actionPending === next.actionPending &&
-  previous.eager === next.eager,
+  previous.eager === next.eager &&
+  previous.folderAppearance === next.folderAppearance &&
+  previous.onOpenContextMenu === next.onOpenContextMenu,
 );
 
 const WorkspaceModal = WorkspaceDialog;
@@ -630,6 +760,7 @@ const FolderDialog = ({
   onClose,
   onSave,
   onDelete,
+  onChangeAppearance,
 }: {
   state: FolderDialogState;
   pending: boolean;
@@ -637,6 +768,9 @@ const FolderDialog = ({
   onClose: () => void;
   onSave: () => void;
   onDelete?: () => void;
+  onChangeAppearance: (
+    next: Partial<Pick<FolderDialogState, "icon" | "color">>,
+  ) => void;
 }) => (
   <WorkspaceModal
     title={state.id ? "重命名文件夹" : "新建文件夹"}
@@ -657,6 +791,61 @@ const FolderDialog = ({
           onChange={(event) => onChange(event.target.value)}
         />
       </label>
+      <fieldset className="folder-appearance-fieldset">
+        <legend>文件夹图标</legend>
+        <div className="folder-icon-options">
+          {FOLDER_ICON_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={
+                state.icon === option.id ? "is-selected" : ""
+              }
+              aria-label={option.label}
+              aria-pressed={state.icon === option.id}
+              title={option.label}
+              onClick={() => onChangeAppearance({ icon: option.id })}
+              disabled={pending}
+            >
+              <FolderAppearanceIcon icon={option.id} />
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="folder-appearance-fieldset">
+        <legend>文件夹颜色</legend>
+        <div className="folder-color-options">
+          {FOLDER_COLOR_OPTIONS.map((option) => (
+            <button
+              key={option.color}
+              type="button"
+              className={
+                state.color.toLowerCase() === option.color
+                  ? "is-selected"
+                  : ""
+              }
+              style={{ "--swatch-color": option.color } as React.CSSProperties}
+              aria-label={option.label}
+              aria-pressed={state.color.toLowerCase() === option.color}
+              title={option.label}
+              onClick={() => onChangeAppearance({ color: option.color })}
+              disabled={pending}
+            />
+          ))}
+          <label className="folder-custom-color">
+            <input
+              type="color"
+              value={state.color}
+              aria-label="选择自定义颜色"
+              onChange={(event) =>
+                onChangeAppearance({ color: event.target.value })
+              }
+              disabled={pending}
+            />
+            <span>自定义</span>
+          </label>
+        </div>
+      </fieldset>
       <div className="dialog-actions">
         {state.id && onDelete && (
           <button
@@ -683,6 +872,94 @@ const FolderDialog = ({
     </form>
   </WorkspaceModal>
 );
+
+const WorkspaceContextMenu = ({
+  state,
+  onClose,
+}: {
+  state: WorkspaceContextMenuState;
+  onClose: () => void;
+}) => {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x: state.x, y: state.y });
+
+  useLayoutEffect(() => {
+    const bounds = menuRef.current?.getBoundingClientRect();
+    if (!bounds) {
+      return;
+    }
+    const padding = 8;
+    setPosition({
+      x: Math.max(padding, Math.min(state.x, window.innerWidth - bounds.width - padding)),
+      y: Math.max(padding, Math.min(state.y, window.innerHeight - bounds.height - padding)),
+    });
+  }, [state.x, state.y, state.items.length]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+        return;
+      }
+      const buttons = Array.from(
+        menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || [],
+      );
+      if (!buttons.length) {
+        return;
+      }
+      event.preventDefault();
+      const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      const nextIndex =
+        event.key === "ArrowDown"
+          ? (currentIndex + 1) % buttons.length
+          : (currentIndex <= 0 ? buttons.length : currentIndex) - 1;
+      buttons[nextIndex]?.focus();
+    };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+    menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="workspace-context-menu"
+      role="menu"
+      aria-label="操作菜单"
+      style={{ left: position.x, top: position.y }}
+    >
+      {state.items.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          role="menuitem"
+          className={item.danger ? "is-danger" : ""}
+          disabled={item.disabled}
+          onClick={() => {
+            onClose();
+            item.onSelect();
+          }}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>,
+    document.body,
+  );
+};
 
 const ConfirmDialog = ({
   state,
@@ -763,6 +1040,8 @@ export const WorkspaceHome = ({
     null,
   );
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [contextMenu, setContextMenu] =
+    useState<WorkspaceContextMenuState | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [sceneCursor, setSceneCursor] = useState<string | null>(null);
   const [trashSceneCursor, setTrashSceneCursor] = useState<string | null>(
@@ -782,6 +1061,16 @@ export const WorkspaceHome = ({
   ].join("|");
   const pageQueryKeyRef = useRef(pageQueryKey);
   pageQueryKeyRef.current = pageQueryKey;
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  const showContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLElement>, items: WorkspaceContextMenuItem[]) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setContextMenu({ x: event.clientX, y: event.clientY, items });
+    },
+    [],
+  );
 
   const loadWorkspace = useCallback(async () => {
     const requestId = ++loadRequestRef.current;
@@ -1212,6 +1501,7 @@ export const WorkspaceHome = ({
       const scene = await createCloudScene({
         name: sceneName?.trim() || "未命名白板",
         folder_id: folderId,
+        appState: { viewBackgroundColor: "#fbfaf7" },
       });
       broadcastWorkspaceChanged();
       navigateToScene(scene);
@@ -1379,6 +1669,7 @@ export const WorkspaceHome = ({
         const updated = await renameCloudFolder(
           folderDialog.id,
           folderDialog.name.trim(),
+          { icon: folderDialog.icon, color: folderDialog.color },
         );
         setFolders((current) =>
           current.map((folder) =>
@@ -1394,7 +1685,10 @@ export const WorkspaceHome = ({
         );
         broadcastWorkspaceChanged();
       } else {
-        const created = await createCloudFolder(folderDialog.name.trim());
+        const created = await createCloudFolder(folderDialog.name.trim(), {
+          icon: folderDialog.icon,
+          color: folderDialog.color,
+        });
         setFolders((current) => [...current, created]);
         broadcastWorkspaceChanged();
       }
@@ -1448,6 +1742,85 @@ export const WorkspaceHome = ({
     });
   };
 
+  const openFolderDialog = (folder?: CloudFolder) => {
+    setFolderDialog({
+      id: folder?.id || null,
+      name: folder?.name || "",
+      icon: folder?.icon || DEFAULT_FOLDER_APPEARANCE.icon,
+      color: folder?.color || DEFAULT_FOLDER_APPEARANCE.color,
+    });
+  };
+
+  const openFolderContextMenu = (
+    folder: CloudFolder,
+    event: React.MouseEvent<HTMLElement>,
+  ) => {
+    showContextMenu(event, [
+      {
+        label: "打开文件夹",
+        onSelect: () => {
+          setSelectedFolderId(folder.id);
+          setView("all");
+        },
+      },
+      {
+        label: "在此文件夹中新建画板",
+        disabled: !!pendingAction,
+        onSelect: () => void handleCreateScene(folder.id),
+      },
+      {
+        label: "重命名与自定义外观",
+        onSelect: () => openFolderDialog(folder),
+      },
+      {
+        label: "删除文件夹",
+        danger: true,
+        disabled: !!pendingAction,
+        onSelect: () => handleDeleteFolder(folder),
+      },
+    ]);
+  };
+
+  const openBoardContextMenu = (
+    scene: CloudSceneSummary,
+    event: React.MouseEvent<HTMLElement>,
+  ) => {
+    const items =
+      view === "trash"
+        ? [
+            {
+              label: "还原画板",
+              disabled: !!pendingAction,
+              onSelect: () => void handleRestoreScene(scene),
+            },
+            {
+              label: "彻底删除",
+              danger: true,
+              disabled: !!pendingAction,
+              onSelect: () => handleDeleteScene(scene),
+            },
+          ]
+        : [
+            { label: "打开画板", onSelect: () => navigateToScene(scene) },
+            {
+              label: scene.favorite ? "取消收藏" : "收藏画板",
+              disabled: !!pendingAction,
+              onSelect: () => void handleToggleFavorite(scene),
+            },
+            {
+              label: "编辑画板信息",
+              onSelect: () => openMetadataDialog(scene),
+            },
+            {
+              label: "移至回收站",
+              danger: true,
+              disabled: !!pendingAction,
+              onSelect: () => handleDeleteScene(scene),
+            },
+          ];
+    showContextMenu(event, items);
+  };
+
   return (
     <div className="workspace-home" ref={rootRef}>
       <div className="workspace-layout">
@@ -1459,7 +1832,7 @@ export const WorkspaceHome = ({
             <a
               className="workspace-brand"
               href="/"
-              aria-label="返回画板首页"
+              aria-label="狐涂画板首页"
               onClick={(event) => {
                 if (onSelectScene) {
                   event.preventDefault();
@@ -1471,7 +1844,7 @@ export const WorkspaceHome = ({
               }}
             >
               <ExcalidrawMark />
-              <span>Excalidraw</span>
+              <span>狐涂画板</span>
             </a>
             <div className="workspace-header-actions">
               <button
@@ -1566,7 +1939,7 @@ export const WorkspaceHome = ({
             <button
               type="button"
               aria-label="新建文件夹"
-              onClick={() => setFolderDialog({ id: null, name: "" })}
+              onClick={() => openFolderDialog()}
             >
               ＋
             </button>
@@ -1580,6 +1953,15 @@ export const WorkspaceHome = ({
                     : ""
                 }`.trim()}
                 key={folder.id}
+                style={
+                  {
+                    "--folder-accent":
+                      folder.color || DEFAULT_FOLDER_APPEARANCE.color,
+                  } as React.CSSProperties
+                }
+                onContextMenu={(event) =>
+                  openFolderContextMenu(folder, event)
+                }
               >
                 <button
                   type="button"
@@ -1588,7 +1970,13 @@ export const WorkspaceHome = ({
                     setView("all");
                   }}
                 >
-                  <FolderIcon />
+                  <span className="folder-row-icon" aria-hidden="true">
+                    <FolderAppearanceIcon
+                      icon={
+                        folder.icon || DEFAULT_FOLDER_APPEARANCE.icon
+                      }
+                    />
+                  </span>
                   <span>{folder.name}</span>
                   <small>{folderSceneCounts.get(folder.id) || 0}</small>
                 </button>
@@ -1596,8 +1984,8 @@ export const WorkspaceHome = ({
                   type="button"
                   className="folder-more"
                   aria-label={`${folder.name} 文件夹操作`}
-                  onClick={() =>
-                    setFolderDialog({ id: folder.id, name: folder.name })
+                  onClick={(event) =>
+                    openFolderContextMenu(folder, event)
                   }
                 >
                   <MoreIcon />
@@ -1762,6 +2150,14 @@ export const WorkspaceHome = ({
                     onEdit={openMetadataDialog}
                     onDelete={handleDeleteScene}
                     onRestore={handleRestoreScene}
+                    onOpenContextMenu={openBoardContextMenu}
+                    folderAppearance={
+                      scene.folder_id
+                        ? folders.find(
+                            (folder) => folder.id === scene.folder_id,
+                          ) || DEFAULT_FOLDER_APPEARANCE
+                        : DEFAULT_FOLDER_APPEARANCE
+                    }
                     actionPending={!!pendingAction}
                   />
                 ))}
@@ -1804,6 +2200,11 @@ export const WorkspaceHome = ({
           onChange={(name) =>
             setFolderDialog((current) =>
               current ? { ...current, name } : current,
+            )
+          }
+          onChangeAppearance={(next) =>
+            setFolderDialog((current) =>
+              current ? { ...current, ...next } : current,
             )
           }
           onClose={() => setFolderDialog(null)}
@@ -1849,7 +2250,7 @@ export const WorkspaceHome = ({
         selectedFolderId={selectedFolderId}
         onSelectScene={navigateToScene}
         onCreateScene={handleCreateScene}
-        onCreateFolder={() => setFolderDialog({ id: null, name: "" })}
+        onCreateFolder={() => openFolderDialog()}
         onChangeView={(nextView) => {
           setView(nextView);
           setSelectedFolderId(null);
@@ -1865,6 +2266,12 @@ export const WorkspaceHome = ({
         onEmptyTrash={handleEmptyTrash}
         onReload={loadWorkspace}
       />
+      {contextMenu && (
+        <WorkspaceContextMenu
+          state={contextMenu}
+          onClose={closeContextMenu}
+        />
+      )}
     </div>
   );
 };

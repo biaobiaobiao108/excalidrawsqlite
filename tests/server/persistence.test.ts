@@ -1126,11 +1126,42 @@ describe("cloud persistence server", () => {
     const folderResponse = await jsonRequest(
       handler,
       "/api/folders",
-      { name: "产品设计" },
+      { name: "产品设计", icon: "palette", color: "#4E8290" },
       { headers: { Cookie: cookie } },
     );
     expect(folderResponse.status).toBe(201);
-    const folder = await responseJson<{ id: string }>(folderResponse);
+    const folder = await responseJson<{
+      id: string;
+      icon: string;
+      color: string;
+    }>(folderResponse);
+    expect(folder.icon).toBe("palette");
+    expect(folder.color).toBe("#4e8290");
+
+    const updatedFolderResponse = await jsonRequest(
+      handler,
+      `/api/folders/${folder.id}`,
+      { name: "产品设计", icon: "book", color: "#BD8054" },
+      { method: "PATCH", headers: { Cookie: cookie } },
+    );
+    expect(updatedFolderResponse.status).toBe(200);
+    const updatedFolder = await responseJson<{
+      icon: string;
+      color: string;
+    }>(updatedFolderResponse);
+    expect(updatedFolder.icon).toBe("book");
+    expect(updatedFolder.color).toBe("#bd8054");
+
+    const folderListResponse = await request(handler, "/api/folders", {
+      headers: { Cookie: cookie },
+    });
+    expect(
+      await responseJson<Array<{ id: string; icon: string; color: string }>>(
+        folderListResponse,
+      ),
+    ).toContainEqual(
+      expect.objectContaining({ id: folder.id, icon: "book", color: "#bd8054" }),
+    );
 
     const createdResponse = await jsonRequest(
       handler,

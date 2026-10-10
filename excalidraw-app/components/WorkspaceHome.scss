@@ -59,6 +59,14 @@
   fill: currentColor;
 }
 
+.workspace-mark img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
 .workspace-header-divider {
   inline-size: 1px;
   block-size: 24px;
@@ -74,6 +82,8 @@
 .workspace-header-actions {
   display: grid;
   gap: 0.75rem;
+  min-inline-size: 0;
+  inline-size: 100%;
 }
 
 .workspace-search {
@@ -226,6 +236,8 @@
   justify-content: center;
   gap: 0.35rem;
   inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
   box-sizing: border-box;
   min-block-size: 48px;
   padding-inline: 1rem;
@@ -258,6 +270,7 @@
   overflow: hidden;
   gap: 0.9rem;
   padding: 1.55rem 1.15rem 1.25rem;
+  min-inline-size: 0;
   border-inline-end: 1px solid var(--workspace-border);
   background: var(--workspace-sidebar);
 }
@@ -274,6 +287,7 @@
   align-items: center;
   gap: 0.75rem;
   inline-size: 100%;
+  min-inline-size: 0;
   min-block-size: 44px;
   padding: 0 0.75rem;
   border: 0;
@@ -350,6 +364,8 @@
   display: grid;
   flex: 1 1 auto;
   min-block-size: 0;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: 0.25rem;
   margin-block-start: 0;
   overflow-x: hidden;
@@ -372,11 +388,32 @@
   padding-inline-end: 0.5rem;
 }
 
-.folder-row > button:first-child span {
+.folder-row > button:first-child > span:not(.folder-row-icon) {
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.folder-row-icon {
+  display: grid;
+  flex: 0 0 25px;
+  place-items: center;
+  inline-size: 25px;
+  block-size: 25px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--folder-accent) 13%, transparent);
+  color: var(--folder-accent);
+}
+
+.folder-row-icon svg {
+  inline-size: 16px;
+  block-size: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
 }
 
 .folder-row small {
@@ -384,6 +421,12 @@
   margin-inline-start: auto;
   color: #a1a0ae;
   font-size: 0.75rem;
+}
+
+.folder-row:hover,
+.folder-row.is-selected {
+  background: color-mix(in srgb, var(--folder-accent) 10%, transparent);
+  color: var(--workspace-primary);
 }
 
 .folder-more {
@@ -400,7 +443,7 @@
 .folder-row.is-selected .folder-more {
   opacity: 1;
   pointer-events: auto;
-  color: var(--workspace-primary);
+  color: var(--folder-accent);
 }
 
 .folder-row:hover .folder-more,
@@ -514,7 +557,7 @@
   flex-direction: column;
   box-sizing: border-box;
   content-visibility: auto;
-  contain-intrinsic-size: auto 280px;
+  contain-intrinsic-size: auto 360px;
   container-type: inline-size;
   min-inline-size: 0;
   overflow: clip;
@@ -615,7 +658,7 @@
 
 .board-thumbnail {
   position: relative;
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 2 / 1;
   overflow: hidden;
   border-block-end: 1px solid var(--workspace-border);
   background: #f7f7f2;
@@ -670,11 +713,11 @@
 .board-card-title {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
   inline-size: 100%;
   box-sizing: border-box;
-  padding: 0.65rem 0.75rem 0;
+  padding: 0.45rem 0.75rem 0;
   border: 0;
   background: transparent;
   overflow: hidden;
@@ -684,7 +727,7 @@
   font-size: 0.95rem;
   font-weight: 600;
   line-height: 1.35;
-  block-size: calc(0.95rem * 1.35 * 2 + 0.65rem);
+  block-size: calc(0.95rem * 1.35 + 0.45rem);
   text-align: start;
   text-overflow: ellipsis;
   word-break: break-word;
@@ -766,7 +809,7 @@
 }
 
 .board-card-folder {
-  background: #edf1eb;
+  background: color-mix(in srgb, var(--folder-accent, #668f78) 14%, #fffefa);
   color: #56675c;
   gap: 0.22rem;
   max-inline-size: 104px;
@@ -775,6 +818,11 @@
     inline-size: 11px;
     block-size: 11px;
     flex-shrink: 0;
+    fill: none;
+    stroke: var(--folder-accent, #668f78);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
   }
 }
 
@@ -1149,6 +1197,146 @@
   inline-size: 100%;
 }
 
+.folder-appearance-fieldset {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.folder-appearance-fieldset legend {
+  margin-block-end: 0.55rem;
+  color: var(--workspace-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.folder-icon-options,
+.folder-color-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.folder-icon-options button {
+  display: grid;
+  place-items: center;
+  inline-size: 38px;
+  block-size: 38px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 9px;
+  background: #fffefa;
+  color: var(--workspace-muted);
+  cursor: pointer;
+}
+
+.folder-icon-options button svg {
+  inline-size: 19px;
+  block-size: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.folder-icon-options button:hover,
+.folder-icon-options button.is-selected {
+  border-color: var(--workspace-primary);
+  background: var(--workspace-primary-soft);
+  color: var(--workspace-primary);
+}
+
+.folder-color-options > button {
+  inline-size: 27px;
+  block-size: 27px;
+  border: 2px solid #fffefa;
+  border-radius: 50%;
+  background: var(--swatch-color);
+  box-shadow: 0 0 0 1px var(--workspace-border);
+  cursor: pointer;
+}
+
+.folder-color-options > button.is-selected {
+  box-shadow: 0 0 0 2px var(--swatch-color);
+}
+
+.folder-custom-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-block-size: 30px;
+  color: var(--workspace-muted);
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.folder-custom-color input {
+  inline-size: 27px;
+  block-size: 27px;
+  min-block-size: 0;
+  padding: 2px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 50%;
+  background: #fffefa;
+  cursor: pointer;
+}
+
+.workspace-context-menu {
+  --workspace-border: #e7e5dd;
+  --workspace-text: #252e29;
+  --workspace-primary: #315f4c;
+  --workspace-primary-soft: #e7efe9;
+  position: fixed;
+  z-index: 1200;
+  display: grid;
+  min-inline-size: 210px;
+  max-inline-size: min(280px, calc(100vw - 16px));
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 11px;
+  background: #fffefa;
+  color: var(--workspace-text);
+  font-family: var(--ui-font, system-ui, sans-serif);
+  box-shadow: 0 12px 36px rgba(32, 45, 37, 0.18);
+}
+
+.workspace-context-menu button {
+  min-inline-size: 0;
+  min-block-size: 38px;
+  padding: 0.45rem 0.65rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--workspace-text);
+  cursor: pointer;
+  font-size: 0.84rem;
+  text-align: start;
+}
+
+.workspace-context-menu button:hover,
+.workspace-context-menu button:focus-visible {
+  outline: 0;
+  background: var(--workspace-primary-soft);
+  color: var(--workspace-primary);
+}
+
+.workspace-context-menu button.is-danger {
+  color: #a54242;
+}
+
+.workspace-context-menu button.is-danger:hover,
+.workspace-context-menu button.is-danger:focus-visible {
+  background: #fdf0ee;
+  color: #a54242;
+}
+
+.workspace-context-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .metadata-form input:focus,
 .metadata-form .custom-select__trigger:focus-visible,
 .metadata-form .custom-select__trigger[aria-expanded="true"] {
@@ -1196,6 +1384,15 @@
     padding-inline: 0.9rem;
   }
 
+  .workspace-header-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-header-actions > * {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
   .workspace-main {
     padding-inline: 1.4rem;
   }
@@ -1226,16 +1423,19 @@
     gap: 0.55rem;
     inline-size: auto;
     min-inline-size: 0;
+    max-inline-size: 100%;
   }
 
   .workspace-home .header-create-button {
     order: 1;
+    flex: 0 0 42px;
   }
 
   .workspace-search {
     order: 0;
     flex: 1;
     inline-size: auto;
+    min-inline-size: 0;
     min-block-size: 42px;
     padding-inline: 0.65rem;
   }
@@ -1365,7 +1565,7 @@
   .board-grid .board-card-thumbnail,
   .board-grid .board-thumbnail {
     block-size: auto;
-    aspect-ratio: 16 / 10;
+    aspect-ratio: 16 / 9;
     border-block-end: 1px solid var(--workspace-border);
     border-inline-end: 0;
   }

@@ -9,6 +9,10 @@ html.dark {
   color: #fff;
 }
 
+html:not(.dark) {
+  color-scheme: light;
+}
+
 body,
 html {
   margin: 0;
@@ -17,7 +21,7 @@ html {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background-color: #fff;
+  background-color: #fbfaf7;
 }
 
 html.dark body,
@@ -27,7 +31,7 @@ html.dark #root {
 
 #root {
   height: 100%;
-  background-color: #fff;
+  background-color: #fbfaf7;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   -khtml-user-select: none;
@@ -71,7 +75,7 @@ html.dark #root {
   display: grid;
   place-items: center;
   height: 100%;
-  background: #fff;
+  background: #fbfaf7;
   color: #747487;
   font-family: var(--ui-font, system-ui, sans-serif);
 }
@@ -93,10 +97,41 @@ html.dark .editor-loading-state {
 }
 
 .excalidraw {
-  --color-primary-contrast-offset: #625ee0; // to offset Chubb illusion
-
-  &.theme--dark {
-    --color-primary-contrast-offset: #726dff; // to offset Chubb illusion
+  &:not(.theme--dark) {
+    --color-primary-contrast-offset: #315f4c;
+    --color-selection: #315f4c;
+    --color-primary: #315f4c;
+    --color-primary-darker: #294f40;
+    --color-primary-darkest: #203f33;
+    --color-primary-light: #e7efe9;
+    --color-primary-light-darker: #d7e6dc;
+    --color-primary-hover: #3d725a;
+    --color-brand-hover: #315f4c;
+    --color-brand-active: #294f40;
+    --color-on-primary-container: #315f4c;
+    --color-surface-primary-container: #e7efe9;
+    --color-promo: #315f4c;
+    --color-surface-low: #f7f6f1;
+    --color-surface-mid: #eeeee8;
+    --color-surface-high: #e7e5dd;
+    --color-surface-lowest: #fffefa;
+    --color-on-surface: #26342d;
+    --color-border-outline: #788980;
+    --color-border-outline-variant: #d6ddd7;
+    --default-bg-color: #fbfaf7;
+    --input-bg-color: #fffefa;
+    --input-border-color: #e2e0d8;
+    --input-hover-bg-color: #f7f6f1;
+    --island-bg-color: #fffefa;
+    --island-bg-color-alt: #fbfaf7;
+    --popup-secondary-bg-color: #f7f6f1;
+    --default-border-color: #e7e5dd;
+    --focus-highlight-color: #315f4c;
+    --select-highlight-color: #315f4c;
+    --link-color: #315f4c;
+    --link-color-hover: #294f40;
+    --link-color-active: #203f33;
+    --button-special-active-bg-color: #e7efe9;
   }
 
   .footer-center {

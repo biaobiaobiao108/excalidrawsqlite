@@ -63,6 +63,8 @@ import {
   requireRevision,
   validateAppState,
   validateElements,
+  validateFolderColor,
+  validateFolderIcon,
   validateFolderName,
   getPathId,
   validateId,
@@ -357,7 +359,8 @@ const publishWorkspaceChanged = (runtime: ServerRuntime, updatedAt?: number) =>
 const getFolderSummary = (runtime: ServerRuntime, id: string) =>
   runtime.db
     .query(
-      `SELECT folders.id, folders.name, folders.created_at, folders.updated_at,
+      `SELECT folders.id, folders.name, folders.icon, folders.color,
+              folders.created_at, folders.updated_at,
               COUNT(scenes.id) AS scene_count
        FROM folders
        LEFT JOIN scenes
@@ -435,7 +438,9 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
       touchSceneLastOpened: runtime.db.query(
         "UPDATE scenes SET last_opened_at = ? WHERE id = ?",
       ),
-      getFolderById: runtime.db.query("SELECT id FROM folders WHERE id = ?"),
+      getFolderById: runtime.db.query(
+        "SELECT id, icon, color FROM folders WHERE id = ?",
+      ),
       getFileUpdatedAt: runtime.db.query(
         "SELECT updated_at FROM files WHERE id = ?",
       ),
@@ -464,7 +469,8 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
          ORDER BY scenes.deleted_at DESC, scenes.id DESC`,
       ),
       listFolders: runtime.db.query(
-        `SELECT folders.id, folders.name, folders.created_at, folders.updated_at,
+        `SELECT folders.id, folders.name, folders.icon, folders.color,
+                folders.created_at, folders.updated_at,
                 COUNT(scenes.id) AS scene_count
          FROM folders
          LEFT JOIN scenes
@@ -889,12 +895,18 @@ export const createRequestHandler = (
           await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
         );
         const name = validateFolderName(body.name);
+        const icon =
+          body.icon === undefined ? "folder" : validateFolderIcon(body.icon);
+        const color =
+          body.color === undefined
+            ? "#315f4c"
+            : validateFolderColor(body.color);
         const id = `folder_${Date.now().toString(36)}_${randomHex(4)}`;
         const now = Date.now();
         try {
           runtime.db.run(
-            "INSERT INTO folders (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
-            [id, name, now, now],
+            "INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            [id, name, icon, color, now, now],
           );
         } catch (error: any) {
           if (
@@ -910,7 +922,15 @@ export const createRequestHandler = (
         return jsonResponse(
           runtime,
           req,
-          { id, name, created_at: now, updated_at: now, scene_count: 0 },
+          {
+            id,
+            name,
+            icon,
+            color,
+            created_at: now,
+            updated_at: now,
+            scene_count: 0,
+          },
           201,
         );
       }
@@ -921,14 +941,24 @@ export const createRequestHandler = (
           await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
         );
         const name = validateFolderName(body.name);
-        const existing = stmts.getFolderById.get(id);
+        const existing = stmts.getFolderById.get(id) as {
+          id: string;
+          icon: string;
+          color: string;
+        } | null;
         if (!existing) {
           throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
         }
+        const icon = hasOwn(body, "icon")
+          ? validateFolderIcon(body.icon)
+          : existing.icon;
+        const color = hasOwn(body, "color")
+          ? validateFolderColor(body.color)
+          : existing.color;
         const now = Date.now();
         runtime.db.run(
-          "UPDATE folders SET name = ?, updated_at = ? WHERE id = ?",
-          [name, now, id],
+          "UPDATE folders SET name = ?, icon = ?, color = ?, updated_at = ? WHERE id = ?",
+          [name, icon, color, now, id],
         );
         const updated = getFolderSummary(runtime, id);
         if (!updated) {

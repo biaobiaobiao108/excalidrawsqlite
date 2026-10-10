@@ -53,6 +53,34 @@ export const validateFolderName = (value: unknown) => {
   return name;
 };
 
+export const validateFolderIcon = (value: unknown) => {
+  const allowedIcons = new Set([
+    "folder",
+    "book",
+    "palette",
+    "lightbulb",
+    "layers",
+    "star",
+    "image",
+    "code",
+  ]);
+  if (typeof value !== "string" || !allowedIcons.has(value)) {
+    throw new HttpError(400, "INVALID_FOLDER_ICON", "无效的文件夹图标");
+  }
+  return value;
+};
+
+export const validateFolderColor = (value: unknown) => {
+  if (typeof value !== "string" || !/^#[\da-f]{6}$/i.test(value)) {
+    throw new HttpError(
+      400,
+      "INVALID_FOLDER_COLOR",
+      "文件夹颜色必须是十六进制颜色值",
+    );
+  }
+  return value.toLowerCase();
+};
+
 export const validateTags = (value: unknown) => {
   if (!Array.isArray(value) || value.length > MAX_TAGS) {
     throw new HttpError(

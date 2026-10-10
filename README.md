@@ -1,4 +1,4 @@
-# Excalidraw (Bun + SQLite 持久化纯净私有化版本)
+# 狐涂画板（Bun + SQLite 自托管版）
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Bun Version](https://img.shields.io/badge/Bun-1.4%2B-black?logo=bun)](https://bun.sh) [![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)](https://github.com/biaobiaobiao108/excalidrawsqlite/pkgs/container/excalidrawsqlite)
 
@@ -8,7 +8,7 @@
 
 ## ⚖️ 与原版 Excalidraw 的核心区别与优化
 
-| 对比维度 | 官方 / 社区原版 Excalidraw | 本项目 (Excalidraw Bun + SQLite 纯净版) |
+| 对比维度 | 官方 / 社区原版 Excalidraw | 本项目（狐涂画板，Bun + SQLite） |
 | :-- | :-- | :-- |
 | **运行时与架构** | Node.js + Yarn，微服务或多容器配置 | **100% 全栈 Bun (1.4.3+) 驱动**，单进程一体化极速托管，纯 TypeScript ESM 脚本工具链 |
 | **数据持久化** | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端 | **原生 SQLite WAL 高性能持久化**，Prepared Statements、摘要列、部分索引与 keyset 分页，单卷挂载 `./data:/app/data` |

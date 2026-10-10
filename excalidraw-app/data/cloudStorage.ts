@@ -69,6 +69,16 @@ export interface CloudSceneData {
 export interface CloudFolder {
   id: string;
   name: string;
+  icon:
+    | "folder"
+    | "book"
+    | "palette"
+    | "lightbulb"
+    | "layers"
+    | "star"
+    | "image"
+    | "code";
+  color: string;
   created_at: number;
   updated_at: number;
   scene_count: number;
@@ -616,13 +626,16 @@ export async function fetchCloudFolders(): Promise<CloudFolder[]> {
   );
 }
 
-export async function createCloudFolder(name: string): Promise<CloudFolder> {
+export async function createCloudFolder(
+  name: string,
+  appearance: Pick<CloudFolder, "icon" | "color">,
+): Promise<CloudFolder> {
   return fetchJson(
     "/api/folders",
     {
       method: "POST",
       headers: getHeaders(),
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, ...appearance }),
     },
     "创建文件夹失败",
   );
@@ -631,13 +644,14 @@ export async function createCloudFolder(name: string): Promise<CloudFolder> {
 export async function renameCloudFolder(
   id: string,
   name: string,
+  appearance: Pick<CloudFolder, "icon" | "color">,
 ): Promise<CloudFolder> {
   return fetchJson(
     `/api/folders/${encodeURIComponent(id)}`,
     {
       method: "PATCH",
       headers: getHeaders(),
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, ...appearance }),
     },
     "重命名文件夹失败",
   );

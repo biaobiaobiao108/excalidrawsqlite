@@ -34,6 +34,8 @@ export const initializeDatabase = (db: Database) => {
     CREATE TABLE IF NOT EXISTS folders (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      icon TEXT NOT NULL DEFAULT 'folder',
+      color TEXT NOT NULL DEFAULT '#315f4c',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
