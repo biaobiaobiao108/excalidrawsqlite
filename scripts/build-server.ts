@@ -21,9 +21,9 @@ const result = await Bun.build({
 });
 
 if (!result.success) {
-  console.error("❌ Server build failed with errors:");
+  console.info("❌ Server build failed with errors:");
   for (const log of result.logs) {
-    console.error(log);
+    console.info(log);
   }
   process.exit(1);
 }

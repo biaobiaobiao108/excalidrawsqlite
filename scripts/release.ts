@@ -57,12 +57,12 @@ const getArguments = (): [string, string, boolean] => {
   }
 
   if (tag !== "latest" && tag !== "next" && tag !== "test") {
-    console.error(`Unsupported tag "${tag}", use "latest", "next" or "test".`);
+    console.info(`Unsupported tag "${tag}", use "latest", "next" or "test".`);
     process.exit(1);
   }
 
   if (tag === "latest" && !version) {
-    console.error("Pass the version to make the latest stable release!");
+    console.info("Pass the version to make the latest stable release!");
     process.exit(1);
   }
 
@@ -90,7 +90,7 @@ const getArguments = (): [string, string, boolean] => {
 
 const validatePackageName = (packageName: string) => {
   if (!PACKAGES.includes(packageName)) {
-    console.error(`Package "${packageName}" not found!`);
+    console.info(`Package "${packageName}" not found!`);
     process.exit(1);
   }
 };
@@ -259,7 +259,7 @@ const askToCommit = async (tag: string, nextVersion: string): Promise<void> => {
       { inherit: true },
     );
   } else {
-    console.warn("Skipping commit. Don't forget to commit manually later!");
+    console.info("Skipping commit. Don't forget to commit manually later!");
   }
 };
 

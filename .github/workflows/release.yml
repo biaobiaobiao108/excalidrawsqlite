@@ -36,6 +36,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -43,8 +44,12 @@ jobs:
       - name: Determine stable release
         id: release_flags
         shell: bash
+        env:
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
-          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "release" && "$RELEASE_IS_PRERELEASE" == "true" ]]; then
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "latest=true" >> "$GITHUB_OUTPUT"
           else
             echo "latest=false" >> "$GITHUB_OUTPUT"
@@ -61,7 +66,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ steps.release_flags.outputs.latest == 'true' || (github.event_name == 'release' && github.event.release.prerelease == false) }}
+            type=raw,value=latest,enable=${{ steps.release_flags.outputs.latest == 'true' }}
             type=sha,format=short
 
       - name: Log in to GitHub Container Registry (GHCR)
@@ -133,14 +138,37 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_IS_STABLE: ${{ steps.release_flags.outputs.latest == 'true' }}
         run: |
           export REPO_LOWER="${RELEASE_REPOSITORY,,}"
-          cat <<'EOF' | python3 -c 'import os, re, sys; template = sys.stdin.read(); result = re.sub(r"__(REPO_LOWER|RELEASE_TAG)__", lambda match: os.environ[match.group(1)], template); open("release_notes.md", "w", encoding="utf-8").write(result)'
+          cat <<'EOF' | python3 -c '
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          template = sys.stdin.read()
+          replacements = {
+              "REPO_LOWER": os.environ["REPO_LOWER"],
+              "RELEASE_TAG": os.environ["RELEASE_TAG"],
+          }
+          result = re.sub(
+              r"__(REPO_LOWER|RELEASE_TAG)__",
+              lambda match: replacements[match.group(1)],
+              template,
+          )
+          latest_alias = ""
+          if os.environ["RELEASE_IS_STABLE"] == "true":
+              repo_lower = replacements["REPO_LOWER"]
+              latest_alias = f" / `ghcr.io/{repo_lower}:latest`"
+          result = result.replace("__LATEST_ALIAS__", latest_alias)
+          Path("release_notes.md").write_text(result, encoding="utf-8")
+          '
           ## 📦 容器镜像已发布 (Container Images)
 
           本版本的多架构容器镜像（`linux/amd64` 与 `linux/arm64`）已成功构建并发布至 GitHub Packages。
 
-          - **GHCR 镜像地址**: `ghcr.io/__REPO_LOWER__:__RELEASE_TAG__` / `ghcr.io/__REPO_LOWER__:latest`
+          - **GHCR 镜像地址**: `ghcr.io/__REPO_LOWER__:__RELEASE_TAG__`__LATEST_ALIAS__
           - **全栈轻量架构**: Bun 1.4+ + 原生 SQLite 持久化 + 纯净无广告 UI (镜像体积仅 ~130MB)
 
           ---
@@ -159,7 +187,7 @@ jobs:
           docker run -d \
             --name excalidraw \
             --restart unless-stopped \
-            -p 8080:8080 \
+            -p 127.0.0.1:8080:8080 \
             -v $(pwd)/data:/app/data:Z \
             -e AUTH_PASSWORD="your-strong-password" \
             -e DB_PATH=/app/data/excalidraw.db \
@@ -183,7 +211,7 @@ jobs:
               container_name: excalidraw
               restart: unless-stopped
               ports:
-                - "8080:8080"
+                - "127.0.0.1:8080:8080"
               environment:
                 - PORT=8080
                 - DB_PATH=/app/data/excalidraw.db

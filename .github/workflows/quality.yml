@@ -7,12 +7,19 @@ on:
       - "**"
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -22,5 +29,39 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Audit dependencies
+        run: bun audit
+
       - name: Run all quality gates
         run: bun run test:all
+
+      - name: Build Docker image for health smoke
+        run: docker build --tag excalidraw:quality-smoke .
+
+      - name: Smoke test Docker health endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_name="excalidraw-quality-smoke"
+          cleanup() {
+            docker rm --force "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run --detach \
+            --name "$container_name" \
+            --publish 127.0.0.1:18080:8080 \
+            --env AUTH_PASSWORD=quality-smoke-password \
+            excalidraw:quality-smoke
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18080/api/health; then
+              echo "Container health check passed."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs "$container_name"
+          echo "Container did not become healthy at /api/health." >&2
+          exit 1

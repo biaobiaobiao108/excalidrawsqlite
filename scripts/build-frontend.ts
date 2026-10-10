@@ -167,9 +167,9 @@ export async function buildFrontend(options: BuildOptions = {}) {
   });
 
   if (!buildResult.success) {
-    console.error("❌ Bun build failed with errors:");
+    console.info("❌ Bun build failed with errors:");
     for (const log of buildResult.logs) {
-      console.error(log);
+      console.info(log);
     }
     throw new Error("Bun build failed");
   }

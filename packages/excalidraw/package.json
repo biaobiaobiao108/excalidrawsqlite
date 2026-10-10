@@ -87,7 +87,6 @@
     "points-on-curve": "1.0.1",
     "radix-ui": "^1.6.7",
     "roughjs": "^4.6.6",
-    "sass": "^1.104.1",
     "tunnel-rat": "0.1.2"
   },
   "devDependencies": {

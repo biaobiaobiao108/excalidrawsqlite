@@ -92,7 +92,7 @@ export const woff2ServerPlugin = (options: { outdir?: string } = {}): Plugin => 
 
       const pyftmerge = Bun.which("pyftmerge");
       if (!pyftmerge) {
-        console.error(
+        console.info(
           'Skipped TTF generation: install "fonttools" first in order to generate TTF fonts!\nhttps://github.com/fonttools/fonttools',
         );
         return;

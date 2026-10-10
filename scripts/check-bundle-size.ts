@@ -255,7 +255,7 @@ export const checkBundleSize = (
   buildDirectory = defaultBuildDirectory,
 ): boolean => {
   if (!fs.existsSync(buildDirectory)) {
-    console.error(
+    console.info(
       `❌ Bundle size check failed: build directory not found: ${buildDirectory}`,
     );
     return false;
@@ -263,7 +263,7 @@ export const checkBundleSize = (
 
   const initialAssetPaths = getInitialAssetPaths(buildDirectory);
   if (!initialAssetPaths) {
-    console.error(
+    console.info(
       `❌ Bundle size check failed: index.html not found in ${buildDirectory}`,
     );
     return false;
@@ -274,7 +274,7 @@ export const checkBundleSize = (
   );
 
   if (assets.length === 0) {
-    console.error(
+    console.info(
       `❌ Bundle size check failed: no JavaScript or CSS files found in ${buildDirectory}`,
     );
     return false;
@@ -287,9 +287,9 @@ export const checkBundleSize = (
 
   const violations = getViolations(assets);
   if (violations.length > 0) {
-    console.error("❌ Bundle size check failed:");
+    console.info("❌ Bundle size check failed:");
     for (const violation of violations) {
-      console.error(violation);
+      console.info(violation);
     }
     return false;
   }

@@ -38,7 +38,7 @@ const getCommitHashForLastVersion = (): string => {
     ]);
     return stdout.split(/\r?\n/)[0];
   } catch (error) {
-    console.error(error);
+    console.info(error);
     return "";
   }
 };
