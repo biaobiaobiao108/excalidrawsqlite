@@ -2,31 +2,14 @@
   "name": "@excalidraw/excalidraw",
   "version": "0.18.0",
   "type": "module",
-  "types": "./dist/types/excalidraw/index.d.ts",
   "main": "./dist/prod/index.js",
   "module": "./dist/prod/index.js",
   "exports": {
-    "./common/*": {
-      "types": "./dist/types/common/src/*.d.ts"
-    },
-    "./element/*": {
-      "types": "./dist/types/element/src/*.d.ts"
-    },
-    "./math/*": {
-      "types": "./dist/types/math/src/*.d.ts"
-    },
-    "./utils/*": {
-      "types": "./dist/types/utils/src/*.d.ts"
-    },
-    "./*": {
-      "types": "./dist/types/excalidraw/*.d.ts"
-    },
     "./index.css": {
       "development": "./dist/dev/index.css",
       "production": "./dist/prod/index.css"
     },
     ".": {
-      "types": "./dist/types/excalidraw/index.d.ts",
       "development": "./dist/dev/index.js",
       "production": "./dist/prod/index.js",
       "default": "./dist/prod/index.js"
@@ -70,8 +53,7 @@
   "bugs": "https://github.com/excalidraw/excalidraw/issues",
   "homepage": "https://github.com/excalidraw/excalidraw/tree/master/packages/excalidraw",
   "scripts": {
-    "gen:types": "rm -rf types && tsc",
-    "build:esm": "rm -rf dist && bun ../../scripts/buildPackage.ts && bun run gen:types"
+    "build:esm": "rm -rf dist && bun ../../scripts/buildPackage.ts"
   },
   "peerDependencies": {
     "react": "^17.0.2 || ^18.2.0 || ^19.3.0",

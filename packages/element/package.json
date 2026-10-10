@@ -2,24 +2,20 @@
   "name": "@excalidraw/element",
   "version": "0.18.0",
   "type": "module",
-  "types": "./dist/types/element/src/index.d.ts",
   "main": "./dist/prod/index.js",
   "module": "./dist/prod/index.js",
   "exports": {
     ".": {
-      "types": "./dist/types/element/src/index.d.ts",
       "development": "./dist/dev/index.js",
       "production": "./dist/prod/index.js",
       "default": "./dist/prod/index.js"
     },
     "./*": {
-      "types": "./dist/types/element/src/*.d.ts",
       "development": "./dist/dev/index.js",
       "production": "./dist/prod/index.js",
       "default": "./dist/prod/index.js"
     },
     "./visualdebug": {
-      "types": "./dist/types/element/src/visualdebug.d.ts",
       "development": "./dist/dev/visualdebug.js",
       "production": "./dist/prod/visualdebug.js",
       "default": "./dist/prod/visualdebug.js"
@@ -59,8 +55,7 @@
   "bugs": "https://github.com/excalidraw/excalidraw/issues",
   "repository": "https://github.com/excalidraw/excalidraw",
   "scripts": {
-    "gen:types": "rm -rf types && tsc",
-    "build:esm": "rm -rf dist && bun ../../scripts/buildBase.ts && bun run gen:types"
+    "build:esm": "rm -rf dist && bun ../../scripts/buildBase.ts"
   },
   "dependencies": {
     "@excalidraw/common": "0.18.0",

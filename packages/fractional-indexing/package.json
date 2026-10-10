@@ -3,15 +3,13 @@
   "version": "3.3.0",
   "description": "Provides functions for generating ordering strings",
   "type": "module",
-  "types": "./dist/types/fractional-indexing/src/index.d.ts",
   "main": "./dist/prod/index.js",
   "module": "./dist/prod/index.js",
   "engines": {
     "node": "^14.13.1 || >=16.0.0"
   },
   "scripts": {
-    "gen:types": "rm -rf types && tsc",
-    "build:esm": "rm -rf dist && bun ../../scripts/buildBase.ts && bun run gen:types"
+    "build:esm": "rm -rf dist && bun ../../scripts/buildBase.ts"
   },
   "keywords": [
     "fractional",
@@ -27,7 +25,6 @@
 
   "exports": {
     ".": {
-      "types": "./dist/types/fractional-indexing/src/index.d.ts",
       "development": "./dist/dev/index.js",
       "production": "./dist/prod/index.js",
       "default": "./dist/prod/index.js"
