@@ -104,6 +104,10 @@ type WorkspaceContextMenuItem = {
     | "star"
     | "edit"
     | "restore"
+    | "folder"
+    | "search"
+    | "commands"
+    | "refresh"
     | "trash"
     | "check"
     | "close";
@@ -520,12 +524,23 @@ const WorkspaceContextMenuIcon = ({
   if (icon === "check") {
     return <BoardSelectionIcon selected />;
   }
+  if (icon === "search") {
+    return <SearchIcon />;
+  }
 
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       {icon === "open" && <path d="M7 17 17 7M8 7h9v9" />}
       {icon === "plus" && <path d="M12 5v14M5 12h14" />}
       {icon === "close" && <path d="m6 6 12 12M18 6 6 18" />}
+      {icon === "folder" && <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" />}
+      {icon === "commands" && <path d="m5 7 5 5-5 5M13 17h6" />}
+      {icon === "refresh" && (
+        <>
+          <path d="M20 7v5h-5M4 17v-5h5" />
+          <path d="M5.5 7a7.5 7.5 0 0 1 12-1L20 12M4 12l2.5 6a7.5 7.5 0 0 0 12-1" />
+        </>
+      )}
       {icon === "settings" && (
         <>
           <path d="M4 6h16M4 12h16M4 18h16" />
@@ -1155,6 +1170,7 @@ const WorkspaceContextMenu = ({
       className="workspace-context-menu"
       role="menu"
       aria-label="操作菜单"
+      onContextMenu={(event) => event.preventDefault()}
       style={{ left: position.x, top: position.y }}
     >
       {state.items.map((item) => (
@@ -2518,6 +2534,103 @@ export const WorkspaceHome = ({
     showContextMenu(event, items);
   };
 
+  const openBackgroundContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    // Portaled dialogs bubble through this component, but are not page backgrounds.
+    if (
+      !(target instanceof Element) ||
+      !event.currentTarget.contains(target) ||
+      target.closest(
+        'button, a, input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="listbox"], [role="option"]',
+      )
+    ) {
+      return;
+    }
+
+    const inSidebar = !!target.closest(".workspace-sidebar");
+    const inTrash = view === "trash" && !inSidebar;
+    const items: WorkspaceContextMenuItem[] = [];
+    if (!inTrash) {
+      items.push(
+        {
+          label: !inSidebar && selectedFolderId ? "在此文件夹中新建画板" : "新建画板",
+          icon: "plus",
+          disabled: !!pendingAction,
+          onSelect: () => void handleCreateScene(inSidebar ? null : selectedFolderId),
+        },
+        {
+          label: "新建文件夹",
+          icon: "folder",
+          disabled: !!pendingAction,
+          onSelect: () => openFolderDialog(),
+        },
+      );
+    }
+    items.push(
+      {
+        label: "搜索画板",
+        icon: "search",
+        separatorBefore: items.length > 0,
+        onSelect: () => {
+          searchInputRef.current?.focus();
+          searchInputRef.current?.select();
+        },
+      },
+      {
+        label: "命令菜单",
+        icon: "commands",
+        onSelect: () => setCommandPaletteOpen(true),
+      },
+      {
+        label: inTrash ? "刷新回收站" : "刷新画板列表",
+        icon: "refresh",
+        disabled: loading || !!pendingAction,
+        onSelect: () => void loadWorkspace(),
+      },
+    );
+    if (searchQuery || selectedTag || selectedFolderId) {
+      items.push({
+        label: "清除筛选",
+        icon: "close",
+        onSelect: () => {
+          setSearchQuery("");
+          setSelectedTag(null);
+          setSelectedFolderId(null);
+        },
+      });
+    }
+    if (selectedSceneIds.size) {
+      items.push({
+        label: "退出多选",
+        icon: "check",
+        onSelect: clearSceneSelection,
+      });
+    }
+    if (inTrash) {
+      items.push(
+        {
+          label: "返回所有画板",
+          icon: "open",
+          separatorBefore: true,
+          onSelect: () => {
+            setView("all");
+            setSelectedFolderId(null);
+            setSelectedTag(null);
+            setSearchQuery("");
+          },
+        },
+        {
+          label: "清空回收站",
+          icon: "trash",
+          danger: true,
+          disabled: !workspaceStats?.trashCount || !!pendingAction,
+          onSelect: handleEmptyTrash,
+        },
+      );
+    }
+    showContextMenu(event, items);
+  };
+
   const renderBoardCard = (scene: CloudSceneSummary) => (
     <BoardCard
       key={scene.id}
@@ -2547,6 +2660,7 @@ export const WorkspaceHome = ({
     <div
       className="workspace-home"
       ref={rootRef}
+      onContextMenu={openBackgroundContextMenu}
       onKeyDownCapture={(event) => {
         if (
           event.key !== "Escape" ||
