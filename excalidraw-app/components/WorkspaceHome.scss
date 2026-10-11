@@ -556,11 +556,7 @@
 
 .board-grid {
   display: grid;
-  --board-grid-min-card-width: 400px;
-  grid-template-columns: repeat(
-    auto-fill,
-    minmax(min(100%, var(--board-grid-min-card-width)), 1fr)
-  );
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.15rem;
 }
 
@@ -574,7 +570,7 @@
   inset-block-start: 0;
   inset-inline: 0;
   display: grid;
-  grid-template-columns: repeat(var(--board-grid-columns), minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: inherit;
   will-change: transform;
 }
@@ -1559,9 +1555,6 @@
     padding-inline: 1.4rem;
   }
 
-  .board-grid {
-    --board-grid-min-card-width: 290px;
-  }
 }
 
 @media (max-width: 720px) {
@@ -1702,8 +1695,6 @@
   }
 
   .board-grid {
-    --board-grid-min-card-width: 100%;
-    grid-template-columns: 1fr;
     gap: 0.8rem;
   }
 

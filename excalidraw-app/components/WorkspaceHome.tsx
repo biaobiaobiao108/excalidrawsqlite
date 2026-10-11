@@ -180,6 +180,7 @@ const TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
 });
 
 const BOARD_GRID_VIRTUALIZATION_THRESHOLD = 40;
+const BOARD_GRID_COLUMNS = 3;
 const BOARD_GRID_VIRTUAL_OVERSCAN_ROWS = 2;
 const BOARD_GRID_ESTIMATED_ROW_HEIGHT = 360;
 const BOARD_GRID_INITIAL_GAP = 18.4;
@@ -1292,7 +1293,6 @@ export const WorkspaceHome = ({
   const pendingBoardGridFocusRef = useRef<PendingBoardGridFocus | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [boardGridMetrics, setBoardGridMetrics] = useState({
-    columns: 1,
     rowGap: BOARD_GRID_INITIAL_GAP,
     scrollMargin: 0,
   });
@@ -1870,25 +1870,7 @@ export const WorkspaceHome = ({
     }
 
     const style = ownerWindow.getComputedStyle(grid);
-    const gridWidth = grid.clientWidth;
     const rowGap = Number.parseFloat(style.rowGap) || 0;
-    const columnGap = Number.parseFloat(style.columnGap) || rowGap;
-    const minimumWidthSetting = style
-      .getPropertyValue("--board-grid-min-card-width")
-      .trim();
-    const parsedMinimumWidth = Number.parseFloat(minimumWidthSetting);
-    const minimumWidth = minimumWidthSetting.endsWith("%")
-      ? (gridWidth * parsedMinimumWidth) / 100
-      : parsedMinimumWidth;
-    const columns =
-      gridWidth > 0 && Number.isFinite(minimumWidth) && minimumWidth > 0
-        ? Math.max(
-            1,
-            Math.floor(
-              (gridWidth + columnGap) / (minimumWidth + columnGap),
-            ),
-          )
-        : 1;
     const rootRect = root.getBoundingClientRect();
     const gridRect = grid.getBoundingClientRect();
     const scrollMargin = Math.max(
@@ -1898,13 +1880,12 @@ export const WorkspaceHome = ({
 
     setBoardGridMetrics((current) => {
       if (
-        current.columns === columns &&
         Math.abs(current.rowGap - rowGap) < 0.1 &&
         Math.abs(current.scrollMargin - scrollMargin) < 0.5
       ) {
         return current;
       }
-      return { columns, rowGap, scrollMargin };
+      return { rowGap, scrollMargin };
     });
   }, []);
 
@@ -1916,12 +1897,12 @@ export const WorkspaceHome = ({
   const shouldVirtualizeBoardGrid =
     filteredScenes.length > BOARD_GRID_VIRTUALIZATION_THRESHOLD;
   const boardGridRowCount = Math.ceil(
-    filteredScenes.length / boardGridMetrics.columns,
+    filteredScenes.length / BOARD_GRID_COLUMNS,
   );
   const getBoardGridRowKey = useCallback(
     (index: number) =>
-      `${boardGridMetrics.columns}:${filteredScenes[index * boardGridMetrics.columns]?.id || index}`,
-    [boardGridMetrics.columns, filteredScenes],
+      `${BOARD_GRID_COLUMNS}:${filteredScenes[index * BOARD_GRID_COLUMNS]?.id || index}`,
+    [filteredScenes],
   );
   const boardGridVirtualizer = useVirtualizer({
     count: shouldVirtualizeBoardGrid ? boardGridRowCount : 0,
@@ -3137,7 +3118,7 @@ export const WorkspaceHome = ({
                   >
                     {boardGridVirtualizer.getVirtualItems().map((virtualRow) => {
                       const startIndex =
-                        virtualRow.index * boardGridMetrics.columns;
+                        virtualRow.index * BOARD_GRID_COLUMNS;
                       return (
                         <div
                           key={virtualRow.key}
@@ -3146,7 +3127,6 @@ export const WorkspaceHome = ({
                           className="board-grid-virtual-row"
                           style={
                             {
-                              "--board-grid-columns": boardGridMetrics.columns,
                               transform: `translateY(${virtualRow.start - boardGridMetrics.scrollMargin}px)`,
                             } as React.CSSProperties
                           }
@@ -3154,7 +3134,7 @@ export const WorkspaceHome = ({
                           {filteredScenes
                             .slice(
                               startIndex,
-                              startIndex + boardGridMetrics.columns,
+                              startIndex + BOARD_GRID_COLUMNS,
                             )
                             .map(renderBoardCard)}
                         </div>
