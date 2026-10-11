@@ -33,7 +33,13 @@
     min-block-size: 0;
     color: var(--popup-text-color);
 
+    .commands {
+      grid-template-columns: minmax(0, 1fr);
+      overflow-x: hidden;
+    }
+
     .command-item {
+      min-inline-size: 0;
       border: 0;
       background: transparent;
       text-align: start;
@@ -41,9 +47,15 @@
 
       .name {
         flex: 1 1 auto;
+
+        .icon {
+          flex-shrink: 0;
+        }
       }
 
       .label-text {
+        min-inline-size: 0;
+        flex: 1 1 auto;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -54,6 +66,8 @@
         align-items: center;
         gap: 0.35rem;
         min-inline-size: 0;
+        max-inline-size: 45%;
+        flex: 0 1 auto;
         margin-inline-start: 0.25rem;
         color: var(--color-gray-50);
         font-size: 0.75rem;

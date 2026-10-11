@@ -865,7 +865,9 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
                       size="var(--icon-size, 1rem)"
                       icon={item.icon}
                     />
-                    <span className="label-text">{item.label}</span>
+                    <span className="label-text" title={item.label}>
+                      {item.label}
+                    </span>
                     {item.meta && (
                       <div className="item-meta">
                         {item.meta.folderName && (
