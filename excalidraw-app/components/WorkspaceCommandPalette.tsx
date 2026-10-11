@@ -51,11 +51,6 @@ interface PaletteCommand {
   icon: React.ReactNode;
   shortcut?: string;
   activeBadge?: string;
-  meta?: {
-    folderName?: string | null;
-    tags?: string[];
-    timeText?: string;
-  };
   perform: (options?: { newTab?: boolean }) => void;
 }
 
@@ -65,11 +60,6 @@ type CommandGroup = {
 };
 
 const RECENTS_STORAGE_KEY = "excalidraw-workspace-palette-recents";
-const TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
 
 const loadStoredRecents = (): string[] => {
   try {
@@ -103,20 +93,6 @@ const normalizeText = (text: string) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
-
-const formatSceneTime = (timestamp: number | null) => {
-  if (!timestamp) {
-    return "";
-  }
-  const date = new Date(timestamp);
-  const now = new Date();
-  const sameDay = date.toDateString() === now.toDateString();
-  const time = TIME_FORMATTER.format(date);
-  if (sameDay) {
-    return `今天 ${time}`;
-  }
-  return `${date.getMonth() + 1}月${date.getDate()}日`;
-};
 
 interface ParsedCreateIntent {
   folderId: string | null;
@@ -575,11 +551,6 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
       label: scene.name || "未命名白板",
       keywords: [scene.name, scene.folder_name || "", ...scene.tags],
       icon: <SceneIcon />,
-      meta: {
-        folderName: scene.folder_name,
-        tags: scene.tags,
-        timeText: formatSceneTime(scene.last_opened_at || scene.updated_at),
-      },
       perform: ({ newTab } = {}) => {
         recordRecent(`scene-${scene.id}`);
         onClose();
@@ -673,8 +644,6 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
           cmd.label,
           cmd.category,
           ...(cmd.keywords || []),
-          cmd.meta?.folderName || "",
-          ...(cmd.meta?.tags || []),
         ].join(" "),
       );
       return queryTokens.every((token) => target.includes(token));
@@ -868,24 +837,6 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
                     <span className="label-text" title={item.label}>
                       {item.label}
                     </span>
-                    {item.meta && (
-                      <div className="item-meta">
-                        {item.meta.folderName && (
-                          <span className="item-folder">
-                            <FolderIcon />
-                            {item.meta.folderName}
-                          </span>
-                        )}
-                        {item.meta.tags && item.meta.tags.length > 0 && (
-                          <span className="item-tag">
-                            #{item.meta.tags.join(" #")}
-                          </span>
-                        )}
-                        {item.meta.timeText && (
-                          <span className="item-time">{item.meta.timeText}</span>
-                        )}
-                      </div>
-                    )}
                   </div>
                   <div className="item-trailing">
                     {item.activeBadge && (

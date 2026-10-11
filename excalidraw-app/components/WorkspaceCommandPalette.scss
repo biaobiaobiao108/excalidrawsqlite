@@ -61,38 +61,6 @@
         text-overflow: ellipsis;
       }
 
-      .item-meta {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        min-inline-size: 0;
-        max-inline-size: 45%;
-        flex: 0 1 auto;
-        margin-inline-start: 0.25rem;
-        color: var(--color-gray-50);
-        font-size: 0.75rem;
-        white-space: nowrap;
-        overflow: hidden;
-
-        .item-folder {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.2rem;
-
-          svg {
-            inline-size: 0.75rem;
-            block-size: 0.75rem;
-            flex-shrink: 0;
-          }
-        }
-
-        .item-tag,
-        .item-folder {
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-      }
-
       .item-trailing {
         display: inline-flex;
         align-items: center;
