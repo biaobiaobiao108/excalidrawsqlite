@@ -36,7 +36,29 @@ export const handleCloudflareRealtimeRequest = async (
   }
   const internal = new URL("https://realtime.internal/");
   if (sceneId) internal.searchParams.set("scene_id", sceneId);
-  return namespace.get(namespace.idFromName("workspace")).fetch(new Request(internal, req));
+  const realtime = namespace.get(namespace.idFromName("workspace"));
+  const response = await realtime.fetch(new Request(internal, req));
+  if (sceneId && response.status === 101) {
+    // Read after the Durable Object has accepted the socket. Any save committed
+    // before this read is reflected in this event; later saves are delivered by
+    // the normal broadcast path, closing the reconnect race window.
+    const scene = await runtime.db.query(
+      "SELECT revision, updated_at, deleted_at FROM scenes WHERE id = ?",
+    ).get<{ revision: number; updated_at: number; deleted_at: number | null }>(sceneId);
+    if (scene) {
+      await realtime.fetch(new Request("https://realtime.internal/sync-scene", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId,
+          revision: Number(scene.revision) || 0,
+          updatedAt: Number(scene.updated_at) || Date.now(),
+          changeKind: scene.deleted_at ? "deleted" : "content",
+        }),
+      }));
+    }
+  }
+  return response;
 };
 
 export class RealtimeHub {
@@ -44,6 +66,28 @@ export class RealtimeHub {
 
   async fetch(request: Request) {
     const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/sync-scene") {
+      const payload = await request.json() as {
+        sceneId?: unknown;
+        revision?: unknown;
+        updatedAt?: unknown;
+        changeKind?: unknown;
+      };
+      if (
+        typeof payload.sceneId !== "string" ||
+        typeof payload.revision !== "number" ||
+        typeof payload.updatedAt !== "number" ||
+        !["created", "content", "metadata", "thumbnail", "deleted", "restored"].includes(String(payload.changeKind))
+      ) {
+        return new Response("Invalid scene sync event", { status: 400 });
+      }
+      const event = JSON.stringify({ type: "scene_changed", ...payload });
+      for (const socket of this.state.getWebSockets(WORKSPACE_TOPIC)) {
+        const { sceneId } = socket.deserializeAttachment() || {};
+        if (sceneId === payload.sceneId) this.send(socket, event);
+      }
+      return new Response(null, { status: 204 });
+    }
     if (request.method === "POST" && url.pathname === "/broadcast") {
       const payload = await request.json() as Record<string, unknown>;
       const serialized = JSON.stringify(payload);

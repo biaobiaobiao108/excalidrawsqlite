@@ -37,21 +37,36 @@ const envToConfig = (env: CloudflareEnv) => createServerConfig({
   NODE_ENV: "production",
 });
 
+// A Worker isolate serves many concurrent requests, each of which gets a new
+// ServerRuntime. Keep one aggregate body budget per configured isolate limit so
+// those request-local runtimes cannot each reserve the full memory allowance.
+const bodyMemoryBudgets = new Map<number, BodyMemoryBudget>();
+
+const bodyMemoryBudgetForIsolate = (maxBytes: number) => {
+  let budget = bodyMemoryBudgets.get(maxBytes);
+  if (!budget) {
+    budget = new BodyMemoryBudget(maxBytes);
+    bodyMemoryBudgets.set(maxBytes, budget);
+  }
+  return budget;
+};
+
 export const createCloudflareRuntime = (
   env: CloudflareEnv,
   context: WorkerExecutionContext,
   request: Request,
 ): ServerRuntime => {
+  const config = envToConfig(env);
   const runtime: ServerRuntime = {
     db: databaseFromBinding(env.DB),
     files: env.ASSETS_BUCKET,
     staticAssets: env.ASSETS,
     realtimeNamespace: env.REALTIME_HUB,
     waitUntil: (promise) => context.waitUntil(promise),
-    config: envToConfig(env),
+    config,
     clientAddress: request.headers.get("CF-Connecting-IP") || undefined,
     activeBackupArtifacts: new Set(),
-    bodyMemoryBudget: new BodyMemoryBudget(envToConfig(env).maxInFlightBodyBytes),
+    bodyMemoryBudget: bodyMemoryBudgetForIsolate(config.maxInFlightBodyBytes),
   };
   runtime.realtime = {
     publishSceneChanged: (event) => publish(runtime, event),
