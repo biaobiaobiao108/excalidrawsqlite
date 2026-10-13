@@ -292,6 +292,8 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字；需要 ID 时传 `responseMode=ids`，按本体与自动文字分别返回。可指定稳定 `id`，新建箭头只传 `startBinding/endBinding.elementId` 即自动连接同批或已有节点，无需计算端点；自连接或同中心节点须显式传坐标。移动/缩放节点时保留连接；`points` 是绝对画布坐标，支持多段折线，不与二点坐标字段混用。删除形状同时删除绑定文字并清理引用。
 
+无箭头但需要随节点移动的连线使用 `{"type":"arrow","startBinding":{"elementId":"parent"},"endBinding":{"elementId":"child"},"endArrowhead":null}`；`startArrowhead` 默认也为 `null`。`line` 是固定坐标线段，原生编辑器的绑定跟随逻辑只处理 `arrow`，因此不为 `line` 添加另一套绑定语义。自动布局时 `create_diagram.edges` 也可传 `{"from":"parent","to":"child","endArrowhead":null}`，适用于思维导图或组织结构，省略则保留默认箭头。
+
 流程图与时间线优先 `create_diagram`，只需表达内容与关系，不需要计算坐标。最多 100 个节点、200 条连接，默认 `layout=flowchart`、`direction=vertical`、`theme=forest`；可选 `timeline`、`horizontal` 和 `paper/ocean`。节点 `id` 可直接用于后续原地修改；省略 `edges` 自动依节点顺序连接，显式 `[]` 则不连线。分支按关系分层，循环节点同层，返回连线在外侧绕行；自动测量文字高度，所有箭头真实绑定到节点。最终仍使用普通 Excalidraw 图元并一次保存，不构成另一套数据模型。示例：
 
 ```json
@@ -310,6 +312,14 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 复制优先使用 `copy_elements`，例如 `{"boardId":"来源画板","elementIds":["start","decision","edge"],"dx":300,"dy":0}`。省略 `targetBoardId` 为同板复制，`dx/dy` 默认各为 20；跨板复制时传目标 ID，重叠原位置可设 `dx=dy=0`。形状及标签自动生成新 ID，选中标签会复制其所属形状；选择集内部箭头自动重连，外部绑定默认解绑，只有同板可设 `externalBindings=preserve` 保留。始终返回 `idMap`（含标签）和 `warnings`；省略原生元数据会给出警告，所选图元不能投影则整次拒绝。`expectedRevision` 校验目标修订号，`sourceExpectedRevision` 可校验来源修订号。
 
 `get_board.view=input` 的 `elements` 也可直接作为 `update_board.updates`，或取一个作为 `update_element.update`；`type` 仅核对已有图元类型，不能转换类型。相对移动传 `{"id":"start","dx":100,"dy":20}`，绑定标签和箭头随节点联动；不能在同轴同时传 `dx/x` 或 `dy/y`，也不能把相对位移与折线坐标混用。
+
+单个修改的完整参数是 `{"boardId":"画板ID","update":{"id":"start","dx":100}}`；批量是 `{"boardId":"画板ID","updates":[{"id":"start","dx":100}]}`。两者复用同一修改对象，不提供顶层字段别名；误把 `id/dx` 等放在 `update_element` 顶层时会给出嵌套示例。`update_board` 可以在一次原子保存中同时传 `elements` 新增和 `updates` 修改，顺序为删除→新增→修改；只在 `updates` 传一个不存在的 ID 会失败，新增 ID 放在 `elements` 后可在同次 `updates` 中修改。
+
+`update_element` 成功及无变化回执返回最终 `x/y/width/height`；形状仍有绑定文字时另回 `label:{id,x,y,width,height}`，这些是本次保存的实际几何，不必再读取确认落点。移动/复制/批量新增或修改还会返回非阻断的 `ELEMENT_OVERLAP` 提示（在 `warnings` 内，包含 `elementId/otherElementId/overlapRatio`），不会自动挪位置。检查使用旋转后的轴对齐外接框，较小框重叠比例至少 80%，且覆盖较大框至少 35%；明显面积差的完全包含按容器启发式略过，箭头、直线、绑定文字不单独检测，原有同程度重叠不反复告警。这是近似布局提示，可能误报或漏报。
+
+重叠检查有容量上限：场景 5 万图元、变更 1000 个 ID、空间索引 20 万引用、候选访问 2 万次、提示最多 20 条。`overlapCheck.complete=false` 时 `limitations` 说明截断原因，空警告不表示已验证没有重叠。仅样式更新不建立空间索引；复制的投影警告仍与重叠提示一起保留。
+
+图元读取视图（不含 `summary`）回传 `elementCount`（含绑定标签的原生总数）、`viewElementCount`（当前视图在筛选前的总数）、`matchedCount`（筛选后匹配数）与 `returnedElementCount`（本页实际返回数）。例如原生 5 个图元中含两个绑定标签，`compact` 全读的四个数字是 5、3、3、3；分页只返回一个时最后一个数字为 1。`full/elements` 保留标签为独立图元，因此其视图总数会不同。
 
 跨板复制使用 `get_board.view=input` 或批读的 `input` 视图：返回的 `elements` 严格符合写入 schema，可交给 `create_board` 或其他画板的 `add_elements`。形状标签折叠为 `text/labelId/labelStyle`，保留标签 ID 和独立样式。图元视图（compact/elements/input/full）的 `truncated/nextOffset` 表示分页或字符预算截断；summary 只返回元数据；仅 input 返回的 `unsupportedElementIds/warnings` 表示不可写图元或属性被省略，与分页无关。图片、自由画笔及分组、框架等不能通过这个视图完整复制；跳过图元时警告说明原因，省略不代表空画板，原始内容未删除。向同一画板追加已有 ID 会报冲突，原地修改应使用 `update_element` 或 `update_board.updates`。紧凑视图与 `input` 的折线点均为绝对坐标；`full` 为内部相对坐标，需加图元 `x/y`，返回的 `pointCoordinateSystem` 明确标注。`rotation` 单位为度，input 输出舍入至 10 位小数，文字 `x/y` 是左上角。绑定的 `fixedPoint` 允许越出 `[0,1]`，遵循原生绑定归一化范围，支持回读回写。
 
