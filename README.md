@@ -280,6 +280,7 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 | `update_board` | 一次合并删除、新增、`updates` 原地修改和画板元数据，原子保存一个修订；顺序为删除→新增→原地修改。 |
 | `update_element` | 传 `update.id` 与待修改字段，保留图元 ID、连接和其余字段，改颜色无需回传完整 JSON。 |
 | `add_elements` / `remove_elements` | 单纯追加或按 ID 移除图元；普通绘图无需先创建空板再调用追加。 |
+| `copy_elements` | 按 ID 同板或跨板复制，自动生成新 ID、平移并重连内部箭头；返回旧 ID 到新 ID 的 `idMap`。 |
 | `list_folders` / `list_tags` | 分页读取文件夹、标签及画板计数。 |
 | `ensure_folder` / `create_folder` | 按精确名称幂等获取或创建，或明确创建新文件夹；同名歧义要求使用 ID。 |
 | `update_folder` / `delete_folder` | 修改名称、图标、颜色；删除仅把画板移至根目录，`dryRun=true` 预览，执行需 `confirm=true`，可校验 `expectedBoardCount`。 |
@@ -287,7 +288,7 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 | `delete_board` / `restore_board` | 仅软删除或还原，没有永久删除参数；回收站受 `TRASH_RETENTION_DAYS` 保留期限约束。 |
 | `batch_manage_boards` | 最多 100 项 `manage/delete/restore`，每项必传 `expectedRevision`；独立执行，返回逐项结果、`noop` 和 `partial`。 |
 
-每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字；需要 ID 时传 `responseMode=ids`，按本体与自动文字分别返回。可指定稳定 `id`，箭头的 `startBinding/endBinding.elementId` 能引用同批或已有节点，移动/缩放节点时保留连接；`points` 是绝对画布坐标，支持多段折线，不与二点坐标字段混用。删除形状同时删除绑定文字并清理引用。
+每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字；需要 ID 时传 `responseMode=ids`，按本体与自动文字分别返回。可指定稳定 `id`，新建箭头只传 `startBinding/endBinding.elementId` 即自动连接同批或已有节点，无需计算端点；自连接或同中心节点须显式传坐标。移动/缩放节点时保留连接；`points` 是绝对画布坐标，支持多段折线，不与二点坐标字段混用。删除形状同时删除绑定文字并清理引用。
 
 流程图与时间线优先 `create_diagram`，只需表达内容与关系，不需要计算坐标。最多 100 个节点、200 条连接，默认 `layout=flowchart`、`direction=vertical`、`theme=forest`；可选 `timeline`、`horizontal` 和 `paper/ocean`。节点 `id` 可直接用于后续原地修改；省略 `edges` 自动依节点顺序连接，显式 `[]` 则不连线。分支按关系分层，循环节点同层，返回连线在外侧绕行；自动测量文字高度，所有箭头真实绑定到节点。最终仍使用普通 Excalidraw 图元并一次保存，不构成另一套数据模型。示例：
 
@@ -302,7 +303,11 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 }
 ```
 
-`compact` 保留图元 ID、类型、位置、尺寸、文字、非零旋转、折线点与箭头绑定目标，省略装饰样式；坐标字段仍为 `width/height`，不引入缩写。绑定标签 ID 筛选会返回其本体；文字搜索和类型筛选针对合并后的对象。它只用于理解内容，不能用来无损复制；精确复制请显式选择 `input`。
+`compact` 保留图元 ID、类型、位置、尺寸、文字、非零旋转、折线点与箭头绑定目标，省略装饰样式；坐标字段仍为 `width/height`，不引入缩写。`compact/input` 视图按绑定标签 ID 筛选会返回其本体；文字搜索和类型筛选针对合并后的对象。需要可写描述请显式选择 `input` 并检查省略警告。
+
+复制优先使用 `copy_elements`，例如 `{"boardId":"来源画板","elementIds":["start","decision","edge"],"dx":300,"dy":0}`。省略 `targetBoardId` 为同板复制，`dx/dy` 默认各为 20；跨板复制时传目标 ID，重叠原位置可设 `dx=dy=0`。形状及标签自动生成新 ID，选中标签会复制其所属形状；选择集内部箭头自动重连，外部绑定默认解绑，只有同板可设 `externalBindings=preserve` 保留。始终返回 `idMap`（含标签）和 `warnings`；省略原生元数据会给出警告，所选图元不能投影则整次拒绝。`expectedRevision` 校验目标修订号，`sourceExpectedRevision` 可校验来源修订号。
+
+`get_board.view=input` 的 `elements` 也可直接作为 `update_board.updates`，或取一个作为 `update_element.update`；`type` 仅核对已有图元类型，不能转换类型。相对移动传 `{"id":"start","dx":100,"dy":20}`，绑定标签和箭头随节点联动；不能在同轴同时传 `dx/x` 或 `dy/y`，也不能把相对位移与折线坐标混用。
 
 跨板复制使用 `get_board.view=input` 或批读的 `input` 视图：返回的 `elements` 严格符合写入 schema，可交给 `create_board` 或其他画板的 `add_elements`。形状标签折叠为 `text/labelId/labelStyle`，保留标签 ID 和独立样式。图元视图（compact/elements/input/full）的 `truncated/nextOffset` 表示分页或字符预算截断；summary 只返回元数据；仅 input 返回的 `unsupportedElementIds/warnings` 表示不可写图元或属性被省略，与分页无关。图片、自由画笔及分组、框架等不能通过这个视图完整复制；跳过图元时警告说明原因，省略不代表空画板，原始内容未删除。向同一画板追加已有 ID 会报冲突，原地修改应使用 `update_element` 或 `update_board.updates`。紧凑视图与 `input` 的折线点均为绝对坐标；`full` 为内部相对坐标，需加图元 `x/y`，返回的 `pointCoordinateSystem` 明确标注。`rotation` 单位为度，input 输出舍入至 10 位小数，文字 `x/y` 是左上角。绑定的 `fixedPoint` 允许越出 `[0,1]`，遵循原生绑定归一化范围，支持回读回写。
 
@@ -322,11 +327,11 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 软删除和还原的实际状态变化也递增 `revision` 并更新 `updated_at`；重复相同状态返回 `noop`，不递增。删除后还原会使旧的 `expectedRevision` 失效，调用方应使用最新回执版本。`list_tags.nextCursor` 是按标签名排序的边界，SQL 读取名称大于该边界的标签，不要求该标签仍存在；分页不是一致快照，期间改名或新增可能影响后续页，完整重新核对时从第一页读取。
 
-成功及业务结果的完整机器数据在 `structuredContent`，文本 `content` 给简短说明；客户端须检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。绘图写入默认 `responseMode=minimal`，返回修订号、数量和画板 URL，省略 ID 列表和映射，无需再次读取全文确认成功。`create_board/add_elements/update_board/create_diagram` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是本次 `elements` 描述实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是输入描述数量，`elementCount` 是全画板当前图元数量。需要完整原始场景时显式设置 `get_board.view=full`。
+成功及业务结果的完整机器数据在 `structuredContent`，文本 `content` 给简短说明；客户端须检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。绘图写入默认 `responseMode=minimal`，返回修订号、数量和画板 URL，无需再次读取全文确认成功；`copy_elements` 始终额外返回 `idMap/warnings`。`create_board/add_elements/update_board/create_diagram/copy_elements` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是本体数量，`elementCount` 是全画板当前图元数量。需要完整原始场景时显式设置 `get_board.view=full`。
 
 增量修改可传读取时的 `expectedRevision`；省略时服务端读取最新版本并用乐观锁保存。画板写入沿用现有的校验、冲突保护和实时通知，已打开且没有未保存本地修改的画板会自动刷新。发生 `REVISION_CONFLICT` 时重新读取并判断如何合并，不要盲目重试；业务错误返回 `ok=false`，不会标记为工具异常。
 
-工具定义使用 JSON Schema `$defs` 复用公共字段，三种形状共享相同字段结构，仍严格检查每种图元允许的属性。客户端可能再次展开引用，实际模型上下文大小取决于客户端实现。重复批量校验错误按字段与原因聚合，保留前三个具体位置、错误处数，最多展示八类，不回显完整 schema；实际校验仍检查全部输入。`update_board` 中纯图元修改没有任何实际变化时直接返回 `noop`，不再序列化完整画板并发起保存；仅改元数据应优先使用 `manage_board`。
+工具定义使用 JSON Schema `$defs` 复用公共字段，三种形状共享相同字段结构，仍严格检查每种图元允许的属性。客户端可能再次展开引用，实际模型上下文大小取决于客户端实现。重复批量校验错误按字段与原因聚合，保留前三个具体位置、错误处数，最多展示八类，不回显完整 schema；常见错误提供有界修正提示，如 `strokeColour` 应改为 `strokeColor`、独立文字高度自动计算、`angle` 应使用以度为单位的 `rotation`。实际校验仍检查全部输入。`update_board` 中纯图元修改没有任何实际变化时直接返回 `noop`，不再序列化完整画板并发起保存；仅改元数据应优先使用 `manage_board`。
 
 需要排查写入延迟时临时设置 `MCP_TRACE=true`，Compose 已转发该变量。`[MCP timing]` 记录 `apiReadMs/apiWriteMs`（内部 API 调用全过程，包含路由校验、序列化及存储）、`transformMs`（图元生成、更新或投影）、`responseBuildMs`（业务回执构建）、`handlerMs` 和 `apiReads/apiWrites`。这些不是纯 SQLite 执行时间；也不包含模型生成、客户端校验、外部网络、令牌鉴权或 SDK 响应传输。计时默认关闭，无常驻历史缓存，不记录参数、正文或令牌。常见绘图工具按工具名记录，管理操作记录为 `management` 类别。
 
@@ -349,7 +354,7 @@ bun scripts/benchmark-mcp.ts
   "elements": [
     { "id": "start", "type": "rectangle", "x": 0, "y": 0, "width": 180, "height": 80, "text": "开始" },
     { "id": "decision", "type": "diamond", "x": 300, "y": 100, "width": 160, "height": 80, "text": "是否完成" },
-    { "type": "arrow", "points": [[180, 40], [240, 40], [240, 140], [300, 140]],
+    { "type": "arrow",
       "startBinding": { "elementId": "start" }, "endBinding": { "elementId": "decision" } }
   ]
 }
