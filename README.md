@@ -276,6 +276,7 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 | --- | --- |
 | `list_boards` | 名称搜索及文件夹、收藏、精确标签筛选；`view=all/recent/trash`，收藏统一使用 `favorite=true/false`（省略不限），支持排序和 `nextCursor` 分页；不存在的文件夹 ID 明确报错。 |
 | `get_board` | 默认 `compact` 只读文字、几何与连接，标签折入本体；`elements` 含样式，`summary` 元数据，`full` 内部字段，`input` 可写字段。按 `elementIds`、文字 `query`、`type` 定位，支持 `limit/offset/maxChars`，返回 `nextOffset/truncated`。 |
+| `inspect_layout` | 只读检查文字重叠、容器文字溢出、可能的元素碰撞与已绑定箭头异常；返回问题图元 ID、严重程度、建议和检测完整性，便于修改后复查。 |
 | `get_boards_batch` | 一次读取最多 20 块画板，共享字符预算，逐条返回错误或分页信息；与单读一样 `maxChars` 最少 1000，连必要元数据也放不下则明确报错；不是跨画板一致快照。 |
 | `create_board` | 一次创建并绘制，可同时设置背景、收藏、标签和 `folderId/folderName`；允许同名，省略图元创建空板。 |
 | `create_diagram` | 传入节点标题、正文和连接，自动绘制横向或纵向时间线、流程图；支持分支、循环与主题，可同时设置文件夹、标签和收藏。 |
@@ -306,6 +307,16 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
   ]
 }
 ```
+
+创建复杂画板后，可以先检查几何布局，再按问题图元 ID 修改并复查：
+
+```json
+{"boardId":"画板ID","checks":["text_overlap","text_overflow","element_collision","arrow_connection"]}
+```
+
+调用 `inspect_layout` 时省略 `checks` 会检查全部四项。返回 `boardId/revision`、`summary.errors/warnings` 和 `issues`，每条问题包含 `type/severity/elementIds/message`，并可包含 `suggestion`。将涉及的 ID 用于 `update_board.updates`，保存时使用检查结果的 `revision` 作为 `expectedRevision`，再调用检查确认。检查本身不改变图元或修订号，成功 text 仍只给简短说明，不重复业务 JSON。
+
+检测复用图元已存储的文字尺寸与换行结果，不重新测量中文或 Excalifont 字体像素；可能的几何遮挡会标记为 warning。正常的容器包含、背景叠放和箭头穿过背景不直接视为错误，没有绑定的装饰箭头也不报连接异常。无限画布没有隐含边界，负坐标合法。检测有明确预算，`complete=false` 时检查未完成；没有提示也不保证配色、拥挤程度、视觉层次或实际渲染效果正确。
 
 `compact` 保留图元 ID、类型、位置、尺寸、文字、非零旋转、折线点与箭头绑定目标，省略装饰样式；坐标字段仍为 `width/height`，不引入缩写。`compact/input` 视图按绑定标签 ID 筛选会返回其本体；文字搜索和类型筛选针对合并后的对象。需要可写描述请显式选择 `input` 并检查省略警告。
 

@@ -12,6 +12,7 @@ import { registerManagementTools, resolveFolder } from "./mcp-management";
 import { measureMcpApi, measureMcpPhase, traceMcpTool } from "./mcp-trace";
 import { compactMcpSchema } from "./mcp-schema";
 import { buildDiagram, diagramSchema } from "./mcp-diagram";
+import { inspectLayout, inspectLayoutSchema } from "./mcp-inspect";
 
 import { randomBase64Url, timingSafeEqual } from "./crypto";
 import { HttpError } from "./errors";
@@ -26,6 +27,7 @@ const getMcpServerInstructions = (runtime: ServerRuntime) => [
   "Excalidraw 白板支持搜索、读取及批量绘制。流程图/时间线优先 create_diagram 一次传 nodes/edges 自动排版；自定义绘图用 create_board 一次传入名称和全部 elements，不要先建空板再逐个绘制。",
   "每次最多 1,000 个图元描述；形状 text 自动绑定文字。可给节点指定 id，箭头仅传 startBinding/endBinding.elementId 即自动连接同批或已有节点；自连接或同中心节点须显式坐标。折线 points 使用绝对画布坐标；二点仍可用 startX/startY/endX/endY。字段严格校验，不能输入原始内部字段。",
   "独立 text 可传 width 固定宽度并自动换行，height 始终按内容计算，不传 height；省略 width 默认自动宽度。更新 width 会保持固定宽度，更新 autoResize=true 恢复自动宽度；绑定标签尺寸请修改所属形状。",
+  "创建后用 inspect_layout 检查文字重叠、容器文字溢出、可能的元素碰撞与箭头绑定异常；可用 checks 选择检查项。该工具只读，按 issues.elementIds 使用 update_board 修复后重新检查。未绑定的装饰箭头与负坐标不是错误；complete=false 表示检查受预算限制，不能视为检查通过。几何估算不能判断配色、视觉层次或实际字体像素。",
   "需要无箭头且随节点移动的连线，使用 arrow + endArrowhead:null（默认 startArrowhead 为 null）；line 为固定坐标线段，不支持绑定。create_diagram.edges 也可传 endArrowhead:null，适合思维导图/组织结构。",
   "修改优先 update_board 一次合并添加、removeElementIds、updates 原地修改及元数据；只改一个图元用 update_element，保留 ID 和绑定。dx/dy 可相对平移，无需读取坐标，同轴不与 x/y 或折线坐标混用。expectedRevision 是可选的已读修订号，服务端始终使用乐观锁；冲突后重新判断，禁止盲目重试。",
   "get_board.input 返回可写描述，elements 可直接用于 update_board.updates，type 仅核对类型；不能直接追加已有 ID。复制优先 copy_elements：选 ID 自动换新 ID、平移、重连内部箭头，返回 idMap；targetBoardId 省略为同板，跨板外部绑定必须解绑。绑定文字合并到形状，标签 ID 筛选返回本体，points 是绝对坐标，rotation 是度。truncated/nextOffset 表示分页或预算截断；input 的 unsupportedElementIds/warnings 表示投影省略，不能视为空板。常规阅读使用 compact；full 仅调试或小批量检查，包含原生内部字段且 points 是相对坐标。",
@@ -366,6 +368,17 @@ export const createMcpRequestHandler = (
           },
           safeTool(async (args) => result(await readBoard(args)), "get_board"),
         );
+
+        server.registerTool("inspect_layout", {
+          title: "检查画板几何布局",
+          description: "只读检查文字重叠、容器内文字溢出、可能的元素碰撞和已绑定箭头连接异常。默认检查全部四项，可用 checks 筛选。使用现有图元尺寸，无浏览器或字体像素测量；正常包含、装饰箭头和无限画布负坐标不视为错误。不自动修改；根据 issues.elementIds 调用 update_board 后复查。complete=false 表示预算截断，未发现问题不保证视觉正确。",
+          inputSchema: compactMcpSchema(inspectLayoutSchema.extend({ boardId: z.string().min(1).max(128) })),
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        }, safeTool(async ({ boardId, checks }) => {
+          const current = await api<SceneData>(`/api/scenes/${encodeURIComponent(boardId)}`, "GET");
+          return result({ boardId, revision: current.revision,
+            ...measureMcpPhase("transformMs", () => inspectLayout(current.elements, { checks })) });
+        }, "inspect_layout"));
 
         server.registerTool(
           "create_board",
