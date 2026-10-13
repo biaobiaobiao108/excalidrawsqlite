@@ -5,6 +5,7 @@ import {
 } from "./config";
 import { randomHex, sha256Hex } from "./crypto";
 import { HttpError } from "./errors";
+import { findCreateReplay, isMcpCreateSession, lookupMcpCreateReplay, parseCreateRequest, recordCreateRequestStatement } from "./create-idempotency";
 import {
   clearSessionCookies,
   cleanupExpiredSessions,
@@ -787,7 +788,24 @@ export const createRequestHandler = (
         }
         const contentBytes = new TextEncoder().encode(elementsJson).byteLength;
         const now = Date.now();
+        const createSessionToken = req.headers.get("x-mcp-create-session");
+        if (hasOwn(body, "idempotencyPayload") && (!hasOwn(body, "idempotencyKey") || !isMcpCreateSession(runtime, createSessionToken))) {
+          throw new HttpError(400, "INVALID_IDEMPOTENCY_PAYLOAD", "idempotencyPayload 仅供内部 MCP 创建请求使用");
+        }
+        const createRequest = await parseCreateRequest(body, hasOwn(body, "idempotencyPayload") ? body.idempotencyPayload : {
+          id: hasOwn(body, "id") ? id : null, name, elements, appState, tags, favorite, folderId,
+        });
+        const replay = { summary: null as ReturnType<typeof getSceneSummary> | null };
         await withStorageMutationLock(runtime, async () => {
+          if (createRequest) {
+            const replayId = await findCreateReplay(runtime, createRequest, now);
+            if (replayId) {
+              const row = await stmts.getSceneSummaryById.get(replayId) as any;
+              if (!row || row.deleted_at != null) throw new HttpError(409, "IDEMPOTENT_BOARD_DELETED", "该幂等创建请求的画板已删除；如需新建请使用新 key");
+              replay.summary = getSceneSummary(row);
+              return;
+            }
+          }
           await assertReferencedFilesExist(runtime, fileIds);
           try {
             await assertSceneFolderExists(folderId);
@@ -813,18 +831,34 @@ export const createRequestHandler = (
                 ] as const,
             };
             const referenceMutations = await getSceneFileReferenceMutationStatements(runtime, id, fileIds);
-            await runtime.db.batch([sceneInsert, ...referenceMutations]);
+            await runtime.db.batch([
+              sceneInsert,
+              ...referenceMutations,
+              ...(createRequest ? [recordCreateRequestStatement(createRequest, id, now)] : []),
+            ]);
           } catch (error: any) {
             if (
               String(error?.message || "")
                 .toLowerCase()
                 .includes("unique")
             ) {
+              if (createRequest) {
+                const createReplay = await lookupMcpCreateReplay(runtime, String(body.idempotencyKey),
+                  hasOwn(body, "idempotencyPayload") ? body.idempotencyPayload : {
+                    id: hasOwn(body, "id") ? id : null, name, elements, appState, tags, favorite, folderId,
+                  });
+                if (createReplay) {
+                  const { idempotentReplay: _idempotentReplay, ...summary } = createReplay;
+                  replay.summary = summary as ReturnType<typeof getSceneSummary>;
+                  return;
+                }
+              }
               throw new HttpError(409, "SCENE_EXISTS", "画板 ID 已存在");
             }
             throw error;
           }
         }, req.signal);
+        if (replay.summary) return jsonResponse(runtime, req, { ...replay.summary, idempotentReplay: true }, 200);
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,

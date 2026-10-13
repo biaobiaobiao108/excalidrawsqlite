@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 
 import { createMcpRequestHandler } from "../../server/mcp";
 import { createRequestHandler } from "../../server/routes";
+import { getMcpCreateSessionCount } from "../../server/create-idempotency";
 import { createRuntime } from "../../server/runtime";
 import { createServerConfig } from "../../server/config";
 
@@ -48,6 +49,257 @@ const toolResult = <T>(result: {
 };
 
 describe("Excalidraw MCP endpoint", () => {
+  it("detects escaped grid text through its native group and keeps shape collisions advisory", async () => {
+    const directory = path.join(os.tmpdir(), `excalidraw-mcp-group-overflow-${crypto.randomUUID()}`);
+    const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
+      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "group-overflow-test" }) });
+    resources.push({ runtime, directory });
+    const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
+    const client = new Client({ name: "group-overflow-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+    const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/group-overflow-test"), {
+      fetch: (input, init) => handler.fetch(new Request(input, init)),
+    });
+    const invoke = async <T>(name: string, args: Record<string, unknown>) =>
+      toolResult<T>(await client.callTool({ name, arguments: args }));
+    type Issue = { type: string; elementIds: string[]; severity: string; message: string; suggestedUpdate?: unknown };
+    type Inspection = { revision: number; complete: boolean; issues: Issue[];
+      checks: { text_overflow: { checkedPairs: number; skippedNoContainer: number } } };
+    try {
+      await client.connect(transport);
+      const created = await invoke<{ boardId: string }>("create_layout", {
+        name: "六张复杂卡片", columns: 3, cardWidth: 320,
+        cards: [
+          { id: "first", title: "长标题中文与 English 一起自动换行".repeat(3), body: "中文正文\n第二行 mixed English 123\n第三行" },
+          { id: "second", title: "第二张", body: "中文 English mixed 内容与数字 2026".repeat(8) },
+          { id: "third", title: "多行\n标题", body: "多行正文\n再一行\n第三行" },
+          { id: "fourth", title: "", body: "仅正文仍有原生分组容器" },
+          { id: "fifth", title: "仅标题", body: "" },
+          { id: "sixth", title: "末张卡片", body: "短正文" },
+        ],
+      });
+      const initial = await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overflow"] });
+      expect(initial.complete).toBe(true);
+      expect(initial.issues).toEqual([]);
+      expect(initial.checks.text_overflow.checkedPairs).toBeGreaterThan(0);
+      expect(initial.checks.text_overflow.skippedNoContainer).toBe(0);
+      await invoke("update_board", { boardId: created.boardId, updates: [{ id: "first:body", dx: 1500 }] });
+      const before = await invoke<Record<string, unknown>>("get_board", { boardId: created.boardId, view: "full" });
+      const escaped = await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overflow"] });
+      expect(escaped.complete).toBe(true);
+      expect(escaped.issues).toContainEqual(expect.objectContaining({ type: "text_overflow",
+        elementIds: expect.arrayContaining(["first:body", "first:background"]) }));
+      expect(escaped.checks.text_overflow.checkedPairs).toBeGreaterThan(0);
+      expect(escaped.checks.text_overflow.skippedNoContainer).toBe(0);
+      expect(escaped.revision).toBe(before.revision as number);
+      expect(await invoke("get_board", { boardId: created.boardId, view: "full" })).toEqual(before);
+      await invoke("update_board", { boardId: created.boardId, updates: [{ id: "first:body", dx: -1500 }] });
+      expect((await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overflow"] })).issues).toEqual([]);
+      await invoke("add_elements", { boardId: created.boardId,
+        elements: [{ type: "text", id: "free-text", x: 2000, y: 2000, text: "普通独立文字" }] });
+      const withFree = await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overflow"] });
+      expect(withFree.issues).toEqual([]);
+      expect(withFree.checks.text_overflow.skippedNoContainer).toBe(1);
+
+      const collisionBoard = await invoke<{ boardId: string }>("create_board", {
+        name: "装饰阴影与实际碰撞", elements: [
+          { type: "rectangle", id: "background", x: 0, y: 0, width: 400, height: 560,
+            fillStyle: "solid", backgroundColor: "white" },
+          { type: "rectangle", id: "shadow", x: 6, y: 6, width: 400, height: 560,
+            fillStyle: "solid", backgroundColor: "#dddddd" },
+          { type: "rectangle", id: "overlap-a", x: 1000, y: 0, width: 120, height: 120 },
+          { type: "rectangle", id: "overlap-b", x: 1040, y: 0, width: 120, height: 120 },
+        ],
+      });
+      const collisions = await invoke<{ complete: boolean; issues: Issue[] }>("inspect_layout",
+        { boardId: collisionBoard.boardId, checks: ["element_collision"] });
+      expect(collisions.complete).toBe(true);
+      expect(collisions.issues).toContainEqual(expect.objectContaining({ type: "element_collision", severity: "warning",
+        elementIds: expect.arrayContaining(["background", "shadow"]) }));
+      expect(collisions.issues).toContainEqual(expect.objectContaining({ type: "element_collision", severity: "warning",
+        elementIds: expect.arrayContaining(["overlap-a", "overlap-b"]) }));
+      for (const issue of collisions.issues) {
+        expect(issue).not.toHaveProperty("suggestedUpdate");
+        expect(issue.message).not.toContain("566");
+      }
+    } finally {
+      await client.close();
+      await handler.close();
+    }
+  });
+
+  it("creates measured grouped layouts and retries creation without duplicating boards or folders", async () => {
+    const directory = path.join(os.tmpdir(), `excalidraw-mcp-layout-${crypto.randomUUID()}`);
+    const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
+      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "layout-test" }) });
+    resources.push({ runtime, directory });
+    const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
+    const client = new Client({ name: "layout-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+    const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/layout-test"), {
+      fetch: (input, init) => handler.fetch(new Request(input, init)),
+    });
+    const invoke = async <T>(name: string, args: Record<string, unknown>) =>
+      toolResult<T>(await client.callTool({ name, arguments: args }));
+    type Element = { id: string; x: number; y: number; width: number; height: number; groupIds: string[];
+      text?: string; startBinding?: { elementId: string } | null; endBinding?: { elementId: string } | null };
+    type Board = { boardId: string; revision: number; elements: Element[] };
+    try {
+      await client.connect(transport);
+      const tools = await client.listTools();
+      expect(tools.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["measure_text", "create_layout", "inspect_layout"]));
+      expect(tools.tools.find((tool) => tool.name === "measure_text")?.annotations?.readOnlyHint).toBe(true);
+      const measured = await invoke<{ text: string; width: number; height: number; estimated: boolean }>("measure_text",
+        { text: "中文自动换行测量".repeat(4), width: 100, fontSize: 18, fontFamily: "system" });
+      expect(measured.estimated).toBe(true);
+      expect(measured.text).toContain("\n");
+      const layoutArgs = { name: "知识卡片", idempotencyKey: "grid-retry", columns: 2, cardWidth: 240,
+        cards: [{ id: "one", title: "第一张", body: "自动换行中文正文".repeat(12) }, { id: "two", title: "第二张", body: "短正文" }] };
+      const layout = await invoke<{ boardId: string; revision: number; addedCount: number;
+        cards: Array<{ groupId: string; elementIds: string[] }> }>("create_layout", layoutArgs);
+      expect(layout.addedCount).toBe(6);
+      const first = await invoke<Board>("get_board", { boardId: layout.boardId, view: "full" });
+      for (const card of layout.cards) {
+        expect(card.elementIds).toHaveLength(3);
+        expect(first.elements.filter((element) => card.elementIds.includes(element.id)).every((element) => element.groupIds.includes(card.groupId))).toBe(true);
+      }
+      const inspection = await invoke<{ issues: unknown[]; complete: boolean }>("inspect_layout",
+        { boardId: layout.boardId, checks: ["text_overlap", "text_overflow"] });
+      expect(inspection.complete).toBe(true);
+      expect(inspection.issues).toEqual([]);
+      const replay = await invoke<Record<string, unknown>>("create_layout", { ...layoutArgs, responseMode: "ids" });
+      expect(replay).toMatchObject({ boardId: layout.boardId, revision: 1, addedCount: 0, idempotentReplay: true, elementCount: 6 });
+      expect(replay).not.toHaveProperty("cards");
+      expect(replay).not.toHaveProperty("elementMap");
+      expect((await invoke<Board>("get_board", { boardId: layout.boardId, view: "full" })).elements).toEqual(first.elements);
+      await invoke("add_elements", { boardId: layout.boardId, elements: [{ type: "text", id: "measured", x: 1000, y: 1000,
+        text: "中文自动换行测量".repeat(4), width: 100, fontSize: 18, fontFamily: "system" }] });
+      const next = await invoke<Board>("get_board", { boardId: layout.boardId, view: "full" });
+      expect(next.elements.find((element) => element.id === "measured")).toMatchObject({ width: measured.width, height: measured.height, text: measured.text });
+      expect(await invoke("create_layout", layoutArgs)).toMatchObject({ boardId: layout.boardId, revision: next.revision, addedCount: 0, elementCount: 7 });
+
+      const drawingArgs = { name: "有分组的画板", folderName: "幂等文件夹", idempotencyKey: "drawing-retry", autoBind: true,
+        elements: [
+          { type: "rectangle", id: "a", groupIds: ["inner", "outer"], x: 0, y: 0, width: 100, height: 100, text: "节点", labelId: "caption" },
+          { type: "text", id: "title", groupId: "inner", x: 0, y: 150, text: "独立标题" },
+          { type: "ellipse", id: "b", x: 300, y: 0, width: 100, height: 100 },
+          { type: "arrow", id: "edge", points: [[110, 50], [290, 50]] },
+        ] };
+      const drawing = await invoke<{ boardId: string; autoBinding: { bindings: unknown[] } }>("create_board", drawingArgs);
+      expect(drawing.autoBinding.bindings).toHaveLength(2);
+      const native = await invoke<Board>("get_board", { boardId: drawing.boardId, view: "full" });
+      expect(native.elements.find((element) => element.id === "edge")).toMatchObject({ startBinding: { elementId: "a" }, endBinding: { elementId: "b" } });
+      const writable = await invoke<Board>("get_board", { boardId: drawing.boardId, view: "input" });
+      expect(writable.elements.find((element) => element.id === "a")?.groupIds).toEqual(["inner", "outer"]);
+      const copied = await invoke<{ groupIdMap: Record<string, string>; idMap: Record<string, string> }>("copy_elements",
+        { boardId: drawing.boardId, elementIds: ["a", "title"], dx: 0, dy: 300 });
+      expect(copied.groupIdMap.inner).not.toBe("inner");
+      const copiedNative = await invoke<Board>("get_board", { boardId: drawing.boardId, view: "full" });
+      expect(copiedNative.elements.find((element) => element.id === copied.idMap.a)?.groupIds)
+        .toEqual([copied.groupIdMap.inner, copied.groupIdMap.outer]);
+      const folder = runtime.db.query("SELECT id FROM folders WHERE name = ?").get("幂等文件夹") as { id: string };
+      await invoke("delete_folder", { folderId: folder.id, confirm: true });
+      const retry = await invoke<Record<string, unknown>>("create_board", { ...drawingArgs, responseMode: "ids" });
+      expect(retry).toMatchObject({ boardId: drawing.boardId, idempotentReplay: true, addedCount: 0 });
+      expect(retry).not.toHaveProperty("autoBinding");
+      expect(runtime.db.query("SELECT COUNT(*) AS count FROM folders WHERE name = ?").get("幂等文件夹")).toEqual({ count: 0 });
+      const conflict = await client.callTool({ name: "create_board", arguments: { ...drawingArgs, name: "改参数" } });
+      expect(conflict.structuredContent).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_KEY_CONFLICT" } });
+      await invoke("add_elements", { boardId: drawing.boardId, elements: [{ type: "arrow", id: "legacy", points: [[110, 50], [290, 50]] }] });
+      const added = await invoke<{ autoBinding: { bindings: Array<{ elementId: string; endpoint: string; targetId: string }> } }>("add_elements", {
+        boardId: drawing.boardId, autoBind: true, elements: [{ type: "arrow", id: "new-edge", points: [[110, 50], [290, 50]], startBinding: { elementId: "a" } }],
+      });
+      expect(added.autoBinding.bindings).toEqual([{ elementId: "new-edge", endpoint: "endBinding", targetId: "b" }]);
+      const updated = await invoke<{ autoBinding: { bindings: Array<{ elementId: string }> } }>("update_board", {
+        boardId: drawing.boardId, autoBind: true, elements: [{ type: "arrow", id: "updated-edge", points: [[110, 50], [290, 50]] }],
+      });
+      expect(updated.autoBinding.bindings).toHaveLength(2);
+      const attached = await invoke<Board>("get_board", { boardId: drawing.boardId, view: "full" });
+      expect(attached.elements.find((element) => element.id === "legacy")).toMatchObject({ startBinding: null, endBinding: null });
+      expect(attached.elements.find((element) => element.id === "new-edge")).toMatchObject({ startBinding: { elementId: "a" }, endBinding: { elementId: "b" } });
+
+      const diagramArgs = { name: "流程图重试", idempotencyKey: "diagram-retry", nodes: [{ id: "node", title: "节点" }] };
+      const diagram = await invoke<{ boardId: string }>("create_diagram", diagramArgs);
+      expect(await invoke("create_diagram", { ...diagramArgs, responseMode: "ids" })).toMatchObject({ boardId: diagram.boardId, addedCount: 0, idempotentReplay: true });
+      const crossToolConflict = await client.callTool({ name: "create_board", arguments: { name: diagramArgs.name, idempotencyKey: diagramArgs.idempotencyKey } });
+      expect(crossToolConflict.structuredContent).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_KEY_CONFLICT" } });
+      expect(runtime.db.query("SELECT COUNT(*) AS count FROM scenes").get()).toEqual({ count: 3 });
+    } finally {
+      await client.close();
+      await handler.close();
+    }
+    expect(getMcpCreateSessionCount(runtime)).toBe(0);
+  });
+
+  it("inspects selected layout checks through the SDK without changing the board", async () => {
+    const directory = path.join(os.tmpdir(), `excalidraw-mcp-inspect-${crypto.randomUUID()}`);
+    const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
+      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "inspect-test" }) });
+    resources.push({ runtime, directory });
+    const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
+    const client = new Client({ name: "inspect-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+    const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/inspect-test"), {
+      fetch: (input, init) => handler.fetch(new Request(input, init)),
+    });
+    type Inspection = { boardId: string; revision: number; complete: boolean;
+      summary: { errors: number; warnings: number };
+      issues: Array<{ type: string; severity: string; elementIds: string[]; message: string; suggestion?: string;
+        metrics?: { overlapRatio?: number }; suggestedUpdate?: { id: string; dx: number; dy: number } }> };
+    const invoke = async <T>(name: string, args: Record<string, unknown>) =>
+      toolResult<T>(await client.callTool({ name, arguments: args }));
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      const tool = listed.tools.find((item) => item.name === "inspect_layout");
+      expect(tool?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+      const created = await invoke<{ boardId: string; revision: number }>("create_board", {
+        name: "检查布局", elements: [
+          { type: "text", id: "first", x: 0, y: 0, text: "重叠的第一段文字" },
+          { type: "text", id: "second", x: 0, y: 0, text: "重叠的第二段文字" },
+          { type: "rectangle", id: "tiny", x: 500, y: 0, width: 80, height: 20,
+            text: "绑定文字太长\n第二行\n第三行\n第四行", labelId: "overflow-label" },
+          { type: "arrow", id: "decoration", points: [[100, 500], [200, 500]] },
+        ],
+      });
+      const before = await invoke<Record<string, unknown>>("get_board", { boardId: created.boardId, view: "full" });
+      const full = await invoke<Inspection>("inspect_layout", { boardId: created.boardId });
+      expect(full.boardId).toBe(created.boardId);
+      expect(full.revision).toBe(created.revision);
+      expect(full.complete).toBe(true);
+      expect(full.summary.errors + full.summary.warnings).toBe(full.issues.length);
+      expect(full.issues).toContainEqual(expect.objectContaining({ type: "text_overlap", elementIds: expect.arrayContaining(["first", "second"]) }));
+      expect(full.issues.some((issue) => issue.type === "text_overflow" && issue.elementIds.includes("overflow-label"))).toBe(true);
+      expect(full.issues.some((issue) => issue.type === "arrow_connection" && issue.elementIds.includes("decoration"))).toBe(false);
+      for (const issue of full.issues) {
+        expect(["text_overlap", "text_overflow", "element_collision", "arrow_connection"]).toContain(issue.type);
+        expect(["warning", "error"]).toContain(issue.severity);
+        expect(issue.message.length).toBeGreaterThan(0);
+      }
+      const textOnly = await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overlap"] });
+      expect(textOnly.issues.length).toBeGreaterThan(0);
+      expect(textOnly.issues.every((issue) => issue.type === "text_overlap")).toBe(true);
+      const after = await invoke<Record<string, unknown>>("get_board", { boardId: created.boardId, view: "full" });
+      expect(after).toEqual(before);
+      const revision = runtime.db.query("SELECT revision FROM scenes WHERE id = ?").get(created.boardId);
+      expect(revision).toEqual({ revision: created.revision });
+      for (const checks of [["unknown"], []]) {
+        const invalid = await client.callTool({ name: "inspect_layout", arguments: { boardId: created.boardId, checks } });
+        expect(invalid.isError).toBe(true);
+      }
+      const missing = await client.callTool({ name: "inspect_layout", arguments: { boardId: "missing-board" } });
+      expect(missing.structuredContent).toMatchObject({ ok: false, error: { code: "SCENE_NOT_FOUND" } });
+      const overlap = full.issues.find((issue) => issue.type === "text_overlap" && issue.elementIds.includes("second"))!;
+      expect(overlap.metrics?.overlapRatio).toBeGreaterThan(0);
+      expect(overlap.suggestedUpdate?.id).toBe("second");
+      const moved = await invoke<{ revision: number }>("update_board", { boardId: created.boardId,
+        updates: [overlap.suggestedUpdate!], expectedRevision: created.revision });
+      const corrected = await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overlap"] });
+      expect(corrected.revision).toBe(moved.revision);
+      expect(corrected.issues.some((issue) => issue.elementIds.includes("first") && issue.elementIds.includes("second"))).toBe(false);
+    } finally {
+      await client.close();
+      await handler.close();
+    }
+  });
+
   it("supports trusted HTTPS proxy origins and does not trust forwarded hosts on direct connections", async () => {
     for (const trustProxy of [false, true]) {
       const directory = path.join(os.tmpdir(), `excalidraw-mcp-proxy-${crypto.randomUUID()}`);
