@@ -94,6 +94,24 @@ describe("compact MCP schemas", () => {
     }
   });
 
+  it("explains how to create a bound connector without arrowheads", async () => {
+    const connector = { type: "line", startBinding: { elementId: "a" }, endBinding: { elementId: "b" } };
+    const result = await wrapped.validate({ elements: [connector], expectedRevision: 1 });
+    expect(result).not.toHaveProperty("value");
+    expect(result.issues?.map((issue) => issue.message).join("; ")).toContain('"endArrowhead":null');
+    expect(await wrapped.validate({ elements: [{ ...connector, type: "arrow", endArrowhead: null }], expectedRevision: 1 })).toHaveProperty("value");
+  });
+
+  it("shows the update envelope for misplaced element fields", async () => {
+    const update = compactMcpSchema(z.object({ boardId: z.string(), update: elementUpdateSchema }).strict())["~standard"];
+    const result = await update.validate({ boardId: "private-board-value", id: "private-element-value", dx: 20 });
+    const errors = result.issues?.map((issue) => issue.message).join("; ") || "";
+    expect(errors).toContain('"update":{"id":"图元ID","dx":20}');
+    expect(errors).not.toContain("private-board-value");
+    expect(errors).not.toContain("private-element-value");
+    expect(result).not.toHaveProperty("value");
+  });
+
   it("bounds unknown-key reports and avoids drawing advice for unrelated objects", async () => {
     const secret = "sensitive-argument-value";
     const extras = Object.fromEntries(Array.from({ length: 1_000 }, (_, index) => [`unknown${index}_${"x".repeat(1_000)}`, secret]));

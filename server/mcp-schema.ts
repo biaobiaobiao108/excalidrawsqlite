@@ -28,7 +28,11 @@ function issueMessage(issue: z.core.$ZodIssue, input: unknown): string {
   let message = shorten(issue.message, 300);
   if (issue.code === "unrecognized_keys") {
     message = `Unrecognized keys: ${issue.keys.slice(0, 3).map((key) => JSON.stringify(shorten(key, 40))).join("、")}${issue.keys.length > 3 ? `（共 ${issue.keys.length} 个）` : ""}；请删除这些不支持的字段`;
+    if (issue.path.length === 0 && owner && typeof owner === "object" && Object.hasOwn(owner, "boardId") && issue.keys.includes("id"))
+      hints.push('update_element 的图元字段需放入 update，例如 {"boardId":"画板ID","update":{"id":"图元ID","dx":20}}');
     if (isDrawing) {
+      if (elementType === "line" && issue.keys.some((key) => ["startBinding", "endBinding", "startArrowhead", "endArrowhead"].includes(key)))
+        hints.push('line 使用固定坐标；需要绑定节点的无箭头连线，请改用 {"type":"arrow","endArrowhead":null}，startArrowhead 默认 null');
       if (issue.keys.includes("height") && owner && typeof owner === "object" && (owner as { type?: unknown }).type === "text")
         hints.push('文字高度按内容自动计算；用 width 控制换行或 fontSize 调整字号，例如 {"width":200,"fontSize":20}');
       if (issue.keys.includes("angle"))

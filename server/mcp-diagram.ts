@@ -13,7 +13,9 @@ export const diagramSchema = z.object({
     title: z.string().trim().min(1).max(120),
     body: z.string().max(1_800).optional(),
   }).strict()).min(1).max(100),
-  edges: z.array(z.object({ from: nodeId, to: nodeId }).strict()).max(200)
+  edges: z.array(z.object({ from: nodeId, to: nodeId,
+    endArrowhead: z.literal("arrow").nullable().optional().describe("默认 arrow；null 为无箭头连接，仍随节点移动"),
+  }).strict()).max(200)
     .optional().describe("省略则按节点顺序连接；[] 表示无连线，可包含分支、回路与自连接"),
 }).strict();
 
@@ -92,7 +94,7 @@ export const buildDiagram = (input: Diagram) => {
   const ids = args.nodes.map((node) => node.id), unique = new Set(ids);
   if (unique.size !== ids.length)
     throw new HttpError(400, "DUPLICATE_NODE_ID", "nodes.id 必须唯一");
-  const edges = args.edges ?? ids.slice(1).map((to, index) => ({ from: ids[index], to }));
+  const edges: NonNullable<Diagram["edges"]> = args.edges ?? ids.slice(1).map((to, index) => ({ from: ids[index], to }));
   const connections = new Set<string>();
   for (const edge of edges) {
     if (!unique.has(edge.from) || !unique.has(edge.to))
@@ -181,7 +183,7 @@ export const buildDiagram = (input: Diagram) => {
     elements.push(drawingElementSchema.parse({ type: "arrow", id: allocateId(index), points,
       startBinding: { elementId: edge.from, fixedPoint: startFixed },
       endBinding: { elementId: edge.to, fixedPoint: endFixed },
-      strokeColor: style.strokeColor, roughness: 0, endArrowhead: "arrow" }));
+      strokeColor: style.strokeColor, roughness: 0, endArrowhead: edge.endArrowhead === undefined ? "arrow" : edge.endArrowhead }));
   });
   return { elements, nodeCount: ids.length, edgeCount: edges.length, layout, direction, theme };
 };

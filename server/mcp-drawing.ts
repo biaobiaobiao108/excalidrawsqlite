@@ -107,7 +107,7 @@ const binding = z
   .strict()
   .nullable()
   .describe(
-    "绑定目标 ID，可引用同批新图元；fixedPoint 为相对目标的归一化坐标，orbit 端点可以超出 [0,1]，默认根据端点推导；mode 默认 orbit，null 解绑",
+    "仅 arrow 支持绑定，可引用同批新图元；无箭头连接用 type:arrow、endArrowhead:null。fixedPoint 为相对目标的归一化坐标，orbit 端点可以超出 [0,1]，默认根据端点推导；mode 默认 orbit，null 解绑",
   );
 const arrowhead = z
   .enum([
@@ -187,15 +187,16 @@ export const drawingElementSchema = z.discriminatedUnion("type", [
   z
     .object({ type: z.literal("line"), ...linearFields })
     .strict()
-    .refine(validateLinear, "请提供 points 或完整且不同的起终点，不能同时提供"),
+    .refine(validateLinear, "请提供 points 或完整且不同的起终点，不能同时提供")
+    .describe("固定坐标线段或折线，不绑定节点；需要随节点移动的无箭头连线，请使用 arrow 并传 endArrowhead:null"),
   z
     .object({
       type: z.literal("arrow"),
       ...linearFields,
       startBinding: binding.optional(),
       endBinding: binding.optional(),
-      startArrowhead: arrowhead.optional(),
-      endArrowhead: arrowhead.optional(),
+      startArrowhead: arrowhead.optional().describe("起点箭头样式，默认 null（无箭头）"),
+      endArrowhead: arrowhead.optional().describe("终点箭头样式，默认 arrow；null 为无箭头，仍支持节点绑定和自动连接"),
     })
     .strict()
     .refine(validateArrow, "请提供 points 或完整且不同的起终点；也可仅传两端 binding 自动连接（不能同时传 rotation）"),
@@ -620,7 +621,9 @@ export const updateDrawingElements = (
       throw new HttpError(
         400,
         "INVALID_ELEMENT_UPDATE",
-        "只有箭头支持端点绑定或箭头样式",
+        element.type === "line"
+          ? "line 是固定坐标线段；节点绑定请新建 type:arrow 并传 endArrowhead:null，实现无箭头连线，不支持直接转换已有 line 类型"
+          : "只有箭头支持端点绑定或箭头样式；无箭头连接可用 type:arrow、endArrowhead:null",
       );
     const textKeys = ["text", "fontSize", "fontFamily", "textAlign"];
     if (
