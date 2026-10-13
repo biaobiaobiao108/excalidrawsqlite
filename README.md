@@ -329,13 +329,13 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 软删除和还原的实际状态变化也递增 `revision` 并更新 `updated_at`；重复相同状态返回 `noop`，不递增。删除后还原会使旧的 `expectedRevision` 失效，调用方应使用最新回执版本。`list_tags.nextCursor` 是按标签名排序的边界，SQL 读取名称大于该边界的标签，不要求该标签仍存在；分页不是一致快照，期间改名或新增可能影响后续页，完整重新核对时从第一页读取。
 
-业务结果的完整机器数据在 `structuredContent`，文本 `content` 同时返回该对象序列化后的 JSON，只读文本的客户端也能取得 ID、图元、分页游标和错误码。这符合 [MCP 工具结果的兼容性建议](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/server/tools.mdx)。客户端须检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。绘图写入默认 `responseMode=minimal`，返回修订号、数量和画板 URL，无需再次读取全文确认成功；`copy_elements` 始终额外返回 `idMap/warnings`。`create_board/add_elements/update_board/create_diagram/copy_elements` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是本体数量，`elementCount` 是全画板当前图元数量。
+业务结果的完整机器数据仅在 `structuredContent`，成功文本 `content` 给简短说明，不重复传输业务 JSON；客户端应读取结构化结果。客户端须检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。业务错误的文本保留具体原因。绘图写入默认 `responseMode=minimal`，返回修订号、数量和画板 URL，无需再次读取全文确认成功；`copy_elements` 始终额外返回 `idMap/warnings`。`create_board/add_elements/update_board/create_diagram/copy_elements` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是本体数量，`elementCount` 是全画板当前图元数量。
 
 `remove_elements` 和 `update_board` 的删除反馈包含 `notFoundIds`（去重后的缺失请求 ID）、`removedCount`（含绑定文字的实际删除总数）、`requestedRemovedCount`（显式请求且存在的图元数）、`cascadeRemovedCount`（未显式请求的级联删除数）及 `elementCount`（操作后的全板图元数）。缺失 ID 不使整次操作失败，仍返回缺失清单；只删除不存在的 ID 时返回 `noop`，不递增修订号。删除标签 ID 只删除标签，删除形状才联动删除其标签。
 
 批量读取及管理的每项结果都有 `ok:true/false`，仍使用顶层 `partial/truncated` 表示混合结果及截断。`list_boards.view=recent` 只包含打开过的画板，默认按 `lastOpenedAt` 倒序；`view=all,sort=opened` 才包含从未打开的画板并把它们排最后。`create_diagram` 默认生成 `diagram_edge_<从0起序号>` 的边 ID，与用户节点 ID 冲突时会添加后缀；使用 `responseMode=ids` 获取准确的 `elementMap` 后可通过 `update_element` 改箭头样式。
 
-常规阅读使用 `compact`，`full` 仅用于调试或小批量检查原生内部字段。`maxChars` 限制单份业务结果的字符预算，不是整个 HTTP 报文大小；同时传输文本 JSON 与结构化结果会增加报文体积。当前画板图元作为单行 JSON 存储，图元分页、筛选和投影仍需读取整个画板，字符预算不限制数据库读取与解析成本；只需画板概要时使用 `summary`，它不读取图元 JSON。
+常规阅读使用 `compact`，`full` 仅用于调试或小批量检查原生内部字段。`maxChars` 限制业务结果的字符预算，不是整个 HTTP 报文大小。当前画板图元作为单行 JSON 存储，图元分页、筛选和投影仍需读取整个画板，字符预算不限制数据库读取与解析成本；只需画板概要时使用 `summary`，它不读取图元 JSON。
 
 REST `/api/scenes` 写入使用原生 Excalidraw 元素，MCP 使用简化绘图描述，两种格式不能互换。同一画板可以通过两条通道编辑，但应读取最新版本并使用修订号保护；禁止用 MCP 的可写投影覆盖 REST 原生场景，否则会丢失投影未包含的图片和内部属性。MCP 的增量修改保留这些原有内容。服务初始化的 instructions 会显示实际回收站保留天数；默认 30 天，`TRASH_RETENTION_DAYS=0` 时明确告知自动清理已禁用。
 

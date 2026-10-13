@@ -7,7 +7,7 @@
 | 报告项 | 核对结论与处理 |
 | --- | --- |
 | P1-1：非 curl UA 初始化返回空 202 | 本地不可复现。Python-urllib/3.13、curl/8.0、普通客户端初始化均有正常 200 响应，SDK 可读取工具。无 ID 的初始化通知返回空 202 是正常协议行为。报告中的公网差异提示网关/WAF/代理链路拦截，但不能仅凭响应锁定具体 OpenResty 规则。仓库不含线上网关配置，未宣称已修复线上问题；README 补充逐层对比、UA 放行与明确 4xx 拒绝的排查说明。 |
-| P1-2：成功 text 无有效数据 | 已修复。所有业务结果的 text 为与 structuredContent 相同对象的 JSON，包含 ID、图元、游标、警告和错误码。只放一两行摘要仍不能让纯文本客户端使用完整读结果，因此采用完整 JSON 兼容方案；响应预算继续生效，文档说明双通道增加报文体积。 |
+| P1-2：成功 text 无有效数据 | 不采纳。按用户确认，WorkBuddy 未使用 structuredContent 属于客户端适配问题，本项目不为其重复传输完整 JSON。成功 text 保留简短说明，完整数据仅在 structuredContent；错误 text 保留有效原因。 |
 | P1-3：删除缺失 ID 静默跳过 | 已修复。remove_elements 与 update_board 的成功及 noop 结果都返回去重的 notFoundIds。保留删除操作的幂等性，缺失 ID 不阻止其余合法操作；更新不存在图元仍明确报错。 |
 | P1-4：删除不回传总数与级联信息 | 已修复。返回 elementCount、requestedRemovedCount、cascadeRemovedCount。当前仓库的 removedCount 原本就计入绑定文字，报告的 removedCount=1 与当前实现不符；保留实际删除总数的既有语义，避免破坏调用方。 |
 | P2-1：CSS 命名色不完整 | 已修复。图元和文件夹共用校验支持全部 148 个标准命名色，包括 rebeccapurple，以及 transparent 和已有十六进制格式。报告的 147 个是未含 rebeccapurple 的旧数量。大小写统一，非法颜色仍拒绝。 |
@@ -30,9 +30,9 @@
 ## 验证边界
 
 - 完整 `bun run test:all` 通过：单元测试、132 项服务端测试、全局类型检查、生产构建及体积门禁。
-- 真实 MCP SDK 测试校验 text JSON 与 structuredContent 一致，并覆盖批读成功/失败项与字符预算。
+- 真实 MCP SDK 测试校验成功 text 不重复业务 JSON、错误 text 包含原因，并覆盖批读成功/失败项与字符预算。
 - 删除验证覆盖绑定文字级联、重复缺失 ID、仅缺失 ID 的 noop，以及混合新增/删除的反馈。
 - 本地 UA 测试区别带 ID 的初始化请求与无 ID 的通知；没有验证公网代理已恢复。
 - 相关测试使用临时 SQLite/附件目录并清理，未引入浏览器环境或新运行时依赖。
 
-协议依据：[MCP 工具结果兼容指引](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/server/tools.mdx)。颜色依据：[W3C CSS Color 4 命名色](https://www.w3.org/TR/css-color-4/#named-colors)。
+颜色依据：[W3C CSS Color 4 命名色](https://www.w3.org/TR/css-color-4/#named-colors)。

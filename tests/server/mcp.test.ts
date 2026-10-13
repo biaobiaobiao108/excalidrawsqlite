@@ -28,7 +28,7 @@ const toolResult = <T>(result: {
 }) => {
   expect(result.isError).not.toBe(true);
   expect(result.structuredContent).toMatchObject({ ok: true });
-  expect(JSON.parse(result.content.filter((item) => item.type === "text").map((item) => item.text).join(""))).toEqual(result.structuredContent);
+  expect(result.content).toEqual([{ type: "text", text: "操作成功；详情见 structuredContent。" }]);
   const data = result.structuredContent as Record<string, unknown>;
   const records = [data, ...["items", "boards", "results"].flatMap((key) =>
     Array.isArray(data[key]) ? data[key] as Record<string, unknown>[] : [])];
@@ -378,7 +378,7 @@ describe("Excalidraw MCP endpoint", () => {
       expect(emptyUpdate.structuredContent).toMatchObject({ ok: false, error: { code: "EMPTY_UPDATE" } });
       const notFound = await client.callTool({ name: "get_board", arguments: { boardId: "missing" } });
       expect(notFound.structuredContent).toMatchObject({ ok: false });
-      expect(notFound.content[0]).toMatchObject({ type: "text" });
+      expect(notFound.content[0]).toMatchObject({ type: "text", text: "操作失败：画板不存在或已删除" });
       const unchanged = toolResult<{ revision: number }>(await client.callTool({
         name: "get_board", arguments: { boardId: complete.boardId, view: "summary" },
       }));

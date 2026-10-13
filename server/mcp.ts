@@ -29,9 +29,9 @@ const getMcpServerInstructions = (runtime: ServerRuntime) => [
   "get_board.input 返回可写描述，elements 可直接用于 update_board.updates，type 仅核对类型；不能直接追加已有 ID。复制优先 copy_elements：选 ID 自动换新 ID、平移、重连内部箭头，返回 idMap；targetBoardId 省略为同板，跨板外部绑定必须解绑。绑定文字合并到形状，标签 ID 筛选返回本体，points 是绝对坐标，rotation 是度。truncated/nextOffset 表示分页或预算截断；input 的 unsupportedElementIds/warnings 表示投影省略，不能视为空板。常规阅读使用 compact；full 仅调试或小批量检查，包含原生内部字段且 points 是相对坐标。",
   "create_board 可同时设置 folderId/folderName、favorite、tags；folderName 会幂等获取或创建文件夹，重名歧义报错。文件夹用 list/ensure/create/update/delete_folder。manage_board 一次管理收藏、标签、移动和改名，batch_manage_boards 批量管理逐条返回结果。",
   `delete_board 只软删除，restore_board 还原；MCP 不提供永久删除或清空回收站。${runtime.config.trashRetentionDays === 0 ? "当前回收站自动清理已禁用。" : `当前回收站保留 ${runtime.config.trashRetentionDays} 天，超期后由定期维护自动清理。`}delete_folder 仅移画板至根目录，正式执行需 confirm=true，可先 dryRun 查看影响。`,
-  "业务结果同时提供 structuredContent 与相同数据的 JSON text；只读 text 的客户端可直接解析。检查 ok 与 error.code；schema 拒绝可能只有 isError=true 和 text，客户端也必须读取该错误。画板标识统一 boardId，元数据使用 elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt。图元和文件夹仍使用 id。绘图写工具默认 responseMode=minimal 仅回数量/修订号/URL；copy_elements 始终额外返回 idMap/warnings。需要自动 ID 时设 ids 返回 elementMap（inputIndex 对应本体与 labelId）、requestedElementIds（本体）、generatedElementIds（附属文字）。addedCount 是实际新建图元数，elementCount 是全板当前图元数。批读每项有 ok，partial 表示成功失败混合，truncated 仅表示内容/预算截断。",
+  "完整业务结果位于 structuredContent，成功 text 仅给简短说明，不重复数据。检查 ok 与 error.code；schema 拒绝可能只有 isError=true 和 text，客户端也必须读取该错误。画板标识统一 boardId，元数据使用 elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt。图元和文件夹仍使用 id。绘图写工具默认 responseMode=minimal 仅回数量/修订号/URL；copy_elements 始终额外返回 idMap/warnings。需要自动 ID 时设 ids 返回 elementMap（inputIndex 对应本体与 labelId）、requestedElementIds（本体）、generatedElementIds（附属文字）。addedCount 是实际新建图元数，elementCount 是全板当前图元数。批读每项有 ok，partial 表示成功失败混合，truncated 仅表示内容/预算截断。",
   "list_boards.view=recent 只列打开过的画板，默认按 lastOpenedAt 倒序；view=all,sort=opened 则包含从未打开的画板并置于末尾。create_diagram 的边 ID 默认 diagram_edge_<从0起序号>，与节点ID冲突时加后缀；准确映射用 responseMode=ids 的 elementMap，后续可用 update_element 改箭头样式。remove_elements/update_board 回传 notFoundIds，removedCount 包含级联删除，cascadeRemovedCount 是未显式请求的附属删除数。",
-  "REST /api/scenes 使用原生 Excalidraw 图元；MCP 使用简化绘图描述，禁止混用两种格式。可在同一画板使用两条通道编辑，但每次应基于最新修订号增量合并，不能用投影覆盖原生场景，已有图片/自由画笔在 MCP 增量更新中会保留。maxChars 限制单份结果的字符预算，text 与 structuredContent 同时传输使实际报文更大；分页不意味着按页读取存储，极大画板优先 summary 和筛选。",
+  "REST /api/scenes 使用原生 Excalidraw 图元；MCP 使用简化绘图描述，禁止混用两种格式。可在同一画板使用两条通道编辑，但每次应基于最新修订号增量合并，不能用投影覆盖原生场景，已有图片/自由画笔在 MCP 增量更新中会保留。maxChars 限制业务结果的字符预算；分页不意味着按页读取存储，极大画板优先 summary 和筛选。",
   "不支持图片上传、自由绘制或直接输入原始 Excalidraw JSON；工具接受矩形、椭圆、菱形、文字、直线和箭头。输入必须为 JSON 对象，多行字符串遵循 JSON 转义规则。",
 ].join(" ");
 
@@ -85,7 +85,9 @@ const result = (value: Record<string, unknown>) => measureMcpPhase("responseBuil
     ...(value.folder && typeof value.folder === "object"
       ? { folder: cleanBoardRecord(value.folder as Record<string, unknown>) } : {}),
   };
-  return { structuredContent, content: [{ type: "text" as const, text: JSON.stringify(structuredContent) }] };
+  return { structuredContent, content: [{ type: "text" as const, text: value.error
+    ? `操作失败：${(value.error as { message: string }).message}`
+    : "操作成功；详情见 structuredContent。" }] };
 });
 
 const responseModeSchema = z.enum(["minimal", "ids"]).optional()
