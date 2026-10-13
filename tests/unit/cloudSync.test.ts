@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   CloudSaveQueue,
+  getCloudSnapshotFiles,
   getCloudSceneLoadSignatures,
   getCloudSceneRecoveryData,
   matchesPersistedCloudSnapshot,
@@ -30,16 +31,20 @@ const createPersistence = () => {
   const persistence: CloudSavePersistence = {
     load: async () => [...snapshots.values()],
     save: async (value) => {
-      snapshots.set(value.sceneId, value);
+      snapshots.set(value.persistenceKey || value.sceneId, value);
     },
-    remove: async (sceneId, expectedSnapshot) => {
-      if (!expectedSnapshot || matchesPersistedCloudSnapshot(snapshots.get(sceneId), expectedSnapshot)) {
-        snapshots.delete(sceneId);
+    remove: async (sceneId, expectedSnapshot, persistenceKey) => {
+      const key = expectedSnapshot?.persistenceKey || persistenceKey || sceneId;
+      if (!expectedSnapshot || matchesPersistedCloudSnapshot(snapshots.get(key), expectedSnapshot)) {
+        snapshots.delete(key);
       }
     },
   };
   return { persistence, snapshots };
 };
+
+const snapshotForScene = (snapshots: Map<string, CloudSaveSnapshot>, sceneId: string) =>
+  [...snapshots.values()].find((value) => value.sceneId === sceneId);
 
 describe("cloud save queue", () => {
   it("reuploads a cached attachment after server GC rejects its scene reference", async () => {
@@ -287,7 +292,7 @@ describe("cloud save queue", () => {
       const statusCount = statuses.length;
       release();
       await flushing;
-      expect(snapshots.get("scene")?.name).toBe("newer offline edit");
+      expect(snapshotForScene(snapshots, "scene")?.name).toBe("newer offline edit");
       expect(newer.hasPending("scene")).toBe(true);
       if (disposeOlder) expect(statuses.length).toBe(statusCount);
       older.dispose();
@@ -496,7 +501,7 @@ describe("cloud save queue", () => {
 
     failedQueue.enqueue(snapshot("recover me"));
     expect(await failedQueue.flush("scene")).toBe("error");
-    expect(snapshots.get("scene")?.name).toBe("recover me");
+    expect(snapshotForScene(snapshots, "scene")?.name).toBe("recover me");
 
     const recoveredNames: string[] = [];
     const recoveredQueue = new CloudSaveQueue(callbacks, {
@@ -519,12 +524,12 @@ describe("cloud save queue", () => {
     let failFirstRemove = true;
     const flakyPersistence: CloudSavePersistence = {
       ...persistence,
-      remove: async (sceneId) => {
+      remove: async (sceneId, expectedSnapshot, persistenceKey) => {
         if (failFirstRemove) {
           failFirstRemove = false;
           throw new Error("storage temporarily unavailable");
         }
-        await persistence.remove(sceneId);
+        await persistence.remove(sceneId, expectedSnapshot, persistenceKey);
       },
     };
     const committed = snapshot("already committed");
@@ -540,7 +545,7 @@ describe("cloud save queue", () => {
     });
     firstQueue.enqueue(committed);
     expect(await firstQueue.flush("scene")).toBe("saved");
-    expect(snapshots.has("scene")).toBe(true);
+    expect(snapshotForScene(snapshots, "scene")).toBeDefined();
 
     const recoveredQueue = new CloudSaveQueue(callbacks, {
       persistence: flakyPersistence,
@@ -567,6 +572,47 @@ describe("cloud save queue", () => {
     expect(await recoveredQueue.flush("scene")).toBe("saved");
     expect(recoveredQueue.hasPending("scene")).toBe(false);
     expect(snapshots.size).toBe(0);
+  });
+
+  it("keeps unsaved snapshots from two tabs for the same scene independently", async () => {
+    const { persistence, snapshots } = createPersistence();
+    const failingSave = async () => {
+      throw new Error("offline");
+    };
+    const tabA = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: failingSave,
+    });
+    const tabB = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: failingSave,
+    });
+    try {
+      tabA.enqueue({ ...snapshot("branch A"), persistenceKey: "tab-A:scene" });
+      tabB.enqueue({ ...snapshot("branch B"), persistenceKey: "tab-B:scene" });
+      await Promise.all([tabA.flush("scene"), tabB.flush("scene")]);
+
+      expect(snapshots.size).toBe(2);
+      expect(snapshots.get("tab-A:scene")?.name).toBe("branch A");
+      expect(snapshots.get("tab-B:scene")?.name).toBe("branch B");
+    } finally {
+      tabA.dispose();
+      tabB.dispose();
+    }
+  });
+
+  it("rebuilds the snapshot file map from files available after image loading", () => {
+    const ids = ["image-a", "image-b"] as any;
+    const initialFiles = { "image-a": { id: "image-a" } } as any;
+    const hydratedFiles = {
+      ...initialFiles,
+      "image-b": { id: "image-b", dataURL: "data:image/png;base64,aA==" },
+    } as any;
+
+    expect(getCloudSnapshotFiles(ids, initialFiles)).toEqual(initialFiles);
+    expect(getCloudSnapshotFiles(ids, hydratedFiles)).toEqual(hydratedFiles);
   });
 
   it("rebases a fast follow-up snapshot onto the revision from the active save", async () => {

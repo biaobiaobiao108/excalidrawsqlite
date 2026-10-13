@@ -103,6 +103,7 @@ import { LazyOverwriteConfirmDialog } from "./components/LazyOverwriteConfirmDia
 import {
   CloudSaveQueue,
   getCloudPersistenceSignature,
+  getCloudSnapshotFiles,
   getCloudSceneLoadSignatures,
   getCloudSceneRecoveryData,
   subscribeCloudRealtime,
@@ -219,7 +220,7 @@ const getCloudFileIds = (elements: readonly any[]) => {
 
 const waitForCloudFiles = async (
   fileIds: readonly FileId[],
-  files: BinaryFiles,
+  getFiles: () => BinaryFiles,
 ) => {
   const deadline = Date.now() + 30_000;
   while (true) {
@@ -234,6 +235,7 @@ const waitForCloudFiles = async (
       await new Promise((resolve) => setTimeout(resolve, 200));
       continue;
     }
+    const files = getFiles();
     const erroredFile = fileIds.find(
       (fileId) => statuses.get(fileId) === "error" && !files[fileId],
     );
@@ -787,8 +789,9 @@ const ExcalidrawWrapper = (props: {
   }, [excalidrawAPI]);
 
   const saveCurrentCloudScene = useCallback(async () => {
+    const api = excalidrawAPI;
     const snapshot = createCurrentCloudSnapshot();
-    if (!snapshot) {
+    if (!snapshot || !api) {
       return false;
     }
     try {
@@ -806,7 +809,14 @@ const ExcalidrawWrapper = (props: {
       const fileIds = getCloudFileIds(persistedElements);
       await waitForCloudFiles(
         fileIds,
-        persistedSnapshot.files,
+        () => api.getFiles(),
+      );
+      // Image hydration may finish while waiting. Rebuild the save payload
+      // from the editor's current file map instead of retaining the earlier
+      // snapshot's incomplete copy.
+      persistedSnapshot.files = getCloudSnapshotFiles(
+        fileIds,
+        api.getFiles(),
       );
       const signature = getCloudPersistenceSignature(
         persistedSnapshot.name,

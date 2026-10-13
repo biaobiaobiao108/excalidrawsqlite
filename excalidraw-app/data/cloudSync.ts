@@ -24,6 +24,8 @@ export interface CloudSaveSnapshot {
   baseRevision?: number;
   /** Identifies the persisted edit across editor instances and browser tabs. */
   persistenceId?: string;
+  /** Stable per-tab slot; separate tabs keep independent recovery snapshots. */
+  persistenceKey?: string;
 }
 
 export const getCloudSceneRecoveryData = (
@@ -77,6 +79,20 @@ export const getCloudPersistenceSignature = (
       return [fileId, file?.mimeType, file?.created, file?.dataURL?.length];
     }),
   });
+
+export const getCloudSnapshotFiles = (
+  fileIds: readonly FileId[],
+  files: BinaryFiles,
+): BinaryFiles => {
+  const snapshotFiles: BinaryFiles = {};
+  for (const fileId of fileIds) {
+    const file = files[fileId];
+    if (file) {
+      snapshotFiles[fileId] = file;
+    }
+  }
+  return snapshotFiles;
+};
 
 export const getCloudSceneLoadSignatures = (
   remoteScene: CloudScenePersistenceSignatureInput,
@@ -137,6 +153,7 @@ type CloudSavePersistenceOperation = {
   generation: number;
   snapshot: CloudSaveSnapshot | null;
   expectedSnapshot?: CloudSaveSnapshot;
+  persistenceKey?: string;
 };
 
 type CloudSavePersistenceWriter = {
@@ -146,10 +163,35 @@ type CloudSavePersistenceWriter = {
 };
 
 export type CloudSavePersistence = {
-  load: () => Promise<CloudSaveSnapshot[]>;
+  load: (persistenceKeyPrefix?: string) => Promise<CloudSaveSnapshot[]>;
   save: (snapshot: CloudSaveSnapshot) => Promise<void>;
-  remove: (sceneId: string, expectedSnapshot?: CloudSaveSnapshot) => Promise<void>;
+  remove: (
+    sceneId: string,
+    expectedSnapshot?: CloudSaveSnapshot,
+    persistenceKey?: string,
+  ) => Promise<void>;
 };
+
+const getCloudSavePersistenceKey = (snapshot: CloudSaveSnapshot) =>
+  snapshot.persistenceKey || snapshot.sceneId;
+
+const getCloudSaveTabId = () => {
+  const storageKey = "excalidraw_cloud_save_tab_id";
+  try {
+    const stored = window.sessionStorage.getItem(storageKey);
+    if (stored) {
+      return stored;
+    }
+    const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`;
+    window.sessionStorage.setItem(storageKey, id);
+    return id;
+  } catch {
+    return globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`;
+  }
+};
+
+const CLOUD_SAVE_TAB_ID =
+  typeof window === "undefined" ? "server" : getCloudSaveTabId();
 
 // Compare legacy snapshots without allocating serialized elements or data URLs.
 const snapshotValuesMatch = (left: unknown, right: unknown): boolean => {
@@ -189,43 +231,94 @@ export const matchesPersistedCloudSnapshot = (
 const cloudSaveStore = createStore("cloud-save-db", "pending-scenes");
 const memoryPendingSnapshots = new Map<string, CloudSaveSnapshot>();
 const memoryCloudSavePersistence: CloudSavePersistence = {
-  load: async () => [...memoryPendingSnapshots.values()],
+  load: async (persistenceKeyPrefix) => [...memoryPendingSnapshots.values()]
+    .filter((snapshot) =>
+      !persistenceKeyPrefix ||
+      snapshot.persistenceKey?.startsWith(`${persistenceKeyPrefix}:`) ||
+      !snapshot.persistenceKey,
+    ),
   save: async (snapshot) => {
-    memoryPendingSnapshots.set(snapshot.sceneId, snapshot);
+    memoryPendingSnapshots.set(getCloudSavePersistenceKey(snapshot), snapshot);
   },
-  remove: async (sceneId, expectedSnapshot) => {
+  remove: async (sceneId, expectedSnapshot, persistenceKey) => {
+    const key = expectedSnapshot
+      ? getCloudSavePersistenceKey(expectedSnapshot)
+      : persistenceKey || sceneId;
     if (
       !expectedSnapshot || matchesPersistedCloudSnapshot(
-        memoryPendingSnapshots.get(sceneId), expectedSnapshot,
+        memoryPendingSnapshots.get(key), expectedSnapshot,
       )
     ) {
-      memoryPendingSnapshots.delete(sceneId);
+      memoryPendingSnapshots.delete(key);
     }
   },
 };
 
 const indexedDbCloudSavePersistence: CloudSavePersistence = {
-  load: async () => {
+  load: async (persistenceKeyPrefix) => {
     const saved = await entries(cloudSaveStore);
-    return saved
-      .map(([, snapshot]) => snapshot)
-      .filter(isCloudSaveSnapshot);
+    const snapshots: CloudSaveSnapshot[] = [];
+    for (const [key, value] of saved) {
+      if (!isCloudSaveSnapshot(value)) {
+        continue;
+      }
+      if (value.persistenceKey) {
+        if (
+          !persistenceKeyPrefix ||
+          value.persistenceKey.startsWith(`${persistenceKeyPrefix}:`)
+        ) {
+          snapshots.push(value);
+        }
+        continue;
+      }
+
+      // Legacy snapshots used sceneId as their only key. Claim each one
+      // atomically so only one tab adopts it during an upgrade.
+      const sceneId = value.sceneId;
+      const persistenceKey = `${persistenceKeyPrefix || CLOUD_SAVE_TAB_ID}:${sceneId}`;
+      let claimed: CloudSaveSnapshot | null = null;
+      await cloudSaveStore("readwrite", (store) => {
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const current = request.result;
+          if (isCloudSaveSnapshot(current) && !current.persistenceKey) {
+            claimed = {
+              ...current,
+              persistenceKey,
+              persistenceId:
+                current.persistenceId ||
+                globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`,
+            };
+            store.put(claimed, persistenceKey);
+            store.delete(key);
+          }
+        };
+        return promisifyRequest(store.transaction);
+      });
+      if (claimed) {
+        snapshots.push(claimed);
+      }
+    }
+    return snapshots;
   },
   save: async (snapshot) => {
-    await set(snapshot.sceneId, snapshot, cloudSaveStore);
+    await set(getCloudSavePersistenceKey(snapshot), snapshot, cloudSaveStore);
   },
-  remove: async (sceneId, expectedSnapshot) => {
+  remove: async (sceneId, expectedSnapshot, persistenceKey) => {
+    const key = expectedSnapshot
+      ? getCloudSavePersistenceKey(expectedSnapshot)
+      : persistenceKey || sceneId;
     if (!expectedSnapshot) {
-      await del(sceneId, cloudSaveStore);
+      await del(key, cloudSaveStore);
       return;
     }
     // Compare and delete inside one transaction. Another tab may have written
     // a newer edit while this editor's network request was in flight.
     await cloudSaveStore("readwrite", (store) => {
-      const request = store.get(sceneId);
+      const request = store.get(key);
       request.onsuccess = () => {
         if (matchesPersistedCloudSnapshot(request.result, expectedSnapshot)) {
-          store.delete(sceneId);
+          store.delete(key);
         }
       };
       return promisifyRequest(store.transaction);
@@ -555,6 +648,7 @@ export class CloudSaveQueue {
   private activeFlushPromise: Promise<void> | null = null;
   private readonly dependencies: CloudSaveDependencies;
   private readonly readyPromise: Promise<void>;
+  private readonly persistenceKeyPrefix = CLOUD_SAVE_TAB_ID;
 
   constructor(
     private readonly callbacks: QueueCallbacks,
@@ -651,6 +745,9 @@ export class CloudSaveQueue {
       ...snapshot,
       persistenceId:
         globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`,
+      persistenceKey:
+        snapshot.persistenceKey ||
+        `${this.persistenceKeyPrefix}:${snapshot.sceneId}`,
       baseRevision:
         snapshot.baseRevision ?? this.revisions.get(snapshot.sceneId),
     });
@@ -946,7 +1043,9 @@ export class CloudSaveQueue {
 
   private async restorePersistedSnapshots() {
     try {
-      const snapshots = await this.dependencies.persistence.load();
+      const snapshots = await this.dependencies.persistence.load(
+        this.persistenceKeyPrefix,
+      );
       for (const snapshot of snapshots) {
         if (!isCloudSaveSnapshot(snapshot) || this.pending.has(snapshot.sceneId)) {
           continue;
@@ -1040,6 +1139,9 @@ export class CloudSaveQueue {
       generation,
       snapshot: null,
       expectedSnapshot,
+      persistenceKey:
+        expectedSnapshot?.persistenceKey ||
+        `${this.persistenceKeyPrefix}:${sceneId}`,
     });
   }
 
@@ -1093,6 +1195,7 @@ export class CloudSaveQueue {
           await this.dependencies.persistence.remove(
             sceneId,
             operation.expectedSnapshot,
+            operation.persistenceKey,
           );
         }
         this.persistenceErrors.delete(sceneId);
