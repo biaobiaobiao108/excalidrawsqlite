@@ -993,7 +993,10 @@ export const removeDrawingElements = (
   current: readonly ExcalidrawElement[],
   requestedIds: readonly string[],
 ) => {
-  const idsToRemove = new Set(requestedIds);
+  const requested = new Set(requestedIds);
+  const currentIds = new Set(current.map((element) => element.id));
+  const notFoundIds = [...requested].filter((id) => !currentIds.has(id));
+  const idsToRemove = new Set(requested);
   for (const element of current) {
     if (!idsToRemove.has(element.id)) {
       continue;
@@ -1051,5 +1054,10 @@ export const removeDrawingElements = (
   return {
     elements: cleaned,
     removedCount: current.length - remaining.length,
+    requestedRemovedCount: current.filter((element) => requested.has(element.id)).length,
+    cascadeRemovedCount: current.filter((element) =>
+      idsToRemove.has(element.id) && !requested.has(element.id),
+    ).length,
+    notFoundIds,
   };
 };

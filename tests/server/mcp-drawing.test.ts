@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { CSS_NAMED_COLORS } from "../../server/color";
 import { CaptureUpdateAction, StoreSnapshot } from "@excalidraw/element/store";
 import type { OrderedExcalidrawElement, SceneElementsMap } from "@excalidraw/element/types";
 import {
@@ -401,6 +402,36 @@ describe("MCP drawing contracts", () => {
         }),
       ]),
     ).toThrow("绑定目标");
+  });
+  it("accepts all standard CSS named colors while rejecting context-dependent colors", () => {
+    expect(CSS_NAMED_COLORS.length).toBe(148);
+    expect(new Set(CSS_NAMED_COLORS).size).toBe(148);
+    for (const name of CSS_NAMED_COLORS) {
+      expect(colorSchema.parse(name)).toBe(name);
+      expect(colorSchema.parse(` ${name.toUpperCase()} `)).toBe(name);
+    }
+    expect(drawingElementSchema.parse({ ...shape("purple"), strokeColor: "rebeccapurple" }).strokeColor).toBe("rebeccapurple");
+    for (const name of ["currentColor", "CanvasText", "inherit", "rebecca-purple"])
+      expect(colorSchema.safeParse(name).success).toBe(false);
+  });
+  it("reports missing deletion IDs and distinguishes explicitly removed elements from cascaded labels", () => {
+    const current = createDrawingBatch([
+      drawingElementSchema.parse({ ...shape("a"), text: "标签", labelId: "caption" }),
+      shape("b", 250),
+    ]).elements;
+    const before = structuredClone(current);
+    const removed = removeDrawingElements(current, ["a", "a", "ghost", "ghost"]);
+    expect(removed.elements.map((element) => element.id)).toEqual(["b"]);
+    expect(removed).toMatchObject({ removedCount: 2, requestedRemovedCount: 1,
+      cascadeRemovedCount: 1, notFoundIds: ["ghost"] });
+    expect(removeDrawingElements(current, ["a", "caption"])).toMatchObject({
+      removedCount: 2, requestedRemovedCount: 2, cascadeRemovedCount: 0, notFoundIds: [],
+    });
+    const missingOnly = removeDrawingElements(current, ["ghost"]);
+    expect(missingOnly).toMatchObject({ removedCount: 0, requestedRemovedCount: 0,
+      cascadeRemovedCount: 0, notFoundIds: ["ghost"] });
+    expect(missingOnly.elements[0]).toBe(current[0]);
+    expect(current).toEqual(before);
   });
   it("changes style in place and uses native binding updates when moving/resizing containers", () => {
     const current = flow();
