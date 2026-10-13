@@ -169,10 +169,14 @@ export const drawingElementSchema = z.discriminatedUnion("type", [
       x: coordinate,
       y: coordinate,
       text: z.string().min(1).max(10_000),
+      width: dimension.optional().describe("独立文字的固定换行宽度；省略时按内容自动计算宽度。高度按换行后的内容计算，不传 height"),
+      autoResize: z.boolean().optional().describe("默认未传 width 时为 true；传 width 时为 false。true 恢复按内容自动计算宽度，不能同时传 width"),
       ...typography,
       ...style,
     })
-    .strict(),
+    .strict()
+    .refine((value) => value.autoResize !== false || value.width !== undefined, "autoResize=false 时必须提供 width")
+    .refine((value) => value.autoResize !== true || value.width === undefined, "autoResize=true 时不能同时提供 width"),
   z
     .object({ type: z.literal("line"), ...linearFields })
     .strict()
@@ -196,6 +200,7 @@ export const elementUpdateSchema = z
     y: coordinate.optional(),
     width: dimension.optional(),
     height: dimension.optional(),
+    autoResize: z.boolean().optional().describe("仅独立文字使用；true 恢复自动宽度，false 保持固定宽度。传 width 自动启用固定宽度；文字高度始终由内容计算"),
     text: z.string().max(10_000).optional().describe("形状及其绑定标签最多 2000 字符；独立文字最多 10000 字符，空字符串清除形状标签"),
     labelId: idSchema.optional().describe("仅形状使用；新建标签可指定稳定 ID，已有标签只能传相同 ID，不能重命名"),
     labelStyle: labelStyleSchema.optional().describe("仅形状的绑定文字使用；按字段合并独立样式，不修改形状样式；无标签时须同时提供非空 text"),
@@ -212,6 +217,7 @@ export const elementUpdateSchema = z
     endArrowhead: arrowhead.optional(),
   })
   .strict()
+  .refine((value) => value.autoResize !== true || value.width === undefined, "autoResize=true 时不能同时提供 width")
   .refine((v) => Object.keys(v).length > 1, "请提供至少一个修改字段");
 type Spec = z.infer<typeof drawingElementSchema>;
 type Update = z.infer<typeof elementUpdateSchema>;
@@ -295,6 +301,23 @@ const layoutLabel = (
   );
   return { ...measured, ...position, angle: shape.angle };
 };
+const layoutFreeText = (
+  element: ExcalidrawTextElement,
+  width?: number,
+  autoResize = width === undefined ? element.autoResize : false,
+) => {
+  const fixedWidth = width ?? element.width;
+  const text = autoResize
+    ? element.originalText
+    : wrapText(element.originalText, getFontString(element), fixedWidth);
+  const measured = newTextElement({ ...element, x: 0, y: 0, text, autoResize });
+  return {
+    ...measured,
+    x: element.x,
+    y: element.y,
+    width: autoResize ? measured.width : fixedWidth,
+  };
+};
 export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
   if ((spec.type === "rectangle" || spec.type === "ellipse" || spec.type === "diamond") &&
     spec.labelStyle?.rotation !== undefined && Math.abs(spec.labelStyle.rotation - (spec.rotation ?? 0)) > 1e-10)
@@ -325,7 +348,7 @@ export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
   if (spec.type === "text")
     return [
       {
-        ...newTextElement({
+        ...layoutFreeText(newTextElement({
           ...base,
           x: spec.x,
           y: spec.y,
@@ -333,7 +356,7 @@ export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
           fontSize: spec.fontSize,
           fontFamily: fontId(spec.fontFamily),
           textAlign: spec.textAlign,
-        }),
+        }), spec.width, spec.autoResize ?? (spec.width === undefined)),
         // The writable API consistently uses top-left coordinates, including
         // centered/right-aligned text, just as updateDrawingElements does.
         x: spec.x,
@@ -492,6 +515,14 @@ export const updateDrawingElements = (
     const isShapeLabel = ["rectangle", "ellipse", "diamond"].includes(element.type) ||
       !!labelContainer && ["rectangle", "ellipse", "diamond"].includes(labelContainer.type);
     const shape = ["rectangle", "ellipse", "diamond"].includes(element.type);
+    if (patch.autoResize !== undefined && (element.type !== "text" || element.containerId))
+      throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "autoResize 仅独立文字使用；绑定标签由所属形状控制尺寸");
+    if (element.type === "text") {
+      if (patch.height !== undefined)
+        throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "文字 height 由内容自动计算；请通过 width 控制换行或 fontSize 调整字号");
+      if (element.containerId && patch.width !== undefined)
+        throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "绑定文字宽度由所属形状控制，请修改形状 width");
+    }
     const existingLabelId = element.boundElements?.find((b) => b.type === "text")?.id;
     const existingLabel = existingLabelId ? map.get(existingLabelId) : undefined;
     if (patch.labelId !== undefined || patch.labelStyle !== undefined) {
@@ -546,11 +577,13 @@ export const updateDrawingElements = (
         "此图元不支持文字字段",
       );
     const changes: Record<string, unknown> = { ...props(patch) };
+    if (element.type === "text" && patch.width !== undefined) changes.autoResize = false;
     for (const key of [
       "x",
       "y",
       "width",
       "height",
+      "autoResize",
       "startArrowhead",
       "endArrowhead",
     ] as const)
@@ -647,7 +680,11 @@ export const updateDrawingElements = (
       });
       const laidOut = isShapeLabel && labelContainer
         ? layoutLabel(labelContainer, measured)
-        : { ...measured, x: patch.x ?? element.x, y: patch.y ?? element.y };
+        : {
+            ...layoutFreeText(measured, patch.width ?? (!element.autoResize ? element.width : undefined),
+              patch.autoResize ?? (patch.width === undefined ? element.autoResize : false)),
+            x: patch.x ?? element.x, y: patch.y ?? element.y,
+          };
       // Constructors preserve the source version; apply the new text/layout as
       // an element update so remote Store snapshots observe direct text edits.
       const { version: _version, versionNonce: _nonce, updated: _updated, ...textChanges } = laidOut;
@@ -805,7 +842,7 @@ export const inputDrawingElements = (current: readonly ExcalidrawElement[]) => {
     if (element.type === "text") {
       if (element.verticalAlign !== (element.containerId ? "middle" : "top"))
         fields.push("verticalAlign");
-      if (!element.autoResize) fields.push("autoResize", "width");
+      if (element.containerId && !element.autoResize) fields.push("autoResize", "width");
     }
     if (fields.length) warnings.push({ elementId: element.id, fields });
     const base = { id: element.id, type: element.type, ...writableStyle(element) };
@@ -832,6 +869,7 @@ export const inputDrawingElements = (current: readonly ExcalidrawElement[]) => {
       candidate = {
         ...base, x: element.x, y: element.y,
         text: element.originalText, ...textStyle(element),
+        ...(!element.autoResize ? { width: element.width, autoResize: false } : {}),
       };
     } else if (element.type === "line" || element.type === "arrow") {
       candidate = {

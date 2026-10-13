@@ -29,7 +29,9 @@ describe("compact MCP schemas", () => {
       expect(drawingElementSchema.safeParse({ ...box, type, strokeColour: "red" }).success).toBe(false);
       expect(drawingElementSchema.safeParse({ ...box, type, startBinding: { elementId: "a" } }).success).toBe(false);
     }
-    expect(drawingElementSchema.safeParse({ type: "text", x: 0, y: 0, text: "a", width: 100 }).success).toBe(false);
+    expect(drawingElementSchema.safeParse({ type: "text", x: 0, y: 0, text: "a", width: 100 }).success).toBe(true);
+    expect(drawingElementSchema.safeParse({ type: "text", x: 0, y: 0, text: "a", height: 100 }).success).toBe(false);
+    expect(drawingElementSchema.safeParse({ type: "text", x: 0, y: 0, text: "a", width: 100, autoResize: true }).success).toBe(false);
     expect(drawingElementSchema.safeParse({ type: "line", points: [[0, 0], [10, 10]], endBinding: { elementId: "a" } }).success).toBe(false);
   });
 

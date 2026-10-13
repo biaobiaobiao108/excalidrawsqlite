@@ -564,6 +564,24 @@ describe("Excalidraw MCP endpoint", () => {
       expect(incompleteLabel.unsupportedElementIds).toContain("rr");
       expect(incompleteLabel.truncated).toBe(false);
       expect(incompleteLabel.warnings.some((warning) => warning.message.includes("2000"))).toBe(true);
+      const fixedBoard = toolResult<{ boardId: string }>(await client.callTool({
+        name: "create_board", arguments: { name: "固定宽度文字", elements: [
+          { type: "text", id: "paragraph", x: 20, y: 30, width: 100, fontSize: 20, text: "中文段落自动换行测试内容" },
+        ] },
+      }));
+      const fixedRead = toolResult<{ elements: Array<Record<string, unknown>> }>(await client.callTool({
+        name: "get_board", arguments: { boardId: fixedBoard.boardId, view: "full" },
+      }));
+      expect(fixedRead.elements[0]).toMatchObject({ width: 100, autoResize: false });
+      expect(String(fixedRead.elements[0].text)).toContain("\n");
+      toolResult(await client.callTool({ name: "update_board", arguments: {
+        boardId: fixedBoard.boardId, updates: [{ id: "paragraph", width: 200 }],
+      } }));
+      const fixedInput = toolResult<{ elements: Array<Record<string, unknown>>; warnings: unknown[] }>(await client.callTool({
+        name: "get_board", arguments: { boardId: fixedBoard.boardId, view: "input" },
+      }));
+      expect(fixedInput.elements[0]).toMatchObject({ width: 200, autoResize: false, text: "中文段落自动换行测试内容" });
+      expect(fixedInput.warnings).toEqual([]);
     } finally {
       await client.close();
       await mcpHandler.close();

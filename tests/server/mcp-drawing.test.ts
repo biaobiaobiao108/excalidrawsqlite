@@ -38,6 +38,53 @@ const flow = () =>
     }),
   ]).elements;
 describe("MCP drawing contracts", () => {
+  it("creates fixed-width text and preserves wrapping through updates and input copies", () => {
+    const text = "中文自动换行测试以及更多内容";
+    const current = createDrawingBatch([drawingElementSchema.parse({
+      type: "text", id: "fixed", x: 20, y: 30, text, width: 80,
+      fontSize: 20, textAlign: "right",
+    })]).elements;
+    const element = current[0];
+    if (element.type !== "text") throw new Error("expected text");
+    expect(element).toMatchObject({ x: 20, y: 30, width: 80, autoResize: false, originalText: text });
+    expect(element.text).toContain("\n");
+    expect(element.height).toBeGreaterThan(25);
+    const input = inputDrawingElements(current);
+    expect(input.warnings).toEqual([]);
+    expect(input.elements[0]).toMatchObject({ width: 80, autoResize: false, text });
+    expect(inputDrawingElements(createDrawingBatch(input.elements).elements)).toEqual(input);
+
+    const changed = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "fixed", text: `${text}${text}`, fontSize: 24 })]);
+    const updated = changed.elements[0];
+    if (updated.type !== "text") throw new Error("expected text");
+    expect(updated.width).toBe(80);
+    expect(updated.height).toBeGreaterThan(element.height);
+    expect(updated.version).toBeGreaterThan(element.version);
+    expect(updateDrawingElements(changed.elements, [elementUpdateSchema.parse({ id: "fixed", text: `${text}${text}`, fontSize: 24 })]).updatedCount).toBe(0);
+    const wider = updateDrawingElements(changed.elements, [elementUpdateSchema.parse({ id: "fixed", width: 160 })]).elements[0];
+    expect(wider.width).toBe(160);
+    expect(wider.height).toBeLessThan(updated.height);
+    const automatic = updateDrawingElements(changed.elements, [elementUpdateSchema.parse({ id: "fixed", autoResize: true })]).elements[0];
+    if (automatic.type !== "text") throw new Error("expected text");
+    expect(automatic.autoResize).toBe(true);
+    expect(automatic.text).toBe(automatic.originalText);
+    expect(automatic.width).toBeGreaterThan(80);
+    expect(current[0]).toEqual(element);
+  });
+
+  it("enables fixed width even at the current natural width and rejects unsupported text sizing", () => {
+    const current = createDrawingBatch([drawingElementSchema.parse({ type: "text", id: "free", x: 0, y: 0, text: "text" })]).elements;
+    const fixed = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "free", width: current[0].width })]);
+    expect(fixed.updatedCount).toBe(1);
+    expect(fixed.elements[0]).toMatchObject({ autoResize: false, width: current[0].width });
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "free", height: 100 })])).toThrow("height 由内容自动计算");
+    const bound = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"), text: "label", labelId: "label" })]).elements;
+    expect(() => updateDrawingElements(bound, [elementUpdateSchema.parse({ id: "label", width: 100 })])).toThrow("所属形状");
+    expect(() => updateDrawingElements(bound, [elementUpdateSchema.parse({ id: "box", autoResize: false })])).toThrow("仅独立文字");
+    for (const width of [0, -1, Infinity, NaN, 1_000_001])
+      expect(drawingElementSchema.safeParse({ type: "text", x: 0, y: 0, text: "a", width }).success).toBe(false);
+  });
+
   it("lays out direct bound-label updates like updates through the container", () => {
     for (const type of ["rectangle", "ellipse", "diamond"] as const) {
       const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"),
