@@ -4,6 +4,7 @@ import * as z from "zod/v4";
 import {
   colorSchema, drawingElementSchema, createDrawingBatch, removeDrawingElements,
   compactElement, elementUpdateSchema, updateDrawingElements, inputDrawingElements,
+  measureDrawingText,
 } from "./mcp-drawing";
 import { compactDrawingElements } from "./mcp-read";
 import { copyDrawingSelection } from "./mcp-copy";
@@ -12,6 +13,9 @@ import { registerManagementTools, resolveFolder } from "./mcp-management";
 import { measureMcpApi, measureMcpPhase, traceMcpTool } from "./mcp-trace";
 import { compactMcpSchema } from "./mcp-schema";
 import { buildDiagram, diagramSchema } from "./mcp-diagram";
+import { measureTextSchema, layoutSchema, buildDrawingLayout } from "./mcp-layout";
+import { autoBindArrowEndpoints } from "./mcp-autobind";
+import { registerMcpCreateSession, unregisterMcpCreateSession, lookupMcpCreateReplay } from "./create-idempotency";
 import { inspectLayout, inspectLayoutSchema } from "./mcp-inspect";
 
 import { randomBase64Url, timingSafeEqual } from "./crypto";
@@ -27,6 +31,8 @@ const getMcpServerInstructions = (runtime: ServerRuntime) => [
   "Excalidraw 白板支持搜索、读取及批量绘制。流程图/时间线优先 create_diagram 一次传 nodes/edges 自动排版；自定义绘图用 create_board 一次传入名称和全部 elements，不要先建空板再逐个绘制。",
   "每次最多 1,000 个图元描述；形状 text 自动绑定文字。可给节点指定 id，箭头仅传 startBinding/endBinding.elementId 即自动连接同批或已有节点；自连接或同中心节点须显式坐标。折线 points 使用绝对画布坐标；二点仍可用 startX/startY/endX/endY。字段严格校验，不能输入原始内部字段。",
   "独立 text 可传 width 固定宽度并自动换行，height 始终按内容计算，不传 height；省略 width 默认自动宽度。更新 width 会保持固定宽度，更新 autoResize=true 恢复自动宽度；绑定标签尺寸请修改所属形状。",
+  "卡片排版可用 create_layout 一次传 cards/title/body、columns、cardWidth、gap、padding，自动生成原生分组网格；mode 当前仅 grid。measure_text 返回同一服务端估算器的换行和尺寸，estimated=true，非浏览器字体测量。groupId 把多个图元组成编辑器可整体拖动的原生组，groupIds 支持最多8层，从内到外；MCP移动/复制按指定 IDs，整张卡片使用 cards.elementIds。copy_elements 隔离新旧组并返回 groupIdMap。",
+  "create_board/create_diagram/create_layout 可传 idempotencyKey，在24小时内相同key与参数重试返回已有画板当前摘要及 addedCount=0，不重新创建；responseMode 可改变，其他参数改变须换key。重放不回新随机图元/卡片映射，需 get_board 读取；已删除画板重放拒绝。create_board/add_elements/update_board 的 autoBind 默认 false，开启仅尝试绑定新增箭头未绑定端点，保留端点坐标和显式绑定；歧义/预算结果见 autoBinding，装饰箭头无需开启。",
   "创建后用 inspect_layout 检查文字重叠、容器文字溢出、可能的元素碰撞与箭头绑定异常；可用 checks 选择检查项。该工具只读，按 issues.elementIds 使用 update_board 修复后重新检查。issues.metrics 为重叠程度或距离；suggestedUpdate 可作为 updates 的候选平移，只分离该对图元，应用后须复查整个布局。未绑定的装饰箭头与负坐标不是错误；complete=false 表示检查受预算限制，不能视为检查通过。几何估算不能判断配色、视觉层次或实际字体像素。",
   "需要无箭头且随节点移动的连线，使用 arrow + endArrowhead:null（默认 startArrowhead 为 null）；line 为固定坐标线段，不支持绑定。create_diagram.edges 也可传 endArrowhead:null，适合思维导图/组织结构。",
   "修改优先 update_board 一次合并添加、removeElementIds、updates 原地修改及元数据；只改一个图元用 update_element，保留 ID 和绑定。dx/dy 可相对平移，无需读取坐标，同轴不与 x/y 或折线坐标混用。expectedRevision 是可选的已读修订号，服务端始终使用乐观锁；冲突后重新判断，禁止盲目重试。",
@@ -138,6 +144,19 @@ const makeSafeTool = <T>(handler: (args: T) => Promise<ReturnType<typeof result>
 
 const expectedRevisionSchema = z.number().int().positive().optional()
   .describe("可选的读取时修订号；省略时读取最新版本，仍使用乐观锁保存");
+const idempotencyKeySchema = z.string().min(1).max(128).refine((key) => !!key.trim(), "幂等 key 不能为空").optional()
+  .describe("可选创建幂等 key，有效 24 小时；相同 key/参数重试返回已有画板当前摘要，addedCount=0，不重新绘制；改参数须换 key");
+const autoBindSchema = z.boolean().default(false).describe("显式开启时，对新箭头未绑定端点尝试 24px 内最近形状绑定；保留原坐标，歧义不猜。默认关闭；超过检测预算返回 autoBinding.complete=false");
+const createIntent = (tool: string, args: Record<string, unknown>) => {
+  const { idempotencyKey: _key, responseMode: _mode, ...payload } = args;
+  return { tool, args: payload };
+};
+const bindCreated = (drawing: { elements: ExcalidrawElement[]; created: ExcalidrawElement[] }, enabled: boolean) => {
+  if (!enabled) return { ...drawing, autoBinding: undefined };
+  const createdIds = new Set(drawing.created.map((element) => element.id));
+  const { elements, ...autoBinding } = autoBindArrowEndpoints(drawing.elements, [...createdIds]);
+  return { elements, created: elements.filter((element) => createdIds.has(element.id)), autoBinding };
+};
 
 const boardMetadataSchema = {
   folderId: z.string().min(1).max(128).nullable().optional().describe("目标文件夹 ID；null 移至根目录，不可与 folderName 同传"),
@@ -208,6 +227,7 @@ export const createMcpRequestHandler = (
     // MCP calls pass through the exact same route validation and persistence
     // logic as the browser, using a private in-memory session never exposed to
     // network requests or persisted to SQLite.
+    registerMcpCreateSession(runtime, internalSessionToken);
     runtime.sessions.set(internalSessionToken, Number.MAX_SAFE_INTEGER);
   }
 
@@ -228,6 +248,9 @@ export const createMcpRequestHandler = (
           const origin = requestInfo ? getRequestOrigin(runtime, requestInfo) : "";
           return `${origin}/?id=${encodeURIComponent(id)}`;
         };
+        const replayReceipt = (board: Record<string, unknown>) => result({ ...board,
+          addedCount: 0, idempotentReplay: true, url: boardUrl(String(board.id ?? board.boardId)) });
+        const creationReplay = (key: string | undefined, intent: unknown) => lookupMcpCreateReplay(runtime, key, intent);
 
         const readBoard = async ({
           boardId, view = "compact", elementIds, query, type, offset = 0,
@@ -380,6 +403,43 @@ export const createMcpRequestHandler = (
             ...measureMcpPhase("transformMs", () => inspectLayout(current.elements, { checks })) });
         }, "inspect_layout"));
 
+        server.registerTool("measure_text", {
+          title: "估算文字换行与尺寸",
+          description: "创建前估算文字自然宽度或固定 width 下的换行、宽高；与 MCP 创建文字使用相同服务端估算器，不读取或修改画板。中文和其他字符采用估算宽度，字体实际效果请预览复查。",
+          inputSchema: compactMcpSchema(measureTextSchema),
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        }, safeTool(async (args) => result(measureMcpPhase("transformMs", () => measureDrawingText(args))), "measure_text"));
+
+        server.registerTool("create_layout", {
+          title: "自动创建卡片网格画板",
+          description: "一次传入最多100张 cards（title/body），自动换行、测高和分列，无需逐个计算坐标。每张背景、标题、正文共享原生分组，编辑器可整体拖动；cards.elementIds 可用于 MCP 批量移动/复制，MCP 按指定 ID 操作。mode 当前支持 grid。返回卡片及布局边界；文字尺寸是服务端估算，创建后可用 inspect_layout 复查。",
+          inputSchema: compactMcpSchema(layoutSchema.safeExtend({
+            name: z.string().trim().min(1).max(120),
+            ...boardMetadataSchema,
+            responseMode: responseModeSchema,
+            idempotencyKey: idempotencyKeySchema,
+          })),
+          annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        }, safeTool(async (args) => {
+          const intent = createIntent("create_layout", args);
+          const replay = creationReplay(args.idempotencyKey, intent);
+          if (replay) return replayReceipt(replay);
+          const { layout, drawing } = measureMcpPhase("transformMs", () => {
+            const layout = buildDrawingLayout(args);
+            return { layout, drawing: createDrawingBatch(layout.elements) };
+          });
+          const folder = await resolveFolder(args, api);
+          const board = await api<{ id: string; name: string; revision: number; idempotentReplay?: boolean }>("/api/scenes", "POST", {
+            name: args.name, elements: drawing.elements, appState: { viewBackgroundColor: "#ffffff" },
+            ...(folder === undefined ? {} : { folder_id: folder }), tags: args.tags, favorite: args.favorite,
+            ...(args.idempotencyKey ? { idempotencyKey: args.idempotencyKey, idempotencyPayload: intent } : {}),
+          });
+          if (board.idempotentReplay) return replayReceipt(board);
+          return result({ boardId: board.id, name: board.name, revision: board.revision,
+            elementCount: drawing.elements.length, ...drawingReceipt(drawing.created, args.responseMode),
+            cards: layout.cards, bounds: layout.bounds, estimated: layout.estimated, note: layout.note, url: boardUrl(board.id) });
+        }, "create_layout"));
+
         server.registerTool(
           "create_board",
           {
@@ -390,6 +450,8 @@ export const createMcpRequestHandler = (
               elements: z.array(drawingElementSchema).max(1_000).optional(),
               backgroundColor: colorSchema.optional().describe("画布背景颜色，默认白色"),
               responseMode: responseModeSchema,
+              idempotencyKey: idempotencyKeySchema,
+              autoBind: autoBindSchema,
               ...boardMetadataSchema,
             }).strict()),
             annotations: {
@@ -398,35 +460,46 @@ export const createMcpRequestHandler = (
               openWorldHint: false,
             },
           },
-          safeTool(async ({ name, elements = [], backgroundColor, folderId, folderName, tags, favorite, responseMode }) => {
-            const { elements: drawing, created } = measureMcpPhase("transformMs", () => createDrawingBatch(elements));
+          safeTool(async (args) => {
+            const { name, elements = [], backgroundColor, folderId, folderName, tags, favorite, responseMode, idempotencyKey, autoBind } = args;
+            const intent = createIntent("create_board", args);
+            const replay = creationReplay(idempotencyKey, intent);
+            if (replay) return replayReceipt(replay);
+            const { elements: drawing, created, autoBinding } = measureMcpPhase("transformMs", () => bindCreated(createDrawingBatch(elements), autoBind));
             const resolvedFolder = await resolveFolder({ folderId, folderName }, api);
-            const board = await api<{ id: string; name: string; revision: number }>(
+            const board = await api<{ id: string; name: string; revision: number; idempotentReplay?: boolean }>(
               "/api/scenes",
               "POST",
               { name, elements: drawing, appState: { viewBackgroundColor: backgroundColor || "#ffffff" },
-                ...(resolvedFolder === undefined ? {} : { folder_id: resolvedFolder }), tags, favorite },
+                ...(resolvedFolder === undefined ? {} : { folder_id: resolvedFolder }), tags, favorite,
+                ...(idempotencyKey ? { idempotencyKey, idempotencyPayload: intent } : {}) },
             );
+            if (board.idempotentReplay) return replayReceipt(board);
             return result({ boardId: board.id, name: board.name, revision: board.revision,
-              elementCount: drawing.length, ...drawingReceipt(created, responseMode), url: boardUrl(board.id) });
+              elementCount: drawing.length, ...drawingReceipt(created, responseMode), ...(autoBinding ? { autoBinding } : {}), url: boardUrl(board.id) });
           }, "create_board"),
         );
 
         server.registerTool("create_diagram", {
           title: "自动绘制流程图或时间线",
           description: "一次传节点标题/正文与连接，自动排版并创建画板，无需计算坐标。最多100节点/200连接，默认纵向流程图与forest主题；省略edges按顺序连接，[]不连线，edges.endArrowhead=null为无箭头连接。节点id可直接用于后续更新。复杂自定义图元用create_board。",
-          inputSchema: compactMcpSchema(diagramSchema.extend({ ...boardMetadataSchema, responseMode: responseModeSchema })),
+          inputSchema: compactMcpSchema(diagramSchema.extend({ ...boardMetadataSchema, responseMode: responseModeSchema, idempotencyKey: idempotencyKeySchema })),
           annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false },
         }, safeTool(async (args) => {
+          const intent = createIntent("create_diagram", args);
+          const replay = creationReplay(args.idempotencyKey, intent);
+          if (replay) return replayReceipt(replay);
           const { diagram, drawing } = measureMcpPhase("transformMs", () => {
             const diagram = buildDiagram(args);
             return { diagram, drawing: createDrawingBatch(diagram.elements) };
           });
           const folder = await resolveFolder(args, api);
-          const board = await api<{ id: string; name: string; revision: number }>("/api/scenes", "POST", {
+          const board = await api<{ id: string; name: string; revision: number; idempotentReplay?: boolean }>("/api/scenes", "POST", {
             name: args.name, elements: drawing.elements, appState: { viewBackgroundColor: "#ffffff" },
             ...(folder === undefined ? {} : { folder_id: folder }), tags: args.tags, favorite: args.favorite,
+            ...(args.idempotencyKey ? { idempotencyKey: args.idempotencyKey, idempotencyPayload: intent } : {}),
           });
+          if (board.idempotentReplay) return replayReceipt(board);
           return result({ boardId: board.id, name: board.name, revision: board.revision,
             nodeCount: diagram.nodeCount, edgeCount: diagram.edgeCount, layout: diagram.layout,
             direction: diagram.direction, theme: diagram.theme, elementCount: drawing.elements.length,
@@ -444,6 +517,7 @@ export const createMcpRequestHandler = (
               elements: z.array(drawingElementSchema).min(1).max(1_000),
               responseMode: responseModeSchema,
               expectedRevision: expectedRevisionSchema,
+              autoBind: autoBindSchema,
             }).strict()),
             annotations: {
               destructiveHint: false,
@@ -451,13 +525,13 @@ export const createMcpRequestHandler = (
               openWorldHint: false,
             },
           },
-          safeTool(async ({ boardId, elements, expectedRevision, responseMode }) => {
+          safeTool(async ({ boardId, elements, expectedRevision, responseMode, autoBind }) => {
             const current = await api<SceneData>(
               `/api/scenes/${encodeURIComponent(boardId)}`,
               "GET",
             );
             assertRevision(current, expectedRevision);
-            const { created, elements: merged } = measureMcpPhase("transformMs", () => createDrawingBatch(elements, current.elements));
+            const { created, elements: merged, autoBinding } = measureMcpPhase("transformMs", () => bindCreated(createDrawingBatch(elements, current.elements), autoBind));
             const saved = await api<{ revision: number; updated_at: number }>(
               `/api/scenes/${encodeURIComponent(boardId)}`,
               "PUT",
@@ -472,6 +546,7 @@ export const createMcpRequestHandler = (
               elementCount: merged.length,
               ...drawingReceipt(created, responseMode),
               revision: saved.revision,
+              ...(autoBinding ? { autoBinding } : {}),
               url: boardUrl(boardId),
             });
           }, "add_elements"),
@@ -510,7 +585,7 @@ export const createMcpRequestHandler = (
             baseRevision: target.revision, elements: merged, appState: target.appState,
           });
           return result({ boardId: targetBoardId, sourceBoardId: boardId, revision: saved.revision,
-            elementCount: merged.length, ...drawingReceipt(created, responseMode), idMap: copied.idMap,
+            elementCount: merged.length, ...drawingReceipt(created, responseMode), idMap: copied.idMap, groupIdMap: copied.groupIdMap,
             ...overlaps, warnings: [...copied.warnings, ...overlaps.warnings], url: boardUrl(targetBoardId) });
         }, "copy_elements"));
 
@@ -570,22 +645,25 @@ export const createMcpRequestHandler = (
                 .describe("修改对象数组 [{id,...}]，单个修改可用 update_element.update；新增用 elements，可在同次添加后更新该新 ID"),
               responseMode: responseModeSchema,
               name: z.string().trim().min(1).max(120).optional(),
+              autoBind: autoBindSchema,
               backgroundColor: colorSchema.optional(),
               ...boardMetadataSchema,
             }).strict()),
             annotations: { destructiveHint: true, idempotentHint: false, openWorldHint: false },
           },
-          safeTool(async ({ boardId, expectedRevision, elements, removeElementIds, updates, name, backgroundColor, folderId, folderName, tags, favorite, responseMode }) => {
+          safeTool(async ({ boardId, expectedRevision, elements, removeElementIds, updates, name, backgroundColor, folderId, folderName, tags, favorite, responseMode, autoBind }) => {
             if (!elements && !removeElementIds && !updates && name === undefined && backgroundColor === undefined &&
                 folderId === undefined && folderName === undefined && tags === undefined && favorite === undefined) {
               throw new HttpError(400, "EMPTY_UPDATE", "请提供图元修改或画板元数据中至少一项。");
             }
             const current = await api<SceneData>(`/api/scenes/${encodeURIComponent(boardId)}`, "GET");
             assertRevision(current, expectedRevision);
-            const { remaining, created, updated } = measureMcpPhase("transformMs", () => {
+            const { remaining, created, updated, autoBinding } = measureMcpPhase("transformMs", () => {
               const remaining = removeDrawingElements(current.elements, removeElementIds || []);
               const { created, elements: merged } = createDrawingBatch(elements || [], remaining.elements);
-              return { remaining, created, updated: updateDrawingElements(merged, updates || []) };
+              const updated = updateDrawingElements(merged, updates || []);
+              const attached = bindCreated({ created, elements: updated.elements }, autoBind);
+              return { remaining, created: attached.created, updated: { ...updated, elements: attached.elements }, autoBinding: attached.autoBinding };
             });
             if (!remaining.removedCount && !created.length && !updated.updatedCount && name === undefined &&
                 backgroundColor === undefined && folderId === undefined && folderName === undefined &&
@@ -608,6 +686,7 @@ export const createMcpRequestHandler = (
             return result({ boardId, revision: saved.revision, elementCount: updated.elements.length, ...drawingReceipt(created, responseMode),
               removedCount: remaining.removedCount, requestedRemovedCount: remaining.requestedRemovedCount,
               cascadeRemovedCount: remaining.cascadeRemovedCount, notFoundIds: remaining.notFoundIds, updatedCount: updated.updatedCount,
+              ...(autoBinding ? { autoBinding } : {}),
               ...overlaps, url: boardUrl(boardId) });
           }, "update_board"),
         );
@@ -745,6 +824,7 @@ export const createMcpRequestHandler = (
     close: async () => {
       if (internalSessionToken) {
         runtime.sessions.delete(internalSessionToken);
+        unregisterMcpCreateSession(runtime, internalSessionToken);
       }
       await mcp?.close();
     },
