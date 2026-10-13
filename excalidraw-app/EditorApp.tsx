@@ -75,6 +75,7 @@ import type { CloudSceneData } from "./data/cloudStorage";
 
 import { updateStaleImageStatuses } from "./data/FileManager";
 import { FileStatusStore } from "./data/fileStatusStore";
+import { waitForCloudFiles } from "./data/waitForCloudFiles";
 import { importFromLocalStorage } from "./data/localStorage";
 
 import {
@@ -215,37 +216,6 @@ const getCloudFileIds = (elements: readonly any[]) => {
     }
   }
   return [...fileIds];
-};
-
-const waitForCloudFiles = async (
-  fileIds: readonly FileId[],
-  files: BinaryFiles,
-) => {
-  const deadline = Date.now() + 30_000;
-  while (true) {
-    const statuses = FileStatusStore.getSnapshot().value;
-    const loadingFiles = fileIds.filter(
-      (fileId) => statuses.get(fileId) === "loading",
-    );
-    if (loadingFiles.length) {
-      if (Date.now() >= deadline) {
-        throw new Error("图片加载超时，请稍后重试");
-      }
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      continue;
-    }
-    const erroredFile = fileIds.find(
-      (fileId) => statuses.get(fileId) === "error" && !files[fileId],
-    );
-    if (erroredFile) {
-      throw new Error(`图片 ${erroredFile} 加载失败，请重新加载后再保存`);
-    }
-    const missingFile = fileIds.find((fileId) => !files[fileId]?.dataURL);
-    if (missingFile) {
-      throw new Error(`图片 ${missingFile} 尚未准备完成，请稍后重试`);
-    }
-    return;
-  }
 };
 
 const ExcalidrawWrapper = (props: {
@@ -788,9 +758,10 @@ const ExcalidrawWrapper = (props: {
 
   const saveCurrentCloudScene = useCallback(async () => {
     const snapshot = createCurrentCloudSnapshot();
-    if (!snapshot) {
+    if (!snapshot || !excalidrawAPI) {
       return false;
     }
+    const loadId = cloudSceneLoadIdRef.current;
     try {
       // Flush the latest preview before leaving the editor. The body and
       // thumbnail remain independently best-effort, but a normal in-app
@@ -804,9 +775,11 @@ const ExcalidrawWrapper = (props: {
         elements: persistedElements,
       };
       const fileIds = getCloudFileIds(persistedElements);
-      await waitForCloudFiles(
+      persistedSnapshot.files = await waitForCloudFiles(
         fileIds,
-        persistedSnapshot.files,
+        () => excalidrawAPI.getFiles(),
+        () => currentSceneIdRef.current === snapshot.sceneId &&
+          cloudSceneLoadIdRef.current === loadId,
       );
       const signature = getCloudPersistenceSignature(
         persistedSnapshot.name,
@@ -841,6 +814,7 @@ const ExcalidrawWrapper = (props: {
   }, [
     cloudSaveQueue,
     createCurrentCloudSnapshot,
+    excalidrawAPI,
     saveThumbnailDebounced,
     thumbnailSaveQueue,
   ]);
