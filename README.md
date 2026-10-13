@@ -88,7 +88,7 @@ bun install
 bunx wrangler login
 ```
 
-- 在 Cloudflare 创建一个 D1 数据库和一个 R2 bucket，然后将返回的 D1 数据库名称、ID 与 R2 bucket 名称填入 `wrangler.jsonc` 对应的 `DB` 和 `ASSETS_BUCKET` bindings。资源名和 ID 由部署者的 Cloudflare 账号提供，仓库不预设账号专属值。
+- `wrangler.jsonc` 只声明代码使用的绑定名 `DB` 和 `ASSETS_BUCKET`，不写入 D1 的数据库名/ID 或 R2 bucket 名。Cloudflare Workers Builds 首次部署时会在账号内自动创建并绑定资源；具体资源名称和标识只保存在 Cloudflare 账号，不回写 GitHub 仓库。[Wrangler 自动创建资源](https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning)
 - 配置进入画板的登录密码和 MCP 访问令牌。两个变量用途不同：
 
 | 变量 | 用途 | 必需性 |
@@ -111,21 +111,19 @@ MCP_TOKEN="replace-with-a-local-mcp-token"
 
 之后运行 `bun run dev` 或 `bun run cf:dev`。`.dev.vars` 只供本地 Wrangler 使用并已加入 Git 忽略规则；不要把密钥写进前端变量或提交到仓库。
 
-生产环境通过 Wrangler 将密钥单独保存为 Worker secrets，命令会提示输入对应值。网页登录密码必需；如果不用 MCP，可不设置 MCP token：
-
-```bash
-bunx wrangler secret put AUTH_PASSWORD
-bunx wrangler secret put MCP_TOKEN
-```
+生产密钥在 Cloudflare Dashboard 的 Worker **Settings → Variables and Secrets** 中添加为 Secret：`AUTH_PASSWORD` 必需，`MCP_TOKEN` 仅在启用 MCP 时需要。不要将这些值放进 GitHub Actions secrets、`wrangler.jsonc` 或前端构建变量。
 
 ### 首次部署与更新
 
-```bash
-bun run cf:db:migrate:remote
-bun run cf:deploy
-```
+在 Cloudflare Dashboard 进入 **Workers & Pages → Create application → Connect to Git**，选择本仓库并设置：
 
-部署前必须先应用 D1 migrations；后续新增 migration 时，先在本地验证，再运行远程 migration，最后发布 Worker。`cf:deploy` 是手动部署命令，仓库 CI 不会发布到 Cloudflare。Cloudflare Dashboard 可用于查看 Worker 日志、配置变量和管理资源；不要把账户密钥写入 `wrangler.jsonc`。
+- 构建命令：`bun install --frozen-lockfile && bun run build:frontend`
+- 部署命令：`bunx wrangler deploy`
+- 根目录：仓库根目录（包含 `wrangler.jsonc`）
+
+首次部署后，Cloudflare 会创建 D1 和 R2 资源并在 Worker 设置中显示绑定。打开 **D1 → 对应数据库 → Console**，执行 [`migrations-d1/0001_baseline.sql`](migrations-d1/0001_baseline.sql) 的 SQL，完成首次 schema 初始化。后续 migration 也在本地验证后，通过对应 D1 Console 执行；GitHub Actions 只做质量检查，不发布。请只从 Cloudflare Dashboard 的 Git Builds 部署，避免本地 `wrangler deploy` 把自动生成的账号资源 ID 写回工作区。
+
+画板登录密码和 MCP token 则在部署后的 Worker **Settings → Variables and Secrets** 中作为 Secret 配置。推送到 Cloudflare Builds 选定的分支后，Cloudflare 会构建和部署 Worker；生产变量和资源绑定由 Cloudflare 账号管理。
 
 ### 本地开发
 
@@ -151,12 +149,7 @@ bun run build
 
 MCP 使用标准 Streamable HTTP 传输，生产端点为 `https://<your-worker-domain>/mcp/<URL 编码后的令牌>`；本地 Wrangler 地址默认为 `http://127.0.0.1:8787`。设置高强度随机令牌：
 
-```bash
-bunx wrangler secret put MCP_TOKEN
-bun run cf:deploy
-```
-
-本地测试 MCP 时，将令牌写到 `.dev.vars` 的 `MCP_TOKEN` 项，见上文配置示例。生产环境使用 `wrangler secret put` 保存的值。
+本地测试 MCP 时，将令牌写到 `.dev.vars` 的 `MCP_TOKEN` 项，见上文配置示例。生产环境在 Cloudflare Dashboard 的 Worker **Settings → Variables and Secrets** 中将 `MCP_TOKEN` 添加为 Secret；Worker 部署由 Cloudflare Git Builds 触发。
 
 在支持远程 HTTP MCP 的 Agent 客户端中添加服务：
 
@@ -173,7 +166,7 @@ bun run cf:deploy
 
 MCP 入口通过路径令牌鉴权；令牌使用 `encodeURIComponent` 编码后放在 `/mcp/` 后面。远程连接使用 HTTPS，并避免在访问日志中记录令牌路径。
 
-Cloudflare 部署时，先按部署章节保存 `MCP_TOKEN` Worker secret，再手动运行 `bun run cf:deploy`。MCP 客户端地址为 `https://<your-worker-domain>/mcp/<URL 编码后的令牌>`；无需登录网页，也无需 `Authorization` 请求头。生产连接必须使用 HTTPS，并避免在访问日志中记录令牌路径。
+Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` Secret。MCP 客户端地址为 `https://<your-worker-domain>/mcp/<URL 编码后的令牌>`；无需登录网页，也无需 `Authorization` 请求头。生产连接必须使用 HTTPS，并避免在访问日志中记录令牌路径。
 工具按“尽量一次完成”安排：
 
 | 工具 | 用途 |

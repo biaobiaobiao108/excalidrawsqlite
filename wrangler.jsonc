@@ -30,14 +30,12 @@
   "d1_databases": [
     {
       "binding": "DB",
-      // Add database_name and database_id for the D1 resource in your Cloudflare account.
       "migrations_dir": "migrations-d1"
     }
   ],
   "r2_buckets": [
     {
       "binding": "ASSETS_BUCKET"
-      // Add bucket_name for the R2 bucket in your Cloudflare account.
     }
   ],
   "durable_objects": {

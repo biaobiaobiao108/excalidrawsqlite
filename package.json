@@ -43,10 +43,8 @@
     "test:size": "bun run build && bun scripts/check-bundle-size.ts",
     "test:all": "bun run test:unit && bun run test:server && bun run test:typecheck && bun run test:size",
     "cf:dev": "bunx wrangler dev",
-    "cf:deploy": "bunx wrangler deploy",
     "cf:dry-run": "bunx wrangler deploy --dry-run --outdir out/cloudflare-worker",
     "cf:db:migrate:local": "bunx wrangler d1 migrations apply DB --local",
-    "cf:db:migrate:remote": "bunx wrangler d1 migrations apply DB --remote",
     "test:typecheck": "bun check -p tsconfig.json && bun check -p tsconfig.tests.json",
     "build:packages": "bun run --cwd packages/common build:esm && bun run --cwd packages/fractional-indexing build:esm && bun run --cwd packages/laser-pointer build:esm && bun run --cwd packages/math build:esm && bun run --cwd packages/element build:esm && bun run --cwd packages/excalidraw build:esm"
   },
