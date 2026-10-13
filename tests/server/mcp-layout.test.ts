@@ -5,6 +5,11 @@ import { createDrawingBatch, drawingElementSchema, elementUpdateSchema, inputDra
 import { copyDrawingSelection } from "../../server/mcp-copy";
 
 describe("MCP card layout and grouping", () => {
+  it("rejects unusably narrow card text areas before allocating a layout", () => {
+    expect(layoutSchema.safeParse({ cards: [{ body: "中" }], cardWidth: 40, padding: 19, bodyFontSize: 128 }).success).toBe(false);
+    expect(layoutSchema.safeParse({ cards: [{ title: "标题" }], cardWidth: 40, padding: 15, titleFontSize: 24 }).success).toBe(false);
+    expect(layoutSchema.safeParse({ cards: [{ body: "中" }], cardWidth: 168, padding: 20, bodyFontSize: 128 }).success).toBe(true);
+  });
   it("round-trips nested native groups and detaches copied groups from originals", () => {
     const specs = [
       { type: "rectangle", id: "card", groupIds: ["inner", "outer"], x: 0, y: 0, width: 200, height: 100, text: "标签" },

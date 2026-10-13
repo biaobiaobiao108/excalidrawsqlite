@@ -36,6 +36,10 @@ export const layoutSchema = z.object({
   backgroundColor: colorSchema.default("#ffffff"),
   textColor: colorSchema.default("#1f2328"),
 }).strict().refine((value) => value.cardWidth > 2 * value.padding, "cardWidth 必须大于两倍 padding")
+  .refine((value) => value.cards.every((card) =>
+    (!card.title || value.cardWidth - value.padding * 2 >= value.titleFontSize) &&
+    (!card.body || value.cardWidth - value.padding * 2 >= value.bodyFontSize)),
+  "卡片可用文字宽度至少应容纳一个对应字号的字符；请增大 cardWidth、减小 padding 或字号")
   .refine((value) => new Set(value.cards.filter((card) => card.id).map((card) => card.id)).size === value.cards.filter((card) => card.id).length, "卡片 ID 不得重复");
 
 /** A bounded deterministic grid; text uses the same estimator as the writable drawing API. */
