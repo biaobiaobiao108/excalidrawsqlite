@@ -38,6 +38,25 @@ const flow = () =>
     }),
   ]).elements;
 describe("MCP drawing contracts", () => {
+  it("lays out direct bound-label updates like updates through the container", () => {
+    for (const type of ["rectangle", "ellipse", "diamond"] as const) {
+      const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"),
+        type, text: "a", labelId: "caption", rotation: 30 })]).elements;
+      const before = structuredClone(current);
+      const changes = { text: "abcdefghijabcdefghijabcdefghij", fontSize: 24, textAlign: "right" as const };
+      const direct = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "caption", ...changes })]);
+      const throughContainer = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "box", ...changes })]);
+      const caption = direct.elements.find((element) => element.id === "caption")!;
+      const expected = throughContainer.elements.find((element) => element.id === "caption")!;
+      for (const key of ["text", "originalText", "x", "y", "width", "height", "angle", "fontSize", "textAlign"] as const)
+        expect(caption[key as keyof typeof caption]).toEqual(expected[key as keyof typeof expected]);
+      expect(caption.version).toBeGreaterThan(current.find((element) => element.id === "caption")!.version);
+      expect(direct.elements.find((element) => element.id === "box")).toEqual(current[0]);
+      expect(updateDrawingElements(direct.elements, [elementUpdateSchema.parse({ id: "caption", ...changes })]).updatedCount).toBe(0);
+      expect(current).toEqual(before);
+    }
+  });
+
   it("advances existing label versions so remote text, style and layout update the Store baseline", () => {
     let current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"),
       text: "old", labelId: "caption" })]).elements;

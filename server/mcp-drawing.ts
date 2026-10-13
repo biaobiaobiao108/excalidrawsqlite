@@ -645,14 +645,13 @@ export const updateDrawingElements = (
             : fontId(patch.fontFamily),
         textAlign: patch.textAlign ?? element.textAlign,
       });
-      next = newElementWith(next, {
-        ...measured,
-        x: patch.x ?? element.x,
-        y: patch.y ?? element.y,
-        id: element.id,
-        version: next.version,
-        versionNonce: next.versionNonce,
-      } as never);
+      const laidOut = isShapeLabel && labelContainer
+        ? layoutLabel(labelContainer, measured)
+        : { ...measured, x: patch.x ?? element.x, y: patch.y ?? element.y };
+      // Constructors preserve the source version; apply the new text/layout as
+      // an element update so remote Store snapshots observe direct text edits.
+      const { version: _version, versionNonce: _nonce, updated: _updated, ...textChanges } = laidOut;
+      next = newElementWith(element, textChanges as never);
     } else if (["rectangle", "ellipse", "diamond"].includes(element.type)) {
       const labelId = element.boundElements?.find((b) => b.type === "text")?.id;
       const existing = labelId ? map.get(labelId) : undefined;
