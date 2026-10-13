@@ -48,6 +48,84 @@ const toolResult = <T>(result: {
 };
 
 describe("Excalidraw MCP endpoint", () => {
+  it("detects escaped grid text through its native group and keeps shape collisions advisory", async () => {
+    const directory = path.join(os.tmpdir(), `excalidraw-mcp-group-overflow-${crypto.randomUUID()}`);
+    const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
+      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "group-overflow-test" }) });
+    resources.push({ runtime, directory });
+    const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
+    const client = new Client({ name: "group-overflow-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+    const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/group-overflow-test"), {
+      fetch: (input, init) => handler.fetch(new Request(input, init)),
+    });
+    const invoke = async <T>(name: string, args: Record<string, unknown>) =>
+      toolResult<T>(await client.callTool({ name, arguments: args }));
+    type Issue = { type: string; elementIds: string[]; severity: string; message: string; suggestedUpdate?: unknown };
+    type Inspection = { revision: number; complete: boolean; issues: Issue[];
+      checks: { text_overflow: { checkedPairs: number; skippedNoContainer: number } } };
+    try {
+      await client.connect(transport);
+      const created = await invoke<{ boardId: string }>("create_layout", {
+        name: "六张复杂卡片", columns: 3, cardWidth: 320,
+        cards: [
+          { id: "first", title: "长标题中文与 English 一起自动换行".repeat(3), body: "中文正文\n第二行 mixed English 123\n第三行" },
+          { id: "second", title: "第二张", body: "中文 English mixed 内容与数字 2026".repeat(8) },
+          { id: "third", title: "多行\n标题", body: "多行正文\n再一行\n第三行" },
+          { id: "fourth", title: "", body: "仅正文仍有原生分组容器" },
+          { id: "fifth", title: "仅标题", body: "" },
+          { id: "sixth", title: "末张卡片", body: "短正文" },
+        ],
+      });
+      const initial = await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overflow"] });
+      expect(initial.complete).toBe(true);
+      expect(initial.issues).toEqual([]);
+      expect(initial.checks.text_overflow.checkedPairs).toBeGreaterThan(0);
+      expect(initial.checks.text_overflow.skippedNoContainer).toBe(0);
+      await invoke("update_board", { boardId: created.boardId, updates: [{ id: "first:body", dx: 1500 }] });
+      const before = await invoke<Record<string, unknown>>("get_board", { boardId: created.boardId, view: "full" });
+      const escaped = await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overflow"] });
+      expect(escaped.complete).toBe(true);
+      expect(escaped.issues).toContainEqual(expect.objectContaining({ type: "text_overflow",
+        elementIds: expect.arrayContaining(["first:body", "first:background"]) }));
+      expect(escaped.checks.text_overflow.checkedPairs).toBeGreaterThan(0);
+      expect(escaped.checks.text_overflow.skippedNoContainer).toBe(0);
+      expect(escaped.revision).toBe(before.revision as number);
+      expect(await invoke("get_board", { boardId: created.boardId, view: "full" })).toEqual(before);
+      await invoke("update_board", { boardId: created.boardId, updates: [{ id: "first:body", dx: -1500 }] });
+      expect((await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overflow"] })).issues).toEqual([]);
+      await invoke("add_elements", { boardId: created.boardId,
+        elements: [{ type: "text", id: "free-text", x: 2000, y: 2000, text: "普通独立文字" }] });
+      const withFree = await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overflow"] });
+      expect(withFree.issues).toEqual([]);
+      expect(withFree.checks.text_overflow.skippedNoContainer).toBe(1);
+
+      const collisionBoard = await invoke<{ boardId: string }>("create_board", {
+        name: "装饰阴影与实际碰撞", elements: [
+          { type: "rectangle", id: "background", x: 0, y: 0, width: 400, height: 560,
+            fillStyle: "solid", backgroundColor: "white" },
+          { type: "rectangle", id: "shadow", x: 6, y: 6, width: 400, height: 560,
+            fillStyle: "solid", backgroundColor: "#dddddd" },
+          { type: "rectangle", id: "overlap-a", x: 1000, y: 0, width: 120, height: 120 },
+          { type: "rectangle", id: "overlap-b", x: 1040, y: 0, width: 120, height: 120 },
+        ],
+      });
+      const collisions = await invoke<{ complete: boolean; issues: Issue[] }>("inspect_layout",
+        { boardId: collisionBoard.boardId, checks: ["element_collision"] });
+      expect(collisions.complete).toBe(true);
+      expect(collisions.issues).toContainEqual(expect.objectContaining({ type: "element_collision", severity: "warning",
+        elementIds: expect.arrayContaining(["background", "shadow"]) }));
+      expect(collisions.issues).toContainEqual(expect.objectContaining({ type: "element_collision", severity: "warning",
+        elementIds: expect.arrayContaining(["overlap-a", "overlap-b"]) }));
+      for (const issue of collisions.issues) {
+        expect(issue).not.toHaveProperty("suggestedUpdate");
+        expect(issue.message).not.toContain("566");
+      }
+    } finally {
+      await client.close();
+      await handler.close();
+    }
+  });
+
   it("creates measured grouped layouts and retries creation without duplicating boards or folders", async () => {
     const directory = path.join(os.tmpdir(), `excalidraw-mcp-layout-${crypto.randomUUID()}`);
     const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
