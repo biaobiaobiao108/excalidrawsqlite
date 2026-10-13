@@ -71,6 +71,17 @@ export const initializeDatabase = (db: Database) => {
     );
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      action TEXT NOT NULL,
+      key TEXT NOT NULL,
+      window_started_at INTEGER NOT NULL,
+      count INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (action, key)
+    );
+  `);
+
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_scenes_updated_at ON scenes(updated_at DESC)",
   );
@@ -112,6 +123,9 @@ export const initializeDatabase = (db: Database) => {
   );
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_rate_limits_updated_at ON rate_limits(updated_at)",
   );
   db.run("PRAGMA optimize=0x10002;");
 };

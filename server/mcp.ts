@@ -11,7 +11,7 @@ import { measureMcpApi, measureMcpPhase, traceMcpTool } from "./mcp-trace";
 import { compactMcpSchema } from "./mcp-schema";
 import { buildDiagram, diagramSchema } from "./mcp-diagram";
 
-import { randomBase64Url, timingSafeEqual } from "./crypto";
+import { timingSafeEqual } from "./crypto";
 import { HttpError } from "./errors";
 import { getRequestOrigin, isAllowedOrigin, jsonResponse, response } from "./http";
 
@@ -151,12 +151,12 @@ const getPathToken = (req: Request) => {
   }
 };
 
-const createInternalApi = (apiHandler: ApiHandler, sessionToken: string) =>
+const createInternalApi = (apiHandler: ApiHandler, token: string) =>
   async <T>(path: string, method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown) => measureMcpApi(method, async () => {
     const req = new Request(`http://excalidraw-mcp.internal${path}`, {
       method,
       headers: {
-        Cookie: `excalidraw_session=${sessionToken}`,
+        Authorization: `Bearer ${token}`,
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -185,16 +185,8 @@ export const createMcpRequestHandler = (
   apiHandler: ApiHandler,
 ): McpRequestHandler => {
   const expectedToken = runtime.config.mcpToken;
-  const internalSessionToken = expectedToken ? randomBase64Url(32) : null;
-  if (internalSessionToken) {
-    // MCP calls pass through the exact same route validation and persistence
-    // logic as the browser, using a private in-memory session never exposed to
-    // network requests or persisted to SQLite.
-    runtime.sessions.set(internalSessionToken, Number.MAX_SAFE_INTEGER);
-  }
-
-  const api = internalSessionToken
-    ? createInternalApi(apiHandler, internalSessionToken)
+  const api = expectedToken
+    ? createInternalApi(apiHandler, expectedToken)
     : null;
   const folderExists = api ? runtime.db.query("SELECT id FROM folders WHERE id = ?") : null;
 
@@ -664,9 +656,6 @@ export const createMcpRequestHandler = (
       });
     },
     close: async () => {
-      if (internalSessionToken) {
-        runtime.sessions.delete(internalSessionToken);
-      }
       await mcp?.close();
     },
   };

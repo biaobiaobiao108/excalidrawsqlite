@@ -35,33 +35,8 @@ jobs:
       - name: Run all quality gates
         run: bun run test:all
 
-      - name: Build Docker image for health smoke
-        run: docker build --tag excalidraw:quality-smoke .
+      - name: Apply D1 migrations to Wrangler local database
+        run: bun run cf:db:migrate:local
 
-      - name: Smoke test Docker health endpoint
-        shell: bash
-        run: |
-          set -euo pipefail
-          container_name="excalidraw-quality-smoke"
-          cleanup() {
-            docker rm --force "$container_name" >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-
-          docker run --detach \
-            --name "$container_name" \
-            --publish 127.0.0.1:18080:8080 \
-            --env AUTH_PASSWORD=quality-smoke-password \
-            excalidraw:quality-smoke
-
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:18080/api/health; then
-              echo "Container health check passed."
-              exit 0
-            fi
-            sleep 2
-          done
-
-          docker logs "$container_name"
-          echo "Container did not become healthy at /api/health." >&2
-          exit 1
+      - name: Validate Worker bundle
+        run: bun run cf:dry-run

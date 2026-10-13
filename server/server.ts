@@ -42,6 +42,7 @@ export {
 } from "./files";
 export { createRequestHandler } from "./routes";
 export type { RequestAddressResolver, ServerConfig, ServerRuntime } from "./types";
+export type { LocalServerRuntime } from "./runtime";
 
 export const resolveServerHostname = (
   _isDev: boolean,
@@ -134,7 +135,7 @@ export const shutdownServer = async (options: {
     console.info("[Database] Shutdown WAL checkpoint failed", error);
   }
   try {
-    runtime.db.close();
+    runtime.db.close?.();
   } catch {
     // Ignore close failures during process shutdown.
   }
@@ -199,7 +200,7 @@ export const startServer = async () => {
         console.info("[Realtime] 开发服务器启动失败后的清理失败", cleanupError);
       }
       try {
-        runtime.db.close();
+        runtime.db.close?.();
       } catch (cleanupError) {
         console.info("[Database] 开发服务器启动失败后的清理失败", cleanupError);
       }

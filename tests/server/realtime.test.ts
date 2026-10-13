@@ -8,7 +8,7 @@ import {
   createRequestHandler,
   createRuntime,
   createServerConfig,
-  type ServerRuntime,
+  type LocalServerRuntime,
 } from "../../server/server";
 import {
   createRealtimeHub,
@@ -16,7 +16,7 @@ import {
   type RealtimeSocketData,
 } from "../../server/realtime";
 
-const runtimes: ServerRuntime[] = [];
+const runtimes: LocalServerRuntime[] = [];
 const directories: string[] = [];
 
 const request = (

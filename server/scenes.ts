@@ -105,23 +105,23 @@ const getFolderQuery = (runtime: ServerRuntime) => {
   return cached;
 };
 
-const assertFolderExists = (
+const assertFolderExists = async (
   runtime: ServerRuntime,
   folderId: string | null,
 ) => {
   if (
     folderId &&
-    !getFolderQuery(runtime).getFolderId.get(folderId)
+    !(await getFolderQuery(runtime).getFolderId.get(folderId))
   ) {
     throw new HttpError(400, "FOLDER_NOT_FOUND", "文件夹不存在");
   }
 };
 
-export const parseSceneMetadata = (
+export const parseSceneMetadata = async (
   runtime: ServerRuntime,
   body: Record<string, unknown>,
   existing?: any,
-) => {
+): Promise<{ name: string; tags: string[]; favorite: boolean; folderId: string | null }> => {
   const name = hasOwn(body, "name")
     ? validateName(body.name)
     : existing?.name || "未命名白板";
@@ -134,7 +134,7 @@ export const parseSceneMetadata = (
   const folderId = hasOwn(body, "folder_id")
     ? validateFolderId(body.folder_id)
     : existing?.folder_id || null;
-  assertFolderExists(runtime, folderId);
+  await assertFolderExists(runtime, folderId);
   return { name, tags, favorite, folderId };
 };
 
@@ -150,15 +150,15 @@ export const sanitizeSceneElements = (elements: unknown[]): unknown[] => {
   });
 };
 
-export const cleanupExpiredTrashScenes = (
+export const cleanupExpiredTrashScenes = async (
   runtime: ServerRuntime,
   retentionDays: number = runtime.config.trashRetentionDays,
-): number => {
+): Promise<number> => {
   if (retentionDays <= 0) {
     return 0;
   }
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-  const result = runtime.db.run(
+  const result = await runtime.db.run(
     "DELETE FROM scenes WHERE deleted_at IS NOT NULL AND deleted_at < ?",
     [cutoff],
   );

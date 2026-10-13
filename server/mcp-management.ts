@@ -70,25 +70,25 @@ const metadataSchema = z.strictObject({
 });
 type ManageInput = z.infer<typeof metadataSchema>;
 const queryCache = new WeakMap<ServerRuntime, ReturnType<ServerRuntime["db"]["query"]>>();
-function readSummary(runtime: ServerRuntime, id: string) {
+async function readSummary(runtime: ServerRuntime, id: string) {
   let statement = queryCache.get(runtime);
   if (!statement) {
     statement = runtime.db.query("SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at, scenes.revision, scenes.content_bytes AS size, scenes.element_count, scenes.tags_json, scenes.is_favorite, scenes.folder_id, scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at, folders.name AS folder_name FROM scenes LEFT JOIN folders ON folders.id = scenes.folder_id WHERE scenes.id = ?");
     queryCache.set(runtime, statement);
   }
-  const row = statement.get(id);
+  const row = await statement.get(id);
   if (!row) throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
   return getSceneSummary(row);
 }
 const folderCountCache = new WeakMap<ServerRuntime, ReturnType<ServerRuntime["db"]["query"]>>();
 const tagQueryCache = new WeakMap<ServerRuntime, ReturnType<ServerRuntime["db"]["query"]>>();
-function folderBoardCount(runtime: ServerRuntime, id: string) {
+async function folderBoardCount(runtime: ServerRuntime, id: string) {
   let statement = folderCountCache.get(runtime);
   if (!statement) {
     statement = runtime.db.query("SELECT COUNT(*) AS count FROM scenes WHERE folder_id = ?");
     folderCountCache.set(runtime, statement);
   }
-  return (statement.get(id) as { count: number }).count;
+  return (await statement.get<{ count: number }>(id))?.count ?? 0;
 }
 function assertRevision(revision: number, expected?: number) {
   if (expected !== undefined && revision !== expected) throw new HttpError(409, "REVISION_CONFLICT", `画板已更新，当前修订号为 ${revision}；请重新读取判断`);
@@ -97,7 +97,7 @@ function assertRevision(revision: number, expected?: number) {
 export function registerManagementTools(server: McpServer, context: Context) {
   const { runtime, api, result, safeTool, boardUrl } = context;
   const manage = async (input: ManageInput) => {
-    const current = readSummary(runtime, input.boardId);
+    const current = await readSummary(runtime, input.boardId);
     assertRevision(current.revision, input.expectedRevision);
     if (current.deleted_at !== null) throw new HttpError(404, "SCENE_NOT_FOUND", "画板已删除，请先 restore_board");
     if ((input.tags === undefined) !== (input.tagMode === undefined)) throw new HttpError(400, "INVALID_TAGS", "tags 与 tagMode 必须一起提供");
@@ -110,11 +110,11 @@ export function registerManagementTools(server: McpServer, context: Context) {
     return { ...board, boardId: input.boardId, noop, url: boardUrl(input.boardId) };
   };
   const setDeleted = async (boardId: string, deleted: boolean, expectedRevision?: number) => {
-    const current = readSummary(runtime, boardId);
+    const current = await readSummary(runtime, boardId);
     assertRevision(current.revision, expectedRevision);
     const noop = (current.deleted_at !== null) === deleted;
     if (!noop) await api("/api/scenes/batch", "PATCH", { scenes: [{ id: boardId, revision: current.revision }], deleted });
-    const board = readSummary(runtime, boardId);
+    const board = await readSummary(runtime, boardId);
     return { ...board, boardId, noop, deleted, url: boardUrl(boardId) };
   };
   server.registerTool("list_folders", { description: "分页列出文件夹及画板数量，支持名称搜索；已有名称时可直接传给 create_board/manage_board 无需先查询。", inputSchema: compactMcpSchema(z.strictObject({ query: z.string().max(80).optional(), cursor: z.string().min(1).max(128).optional(), limit: z.number().int().min(1).max(100).default(50) })), annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ query, cursor, limit }) => {
@@ -131,7 +131,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
   }
   const tagsStatement = tagQuery;
   server.registerTool("list_tags", { description: "列出在用标签及画板数量，按名称排序；cursor 是上一页最后名称的排序边界，即使该标签删除或改名仍可继续，非快照分页不保证包含分页期间移到边界前的新名称。标签直接在 create_board/manage_board 使用，无需单独创建。", inputSchema: compactMcpSchema(z.strictObject({ cursor: z.string().max(32).optional(), limit: z.number().int().min(1).max(100).default(50) })), annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ cursor, limit }) => {
-    const rows = tagsStatement.all(cursor ?? "", limit + 1) as Array<{ name: string; boardCount: number }>;
+    const rows = await tagsStatement.all<{ name: string; boardCount: number }>(cursor ?? "", limit + 1);
     const tags = rows.slice(0, limit);
     return result({ tags, nextCursor: rows.length > limit ? tags.at(-1)!.name : null });
   }));
@@ -151,7 +151,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
   server.registerTool("delete_folder", { description: "删除文件夹并将其中画板移到根目录，保留全部画板；dryRun=true 预览，执行必须 confirm=true，可传 expectedBoardCount 防止数量变化误操作。", inputSchema: compactMcpSchema(z.strictObject({ ...folderFields, dryRun: z.boolean().default(false), confirm: z.boolean().optional(), expectedBoardCount: z.number().int().nonnegative().optional() })), annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
     const folder = await findFolder(args, api);
     if (!folder) throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
-    const boardCount = folderBoardCount(runtime, folder.id);
+    const boardCount = await folderBoardCount(runtime, folder.id);
     if (args.dryRun) return result({ folder, wouldMoveBoards: boardCount, dryRun: true });
     if (args.confirm !== true) throw new HttpError(400, "CONFIRM_REQUIRED", "删除文件夹需要 confirm=true；可先 dryRun=true 预览");
     if (args.expectedBoardCount !== undefined && boardCount !== args.expectedBoardCount) throw new HttpError(409, "FOLDER_CHANGED", "文件夹画板数量发生变化，请重新预览");
@@ -176,7 +176,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
       } catch (error) {
         if (!(error instanceof HttpError)) throw error;
         let revision: number | undefined;
-        try { revision = readSummary(runtime, item.boardId).revision; } catch { /* Missing boards have no revision. */ }
+        try { revision = (await readSummary(runtime, item.boardId)).revision; } catch { /* Missing boards have no revision. */ }
         outcomes.push({ ok: false, boardId: item.boardId, action: item.action, ...(revision === undefined ? {} : { revision }), error: { code: error.code, message: error.message } });
       }
     }

@@ -243,6 +243,9 @@ export const createDatabaseSnapshot = async (
   runtime: ServerRuntime,
   timestamp: string,
 ) => {
+  if (!runtime.dbPath) {
+    throw new HttpError(501, "BACKUP_UNAVAILABLE", "Cloudflare Worker 不提供应用内数据库备份");
+  }
   const tempBackupFile = path.join(
     path.dirname(runtime.dbPath),
     `excalidraw-backup-${timestamp}-${randomHex(4)}.db`,
@@ -326,7 +329,7 @@ export const createFullBackup = async (
       const manifestSize = manifestBytes;
 
       const archivePath = path.join(
-        path.dirname(runtime.dbPath),
+        path.dirname(runtime.dbPath!),
         `excalidraw-full-backup-${timestamp}-${randomHex(4)}.tar`,
       );
       const tempArchivePath = `${archivePath}.${randomHex(8)}.tmp`;

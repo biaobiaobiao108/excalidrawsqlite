@@ -13,9 +13,9 @@ import {
 } from "../../server/files";
 import { createRuntime } from "../../server/runtime";
 
-import type { ServerRuntime } from "../../server/types";
+import type { LocalServerRuntime } from "../../server/runtime";
 
-const resources: Array<{ runtime: ServerRuntime; directory: string }> = [];
+const resources: Array<{ runtime: LocalServerRuntime; directory: string }> = [];
 
 const setup = async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "storage-lifecycle-"));
@@ -29,7 +29,7 @@ const setup = async () => {
 };
 
 const upload = async (
-  runtime: ServerRuntime,
+  runtime: LocalServerRuntime,
   id: string,
   data: Uint8Array,
   version?: number,

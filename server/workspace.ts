@@ -14,7 +14,7 @@ const workspaceQueries = new WeakMap<
   }
 >();
 
-export const getWorkspaceStats = (runtime: ServerRuntime) => {
+export const getWorkspaceStats = async (runtime: ServerRuntime) => {
   let queries = workspaceQueries.get(runtime);
   if (!queries) {
     queries = {
@@ -33,7 +33,9 @@ export const getWorkspaceStats = (runtime: ServerRuntime) => {
     };
     workspaceQueries.set(runtime, queries);
   }
-  const counts = queries.counts.get() as WorkspaceCounts;
-  const tags = queries.tags.all() as Array<{ tag: string }>;
+  const [counts, tags] = await Promise.all([
+    queries.counts.get<WorkspaceCounts>(),
+    queries.tags.all<{ tag: string }>(),
+  ]);
   return { ...counts, tags: tags.map(({ tag }) => tag) };
 };

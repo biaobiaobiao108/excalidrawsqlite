@@ -9,9 +9,10 @@ import { withStorageMutationLock } from "../../server/files";
 import { createRequestHandler } from "../../server/routes";
 import { createRuntime } from "../../server/runtime";
 
-import type { SceneRealtimeEvent, ServerRuntime } from "../../server/types";
+import type { SceneRealtimeEvent } from "../../server/types";
+import type { LocalServerRuntime } from "../../server/runtime";
 
-const resources: Array<{ runtime: ServerRuntime; directory: string }> = [];
+const resources: Array<{ runtime: LocalServerRuntime; directory: string }> = [];
 
 const setup = (env: Record<string, string> = {}) => {
   const directory = path.join(os.tmpdir(), `excalidraw-routes-${crypto.randomUUID()}`);

@@ -898,23 +898,3 @@ export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
   }, getCloudFileConcurrency());
   return { loadedFiles, erroredFiles };
 }
-
-export async function downloadCloudBackup(): Promise<Blob> {
-  const res = await fetchWithTimeout(
-    "/api/backup/snapshot",
-    { headers: { Accept: "application/x-sqlite3" } },
-    "下载云端数据库备份失败",
-  );
-  await assertResponse(res, "下载云端数据库备份失败");
-  return res.blob();
-}
-
-export async function downloadCloudFullBackup(): Promise<Blob> {
-  const res = await fetchWithTimeout(
-    "/api/backup/full",
-    { headers: { Accept: "application/x-tar" } },
-    "下载云端完整备份失败",
-  );
-  await assertResponse(res, "下载云端完整备份失败");
-  return res.blob();
-}

@@ -2,7 +2,6 @@ import {
   AUTH_COOKIE_DEVELOPMENT,
   AUTH_COOKIE_PRODUCTION,
   AUTH_RATE_WINDOW_MS,
-  MAX_RATE_LIMIT_KEYS,
   MAX_AUTH_PASSWORD_LENGTH,
   WRITE_RATE_WINDOW_MS,
 } from "./config";
@@ -15,32 +14,30 @@ import { getCookie, isSecureRequest } from "./http";
 
 import type { RequestAddressResolver, ServerRuntime } from "./types";
 
-export const cleanupExpiredSessions = (runtime: ServerRuntime, now: number) => {
-  for (const [token, expiresAt] of runtime.sessions) {
-    if (expiresAt <= now) {
-      runtime.sessions.delete(token);
-    }
-  }
+export const cleanupExpiredSessions = async (
+  runtime: ServerRuntime,
+  now: number,
+) => {
   try {
-    runtime.db.run("DELETE FROM sessions WHERE expires_at <= ?", [now]);
+    await runtime.db.run("DELETE FROM sessions WHERE expires_at <= ?", [now]);
   } catch (error) {
     console.info("[Sessions] cleanup failed", error);
   }
 };
 
-export const cleanupExpiredRateLimits = (
+export const cleanupExpiredRateLimits = async (
   runtime: ServerRuntime,
   now = Date.now(),
 ) => {
-  for (const [key, record] of runtime.authAttempts) {
-    if (now - record.startedAt >= AUTH_RATE_WINDOW_MS) {
-      runtime.authAttempts.delete(key);
-    }
-  }
-  for (const [key, record] of runtime.writeAttempts) {
-    if (now - record.startedAt >= WRITE_RATE_WINDOW_MS) {
-      runtime.writeAttempts.delete(key);
-    }
+  try {
+    await runtime.db.run(
+      `DELETE FROM rate_limits
+       WHERE (action = 'auth' AND window_started_at <= ?)
+          OR (action = 'write' AND window_started_at <= ?)`,
+      [now - AUTH_RATE_WINDOW_MS, now - WRITE_RATE_WINDOW_MS],
+    );
+  } catch (error) {
+    console.info("[Rate limits] cleanup failed", error);
   }
 };
 
@@ -59,7 +56,7 @@ export const getClientKey = (
     // value can be supplied by the client when a proxy preserves X-Forwarded-For.
     return forwardedAddresses?.at(-1) || "unknown";
   }
-  return requestAddressResolver?.(req) || "unknown";
+  return requestAddressResolver?.(req) || runtime.clientAddress || "unknown";
 };
 
 const getSessionCookieNames = () => [
@@ -80,18 +77,17 @@ export const getSessionToken = (runtime: ServerRuntime, req: Request) => {
 export const hashSessionToken = (runtime: ServerRuntime, token: string) =>
   hmacSha256Hex(runtime.config.authPassword, token);
 
-export const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
+export const issueSessionCookie = async (
+  runtime: ServerRuntime,
+  req: Request,
+) => {
   const token = randomBase64Url(32);
-  const expiresAt = Date.now() + runtime.config.sessionTtlMs;
-  runtime.sessions.set(token, expiresAt);
-  try {
-    runtime.db.run(
-      "INSERT OR REPLACE INTO sessions (token, expires_at, created_at) VALUES (?, ?, ?)",
-      [hashSessionToken(runtime, token), expiresAt, Date.now()],
-    );
-  } catch (error) {
-    console.info("[Sessions] failed to persist session", error);
-  }
+  const now = Date.now();
+  const expiresAt = now + runtime.config.sessionTtlMs;
+  await runtime.db.run(
+    "INSERT OR REPLACE INTO sessions (token, expires_at, created_at) VALUES (?, ?, ?)",
+    [await hashSessionToken(runtime, token), expiresAt, now],
+  );
   const secure = isSecureRequest(runtime, req);
   const name =
     runtime.config.nodeEnv === "production" && secure
@@ -115,104 +111,88 @@ export const clearSessionCookies = (runtime: ServerRuntime, req: Request) => {
   );
 };
 
-const sessionQueryCache = new WeakMap<
-  ServerRuntime,
-  {
-    getExpiresAt: ReturnType<ServerRuntime["db"]["query"]>;
-  }
->();
-
-const getSessionStatements = (runtime: ServerRuntime) => {
-  let cached = sessionQueryCache.get(runtime);
-  if (!cached) {
-    cached = {
-      getExpiresAt: runtime.db.query(
-        "SELECT expires_at FROM sessions WHERE token = ? LIMIT 1",
-      ),
-    };
-    sessionQueryCache.set(runtime, cached);
-  }
-  return cached;
-};
-
-export const isAuthorized = (runtime: ServerRuntime, req: Request) => {
+export const isAuthorized = async (runtime: ServerRuntime, req: Request) => {
   if (runtime.config.allowAnonymous || !runtime.config.authPassword) {
     return true;
+  }
+  const bearerToken = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (runtime.config.mcpToken && bearerToken) {
+    const provided = new TextEncoder().encode(bearerToken);
+    const expected = new TextEncoder().encode(runtime.config.mcpToken);
+    if (timingSafeEqual(provided, expected)) return true;
   }
   const token = getSessionToken(runtime, req);
   if (!token) {
     return false;
   }
-  let expiresAt = runtime.sessions.get(token);
-  if (expiresAt === undefined) {
-    try {
-      const row = getSessionStatements(runtime)
-        .getExpiresAt.get(hashSessionToken(runtime, token)) as {
-        expires_at: number;
-      } | null;
+  const hashedToken = await hashSessionToken(runtime, token);
+  try {
+    const row = await runtime.db
+      .query("SELECT expires_at FROM sessions WHERE token = ? LIMIT 1")
+      .get<{ expires_at: number }>(hashedToken);
+    if (!row || row.expires_at <= Date.now()) {
       if (row) {
-        expiresAt = row.expires_at;
-        runtime.sessions.set(token, expiresAt);
+        await runtime.db.run("DELETE FROM sessions WHERE token = ?", [hashedToken]);
       }
-    } catch (error) {
-      console.info("[Sessions] query failed", error);
+      return false;
     }
-  }
-  if (!expiresAt || expiresAt <= Date.now()) {
-    runtime.sessions.delete(token);
-    try {
-      runtime.db.run("DELETE FROM sessions WHERE token = ?", [
-        hashSessionToken(runtime, token),
-      ]);
-    } catch {
-      // ignore
-    }
+    return true;
+  } catch (error) {
+    console.info("[Sessions] query failed", error);
     return false;
   }
-  return true;
 };
 
-export const consumeRateLimit = (
-  bucket: Map<string, { startedAt: number; count: number }>,
+export const consumeRateLimit = async (
+  runtime: ServerRuntime,
+  action: "auth" | "write",
   key: string,
   limit: number,
   windowMs: number,
 ) => {
   const now = Date.now();
-  const current = bucket.get(key);
-  if (!current || now - current.startedAt >= windowMs) {
-    if (!current && bucket.size >= MAX_RATE_LIMIT_KEYS) {
-      let oldestKey: string | undefined;
-      let oldestStartedAt = Number.POSITIVE_INFINITY;
-      for (const [candidateKey, record] of bucket) {
-        if (record.startedAt < oldestStartedAt) {
-          oldestKey = candidateKey;
-          oldestStartedAt = record.startedAt;
-        }
-      }
-      if (oldestKey !== undefined) {
-        bucket.delete(oldestKey);
-      }
-    }
-    bucket.set(key, { startedAt: now, count: 1 });
-    return { allowed: true, retryAfter: 0 };
-  }
-  current.count += 1;
+  const row = await runtime.db.query(`
+    INSERT INTO rate_limits (action, key, window_started_at, count, updated_at)
+    VALUES (?, ?, ?, 1, ?)
+    ON CONFLICT(action, key) DO UPDATE SET
+      window_started_at = CASE
+        WHEN rate_limits.window_started_at <= ? THEN excluded.window_started_at
+        ELSE rate_limits.window_started_at
+      END,
+      count = CASE
+        WHEN rate_limits.window_started_at <= ? THEN 1
+        ELSE rate_limits.count + 1
+      END,
+      updated_at = excluded.updated_at
+    RETURNING window_started_at, count
+  `).get<{ window_started_at: number; count: number }>(
+    action,
+    key,
+    now,
+    now,
+    now - windowMs,
+    now - windowMs,
+  );
+  if (!row) throw new Error("Rate limit update did not return a row");
   return {
-    allowed: current.count <= limit,
-    retryAfter: Math.ceil((windowMs - (now - current.startedAt)) / 1000),
+    allowed: row.count <= limit,
+    retryAfter: Math.max(
+      0,
+      Math.ceil((windowMs - (now - row.window_started_at)) / 1000),
+    ),
   };
 };
 
-export const verifyPassword = (input: unknown, expected: string) => {
+export const verifyPassword = async (input: unknown, expected: string) => {
   if (typeof input !== "string" || input.length > MAX_AUTH_PASSWORD_LENGTH) {
     return false;
   }
+  const encoder = new TextEncoder();
   const inputHash = new Uint8Array(
-    new Bun.CryptoHasher("sha256").update(input).digest(),
+    await crypto.subtle.digest("SHA-256", encoder.encode(input)),
   );
   const expectedHash = new Uint8Array(
-    new Bun.CryptoHasher("sha256").update(expected).digest(),
+    await crypto.subtle.digest("SHA-256", encoder.encode(expected)),
   );
   return timingSafeEqual(inputHash, expectedHash) && input === expected;
 };

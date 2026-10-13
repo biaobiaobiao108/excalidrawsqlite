@@ -2,9 +2,9 @@ import type { ServerConfig } from "./types";
 
 export const DEFAULT_PORT = 8080;
 export const DEFAULT_MAX_FILE_BYTES = 4 * 1024 * 1024;
-export const DEFAULT_MAX_SCENE_BODY_BYTES = 16 * 1024 * 1024;
+export const DEFAULT_MAX_SCENE_BODY_BYTES = 1_900_000;
+export const DEFAULT_MAX_BACKUP_BYTES = 512 * 1024 * 1024;
 export const DEFAULT_MAX_IN_FLIGHT_BODY_BYTES = 64 * 1024 * 1024;
-export const DEFAULT_MAX_BACKUP_BYTES = 128 * 1024 * 1024;
 export const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const AUTH_COOKIE_PRODUCTION = "__Host-excalidraw_session";
 export const AUTH_COOKIE_DEVELOPMENT = "excalidraw_session";
@@ -88,6 +88,7 @@ export const createServerConfig = (
       env.MAX_SCENE_BODY_BYTES,
       DEFAULT_MAX_SCENE_BODY_BYTES,
     ),
+    maxBackupBytes: parsePositiveIntegerEnv(env.MAX_BACKUP_BYTES, DEFAULT_MAX_BACKUP_BYTES),
     maxInFlightBodyBytes: Math.max(
       parsePositiveIntegerEnv(
         env.MAX_IN_FLIGHT_BODY_BYTES,
@@ -101,10 +102,6 @@ export const createServerConfig = (
         env.MAX_FILE_BYTES,
         DEFAULT_MAX_FILE_BYTES,
       ),
-    ),
-    maxBackupBytes: parsePositiveIntegerEnv(
-      env.MAX_BACKUP_BYTES,
-      DEFAULT_MAX_BACKUP_BYTES,
     ),
     sessionTtlMs: parsePositiveIntegerEnv(
       env.AUTH_SESSION_TTL_MS,

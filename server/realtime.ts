@@ -115,23 +115,24 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
       activeSockets.add(ws);
       ws.subscribe(WORKSPACE_TOPIC);
       if (ws.data.sceneId) {
-        ws.subscribe(sceneTopic(ws.data.sceneId));
-        const row = getRealtimeStatements(runtime).getSceneMeta.get(
-          ws.data.sceneId,
-        ) as {
-          revision: number;
-          updated_at: number;
-          deleted_at: number | null;
-        } | null;
-        ws.sendText(
-          serializeEvent({
-            type: "scene_changed",
-            sceneId: ws.data.sceneId,
-            revision: Number(row?.revision) || 0,
-            updatedAt: Number(row?.updated_at) || Date.now(),
-            changeKind: row?.deleted_at ? "deleted" : "content",
-          }),
-        );
+        const sceneId = ws.data.sceneId;
+        ws.subscribe(sceneTopic(sceneId));
+        void Promise.resolve(getRealtimeStatements(runtime).getSceneMeta
+          .get<{
+            revision: number;
+            updated_at: number;
+            deleted_at: number | null;
+          }>(sceneId))
+          .then((row) => {
+            if (ws.readyState !== 1) return;
+            ws.sendText(serializeEvent({
+              type: "scene_changed",
+              sceneId,
+              revision: Number(row?.revision) || 0,
+              updatedAt: Number(row?.updated_at) || Date.now(),
+              changeKind: row?.deleted_at ? "deleted" : "content",
+            }));
+          });
       } else {
         ws.sendText(
           serializeEvent({

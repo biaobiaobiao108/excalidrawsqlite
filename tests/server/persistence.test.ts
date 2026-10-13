@@ -11,7 +11,7 @@ import {
   createServerConfig,
   cleanupStaleFileArtifacts,
   resolveServerHostname,
-  type ServerRuntime,
+  type LocalServerRuntime,
 } from "../../server/server";
 import { createDatabaseSnapshot } from "../../server/backup";
 import { readJson, releaseJsonBodyMemoryBudget } from "../../server/http";
@@ -22,7 +22,7 @@ import {
 import { BodyMemoryBudget } from "../../server/types";
 import { cleanupExpiredTrashScenes } from "../../server/scenes";
 
-const runtimes: ServerRuntime[] = [];
+const runtimes: LocalServerRuntime[] = [];
 const testDirectories: string[] = [];
 
 const createTestRuntime = (env: Record<string, string | undefined> = {}) => {
@@ -352,7 +352,7 @@ describe("cloud persistence server", () => {
     );
   });
 
-  it("only exposes the development reload stream over GET", async () => {
+  it("does not expose the removed Bun development reload stream", async () => {
     const { handler } = createTestRuntime({
       NODE_ENV: "development",
       ALLOW_ANONYMOUS: "true",
@@ -360,8 +360,7 @@ describe("cloud persistence server", () => {
     const response = await request(handler, "/__dev_reload", {
       method: "POST",
     });
-    expect(response.status).toBe(405);
-    expect(response.headers.get("allow")).toBe("GET");
+    expect(response.status).toBe(404);
   });
 
   it("does not expose the development reload stream in production", async () => {
@@ -1892,6 +1891,31 @@ describe("cloud persistence server", () => {
     );
   });
 
+  it("stores D1-sized scene payloads below the 1.9 MB request cap and rejects larger bodies", async () => {
+    const { handler } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
+    const content = "画".repeat(600_000);
+    const created = await jsonRequest(handler, "/api/scenes", {
+      id: "scene_near_d1_limit",
+      name: "接近 D1 上限",
+      elements: [],
+      appState: { note: content },
+    });
+    expect(created.status).toBe(201);
+    const loaded = await responseJson<{ appState: { note: string } }>(
+      await request(handler, "/api/scenes/scene_near_d1_limit"),
+    );
+    expect(loaded.appState.note).toBe(content);
+
+    const oversized = await jsonRequest(handler, "/api/scenes", {
+      id: "scene_over_d1_limit",
+      appState: { note: "x".repeat(1_900_000) },
+    });
+    expect(oversized.status).toBe(413);
+    expect(await responseJson<{ code: string }>(oversized)).toMatchObject({
+      code: "BODY_TOO_LARGE",
+    });
+  });
+
   it("advances thumbnail versions even when the image bytes are unchanged", async () => {
     const { handler, runtime } = createTestRuntime();
     const cookie = await authenticate(handler);
@@ -2355,7 +2379,7 @@ describe("cloud persistence server", () => {
     expect(existsSync(activeBackup)).toBe(true);
   });
 
-  it("reports an unhealthy storage directory", async () => {
+  it("reports an unhealthy local attachment directory", async () => {
     const { handler, runtime, directory } = createTestRuntime({
       ALLOW_ANONYMOUS: "true",
     });
@@ -2386,105 +2410,10 @@ describe("cloud persistence server", () => {
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
-  it("provides an authenticated online SQLite backup snapshot", async () => {
-    const { handler } = createTestRuntime();
-    const unauthorized = await request(handler, "/api/backup/snapshot");
-    expect(unauthorized.status).toBe(401);
-
-    const cookie = await authenticate(handler);
-    // Create a sample scene
-    await jsonRequest(
-      handler,
-      "/api/scenes",
-      {
-        id: "scene_backup_test",
-        name: "备份画板",
-        elements: [{ id: "elem-1", type: "rectangle" }],
-        appState: {},
-      },
-      { headers: { Cookie: cookie } },
-    );
-
-    const backupRes = await request(handler, "/api/backup/snapshot", {
-      headers: { Cookie: cookie },
-    });
-    expect(backupRes.status).toBe(200);
-    expect(backupRes.headers.get("content-type")).toContain(
-      "application/x-sqlite3",
-    );
-    expect(backupRes.headers.get("content-disposition")).toContain(
-      "attachment; filename=",
-    );
-    const buffer = await backupRes.arrayBuffer();
-    expect(buffer.byteLength).toBeGreaterThan(0);
-    // Header for sqlite database starts with "SQLite format 3\0"
-    const header = new TextDecoder().decode(buffer.slice(0, 15));
-    expect(header).toBe("SQLite format 3");
-  });
-
-  it("holds the backup lock until the response is consumed or canceled", async () => {
-    const { handler, directory } = createTestRuntime();
-    const cookie = await authenticate(handler);
-    const firstBackup = await request(handler, "/api/backup/full", {
-      headers: { Cookie: cookie },
-    });
-    expect(firstBackup.status).toBe(200);
-
-    const rejectedBackup = await request(handler, "/api/backup/snapshot", {
-      headers: { Cookie: cookie },
-    });
-    expect(rejectedBackup.status).toBe(429);
-    expect(await responseJson<{ code: string }>(rejectedBackup)).toMatchObject({
-      code: "BACKUP_BUSY",
-    });
-
-    await firstBackup.body?.cancel();
-    const remainingArtifacts = (await fs.readdir(directory)).filter((name) =>
-      /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)/.test(name),
-    );
-    expect(remainingArtifacts).toHaveLength(0);
-
-    const retry = await request(handler, "/api/backup/snapshot", {
-      headers: { Cookie: cookie },
-    });
-    expect(retry.status).toBe(200);
-    await retry.body?.cancel();
-  });
-
-  it("applies write rate limits to backup downloads before creating artifacts", async () => {
-    const { handler, runtime, directory } = createTestRuntime();
-    const cookie = await authenticate(handler);
-    runtime.writeAttempts.set("unknown", {
-      startedAt: Date.now(),
-      count: 120,
-    });
-
-    const response = await request(handler, "/api/backup/full", {
-      headers: { Cookie: cookie },
-    });
-
-    expect(response.status).toBe(429);
-    expect(response.headers.get("retry-after")).toBeTruthy();
-    const artifacts = (await fs.readdir(directory)).filter((name) =>
-      /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)/.test(name),
-    );
-    expect(artifacts).toHaveLength(0);
-  });
-
-  it("rejects an oversized database snapshot and removes its temp file", async () => {
-    const { handler, directory } = createTestRuntime({ MAX_BACKUP_BYTES: "1" });
-    const cookie = await authenticate(handler);
-    const response = await request(handler, "/api/backup/snapshot", {
-      headers: { Cookie: cookie },
-    });
-    expect(response.status).toBe(413);
-    expect(await responseJson<{ code: string }>(response)).toMatchObject({
-      code: "BACKUP_TOO_LARGE",
-    });
-    const artifacts = (await fs.readdir(directory)).filter((name) =>
-      name.startsWith("excalidraw-backup-"),
-    );
-    expect(artifacts).toHaveLength(0);
+  it("removes the application backup endpoints", async () => {
+    const { handler } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
+    expect((await request(handler, "/api/backup/snapshot")).status).toBe(404);
+    expect((await request(handler, "/api/backup/full")).status).toBe(404);
   });
 
   it("measures the compacted SQLite snapshot instead of rejecting free pages", async () => {
@@ -2531,84 +2460,6 @@ describe("cloud persistence server", () => {
       runtime.config.maxBackupBytes,
     );
     await snapshot.cleanup();
-  });
-
-  it("exports a complete backup containing the database, manifest and attachments", async () => {
-    const { handler, runtime, directory } = createTestRuntime();
-    const cookie = await authenticate(handler);
-    const upload = await request(handler, "/api/files/file_full_backup", {
-      method: "PUT",
-      headers: { Cookie: cookie, "Content-Type": "image/png" },
-      body: new Uint8Array([1, 2, 3]),
-    });
-    expect(upload.status).toBe(201);
-    const scene = await jsonRequest(
-      handler,
-      "/api/scenes",
-      {
-        id: "scene_full_backup",
-        name: "完整备份画板",
-        elements: [
-          { id: "image-1", type: "image", fileId: "file_full_backup" },
-        ],
-        appState: {},
-      },
-      { headers: { Cookie: cookie } },
-    );
-    expect(scene.status).toBe(201);
-
-    const backup = await request(handler, "/api/backup/full", {
-      headers: { Cookie: cookie },
-    });
-    expect(backup.status).toBe(200);
-    expect(backup.headers.get("content-type")).toContain("application/x-tar");
-    const archiveBlob = await backup.blob();
-    const archive = new Bun.Archive(archiveBlob);
-    const files = await archive.files();
-    expect([...files.keys()]).toEqual(
-      expect.arrayContaining([
-        "excalidraw.db",
-        "manifest.json",
-        "files/file_full_backup",
-      ]),
-    );
-    const manifest = JSON.parse(await files.get("manifest.json")!.text()) as {
-      format: string;
-      files: Array<{ id: string; path: string }>;
-    };
-    const database = files.get("excalidraw.db")!;
-    expect(database.size).toBeGreaterThan(0);
-    expect(
-      new TextDecoder().decode((await database.arrayBuffer()).slice(0, 15)),
-    ).toBe("SQLite format 3");
-    expect(
-      new Uint8Array(await files.get("files/file_full_backup")!.arrayBuffer()),
-    ).toEqual(new Uint8Array([1, 2, 3]));
-    expect(manifest.format).toBe("excalidraw-full-backup");
-    expect(manifest.files).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "file_full_backup",
-          path: "files/file_full_backup",
-        }),
-      ]),
-    );
-
-    const rawPayloadBytes =
-      database.size +
-      (await files.get("manifest.json")!.arrayBuffer()).byteLength +
-      (await files.get("files/file_full_backup")!.arrayBuffer()).byteLength;
-    expect(archiveBlob.size).toBeGreaterThan(rawPayloadBytes);
-    runtime.config.maxBackupBytes = rawPayloadBytes;
-    runtime.writeAttempts.clear();
-    const tooLargeArchive = await request(handler, "/api/backup/full", {
-      headers: { Cookie: cookie },
-    });
-    expect(tooLargeArchive.status).toBe(413);
-    const leftovers = (await fs.readdir(directory)).filter((name) =>
-      /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)/.test(name),
-    );
-    expect(leftovers).toHaveLength(0);
   });
 
   it("sanitizes isDeleted elements on creation and update to reduce stored size", async () => {
@@ -2686,7 +2537,7 @@ describe("cloud persistence server", () => {
       },
     };
 
-    const cleanedCount = cleanupExpiredTrashScenes(runtime);
+    const cleanedCount = await cleanupExpiredTrashScenes(runtime);
     expect(cleanedCount).toBe(1);
     expect(workspaceChanged).toBe(true);
     expect(runtime.db.query("SELECT id FROM scenes WHERE id = ?").get(id)).toBeNull();

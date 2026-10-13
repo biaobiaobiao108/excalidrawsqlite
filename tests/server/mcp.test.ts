@@ -10,9 +10,9 @@ import { createRequestHandler } from "../../server/routes";
 import { createRuntime } from "../../server/runtime";
 import { createServerConfig } from "../../server/config";
 
-import type { ServerRuntime } from "../../server/types";
+import type { LocalServerRuntime } from "../../server/runtime";
 
-const resources: Array<{ runtime: ServerRuntime; directory: string }> = [];
+const resources: Array<{ runtime: LocalServerRuntime; directory: string }> = [];
 
 afterEach(async () => {
   for (const { runtime, directory } of resources.splice(0)) {
@@ -569,6 +569,6 @@ describe("Excalidraw MCP endpoint", () => {
       await mcpHandler.close();
     }
 
-    expect(runtime.sessions.size).toBe(0);
+    expect(runtime.db.query("SELECT COUNT(*) AS count FROM sessions").get<{ count: number }>()?.count).toBe(0);
   });
 });

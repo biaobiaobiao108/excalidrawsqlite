@@ -1,50 +1,48 @@
-# 狐涂画板（Bun + SQLite 自托管版）
+# 狐涂画板（Bun + Cloudflare Workers）
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Bun Version](https://img.shields.io/badge/Bun-1.4%2B-black?logo=bun)](https://bun.sh) [![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)](https://github.com/biaobiaobiao108/excalidrawsqlite/pkgs/container/excalidrawsqlite)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Bun Version](https://img.shields.io/badge/Bun-1.4%2B-black?logo=bun)](https://bun.sh) [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-orange?logo=cloudflare)](https://workers.cloudflare.com/)
 
-一个基于 **Bun 1.4+** 与 **原生 SQLite** 驱动的纯净、自托管虚拟手绘风格白板。专为注重数据隐私、追求极速体验的个人与团队打造。支持多画板管理、30s 防抖自动云端持久化、画板图元数量统计、图片附件归档、HttpOnly 密码保护与极速 Docker/Podman 容器化部署。
+一个使用 **Bun 1.4+** 构建、部署在 **Cloudflare Workers** 的虚拟手绘风格白板。D1 保存画板和应用数据，R2 保存图片附件，Durable Objects 提供实时变更通知。支持多画板管理、30s 防抖自动保存、HttpOnly 密码保护和 MCP 接入。
 
 ---
 
 ## ⚖️ 与原版 Excalidraw 的核心区别与优化
 
-| 对比维度 | 官方 / 社区原版 Excalidraw | 本项目（狐涂画板，Bun + SQLite） |
+| 对比维度 | 官方 / 社区原版 Excalidraw | 本项目（狐涂画板，Bun + Cloudflare） |
 | :-- | :-- | :-- |
-| **运行时与架构** | Node.js + Yarn，微服务或多容器配置 | **100% 全栈 Bun (1.4.3+) 驱动**，单进程一体化极速托管，纯 TypeScript ESM 脚本工具链 |
-| **数据持久化** | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端 | **原生 SQLite WAL 高性能持久化**，Prepared Statements、摘要列、部分索引与 keyset 分页，单卷挂载 `./data:/app/data` |
+| **运行时与架构** | Node.js + Yarn，微服务或多容器配置 | **Bun 工具链 + Cloudflare Workers**，用 D1 保存画板数据，R2 保存附件 |
+| **数据持久化** | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端 | **Cloudflare D1** 保存画板、文件索引与会话数据，支持摘要列、索引与 keyset 分页 |
 | **多画板管理** | 单画板模式，需手动导出/导入 `.excalidraw` 文件 | **内置画板工作台**：列表/网格浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达 |
 | **图元统计** | 无图元数量感知 | **内置图元数量统计**：保存时维护去 JSON 扫描的 `element_count` / `content_bytes` 摘要列并在卡片展示 |
-| **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存 | **本地文件系统独立归档 + SHA-256 ETag / 304 + 隔离式分批垃圾回收** |
-| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据仍只访问本机/局域网服务，霞鹜文楷与思源黑体使用版本化 CDN |
+| **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存 | **Cloudflare R2 独立存储 + SHA-256 ETag / 304 + 分批垃圾回收** |
+| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据存储在部署者配置的 Cloudflare D1/R2 资源，霞鹜文楷与思源黑体使用版本化 CDN |
 | **中文字体支持** | 默认依赖外部在线 Google Fonts 或英文字体 | **通过 jsDelivr 加载「霞鹜文楷」与「思源黑体」CJK 字体**（Unicode 子集化拆分按需加载） |
 | **身份认证安全** | 无或 Token 明文保存在浏览器本地存储 | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据 |
 | **浏览器与构建** | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置 | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
-| **多端同步** | 依赖手动刷新或高频轮询 | **Bun 原生 WebSocket topic 广播 + 自动重连 + revision 条件拉取** |
+| **多端同步** | 依赖手动刷新或高频轮询 | **Durable Objects WebSocket 广播 + 自动重连 + revision 条件拉取** |
 | **前端现代体验** | 传统弹窗布局与全局媒体查询 | **原生 `<dialog>` 无障碍模型（`aria-modal`） + CSS `@container` 容器查询与 `:has()` 现代选择器** |
 | **代码工程质量** | 多套分散的编译器依赖 | **TypeScript 6.0+ 全 Monorepo 统一驱动** |
-| **全栈开发体验** | 需分别启动前端开发服务与后端 API，跨端口代理 | **`bun run dev` 一体化热重载**，单命令启动前后端，原生 SSE 毫秒级自动热刷新 |
-| **资源消耗** | 内存占用 500MB+，冷启动较慢 | **毫秒级冷启动，内存占用低至约 50~80MB** |
+| **全栈开发体验** | 需分别启动前端开发服务与后端 API，跨端口代理 | **`bun run dev` 一体化本地开发**，由 Wrangler 提供 Worker、D1、R2 和 Durable Objects |
 
 ---
 
 ## ✨ 核心特性详解
 
-### 1. 🚀 全栈 Bun 原生驱动
+### 1. 🚀 Bun 构建与 Cloudflare Workers 运行
 
-- 从 Monorepo 依赖管理、TypeScript 编译构建到生产后端服务托管，100% 运行于 Bun 环境。
-- 零 Node.js / Yarn 依赖，彻底消除冗余中间层。
+- Bun 用于 Monorepo 依赖管理、前端打包、开发和测试；生产 API 与静态资源运行于 Cloudflare Workers。
+- Wrangler 本地环境提供与生产一致的 D1、R2 和 Durable Objects 接口。
 
-### 2. 💾 SQLite WAL 云端自动持久化
+### 2. 💾 D1 画板持久化与 R2 附件归档
 
-- **高性能写入**：基于 Bun 原生 `bun:sqlite`，开启 WAL (Write-Ahead Logging) 模式与高并发事务。
-- **查询优化**：画板摘要列避免列表页扫描 `elements` JSON；有效画板、回收站、文件夹场景分别使用复合/部分索引，列表 API 支持 `limit`、`cursor`、`q`、`folder_id` 与 `favorite` 参数的 keyset 分页。
+- **画板保存**：画板正文、应用状态和元数据存储在 Cloudflare D1；单画板请求体默认限制为 1,900,000 字节，以适配 D1 单行大小限制。
+- **查询优化**：画板摘要列避免列表页扫描 `elements` JSON；有效画板、回收站、文件夹场景分别使用索引，列表支持 keyset 分页。
 - **自动防抖同步**：画布修改后防抖约 30 秒自动同步至云端，并使用 `revision` 乐观锁机制防止并发快照覆盖。
 - **纯净持久化与防膨胀**：前后端协同在持久化保存前自动过滤剔除已擦除/删除（`isDeleted`）图元，杜绝反复绘图擦除后场景 JSON 无节制膨胀。
-- **空闲页池化复用**：已删除画板释放的数据库页自动进入 SQLite 原生 Freelist，供后续新增或保存画板直接零开销池化复用，避免频繁申请分配与截断扩容导致的磁盘 IO 抖动与写放大。
-- **多端实时同步**：同源 `/api/realtime` 使用 Bun 原生 WebSocket；服务端只广播场景 ID、revision 和变更类型，客户端收到后按 ETag/revision 拉取内容，避免把大画板或附件推入 WebSocket。
+- **多端实时同步**：同源 `/api/realtime` 使用 Durable Objects WebSocket；服务端只广播场景 ID、revision 和变更类型，客户端收到后按 ETag/revision 拉取内容。
 - **离开保护**：离开画板或返回工作台主页时，前端会主动等待队列保存完毕再跳转。
-- **附件独立存储**：图片/媒体文件存储于本地 `data/files/`，SQLite 仅保存文件元数据与 SHA-256 哈希，避免大文件膨胀数据库。
-- **附件生命周期**：上传采用流式写临时文件、增量 SHA-256、原子替换与同内容幂等更新；未引用附件按批次回收，删除前先移动到 `.gc` 隔离文件，启动/维护任务会清理过期临时产物。
+- **附件独立存储**：图片和媒体文件存储于 Cloudflare R2，D1 保存文件元数据与 SHA-256 哈希。
+- **附件生命周期**：上传、替换与回收遵循版本一致性，读接口支持 SHA-256 ETag 和 `304 Not Modified`。
 
 ### 3. 🗂️ 完善的多画板与工作台系统
 
@@ -57,7 +55,7 @@
 ### 4. 🧼 极致纯净私有化 (Privacy First)
 
 - 彻底剔除所有外部跟踪分析打点代码与 Sentry 上报；字体不直连 Google Fonts，霞鹜文楷与思源黑体使用版本化 jsDelivr CDN，默认 Excalifont 保持本地。
-- 默认业务数据路径仅访问本机/局域网服务；字体 CDN、Mermaid 或外部嵌入属于明确的静态资源依赖。
+- 业务数据由部署者 Cloudflare 账号中的 Worker、D1 和 R2 处理；字体 CDN、Mermaid 或外部嵌入属于明确的静态资源依赖。
 
 ### 5. ⚡ 现代浏览器性能基线
 
@@ -68,159 +66,72 @@
 ### 6. 🔐 企业级轻量鉴权与安全响应头
 
 - 通过环境变量 `AUTH_PASSWORD` 开启密码保护。
-- 服务端签发安全 `HttpOnly` 会话 Cookie，会话记录持久化于 SQLite，浏览器端不存放明文凭证。
+- Worker 签发安全 `HttpOnly` 会话 Cookie，会话记录持久化于 D1，浏览器端不存放明文凭证。
 - 设置 `MCP_TOKEN` 后可通过 MCP Streamable HTTP 接入 Agent，列出/读取/新建画板，并添加或移除 Excalidraw 图元。
 - 服务端注入严格的 **Content Security Policy (CSP)**，禁止 `unsafe-inline` 和 `unsafe-eval` 脚本执行。
 
-### 7. 📦 完整备份与一键归档
+### 7. 📦 Cloudflare 数据保护
 
-- 支持一键导出包含 `excalidraw.db` 数据库、`manifest.json` 与 `files/` 图片附件的完整 `.tar` 归档包；归档先写临时文件并原子改名，再以流式响应返回，避免备份大小翻倍占用内存。
-
----
-
-## 🚀 快速启动
-
-### 方式一：Docker Compose 部署（推荐）
-
-#### 1. 创建配置文件
-
-在宿主机创建部署目录与 `docker-compose.yml`：
-
-```bash
-mkdir -p ./data
-cat << 'EOF' > docker-compose.yml
-services:
-  excalidraw:
-    image: ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
-    restart: unless-stopped
-    ports:
-      - '127.0.0.1:8080:8080'
-    environment:
-      - AUTH_PASSWORD=your-strong-password  # 访问密码
-      - TRUST_PROXY=false                   # 直连或仅本机反代时保持 false
-    volumes:
-      - ./data:/app/data
-EOF
-```
-
-#### 2. 启动服务
-
-```bash
-docker compose up -d
-```
-
-本机访问 `http://localhost:8080` 即可开始绘制。此示例只绑定本机地址；若需要局域网直连，可将端口改为 `8080:8080`，并保持 `TRUST_PROXY=false`。
-
-若通过 Nginx、Caddy 或 Traefik 提供 HTTPS，应让代理转发到本机 `127.0.0.1:8080`，并将 `TRUST_PROXY` 设为 `true`。此时必须确保只有可信代理能连接应用端口，且代理覆盖客户端传入的 `X-Forwarded-For`，写入实际客户端 IP；不要把启用 `TRUST_PROXY=true` 的应用端口直接暴露到公网，否则客户端可伪造转发地址并绕过登录限流。
-
-Docker 构建上下文会排除本地 `.env.development` 和 `.env.production`。当前唯一的其他公开前端构建选项 `VITE_APP_DISABLE_PREVENT_UNLOAD` 可通过 Compose `.env` 文件或 shell 环境变量传入；不要在 `VITE_*` 配置中放秘密，因为其值会编译到浏览器资源。
+- D1 数据可通过 Cloudflare D1 Time Travel 恢复；Time Travel 不会回滚 R2 对象。R2 对象备份需要由部署方另行配置，本项目不提供一键完整归档或 R2 备份。
 
 ---
 
-### 方式二：Docker / Podman CLI 单行启动
+## 🚀 Cloudflare 部署与本地开发
 
-**Docker CLI 运行：**
+### 部署前准备
 
-```bash
-mkdir -p ./data
-docker run -d \
-  --name excalidraw \
-  -p 127.0.0.1:8080:8080 \
-  -e AUTH_PASSWORD=your-strong-password \
-  -e TRUST_PROXY=false \
-  -v ./data:/app/data \
-  --restart unless-stopped \
-  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
-```
-
-**Podman 用户（支持 rootless 与 SELinux）：**
+- 安装 Bun 1.4.3+，并准备已启用 Workers、D1 和 R2 的 Cloudflare 账号。
+- 安装依赖并登录 Wrangler：
 
 ```bash
-mkdir -p ./data
-podman run -d \
-  --name excalidraw \
-  -p 127.0.0.1:8080:8080 \
-  -e AUTH_PASSWORD=your-strong-password \
-  -e TRUST_PROXY=false \
-  -v ./data:/app/data:Z \
-  --userns=keep-id \
-  --restart unless-stopped \
-  ghcr.io/biaobiaobiao108/excalidrawsqlite:latest
-```
-
----
-
-### 方式三：本地 Bun 源码运行
-
-#### 前置要求
-
-- 安装 [Bun](https://bun.sh/) (v1.4.3+)
-
-#### 操作步骤
-
-```bash
-# 1. 克隆仓库
-git clone https://github.com/biaobiaobiao108/excalidrawsqlite.git
-cd excalidrawsqlite
-
-# 2. 安装依赖 (使用 Bun 维护 bun.lock)
 bun install
-
-# 3. 构建生产产物并启动全栈服务 (默认端口 8080)
-bun run build
-AUTH_PASSWORD=your-password bun run start
+bunx wrangler login
 ```
 
-PowerShell 请先设置当前终端会话的环境变量：
-
-```powershell
-$env:AUTH_PASSWORD = "your-password"
-bun run build
-bun run start
-```
-
-如果你明确需要关闭密码保护，请改为设置 `$env:ALLOW_ANONYMOUS = "true"`；生产环境不会默认匿名开放。
-
-如需进行前端热重载开发：
+- 在 Cloudflare 创建一个 D1 数据库和一个 R2 bucket，然后将返回的 D1 数据库名称、ID 与 R2 bucket 名称填入 `wrangler.jsonc` 对应的 `DB` 和 `ASSETS_BUCKET` bindings。资源名和 ID 由部署者的 Cloudflare 账号提供，仓库不预设账号专属值。
+- 配置运行密钥。生产环境应设置非空 `AUTH_PASSWORD`；启用 MCP 时设置 `MCP_TOKEN`。通过 Wrangler 写入 Worker secret，不要把密钥提交到仓库或放入前端构建变量：
 
 ```bash
-# 一键启动前后端一体化开发服务器 (内置源码变动监听 + 原生 SSE 浏览器热刷新)
-AUTH_PASSWORD=your-password bun run dev
+bunx wrangler secret put AUTH_PASSWORD
+bunx wrangler secret put MCP_TOKEN
 ```
 
-打开浏览器访问 `http://localhost:8080`，修改任意 `excalidraw-app` 或 `packages` 源码即可体验毫秒级增量重新编译并自动刷新。
+### 首次部署与更新
+
+```bash
+bun run cf:db:migrate:remote
+bun run cf:deploy
+```
+
+部署前必须先应用 D1 migrations；后续新增 migration 时，先在本地验证，再运行远程 migration，最后发布 Worker。`cf:deploy` 是手动部署命令，仓库 CI 不会发布到 Cloudflare。Cloudflare Dashboard 可用于查看 Worker 日志、配置变量和管理资源；不要把账户密钥写入 `wrangler.jsonc`。
+
+### 本地开发
+
+```bash
+bun run cf:db:migrate:local
+bun run dev
+```
+
+`bun run dev` 由 Wrangler 启动本地 Worker、D1、R2 和 Durable Objects，并监听前端源码变化。也可以单独运行 `bun run cf:dev` 调试 Worker。构建与 Worker dry-run 检查：
+
+```bash
+bun run build
+```
+
+本地运行数据位于 Wrangler 的 `.wrangler/state` 目录，不会导入旧 SQLite 数据。项目只支持从空 D1 开始的新部署。
+
+### 数据保护边界
+
+画板、应用状态和元数据存储在 D1，附件存储在 R2。Cloudflare D1 Time Travel 可用于 D1 数据恢复，但不会恢复、删除或回滚 R2 对象；本项目不提供应用内完整备份或 R2 备份。需要恢复附件时，部署方必须使用自己配置的 R2 备份方案，并保证 D1 与 R2 的恢复点一致。
 
 ---
-
-## ⚙️ 环境变量速查表
-
-| 环境变量 | 默认值 | 必填项 | 说明 |
-| :-- | :-- | :-: | :-- |
-| `AUTH_PASSWORD` | _无_ | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。 |
-| `MCP_TOKEN` | _无_ | 否 | 设置后启用 `/mcp/<URL 编码后的 MCP_TOKEN>` MCP 服务，无需认证请求头。未设置时 MCP 端点关闭。 |
-| `MCP_TRACE` | `false` | 否 | 临时启用 MCP 业务处理分段计时；记录内部 API 读写、图元转换、回执构建耗时与读写次数，不记录令牌、参数或画板正文。 |
-| `ALLOW_ANONYMOUS` | `false` | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。 |
-| `TRUST_PROXY` | `false` | 否 | 仅在应用端口被可信反向代理隔离保护时设为 `true`，用于识别 HTTPS 并下发 Secure Cookie。代理需覆盖 `X-Forwarded-For` 为实际客户端 IP，且应用端口不得允许不可信客户端直连；直连部署应保持 `false`，以防伪造转发头绕过登录限流。 |
-| `PORT` | `8080` | 否 | 服务端监听端口。 |
-| `HOST` | `0.0.0.0` | 否 | 服务监听地址。默认绑定所有网络接口；需要限制为本机访问时可显式设置 `HOST=127.0.0.1`。 |
-| `DATA_DIR` | `./data` | 否 | SQLite 数据库文件与图片附件存储目录。 |
-| `AUTH_SESSION_TTL_MS` | `604800000` (7 天) | 否 | 登录会话在服务端与浏览器 Cookie 中的有效期（毫秒）。 |
-| `TRASH_RETENTION_DAYS` | `30` (30 天) | 否 | 回收站画板保留天数。设为 `0` 禁用自动清理；超期后自动物理删除并回收 SQLite 空间与关联孤立附件。 |
-| `MAX_FILE_BYTES` | `4194304` (4MB) | 否 | 单个图片/附件上传大小限制（字节）。 |
-| `MAX_SCENE_BODY_BYTES` | `16777216` (16MB) | 否 | 单个画板 JSON 数据最大请求体大小。 |
-| `MAX_IN_FLIGHT_BODY_BYTES` | `67108864` (64MB) | 否 | 所有并发请求体的聚合内存预算；若配置低于单请求上限，会自动提升到安全下限。 |
-| `MAX_BACKUP_BYTES` | `134217728` (128MB) | 否 | 单次数据库快照或完整备份的原始内容大小上限。 |
-
-构建版本标识统一通过 `BUILD_SHA` 注入（Docker 同名 build arg），不接受旧构建环境变量别名。默认静态产物目录仅为 `excalidraw-app/build`，自定义目录需显式指定 `STATIC_DIR`；不会再回退到旧的 `dist/build` 目录。服务端仅读取当前 SQLite schema，损坏或缺失的修订号、图元数量、场景 JSON 明确报错，不推测版本或返回空场景。
-
----
-
 ## 🤖 MCP：让 Agent 读取和绘制画板
 
-MCP 使用标准 Streamable HTTP 传输，端点为 `http://你的服务地址:8080/mcp/<URL 编码后的令牌>`。设置高强度随机令牌后重启服务：
+MCP 使用标准 Streamable HTTP 传输，生产端点为 `https://<your-worker-domain>/mcp/<URL 编码后的令牌>`；本地 Wrangler 地址默认为 `http://127.0.0.1:8787`。设置高强度随机令牌：
 
 ```bash
-MCP_TOKEN=replace-with-a-long-random-secret bun run dev
+bunx wrangler secret put MCP_TOKEN
+bun run cf:deploy
 ```
 
 Windows PowerShell：
@@ -237,37 +148,15 @@ bun run dev
   "mcpServers": {
     "excalidrawsqlite": {
       "type": "http",
-      "url": "http://127.0.0.1:8080/mcp/replace-with-a-long-random-secret"
+      "url": "https://<your-worker-domain>/mcp/replace-with-a-long-random-secret"
     }
   }
 }
 ```
 
-只接受路径令牌，旧的 `Authorization: Bearer` 和 `?token=...` 均不生效。令牌使用 `encodeURIComponent` 编码后放在 `/mcp/` 后面；无需额外配置请求头。远程连接使用 HTTPS，并在反向代理访问日志中对 MCP 令牌路径脱敏。
+MCP 入口通过路径令牌鉴权；令牌使用 `encodeURIComponent` 编码后放在 `/mcp/` 后面。远程连接使用 HTTPS，并避免在访问日志中记录令牌路径。
 
-容器经 HTTPS 反代部署时，在 Compose 同目录的 `.env` 设置 `MCP_TOKEN` 和 `TRUST_PROXY=true`，然后执行 `docker compose up -d --build`。默认 Compose 已将这两个变量传给容器，并只把应用端口绑定到 `127.0.0.1`。MCP 客户端填写公网地址 `https://boards.example.com/mcp/<URL 编码后的令牌>`；无需登录网页，也无需 `Authorization` 请求头。建议用独立域名的根路径部署，当前应用不支持通过 `X-Forwarded-Prefix` 挂载到任意子路径。
-
-下面的 Nginx 配置放在已有的 HTTPS `server` 块内，专门代理 MCP；网页仍沿用原有的 `location /` 配置。`proxy_pass` 不添加 URI，保留完整令牌路径；转发实际域名、协议及客户端 IP。启用 `TRUST_PROXY` 后，MCP 回执中的画板链接会使用这个公网 HTTPS 地址。
-
-```nginx
-location ^~ /mcp/ {
-    proxy_pass http://127.0.0.1:8080;
-    proxy_http_version 1.1;
-    proxy_set_header Host $http_host;
-    proxy_set_header X-Forwarded-Host $http_host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header Connection "";
-    proxy_buffering off;
-    proxy_cache off;
-    proxy_read_timeout 300s;
-    proxy_send_timeout 300s;
-    access_log off;
-}
-```
-
-MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/POST/DELETE/OPTIONS`，保留 `Accept`、`Content-Type`、`Mcp-*`、`Last-Event-Id` 请求头；不要套用网页登录跳转或验证码。关闭响应缓冲让 SSE 及时送达，设置适当读超时避免代理提前断开连接（[Nginx 代理模块文档](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffering)）。示例关闭该路径的访问日志以避免记录令牌；如需日志，使用脱敏格式。若反代也运行在容器中，应在私有容器网络中转发到应用服务名及端口，而非代理容器自身的 `127.0.0.1`。
-
+Cloudflare 部署时，在终端执行 `bunx wrangler secret put MCP_TOKEN` 保存令牌，再手动运行 `bun run cf:deploy`。MCP 客户端地址为 `https://<your-worker-domain>/mcp/<URL 编码后的令牌>`；无需登录网页，也无需 `Authorization` 请求头。生产连接必须使用 HTTPS，并避免在访问日志中记录令牌路径。
 工具按“尽量一次完成”安排：
 
 | 工具 | 用途 |
@@ -326,7 +215,7 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 工具定义使用 JSON Schema `$defs` 复用公共字段，三种形状共享相同字段结构，仍严格检查每种图元允许的属性。客户端可能再次展开引用，实际模型上下文大小取决于客户端实现。重复批量校验错误按字段与原因聚合，保留前三个具体位置、错误处数，最多展示八类，不回显完整 schema；实际校验仍检查全部输入。`update_board` 中纯图元修改没有任何实际变化时直接返回 `noop`，不再序列化完整画板并发起保存；仅改元数据应优先使用 `manage_board`。
 
-需要排查写入延迟时临时设置 `MCP_TRACE=true`，Compose 已转发该变量。`[MCP timing]` 记录 `apiReadMs/apiWriteMs`（内部 API 调用全过程，包含路由校验、序列化及存储）、`transformMs`（图元生成、更新或投影）、`responseBuildMs`（业务回执构建）、`handlerMs` 和 `apiReads/apiWrites`。这些不是纯 SQLite 执行时间；也不包含模型生成、客户端校验、外部网络、令牌鉴权或 SDK 响应传输。计时默认关闭，无常驻历史缓存，不记录参数、正文或令牌。常见绘图工具按工具名记录，管理操作记录为 `management` 类别。
+需要排查写入延迟时，可在 Cloudflare Worker variables 中临时设置 `MCP_TRACE=true`。`[MCP timing]` 记录 `apiReadMs/apiWriteMs`（内部 API 调用全过程，包含路由校验、序列化及存储）、`transformMs`（图元生成、更新或投影）、`responseBuildMs`（业务回执构建）、`handlerMs` 和 `apiReads/apiWrites`。这些不是纯 D1 执行时间；也不包含模型生成、客户端校验、外部网络、令牌鉴权或 SDK 响应传输。计时默认关闭，无常驻历史缓存，不记录参数、正文或令牌。常见绘图工具按工具名记录，管理操作记录为 `management` 类别。
 
 运行固定性能基准：
 
@@ -367,27 +256,28 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
 
 ```text
 ├── server/
-│   ├── server.ts           # Bun 服务启动入口与优雅退出处理
+│   ├── server.ts           # Bun SQLite 测试服务与兼容性辅助入口，不用于生产部署
+│   ├── db.ts               # 异步 D1 接口与 Cloudflare D1 适配器
+│   ├── bun-database.ts     # 测试专用 Bun SQLite 适配器
 │   ├── mcp.ts              # MCP Streamable HTTP 工具与认证入口
-│   ├── routes.ts           # 纯原生 API 路由与静态资源/SPA 分发
-│   ├── dev-server.ts       # 开发态源码增量监听与热重载编译调度
-│   ├── dev-reload.ts       # 基于 Web Streams 的原生 SSE 广播通道
+│   ├── routes.ts           # 异步 D1 API 路由，静态资源转交 Workers Assets
 │   ├── config.ts           # 环境变量、服务配置与限制常量
 │   ├── types.ts            # 后端共享类型
 │   ├── errors.ts           # HTTP 错误类型
 │   ├── http.ts             # 请求体、响应、安全头与 CORS/CSP
 │   ├── validation.ts       # 请求参数与资源 ID 校验
 │   ├── auth.ts             # 密码会话、Cookie 与限流
-│   ├── database.ts         # 当前 SQLite schema 初始化与 WAL 配置
-│   ├── runtime.ts          # 运行时与持久化目录初始化
+│   ├── database.ts         # 测试专用 SQLite schema 初始化
+│   ├── runtime.ts          # 测试专用 Bun SQLite runtime
 │   ├── scenes.ts           # 画板、文件夹与场景数据处理
 │   ├── files.ts            # 附件、缩略图与存储一致性维护
-│   ├── backup.ts           # SQLite 快照与完整备份
-│   ├── realtime.ts         # Bun 原生 WebSocket 鉴权、topic 与变更广播
-│   ├── static.ts           # 静态资源路径与 SPA fallback 辅助
+│   ├── cloudflare-runtime.ts # Worker binding 注入与 D1 runtime
+│   ├── cloudflare-realtime.ts # Durable Object WebSocket 与广播
+│   ├── files.ts            # R2 附件流、D1 元数据和生命周期维护
 │   └── ...                  # 持久化、备份、并发与安全模块
 ├── scripts/
-│   ├── build-frontend.ts   # 纯原生 Bun HTML Bundler 打包引擎 (含 dev/watch)
+│   ├── build-frontend.ts   # 纯原生 Bun HTML Bundler 打包引擎
+│   ├── dev-cloudflare.ts   # Wrangler Worker 与前端构建监听开发入口
 │   ├── build-version.ts    # 版本号与 Git SHA 元数据生成 (纯 Bun TypeScript ESM)
 │   ├── buildPackage.ts     # Packages 子包 ESM 打包工具
 │   └── release.ts          # 发布与 Changelog 自动化脚本
@@ -406,18 +296,20 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
 │   └── ...
 ├── tests/
 │   ├── unit/                # Bun 原生纯逻辑单元测试
-│   └── server/              # Bun SQLite/API 集成测试
+│   └── server/              # Bun SQLite/API 回归测试
 ├── docs/                   # GitHub Pages 介绍落地页 (单文件、现代化动效与手绘 SVG)
-├── Dockerfile              # oven/bun:1.4.3-alpine 纯 Bun 多阶段极小容器构建 (零 Node.js)
-├── docker-compose.yml      # 容器化编排配置文件
+├── worker/                 # Cloudflare Workers 入口与运行时适配
+├── migrations-d1/           # Cloudflare D1 数据库迁移
+├── wrangler.jsonc           # Worker、静态资源与 Cloudflare bindings 配置
+├── public/_headers          # Workers Static Assets 安全响应头
 └── bun.lock                # Bun 统一依赖锁文件
 ```
 
 ### 后端模块职责
 
-后端仍由 Bun 单进程提供 API、静态资源和 SQLite 持久化。`server/server.ts` 是启动入口，同时保留现有公共导出，便于测试和外部调用继续使用原有导入路径。新增后端逻辑应放入对应职责模块，不要把业务逻辑重新集中到入口文件。
+生产环境由 Cloudflare Worker 提供 API，D1 保存画板数据，R2 保存附件；本地通过 Wrangler 模拟 Worker 与 Cloudflare bindings。Bun SQLite 适配器仅供测试使用。
 
-模块依赖遵循“共享类型与基础能力 → 数据和业务模块 → 路由 → 启动入口”的方向。路由继续使用原生 `Request`/`Response` 和手工路径匹配，不额外引入 HTTP 框架或路由依赖。SQLite 只初始化当前 schema，不维护版本号或旧库迁移；修改 API、鉴权、schema 或附件存储时，保持当前契约和安全边界，并运行后端测试。
+Worker 入口负责注入 D1、R2、Durable Objects、静态资源与 `waitUntil`，业务处理继续使用原生 `Request`/`Response`。D1 结构通过 `migrations-d1/` 管理；项目不提供旧 SQLite 数据导入。
 
 ---
 
@@ -431,7 +323,7 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
 | `GET` | `/api/scenes` | 获取有效画板 keyset 分页；`limit` 默认为 50、最大 100，支持 `cursor/q/folder_id/favorite/sort` 筛选与排序 |
 | `POST` | `/api/scenes` | 创建新画板 |
 | `GET` | `/api/scenes/:id` | 获取指定画板的图元数据与应用状态 |
-| `GET` | `/api/realtime` | 同源 Bun 原生 WebSocket；按 `scene_id` 订阅轻量场景/工作区变更事件 |
+| `GET` | `/api/realtime` | Durable Object WebSocket；按 `scene_id` 订阅轻量场景/工作区变更事件 |
 | `PATCH` | `/api/scenes/:id` | 修改画板元数据（名称、文件夹、标签、收藏状态） |
 | `PUT` | `/api/scenes/:id` | 保存画板快照，携带 `baseRevision` 乐观锁校验 |
 | `PUT` | `/api/scenes/:id/thumbnail` | 保存画板缩略图预览 |
@@ -443,26 +335,15 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
 | `POST` | `/api/folders` | 新建文件夹 |
 | `PATCH` | `/api/folders/:id` | 重命名文件夹 |
 | `DELETE` | `/api/folders/:id` | 删除文件夹 |
-| `PUT` | `/api/files/:id` | 上传图片附件到本地文件系统 (`data/files/`)，自动计算 SHA-256 哈希 |
+| `PUT` | `/api/files/:id` | 流式上传图片附件到 R2，D1 原子更新对象指针并计算 SHA-256 哈希 |
 | `GET` | `/api/files/:id` | 读取图片附件内容（支持 `ETag` 与 `If-None-Match` 协商缓存，秒级 `304 Not Modified`） |
-| `GET` | `/api/backup/full` | 导出包含 SQLite 数据库与全部图片附件的完整 `.tar` 备份 |
-| `GET` | `/api/health` | 容器健康检查（数据库响应性与目录可写性） |
+| `GET` | `/api/health` | D1 连通性健康检查 |
 
 ---
 
 ## 💾 数据持久化与备份恢复
 
-1. **数据目录组成**：
-   - 挂载点 `./data` 包含 `excalidraw.db`、SQLite WAL 文件与 `files/` 实体图片目录。
-2. **完整备份**：
-   - 可在工作台右上角点击 **“导出完整备份”**，或请求 `/api/backup/full`，获取包含最新数据库快照和全部附件的 `.tar` 压缩包。
-3. **数据恢复**：
-   - 恢复前先停止容器服务：
-     ```bash
-     docker compose down
-     ```
-   - 将备份解压并整体覆盖宿主机的 `./data` 目录（确保包含 `excalidraw.db` 和 `files/`）。
-   - 重新启动容器即可完整恢复所有画板与图片资源。
+画板、应用状态和元数据存储在 D1，附件存储在 R2。D1 Time Travel 可恢复 D1 数据，但不会回滚 R2 对象。本项目不提供应用内完整备份或 R2 备份；部署方需自行配置 R2 备份，并确保恢复时 D1 与 R2 数据相互匹配。
 
 ---
 
