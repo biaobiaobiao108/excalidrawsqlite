@@ -1,0 +1,2 @@
+AUTH_PASSWORD="replace-with-a-local-login-password"
+MCP_TOKEN="replace-with-a-local-mcp-token"

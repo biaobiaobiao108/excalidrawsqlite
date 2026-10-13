@@ -89,7 +89,29 @@ bunx wrangler login
 ```
 
 - 在 Cloudflare 创建一个 D1 数据库和一个 R2 bucket，然后将返回的 D1 数据库名称、ID 与 R2 bucket 名称填入 `wrangler.jsonc` 对应的 `DB` 和 `ASSETS_BUCKET` bindings。资源名和 ID 由部署者的 Cloudflare 账号提供，仓库不预设账号专属值。
-- 配置运行密钥。生产环境应设置非空 `AUTH_PASSWORD`；启用 MCP 时设置 `MCP_TOKEN`。通过 Wrangler 写入 Worker secret，不要把密钥提交到仓库或放入前端构建变量：
+- 配置进入画板的登录密码和 MCP 访问令牌。两个变量用途不同：
+
+| 变量 | 用途 | 必需性 |
+| --- | --- | --- |
+| `AUTH_PASSWORD` | 网页登录密码；设置后画板 API 需要登录 | 生产必需，除非明确启用匿名访问 |
+| `MCP_TOKEN` | MCP URL 的访问令牌，不是网页登录密码 | 只在启用 MCP 时设置 |
+
+本地 Wrangler 开发使用仓库根目录的 `.dev.vars`。复制示例文件并替换为自己的值；不启用 MCP 时可以删去 `MCP_TOKEN` 行：
+
+```powershell
+Copy-Item .dev.vars.example .dev.vars
+```
+
+`.dev.vars` 示例内容：
+
+```dotenv
+AUTH_PASSWORD="replace-with-a-local-login-password"
+MCP_TOKEN="replace-with-a-local-mcp-token"
+```
+
+之后运行 `bun run dev` 或 `bun run cf:dev`。`.dev.vars` 只供本地 Wrangler 使用并已加入 Git 忽略规则；不要把密钥写进前端变量或提交到仓库。
+
+生产环境通过 Wrangler 将密钥单独保存为 Worker secrets，命令会提示输入对应值。网页登录密码必需；如果不用 MCP，可不设置 MCP token：
 
 ```bash
 bunx wrangler secret put AUTH_PASSWORD
@@ -112,7 +134,7 @@ bun run cf:db:migrate:local
 bun run dev
 ```
 
-`bun run dev` 由 Wrangler 启动本地 Worker、D1、R2 和 Durable Objects，并监听前端源码变化。也可以单独运行 `bun run cf:dev` 调试 Worker。构建与 Worker dry-run 检查：
+`bun run dev` 由 Wrangler 启动本地 Worker、D1、R2 和 Durable Objects，并监听前端源码变化；启动前请按上文配置 `.dev.vars`。也可以单独运行 `bun run cf:dev` 调试 Worker。构建与 Worker dry-run 检查：
 
 ```bash
 bun run build
@@ -134,12 +156,7 @@ bunx wrangler secret put MCP_TOKEN
 bun run cf:deploy
 ```
 
-Windows PowerShell：
-
-```powershell
-$env:MCP_TOKEN = "replace-with-a-long-random-secret"
-bun run dev
-```
+本地测试 MCP 时，将令牌写到 `.dev.vars` 的 `MCP_TOKEN` 项，见上文配置示例。生产环境使用 `wrangler secret put` 保存的值。
 
 在支持远程 HTTP MCP 的 Agent 客户端中添加服务：
 
@@ -156,7 +173,7 @@ bun run dev
 
 MCP 入口通过路径令牌鉴权；令牌使用 `encodeURIComponent` 编码后放在 `/mcp/` 后面。远程连接使用 HTTPS，并避免在访问日志中记录令牌路径。
 
-Cloudflare 部署时，在终端执行 `bunx wrangler secret put MCP_TOKEN` 保存令牌，再手动运行 `bun run cf:deploy`。MCP 客户端地址为 `https://<your-worker-domain>/mcp/<URL 编码后的令牌>`；无需登录网页，也无需 `Authorization` 请求头。生产连接必须使用 HTTPS，并避免在访问日志中记录令牌路径。
+Cloudflare 部署时，先按部署章节保存 `MCP_TOKEN` Worker secret，再手动运行 `bun run cf:deploy`。MCP 客户端地址为 `https://<your-worker-domain>/mcp/<URL 编码后的令牌>`；无需登录网页，也无需 `Authorization` 请求头。生产连接必须使用 HTTPS，并避免在访问日志中记录令牌路径。
 工具按“尽量一次完成”安排：
 
 | 工具 | 用途 |
