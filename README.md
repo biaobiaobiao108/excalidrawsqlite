@@ -268,6 +268,8 @@ location ^~ /mcp/ {
 
 MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/POST/DELETE/OPTIONS`，保留 `Accept`、`Content-Type`、`Mcp-*`、`Last-Event-Id` 请求头；不要套用网页登录跳转或验证码。关闭响应缓冲让 SSE 及时送达，设置适当读超时避免代理提前断开连接（[Nginx 代理模块文档](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffering)）。示例关闭该路径的访问日志以避免记录令牌；如需日志，使用脱敏格式。若反代也运行在容器中，应在私有容器网络中转发到应用服务名及端口，而非代理容器自身的 `127.0.0.1`。
 
+网关、WAF 或 OpenResty 的 User-Agent 过滤规则也需放行整个 `/mcp/` 路径，包括 Python SDK 的默认 UA；保留真实 User-Agent，不要靠伪装 curl 解决。若 `initialize` 等带 JSON-RPC `id` 的请求收到 `202` 空响应，应使用同一请求比较不同 UA 的公网响应与直连 Bun 响应，并检查各层拦截日志；不能把它当作初始化成功。协议通知（例如 `notifications/initialized`）没有 `id`，正常接受时可以返回 `202` 空响应。需要拒绝时返回明确的 `4xx`，不要用空 `202` 隐藏拦截。本仓库没有线上网关配置，应用更新不会自动解除网关规则。
+
 工具按“尽量一次完成”安排：
 
 | 工具 | 用途 |
@@ -313,9 +315,9 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 绘图回执在 `responseMode=ids` 时返回 `requestedElementIds`（输入图元本体）、`generatedElementIds`（自动生成的绑定文字）和 `elementMap`（按 `inputIndex` 对应本体及 `labelId`），不再提供混合两种角色的 `elementIds` 回执；读取筛选和移除操作的 `elementIds` 入参仍表示待操作的图元。MCP 画板输入和结果统一使用 `boardId`，不提供 `id` 别名，包括列表、单读、批读、创建及管理结果；图元和文件夹各自的 `id` 不变。画板元数据统一为 `elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt`；文件夹使用 `boardCount/createdAt/updatedAt`，不透传对应数据库命名字段。省略内部缩略图哈希和存储大小。批读的 `partial` 表示成功与失败混合，`truncated` 仅表示内容或字符预算截断；画板不存在不会触发 `truncated`，无需续读。
 
-图元和嵌套对象严格拒绝未知字段，`strokeColour`、`fillStyles`、`zIndex` 等错误不会写库。颜色接受十六进制、`transparent` 和 schema 列出的常见 CSS 颜色名；`opacity` 为 0–100 百分比，可带小数；`rotation` 以度为单位；`roundness` 支持像素半径或圆角对象；文字可指定 `fontSize/fontFamily/textAlign`。读取或修改已有场景时保留图片及自由画笔图元，但不提供图片上传、自由画笔生成、原始场景覆盖、备份、永久删除或清空回收站工具。
+图元和嵌套对象严格拒绝未知字段，`strokeColour`、`fillStyles`、`zIndex` 等错误不会写库。颜色接受十六进制、`transparent` 和全部 148 个标准 CSS 命名色（包括 `rebeccapurple`）；`opacity` 为 0–100 百分比，可带小数；`rotation` 以度为单位；`roundness` 支持像素半径或圆角对象；文字可指定 `fontSize/fontFamily/textAlign`。读取或修改已有场景时保留图片及自由画笔图元，但不提供图片上传、自由画笔生成、原始场景覆盖、备份、永久删除或清空回收站工具。
 
-形状及其绑定文字的标签在创建、追加、原地修改时统一最多 2000 字符，直接按绑定文字 ID 修改也遵守此限制；独立文字最多 10000 字符。超限更新返回明确错误，保持原内容和修订号不变。文件夹和图元共用颜色规则，客户端 schema 与服务端均接受大小写并规范为小写，支持 `#RGB/#RGBA/#RRGGBB/#RRGGBBAA`、常见 CSS 名和 `transparent`。批量管理的必填参数错误会定位到 `items.0.expectedRevision/action` 等具体字段。
+形状及其绑定文字的标签在创建、追加、原地修改时统一最多 2000 字符，直接按绑定文字 ID 修改也遵守此限制；独立文字最多 10000 字符。超限更新返回明确错误，保持原内容和修订号不变。文件夹和图元共用颜色规则，客户端 schema 与服务端均接受大小写并规范为小写，支持 `#RGB/#RGBA/#RRGGBB/#RRGGBBAA`、标准 CSS 命名色和 `transparent`。批量管理的必填参数错误会定位到 `items.0.expectedRevision/action` 等具体字段。
 
 修改形状标签样式可传 `update_element.update.labelStyle`，或通过 `update_board.updates` 一次修改多个标签；只合并传入的标签字段，不改形状样式，不需要删除重建。标签字体字段同时出现于顶层和 `labelStyle` 时，嵌套值优先。已有 `labelId` 只用于核对稳定身份，传不同 ID 明确报错；给无标签形状新增文字时可同时指定 `text/labelId/labelStyle`。绑定标签跟随容器旋转，不支持独立于容器的旋转。
 
@@ -327,7 +329,15 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 软删除和还原的实际状态变化也递增 `revision` 并更新 `updated_at`；重复相同状态返回 `noop`，不递增。删除后还原会使旧的 `expectedRevision` 失效，调用方应使用最新回执版本。`list_tags.nextCursor` 是按标签名排序的边界，SQL 读取名称大于该边界的标签，不要求该标签仍存在；分页不是一致快照，期间改名或新增可能影响后续页，完整重新核对时从第一页读取。
 
-成功及业务结果的完整机器数据在 `structuredContent`，文本 `content` 给简短说明；客户端须检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。绘图写入默认 `responseMode=minimal`，返回修订号、数量和画板 URL，无需再次读取全文确认成功；`copy_elements` 始终额外返回 `idMap/warnings`。`create_board/add_elements/update_board/create_diagram/copy_elements` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是本体数量，`elementCount` 是全画板当前图元数量。需要完整原始场景时显式设置 `get_board.view=full`。
+业务结果的完整机器数据在 `structuredContent`，文本 `content` 同时返回该对象序列化后的 JSON，只读文本的客户端也能取得 ID、图元、分页游标和错误码。这符合 [MCP 工具结果的兼容性建议](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/server/tools.mdx)。客户端须检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。绘图写入默认 `responseMode=minimal`，返回修订号、数量和画板 URL，无需再次读取全文确认成功；`copy_elements` 始终额外返回 `idMap/warnings`。`create_board/add_elements/update_board/create_diagram/copy_elements` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是本体数量，`elementCount` 是全画板当前图元数量。
+
+`remove_elements` 和 `update_board` 的删除反馈包含 `notFoundIds`（去重后的缺失请求 ID）、`removedCount`（含绑定文字的实际删除总数）、`requestedRemovedCount`（显式请求且存在的图元数）、`cascadeRemovedCount`（未显式请求的级联删除数）及 `elementCount`（操作后的全板图元数）。缺失 ID 不使整次操作失败，仍返回缺失清单；只删除不存在的 ID 时返回 `noop`，不递增修订号。删除标签 ID 只删除标签，删除形状才联动删除其标签。
+
+批量读取及管理的每项结果都有 `ok:true/false`，仍使用顶层 `partial/truncated` 表示混合结果及截断。`list_boards.view=recent` 只包含打开过的画板，默认按 `lastOpenedAt` 倒序；`view=all,sort=opened` 才包含从未打开的画板并把它们排最后。`create_diagram` 默认生成 `diagram_edge_<从0起序号>` 的边 ID，与用户节点 ID 冲突时会添加后缀；使用 `responseMode=ids` 获取准确的 `elementMap` 后可通过 `update_element` 改箭头样式。
+
+常规阅读使用 `compact`，`full` 仅用于调试或小批量检查原生内部字段。`maxChars` 限制单份业务结果的字符预算，不是整个 HTTP 报文大小；同时传输文本 JSON 与结构化结果会增加报文体积。当前画板图元作为单行 JSON 存储，图元分页、筛选和投影仍需读取整个画板，字符预算不限制数据库读取与解析成本；只需画板概要时使用 `summary`，它不读取图元 JSON。
+
+REST `/api/scenes` 写入使用原生 Excalidraw 元素，MCP 使用简化绘图描述，两种格式不能互换。同一画板可以通过两条通道编辑，但应读取最新版本并使用修订号保护；禁止用 MCP 的可写投影覆盖 REST 原生场景，否则会丢失投影未包含的图片和内部属性。MCP 的增量修改保留这些原有内容。服务初始化的 instructions 会显示实际回收站保留天数；默认 30 天，`TRASH_RETENTION_DAYS=0` 时明确告知自动清理已禁用。
 
 增量修改可传读取时的 `expectedRevision`；省略时服务端读取最新版本并用乐观锁保存。画板写入沿用现有的校验、冲突保护和实时通知，已打开且没有未保存本地修改的画板会自动刷新。发生 `REVISION_CONFLICT` 时重新读取并判断如何合并，不要盲目重试；业务错误返回 `ok=false`，不会标记为工具异常。
 
