@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import type { ExcalidrawElement } from "@excalidraw/element/types";
 import { autoBindArrowEndpoints } from "../../server/mcp-autobind";
 import { createDrawingBatch, drawingElementSchema, elementUpdateSchema, updateDrawingElements } from "../../server/mcp-drawing";
 
@@ -9,6 +10,23 @@ const scene = (extra: Record<string, unknown>[] = []) => createDrawingBatch([
 ].map((spec) => drawingElementSchema.parse(spec))).elements;
 
 describe("MCP opt-in arrow attachment", () => {
+  it("keeps malformed native scenes non-blocking and bounds point processing", () => {
+    const source = scene();
+    const invalidPoints = source.map((element) => element.type === "arrow" ? { ...element, points: [null, [1, 1]] } : element) as unknown as ExcalidrawElement[];
+    const snapshot = structuredClone(invalidPoints);
+    const malformed = autoBindArrowEndpoints(invalidPoints, ["edge"]);
+    expect(malformed.complete).toBe(false);
+    expect(malformed.bindings).toEqual([]);
+    expect(malformed.warnings[0].code).toBe("INVALID_AUTO_BIND_GEOMETRY");
+    expect(invalidPoints).toEqual(snapshot);
+    const invalidTarget = source.map((element) => element.id === "a" ? { ...element, width: NaN } : element);
+    expect(autoBindArrowEndpoints(invalidTarget, ["edge"]).complete).toBe(false);
+    const oversized = source.map((element) => element.type === "arrow" ? { ...element, points: Array(10_001).fill(element.points[0]) } : element);
+    const skipped = autoBindArrowEndpoints(oversized, ["edge"]);
+    expect(skipped.complete).toBe(false);
+    expect(skipped.checkedPoints).toBe(0);
+    expect(skipped.warnings[0].code).toBe("AUTO_BIND_LIMIT");
+  });
   it("binds nearby outlines without changing bends and follows later target movement", () => {
     const source = scene();
     const before = structuredClone(source);
