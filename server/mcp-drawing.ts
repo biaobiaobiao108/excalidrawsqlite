@@ -15,6 +15,8 @@ import {
   calculateFixedPointForNonElbowArrowBinding,
   normalizeFixedPoint,
   updateBoundElements,
+  updateBoundPoint,
+  getGlobalFixedPointForBindableElement,
 } from "@excalidraw/element/binding";
 import { isArrowElement, isBindableElement } from "@excalidraw/element/typeChecks";
 import { setCustomTextMetricsProvider } from "@excalidraw/element/textMeasurements";
@@ -160,6 +162,11 @@ const validateLinear = (value: Record<string, unknown>) => {
     (ends[0] !== ends[2] || ends[1] !== ends[3])
   );
 };
+const isAutomaticArrow = (value: Record<string, unknown>) => value.type === "arrow" &&
+  ["points", "startX", "startY", "endX", "endY"].every((key) => value[key] === undefined);
+const validateArrow = (value: Record<string, unknown>) => isAutomaticArrow(value)
+  ? !!value.startBinding && !!value.endBinding && !value.rotation
+  : validateLinear(value);
 export const drawingElementSchema = z.discriminatedUnion("type", [
   z.object({ type: z.enum(["rectangle", "ellipse", "diamond"]), ...shapeFields }).strict(),
   z
@@ -191,13 +198,16 @@ export const drawingElementSchema = z.discriminatedUnion("type", [
       endArrowhead: arrowhead.optional(),
     })
     .strict()
-    .refine(validateLinear, "请提供 points 或完整且不同的起终点，不能同时提供"),
+    .refine(validateArrow, "请提供 points 或完整且不同的起终点；也可仅传两端 binding 自动连接（不能同时传 rotation）"),
 ]);
 export const elementUpdateSchema = z
   .object({
     id: idSchema,
+    type: z.enum(["rectangle", "ellipse", "diamond", "text", "line", "arrow"]).optional().describe("可直接使用 input 视图的图元作为 updates；必须与现有类型相同，不支持类型转换"),
     x: coordinate.optional(),
     y: coordinate.optional(),
+    dx: coordinate.optional().describe("相对平移 X；不能与 x、points 或起终点坐标同时传入，绑定文字请移动容器"),
+    dy: coordinate.optional().describe("相对平移 Y；不能与 y、points 或起终点坐标同时传入，绑定文字请移动容器"),
     width: dimension.optional(),
     height: dimension.optional(),
     autoResize: z.boolean().optional().describe("仅独立文字使用；true 恢复自动宽度，false 保持固定宽度。传 width 自动启用固定宽度；文字高度始终由内容计算"),
@@ -217,6 +227,8 @@ export const elementUpdateSchema = z
     endArrowhead: arrowhead.optional(),
   })
   .strict()
+  .refine((value) => !(value.dx !== undefined && value.x !== undefined) && !(value.dy !== undefined && value.y !== undefined), "dx 与 x、dy 与 y 不能同时提供")
+  .refine((value) => value.dx === undefined && value.dy === undefined || [value.points, value.startX, value.startY, value.endX, value.endY].every((field) => field === undefined), "相对平移不能与 points 或起终点坐标同时提供")
   .refine((value) => value.autoResize !== true || value.width === undefined, "autoResize=true 时不能同时提供 width")
   .refine((v) => Object.keys(v).length > 1, "请提供至少一个修改字段");
 type Spec = z.infer<typeof drawingElementSchema>;
@@ -327,7 +339,7 @@ export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
     const opts = {
       ...base,
       ...geometry(
-        spec.points || [
+        isAutomaticArrow(spec) ? [[0, 0], [1, 1]] : spec.points || [
           [spec.startX!, spec.startY!],
           [spec.endX!, spec.endY!],
         ],
@@ -393,10 +405,42 @@ export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
 const connect = (
   elements: ExcalidrawElement[],
   requests: readonly (Spec | Update)[],
+  autoPlace = false,
 ) => {
   const map = new Map(elements.map((e) => [e.id, e]));
   for (const request of requests) {
     const arrow = map.get(request.id!);
+    if (autoPlace && isAutomaticArrow(request)) {
+      const endpoints = (["startBinding", "endBinding"] as const).map((key) => {
+        const value = (request as Update)[key];
+        const target = value && map.get(value.elementId);
+        if (!value || !isBindableElement(target) || target.isDeleted)
+          throw new HttpError(400, "INVALID_BINDING", `绑定目标不存在或不可绑定：${value?.elementId ?? key}`);
+        return { target, value, point: getGlobalFixedPointForBindableElement(value.fixedPoint ?? [0.5, 0.5], target, map as ElementsMap) };
+      });
+      if (endpoints[0].target.id === endpoints[1].target.id ||
+          endpoints[0].point[0] === endpoints[1].point[0] && endpoints[0].point[1] === endpoints[1].point[1])
+        throw new HttpError(400, "AUTO_ARROW_GEOMETRY_REQUIRED", "自连接或同中心目标需要显式 points 指定路径");
+      if (!arrow || !isArrowElement(arrow)) throw new HttpError(400, "INVALID_BINDING", "自动连接仅支持箭头");
+      const automaticArrow = newElementWith(arrow, { ...geometry(endpoints.map(({ point }) => point)),
+        startBinding: { elementId: endpoints[0].target.id, fixedPoint: normalizeFixedPoint(endpoints[0].value.fixedPoint ?? [0.5, 0.5]), mode: endpoints[0].value.mode ?? "orbit" },
+        endBinding: { elementId: endpoints[1].target.id, fixedPoint: normalizeFixedPoint(endpoints[1].value.fixedPoint ?? [0.5, 0.5]), mode: endpoints[1].value.mode ?? "orbit" },
+      });
+      map.set(automaticArrow.id, automaticArrow);
+      const absolute = endpoints.map(({ target }, index) => {
+        const key = index === 0 ? "startBinding" : "endBinding";
+        const point = updateBoundPoint(automaticArrow as NonDeleted<typeof automaticArrow>, key,
+          automaticArrow[key], target, map as ElementsMap);
+        return point ? [automaticArrow.x + point[0], automaticArrow.y + point[1]] : endpoints[index].point;
+      });
+      if (absolute[0][0] === absolute[1][0] && absolute[0][1] === absolute[1][1])
+        throw new HttpError(400, "AUTO_ARROW_GEOMETRY_REQUIRED", "自动连接端点重合，请显式 points 指定路径");
+      if (absolute.some((point) => point.some((value) => !coordinate.safeParse(value).success)))
+        throw new HttpError(400, "AUTO_ARROW_GEOMETRY_REQUIRED", "自动连接端点超出画布坐标范围");
+      const placedArrow = newElementWith(automaticArrow, geometry(absolute));
+      map.set(placedArrow.id, placedArrow);
+      continue;
+    }
     for (const key of ["startBinding", "endBinding"] as const) {
       if (!(key in request)) continue;
       if (!arrow || !isArrowElement(arrow))
@@ -485,7 +529,7 @@ export const createDrawingBatch = (
     requests.push({ ...spec, id: group[0].id });
   }
   const elements = syncInvalidIndices(
-      connect([...current, ...created], requests),
+      connect([...current, ...created], requests, true),
     ),
     createdIds = new Set(created.map((e) => e.id));
   return { elements, created: elements.filter((e) => createdIds.has(e.id)) };
@@ -498,7 +542,8 @@ export const updateDrawingElements = (
   const map = new Map(current.map((e) => [e.id, e]));
   const seen = new Set<string>();
   const applied: Update[] = [];
-  for (const patch of updates) {
+  for (const input of updates) {
+    let patch = input;
     if (seen.has(patch.id))
       throw new HttpError(
         400,
@@ -509,6 +554,18 @@ export const updateDrawingElements = (
     const element = map.get(patch.id);
     if (!element)
       throw new HttpError(404, "ELEMENT_NOT_FOUND", `图元不存在：${patch.id}`);
+    if (patch.type !== undefined && patch.type !== element.type)
+      throw new HttpError(400, "INVALID_ELEMENT_UPDATE", `不支持类型转换：${element.type} → ${patch.type}`);
+    if (patch.dx !== undefined || patch.dy !== undefined) {
+      if (element.type === "text" && element.containerId)
+        throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "绑定文字不能独立平移，请移动所属容器");
+      const { dx, dy, ...absolute } = patch;
+      const x = dx === undefined ? patch.x : element.x + dx;
+      const y = dy === undefined ? patch.y : element.y + dy;
+      if (x !== undefined && !coordinate.safeParse(x).success || y !== undefined && !coordinate.safeParse(y).success)
+        throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "平移后的坐标超出画布范围");
+      patch = { ...absolute, ...(x === undefined ? {} : { x }), ...(y === undefined ? {} : { y }) };
+    }
     const labelContainer = element.type === "text" && element.containerId
       ? map.get(element.containerId)
       : undefined;
@@ -926,6 +983,7 @@ export const inputDrawingElements = (current: readonly ExcalidrawElement[]) => {
   }
   return {
     elements: [...candidates.values()],
+    labelOwners: new Map([...foldedLabels].filter(([, parentId]) => candidates.has(parentId))),
     unsupportedElementIds: [...unsupported],
     warnings,
   };

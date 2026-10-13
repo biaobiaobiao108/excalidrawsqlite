@@ -38,6 +38,75 @@ const flow = () =>
     }),
   ]).elements;
 describe("MCP drawing contracts", () => {
+  it("connects binding-only arrows to native outlines regardless of input order", () => {
+    const specs = [
+      { type: "arrow", id: "edge", startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
+      shape("a"), { ...shape("b", 300), type: "ellipse" },
+    ].map((spec) => drawingElementSchema.parse(spec));
+    const created = createDrawingBatch(specs);
+    const edge = created.elements.find((element) => element.id === "edge")!;
+    expect(edge.type).toBe("arrow");
+    if (edge.type !== "arrow") throw new Error("expected arrow");
+    expect(edge.x).toBeGreaterThan(100);
+    expect(edge.x + edge.points[1][0]).toBeLessThan(300);
+    expect(edge.startBinding?.elementId).toBe("a");
+    expect(edge.endBinding?.elementId).toBe("b");
+    expect(created.created.map((element) => element.id)).toEqual(["edge", "a", "b"]);
+    const copy = createDrawingBatch(inputDrawingElements(created.elements).elements);
+    expect(inputDrawingElements(copy.elements)).toEqual(inputDrawingElements(created.elements));
+    const moved = updateDrawingElements(created.elements, [elementUpdateSchema.parse({ id: "a", dx: 20 })]);
+    expect(moved.elements.find((element) => element.id === "edge")!.x).toBeGreaterThan(edge.x);
+    expect(createDrawingBatch([specs[0]], created.elements.filter((element) => element.id !== "edge"))
+      .elements.find((element) => element.id === "edge")!.x).toBeGreaterThan(100);
+    for (const spec of [
+      { type: "arrow", startBinding: { elementId: "a" } },
+      { type: "arrow", startBinding: { elementId: "a" }, endBinding: { elementId: "b" }, startX: 0 },
+      { type: "arrow", startBinding: { elementId: "a" }, endBinding: { elementId: "b" }, rotation: 30 },
+    ]) expect(drawingElementSchema.safeParse(spec).success).toBe(false);
+    expect(() => createDrawingBatch([specs[0]])).toThrow("绑定目标");
+    expect(() => createDrawingBatch([shape("a"), drawingElementSchema.parse({ type: "arrow",
+      startBinding: { elementId: "a" }, endBinding: { elementId: "a" } })])).toThrow("自连接");
+    const inside = createDrawingBatch([shape("a"), shape("b", 300), drawingElementSchema.parse({ type: "arrow", id: "inside",
+      startBinding: { elementId: "a", fixedPoint: [0.25, 0.25], mode: "inside" },
+      endBinding: { elementId: "b", fixedPoint: [0.75, 0.75], mode: "inside" } })]).elements.find((element) => element.id === "inside")!;
+    expect(inside).toMatchObject({ x: 25, y: 20, points: [[0, 0], [350, 40]] });
+  });
+
+  it("moves batches with relative coordinates while retaining labels and bindings", () => {
+    const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("a"), text: "label", labelId: "caption" }),
+      shape("b", 300), drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[100, 40], [300, 40]],
+        startBinding: { elementId: "a" }, endBinding: { elementId: "b" } })]).elements;
+    const before = structuredClone(current);
+    const moved = updateDrawingElements(current, ["a", "b", "edge"].map((id) => elementUpdateSchema.parse({ id, dx: 30, dy: -20 })));
+    for (const old of current) {
+      const next = moved.elements.find((element) => element.id === old.id)!;
+      expect(next.x).toBeCloseTo(old.x + 30);
+      expect(next.y).toBeCloseTo(old.y - 20);
+    }
+    expect(moved.updatedCount).toBe(3);
+    expect(updateDrawingElements(moved.elements, [elementUpdateSchema.parse({ id: "a", dx: 0, dy: 0 })]).updatedCount).toBe(0);
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "caption", dx: 10 })])).toThrow("所属容器");
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "b", dx: 1_000_000 })])).toThrow("超出画布范围");
+    for (const input of [{ id: "a", x: 0, dx: 1 }, { id: "a", y: 0, dy: 1 },
+      { id: "edge", dx: 1, points: [[0, 0], [10, 10]] }]) expect(elementUpdateSchema.safeParse(input).success).toBe(false);
+    expect(current).toEqual(before);
+  });
+
+  it("accepts unchanged input projections as updates and checks the optional type", () => {
+    const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"), text: "label", labelId: "caption" }),
+      drawingElementSchema.parse({ type: "text", id: "free", x: 200, y: 200, text: "a long line", width: 60 }),
+      drawingElementSchema.parse({ type: "line", id: "line", points: [[0, 100], [100, 100]] }),
+      drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[100, 40], [200, 200]], startBinding: { elementId: "box" } }),
+    ]).elements;
+    const projection = inputDrawingElements(current);
+    expect(projection.labelOwners.get("caption")).toBe("box");
+    const updates = projection.elements.map((element) => elementUpdateSchema.parse(element));
+    expect(updateDrawingElements(current, updates).updatedCount).toBe(0);
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "box", type: "ellipse", x: 10 })])).toThrow("不支持类型转换");
+    const damaged = current.map((element) => element.id === "box" ? { ...element, width: 0 } : element);
+    expect(inputDrawingElements(damaged).labelOwners.size).toBe(0);
+  });
+
   it("creates fixed-width text and preserves wrapping through updates and input copies", () => {
     const text = "中文自动换行测试以及更多内容";
     const current = createDrawingBatch([drawingElementSchema.parse({
