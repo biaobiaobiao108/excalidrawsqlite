@@ -1,11 +1,11 @@
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "bun:test";
 
 import { createServerConfig } from "../../server/config";
-import { withStorageMutationLock } from "../../server/files";
+import { stageRequestBodyToFile, upsertStagedFile, withStorageMutationLock } from "../../server/files";
 import { createRequestHandler } from "../../server/routes";
 import { createRuntime } from "../../server/runtime";
 
@@ -182,6 +182,106 @@ describe("route failure and realtime regressions", () => {
     expect(await (await request("/api/scenes/repair_preview")).json()).toMatchObject({ thumbnail_file_id: null });
     expect((await upload(3)).status).toBe(200);
     expect(await (await request("/api/scenes/repair_preview")).json()).toMatchObject({ thumbnail_file_id: initial.thumbnail_file_id });
+  });
+
+  it("rejects slow stale thumbnail uploads before replacing stored bytes and cleans staging", async () => {
+    for (const explicitRevision of [false, true]) {
+      const { runtime, json, request } = setup();
+      await json("/api/scenes", { id: "slow_preview", elements: [{ id: "old", type: "rectangle" }] });
+      const initial = await request("/api/scenes/slow_preview/thumbnail", {
+        method: "PUT", headers: { "Content-Type": "image/png", "X-Thumbnail-Version": "100" },
+        body: new Uint8Array([1, 2, 3]),
+      });
+      const { thumbnail_file_id } = await initial.json() as { thumbnail_file_id: string };
+      let finish!: () => void;
+      let reading!: () => void;
+      const started = new Promise<void>((resolve) => { reading = resolve; });
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          reading();
+          return new Promise<void>((resolve) => {
+            finish = () => { controller.enqueue(new Uint8Array([4, 5, 6])); controller.close(); resolve(); };
+          });
+        },
+      });
+      const upload = request(`/api/scenes/slow_preview/thumbnail${explicitRevision ? "?revision=1" : ""}`, {
+        method: "PUT", headers: { "Content-Type": "image/png", "X-Thumbnail-Version": "101" }, body,
+      });
+      await started;
+      try {
+        expect((await json("/api/scenes/slow_preview", { elements: [{ id: "new", type: "rectangle" }], baseRevision: 1 }, "PUT")).status).toBe(200);
+      } finally {
+        finish();
+      }
+      const rejected = await upload;
+      expect(rejected.status).toBe(409);
+      expect(await rejected.json()).toMatchObject({ code: "REVISION_CONFLICT" });
+      expect(await (await request("/api/scenes/slow_preview")).json()).toMatchObject({ revision: 2, thumbnail_file_id: null });
+      expect(new Uint8Array(await (await request(`/api/files/${thumbnail_file_id}`)).arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+      expect(await readdir(runtime.filesDir)).toEqual([thumbnail_file_id]);
+      expect(runtime.bodyMemoryBudget.getStats().currentBytes).toBe(0);
+      expect((await request("/api/scenes/slow_preview/thumbnail?revision=2", {
+        method: "PUT", headers: { "Content-Type": "image/png", "X-Thumbnail-Version": "102" }, body: new Uint8Array([7]),
+      })).status).toBe(200);
+      expect(new Uint8Array(await (await request(`/api/files/${thumbnail_file_id}`)).arrayBuffer())).toEqual(new Uint8Array([7]));
+      expect((await request("/api/scenes/slow_preview/thumbnail?revision=1", { method: "DELETE" })).status).toBe(409);
+      expect(await (await request("/api/scenes/slow_preview")).json()).toMatchObject({ thumbnail_file_id });
+    }
+  });
+
+  it("rechecks thumbnail revisions after waiting for storage", async () => {
+    const { runtime, json, request } = setup();
+    await json("/api/scenes", { id: "queued_preview" });
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const storage = withStorageMutationLock(runtime, async () => {
+      entered();
+      await new Promise<void>((resolve) => { release = resolve; });
+    });
+    await started;
+    const uploading = request("/api/scenes/queued_preview/thumbnail?revision=1", {
+      method: "PUT", headers: { "Content-Type": "image/png", "X-Thumbnail-Version": "100" }, body: new Uint8Array([1]),
+    });
+    try {
+      for (let attempt = 0; attempt < 100 && !(await readdir(runtime.filesDir)).some((file) => file.endsWith(".tmp")); attempt++) {
+        await Bun.sleep(1);
+      }
+      expect((await readdir(runtime.filesDir)).some((file) => file.endsWith(".tmp"))).toBe(true);
+      await Bun.sleep(1);
+      expect((await json("/api/scenes/queued_preview", { name: "changed", baseRevision: 1 }, "PATCH")).status).toBe(200);
+    } finally {
+      release();
+      await storage;
+    }
+    expect((await uploading).status).toBe(409);
+    expect(await readdir(runtime.filesDir)).toEqual([]);
+    expect(runtime.db.query("SELECT COUNT(*) AS count FROM files").get()).toEqual({ count: 0 });
+  });
+
+  it("rolls back replaced thumbnail bytes when the final write guard detects a scene change", async () => {
+    const { runtime, json, request } = setup();
+    await json("/api/scenes", { id: "rollback_preview" });
+    const uploaded = await request("/api/scenes/rollback_preview/thumbnail", {
+      method: "PUT", headers: { "Content-Type": "image/png", "X-Thumbnail-Version": "100" }, body: new Uint8Array([1, 2]),
+    });
+    const { thumbnail_file_id } = await uploaded.json() as { thumbnail_file_id: string };
+    const previous = runtime.db.query("SELECT * FROM files WHERE id = ?").get(thumbnail_file_id);
+    const prepared = await stageRequestBodyToFile(runtime, thumbnail_file_id, new Request("http://localhost/upload", {
+      method: "PUT", body: new Uint8Array([3, 4]),
+    }));
+    let checks = 0;
+    await expect(upsertStagedFile(runtime, thumbnail_file_id, "image/png", prepared, undefined, 101, () => {
+      if (++checks === 2) {
+        // The second guard runs after the atomic filesystem replacement.
+        runtime.db.run("UPDATE scenes SET revision = revision + 1 WHERE id = ?", ["rollback_preview"]);
+        throw new Error("scene changed during filesystem replacement");
+      }
+    })).rejects.toThrow("scene changed during filesystem replacement");
+    expect(checks).toBe(2);
+    expect(runtime.db.query("SELECT * FROM files WHERE id = ?").get(thumbnail_file_id)).toEqual(previous);
+    expect(new Uint8Array(await (await request(`/api/files/${thumbnail_file_id}`)).arrayBuffer())).toEqual(new Uint8Array([1, 2]));
+    expect(await readdir(runtime.filesDir)).toEqual([thumbnail_file_id]);
   });
 
   it("notifies every open scene after committed batch deletion, restoration and permanent deletion", async () => {

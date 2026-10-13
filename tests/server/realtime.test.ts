@@ -35,6 +35,76 @@ afterEach(async () => {
 });
 
 describe("native websocket realtime", () => {
+  it("reports a permanently deleted scene when its subscriber reconnects", async () => {
+    const directory = path.join(
+      os.tmpdir(),
+      `excalidraw-realtime-test-${crypto.randomUUID()}`,
+    );
+    const runtime = createRuntime({
+      dbPath: path.join(directory, "excalidraw.db"),
+      filesDir: path.join(directory, "files"),
+      config: createServerConfig({
+        NODE_ENV: "test",
+        AUTH_PASSWORD: "",
+        ALLOW_ANONYMOUS: "true",
+      }),
+    });
+    runtimes.push(runtime);
+    directories.push(directory);
+    const handler = createRequestHandler(runtime);
+    const created = await request(handler, "/api/scenes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "scene_removed", name: "断线画板" }),
+    });
+    expect(created.status).toBe(201);
+    const removed = await request(
+      handler,
+      "/api/scenes/scene_removed?permanent=true",
+      { method: "DELETE" },
+    );
+    expect(removed.status).toBe(200);
+
+    const realtime = createRealtimeHub(runtime);
+    const server = Bun.serve<RealtimeSocketData>({
+      port: 0,
+      fetch: (req, currentServer) => realtime.upgrade(req, currentServer),
+      websocket: realtime.websocket,
+    });
+    realtime.attachServer(server);
+    const websocket = new WebSocket(
+      `ws://127.0.0.1:${server.port}${REALTIME_PATH}?scene_id=scene_removed`,
+    );
+    try {
+      const payload = await new Promise<unknown>((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error("WebSocket reconciliation timeout")),
+          2_000,
+        );
+        websocket.addEventListener("message", (event) => {
+          const message = JSON.parse(String(event.data));
+          if (message.type === "scene_changed") {
+            clearTimeout(timeout);
+            resolve(message);
+          }
+        });
+        websocket.addEventListener("error", () => {
+          clearTimeout(timeout);
+          reject(new Error("WebSocket connection failed"));
+        });
+      });
+      expect(payload).toMatchObject({
+        type: "scene_changed",
+        sceneId: "scene_removed",
+        revision: 0,
+        changeKind: "deleted",
+      });
+    } finally {
+      websocket.close();
+      await server.stop(true);
+    }
+  });
+
   it("publishes scene changes to the subscribed scene topic", async () => {
     const root = os.tmpdir();
     const directory = path.join(

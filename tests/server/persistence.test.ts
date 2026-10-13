@@ -1030,6 +1030,44 @@ describe("cloud persistence server", () => {
     expect(invalidSort.status).toBe(400);
   });
 
+  it("keeps unopened scenes last across opened-order pagination regardless of update time", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const insert = runtime.db.query(
+      "INSERT INTO scenes (id, name, elements, app_state, created_at, updated_at, last_opened_at) VALUES (?, ?, '[]', '{}', ?, ?, ?)",
+    );
+    for (const [id, updatedAt, openedAt] of [
+      ["opened_a", 500, 100],
+      ["opened_b", 100, 300],
+      ["opened_c", 200, 300],
+      ["unopened_a", 1000, null],
+      ["unopened_b", 10, null],
+      ["unopened_c", 600, null],
+    ] as const) {
+      await insert.run(id, id, updatedAt, updatedAt, openedAt);
+    }
+    type Page = { items: Array<{ id: string; last_opened_at: number | null }>; nextCursor: string | null };
+    const readIds = async (sort: string, limit: number) => {
+      const ids: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const response = await request(handler, `/api/scenes?sort=${sort}&limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, { headers: { Cookie: cookie } });
+        expect(response.status).toBe(200);
+        const page = await responseJson<Page>(response);
+        ids.push(...page.items.map(({ id }) => id));
+        cursor = page.nextCursor;
+        expect(ids.length).toBeLessThanOrEqual(6);
+      } while (cursor);
+      return ids;
+    };
+    for (const limit of [1, 2, 4]) {
+      expect(await readIds("opened", limit)).toEqual(["opened_c", "opened_b", "opened_a", "unopened_c", "unopened_b", "unopened_a"]);
+    }
+    const byUpdate = ["unopened_a", "unopened_c", "opened_a", "opened_c", "opened_b", "unopened_b"];
+    expect(await readIds("updated", 2)).toEqual(byUpdate);
+    expect(await readIds("created", 2)).toEqual(byUpdate);
+  });
+
   it("always returns a bounded page for scene and trash lists", async () => {
     const { handler, runtime } = createTestRuntime();
     const cookie = await authenticate(handler);

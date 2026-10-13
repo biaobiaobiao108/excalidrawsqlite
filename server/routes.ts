@@ -1164,16 +1164,20 @@ export const createRequestHandler = (
         const thumbnailVersion = parseThumbnailVersion(req);
         const revisionParam = url.searchParams.get("revision");
         const expectedRevision = revisionParam === null
-          ? undefined
-          : requireRevision(Number(revisionParam));
+          ? sceneRevision
+          : requireRevision(Number(revisionParam))!;
+        const assertThumbnailRevision = async () => {
+          const current = await stmts.getSceneVersionById.get(id) as {
+            revision: number; thumbnail_file_id: string | null;
+          } | null;
+          if (!current || current.revision !== expectedRevision) {
+            throw new HttpError(409, "REVISION_CONFLICT", "画板内容已更新，请重新生成预览");
+          }
+          return current;
+        };
         return await withThumbnailWriteLock(thumbnailId, async () => {
-          if (expectedRevision !== undefined) {
-            const current = await stmts.getSceneVersionById.get(id) as {
-              revision: number; thumbnail_file_id: string | null;
-            } | null;
-            if (!current || current.revision !== expectedRevision) {
-              throw new HttpError(409, "REVISION_CONFLICT", "画板内容已更新，请重新生成预览");
-            }
+          const current = await assertThumbnailRevision();
+          if (revisionParam !== null && thumbnailVersion === undefined) {
             // Another tab may have repaired the same board while this upload waited.
             if (current.thumbnail_file_id) {
               return jsonResponse(runtime, req, {
@@ -1204,11 +1208,12 @@ export const createRequestHandler = (
             prepared,
             undefined,
             thumbnailVersion,
+            assertThumbnailRevision,
           );
           const linked = await runtime.db.run(
             `UPDATE scenes SET thumbnail_file_id = ? WHERE id = ? AND deleted_at IS NULL
-             AND (? IS NULL OR revision = ?)`,
-            [thumbnailId, id, expectedRevision ?? null, expectedRevision ?? null],
+             AND revision = ?`,
+            [thumbnailId, id, expectedRevision],
           );
           if (linked.changes !== 1) {
             throw new HttpError(409, "REVISION_CONFLICT", "画板内容已更新，请重新生成预览");
@@ -1216,7 +1221,7 @@ export const createRequestHandler = (
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: id,
-            revision: sceneRevision,
+            revision: expectedRevision,
             updatedAt: Date.now(),
             changeKind: "thumbnail",
           });
@@ -1251,10 +1256,18 @@ export const createRequestHandler = (
         ) || 1;
         const thumbnailId = `thumbnail_${await sha256Hex(id)}`;
         const thumbnailVersion = parseThumbnailVersion(req);
+        const revisionParam = url.searchParams.get("revision");
+        const expectedRevision = revisionParam === null
+          ? sceneRevision
+          : requireRevision(Number(revisionParam))!;
         return await withThumbnailWriteLock(thumbnailId, async () => {
           const currentThumbnail = await stmts.getFileUpdatedAt.get(thumbnailId) as
             | { updated_at: number }
             | null;
+          const current = await stmts.getSceneVersionById.get(id) as { revision: number } | null;
+          if (!current || current.revision !== expectedRevision) {
+            throw new HttpError(409, "REVISION_CONFLICT", "画板内容已更新，请重新生成预览");
+          }
           if (
             thumbnailVersion !== undefined &&
             currentThumbnail &&
@@ -1267,10 +1280,13 @@ export const createRequestHandler = (
               stale: true,
             });
           }
-          await runtime.db.run(
-            "UPDATE scenes SET thumbnail_file_id = NULL WHERE id = ?",
-            [id],
+          const removed = await runtime.db.run(
+            "UPDATE scenes SET thumbnail_file_id = NULL WHERE id = ? AND revision = ? AND deleted_at IS NULL",
+            [id, expectedRevision],
           );
+          if (removed.changes !== 1) {
+            throw new HttpError(409, "REVISION_CONFLICT", "画板内容已更新，请重新生成预览");
+          }
           if (currentThumbnail && thumbnailVersion !== undefined) {
             await runtime.db.run("UPDATE files SET updated_at = ? WHERE id = ?", [
               thumbnailVersion,

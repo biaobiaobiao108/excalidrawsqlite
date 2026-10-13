@@ -60,16 +60,24 @@ test("default compact reads filter folded labels, paginate semantic objects and 
         { id: "edge", type: "arrow", points: [[100, 40], [200, 40]], startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
       ] });
     const compact = await call("get_board", { boardId: created.boardId });
-    expect(compact).toMatchObject({ matchedCount: 3, elementCount: 5, truncated: false, pointCoordinateSystem: "absolute" });
+    expect(compact).toMatchObject({ matchedCount: 3, elementCount: 5, viewElementCount: 3,
+      returnedElementCount: 3, truncated: false, pointCoordinateSystem: "absolute" });
     expect(compact.elements.map((element: any) => element.id)).toEqual(["a", "b", "edge"]);
     const selected = await call("get_board", { boardId: created.boardId, elementIds: ["caption", "a", "missing"] });
     expect(selected.elements).toHaveLength(1);
+    expect(selected).toMatchObject({ viewElementCount: 3, matchedCount: 1, returnedElementCount: 1 });
     expect(selected.elements[0]).toMatchObject({ id: "a", labelId: "caption", text: "待办" });
     expect(selected.notFoundIds).toEqual(["missing"]);
+    const writableLabel = await call("get_board", { boardId: created.boardId, view: "input", elementIds: ["caption", "missing"] });
+    expect(writableLabel.elements).toHaveLength(1);
+    expect(writableLabel.elements[0]).toMatchObject({ id: "a", labelId: "caption" });
+    expect(writableLabel.notFoundIds).toEqual(["missing"]);
+    const unchanged = await call("update_board", { boardId: created.boardId, updates: writableLabel.elements });
+    expect(unchanged).toMatchObject({ noop: true, revision: 1 });
     const searched = await call("get_board", { boardId: created.boardId, query: "待办", type: "rectangle" });
     expect(searched.elements.map((element: any) => element.id)).toEqual(["a"]);
     const first = await call("get_board", { boardId: created.boardId, view: "compact", limit: 1 });
-    expect(first).toMatchObject({ matchedCount: 3, nextOffset: 1, truncated: true });
+    expect(first).toMatchObject({ viewElementCount: 3, returnedElementCount: 1, matchedCount: 3, nextOffset: 1, truncated: true });
     const next = await call("get_board", { boardId: created.boardId, offset: first.nextOffset });
     expect(next.elements.map((element: any) => element.id)).toEqual(["b", "edge"]);
     const batch = await call("get_boards_batch", { boardIds: [created.boardId], maxChars: 1000 });
@@ -79,6 +87,23 @@ test("default compact reads filter folded labels, paginate semantic objects and 
     expect(styled.elements).toHaveLength(5);
     expect(styled.elements[0]).toHaveProperty("strokeColor");
     expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(styled).length * 0.6);
+    const target = await call("create_board", { name: "复制目标" });
+    const copied = await call("copy_elements", { boardId: created.boardId, targetBoardId: target.boardId,
+      elementIds: ["caption", "edge"], dx: 40, dy: 50, expectedRevision: 1, sourceExpectedRevision: 1 });
+    expect(copied).toMatchObject({ boardId: target.boardId, sourceBoardId: created.boardId, revision: 2, addedCount: 3 });
+    const targetRead = await call("get_board", { boardId: target.boardId, view: "full" });
+    expect(targetRead.elements.find((element: any) => element.id === copied.idMap.a)).toMatchObject({ x: 40, y: 50 });
+    expect(targetRead.elements.find((element: any) => element.id === copied.idMap.edge)).toMatchObject({
+      startBinding: { elementId: copied.idMap.a }, endBinding: null,
+    });
+    const rejected = await client.callTool({ name: "copy_elements", arguments: {
+      boardId: created.boardId, targetBoardId: target.boardId, elementIds: ["edge"], externalBindings: "preserve",
+    } });
+    expect(rejected.structuredContent).toMatchObject({ ok: false, error: { code: "INVALID_COPY_BINDING" } });
+    const conflict = await client.callTool({ name: "copy_elements", arguments: {
+      boardId: created.boardId, targetBoardId: target.boardId, elementIds: ["a"], expectedRevision: 1,
+    } });
+    expect(conflict.structuredContent).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
   } finally {
     await client.close();
     await handler.close();

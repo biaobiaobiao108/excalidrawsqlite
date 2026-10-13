@@ -58,6 +58,21 @@ describe("MCP semantic diagrams", () => {
     }
   });
 
+  it("creates mixed directed and headless bound connectors without changing the default", () => {
+    const result = buildDiagram({ name: "树形图", nodes, edges: [
+      { from: "a", to: "b", endArrowhead: null }, { from: "a", to: "c" },
+    ] });
+    const created = createDrawingBatch(result.elements);
+    const arrows = created.elements.filter((element) => element.type === "arrow");
+    expect(arrows.map((arrow) => arrow.type === "arrow" && arrow.endArrowhead)).toEqual([null, "arrow"]);
+    expect(arrows[0].type === "arrow" && arrows[0].startArrowhead).toBeNull();
+    const moved = updateDrawingElements(created.elements, [{ id: "b", dx: 100 }]);
+    const connector = moved.elements.find((element) => element.id === arrows[0].id);
+    expect(connector).toMatchObject({ type: "arrow", endArrowhead: null, endBinding: { elementId: "b" } });
+    expect(connector).not.toEqual(arrows[0]);
+    expect(diagramSchema.safeParse({ name: "bad", nodes, edges: [{ from: "a", to: "b", endArrowhead: "circle" }] }).success).toBe(false);
+  });
+
   it("handles cycles, disconnected nodes, skipped ranks and self loops deterministically", () => {
     const result = buildDiagram({ name: "循环", nodes: [...nodes, { id: "diagram_edge_0", title: "孤立" }],
       edges: [{ from: "a", to: "b" }, { from: "b", to: "a" },

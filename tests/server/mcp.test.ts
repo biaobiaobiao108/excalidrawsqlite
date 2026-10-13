@@ -28,6 +28,7 @@ const toolResult = <T>(result: {
 }) => {
   expect(result.isError).not.toBe(true);
   expect(result.structuredContent).toMatchObject({ ok: true });
+  expect(result.content).toEqual([{ type: "text", text: "操作成功；详情见 structuredContent。" }]);
   const data = result.structuredContent as Record<string, unknown>;
   const records = [data, ...["items", "boards", "results"].flatMap((key) =>
     Array.isArray(data[key]) ? data[key] as Record<string, unknown>[] : [])];
@@ -287,6 +288,16 @@ describe("Excalidraw MCP endpoint", () => {
       );
       expect(removedShape.removedCount).toBe(2);
       expect(removedShape.revision).toBe(4);
+      expect(removedShape).toMatchObject({ elementCount: 1, requestedRemovedCount: 1, cascadeRemovedCount: 1, notFoundIds: [] });
+      const missingRemoval = toolResult(await client.callTool({ name: "remove_elements", arguments: {
+        boardId: created.boardId, elementIds: ["ghost", "ghost"],
+      } }));
+      expect(missingRemoval).toMatchObject({ removedCount: 0, requestedRemovedCount: 0, cascadeRemovedCount: 0,
+        notFoundIds: ["ghost"], elementCount: 1, revision: 4, noop: true });
+      const missingBatchRemoval = toolResult(await client.callTool({ name: "update_board", arguments: {
+        boardId: created.boardId, removeElementIds: ["ghost"],
+      } }));
+      expect(missingBatchRemoval).toMatchObject({ removedCount: 0, notFoundIds: ["ghost"], elementCount: 1, revision: 4, noop: true });
 
       const remaining = toolResult<{
         elements: Array<{ type: string }>;
@@ -340,9 +351,10 @@ describe("Excalidraw MCP endpoint", () => {
 
       const updated = toolResult<{ revision: number; addedCount: number; removedCount: number; elementMap: Array<{ inputIndex: number; elementId: string }> }>(await client.callTool({
         name: "update_board", arguments: { responseMode: "ids", boardId: complete.boardId, expectedRevision: 1, name: "已修改",
-          removeElementIds: [complete.requestedElementIds[0]], elements: [{ id: "replacement", type: "text", x: 0, y: 0, text: "替换内容" }] },
+          removeElementIds: [complete.requestedElementIds[0], "ghost"], elements: [{ id: "replacement", type: "text", x: 0, y: 0, text: "替换内容" }] },
       }));
-      expect(updated).toMatchObject({ revision: 2, addedCount: 1, removedCount: 2 });
+      expect(updated).toMatchObject({ revision: 2, addedCount: 1, removedCount: 2, requestedRemovedCount: 1,
+        cascadeRemovedCount: 1, notFoundIds: ["ghost"], elementCount: 601 });
       expect(updated.elementMap).toEqual([{ inputIndex: 0, elementId: "replacement" }]);
       const changed = toolResult<{ name: string; thumbnail_file_id: string | null; appState: { viewBackgroundColor: string }; elements: Array<{ id: string }> }>(await client.callTool({
         name: "get_board", arguments: { boardId: complete.boardId, view: "full" },
@@ -366,7 +378,7 @@ describe("Excalidraw MCP endpoint", () => {
       expect(emptyUpdate.structuredContent).toMatchObject({ ok: false, error: { code: "EMPTY_UPDATE" } });
       const notFound = await client.callTool({ name: "get_board", arguments: { boardId: "missing" } });
       expect(notFound.structuredContent).toMatchObject({ ok: false });
-      expect(notFound.content[0]).toMatchObject({ type: "text" });
+      expect(notFound.content[0]).toMatchObject({ type: "text", text: "操作失败：画板不存在或已删除" });
       const unchanged = toolResult<{ revision: number }>(await client.callTool({
         name: "get_board", arguments: { boardId: complete.boardId, view: "summary" },
       }));
@@ -453,7 +465,8 @@ describe("Excalidraw MCP endpoint", () => {
         name: "get_boards_batch", arguments: { boardIds: [complete.boardId, "missing", connected.boardId], view: "summary" },
       }));
       expect(summaryBatch).toMatchObject({ partial: true, truncated: false });
-      expect(summaryBatch.boards[1]).toMatchObject({ boardId: "missing", error: { code: "SCENE_NOT_FOUND" } });
+      expect(summaryBatch.boards[0]).toMatchObject({ ok: true });
+      expect(summaryBatch.boards[1]).toMatchObject({ ok: false, boardId: "missing", error: { code: "SCENE_NOT_FOUND" } });
       const allMissing = toolResult<{ partial: boolean; truncated: boolean }>(await client.callTool({
         name: "get_boards_batch", arguments: { boardIds: ["missing"], view: "summary" },
       }));
@@ -564,6 +577,24 @@ describe("Excalidraw MCP endpoint", () => {
       expect(incompleteLabel.unsupportedElementIds).toContain("rr");
       expect(incompleteLabel.truncated).toBe(false);
       expect(incompleteLabel.warnings.some((warning) => warning.message.includes("2000"))).toBe(true);
+      const fixedBoard = toolResult<{ boardId: string }>(await client.callTool({
+        name: "create_board", arguments: { name: "固定宽度文字", elements: [
+          { type: "text", id: "paragraph", x: 20, y: 30, width: 100, fontSize: 20, text: "中文段落自动换行测试内容" },
+        ] },
+      }));
+      const fixedRead = toolResult<{ elements: Array<Record<string, unknown>> }>(await client.callTool({
+        name: "get_board", arguments: { boardId: fixedBoard.boardId, view: "full" },
+      }));
+      expect(fixedRead.elements[0]).toMatchObject({ width: 100, autoResize: false });
+      expect(String(fixedRead.elements[0].text)).toContain("\n");
+      toolResult(await client.callTool({ name: "update_board", arguments: {
+        boardId: fixedBoard.boardId, updates: [{ id: "paragraph", width: 200 }],
+      } }));
+      const fixedInput = toolResult<{ elements: Array<Record<string, unknown>>; warnings: unknown[] }>(await client.callTool({
+        name: "get_board", arguments: { boardId: fixedBoard.boardId, view: "input" },
+      }));
+      expect(fixedInput.elements[0]).toMatchObject({ width: 200, autoResize: false, text: "中文段落自动换行测试内容" });
+      expect(fixedInput.warnings).toEqual([]);
     } finally {
       await client.close();
       await mcpHandler.close();

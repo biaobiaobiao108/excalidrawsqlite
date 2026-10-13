@@ -129,6 +129,8 @@ type QueueCallbacks = {
   onConflict: (sceneId: string, snapshot: CloudSaveSnapshot) => void;
   onError: (error: Error) => void;
   onStatusChange?: (sceneId: string, status: CloudSaveStatus) => void;
+  /** Receives only snapshots confirmed by the server, with their committed revision. */
+  onSnapshotSaved?: (snapshot: CloudSaveSnapshot, revision: number) => void;
 };
 
 export type CloudSaveStatus =
@@ -1113,6 +1115,14 @@ export class CloudSaveQueue {
     }
     broadcastCloudSync({ type: "scene_saved", sceneId, revision });
     this.setStatus(sceneId, nextSnapshot ? "pending" : "saved");
+    if (!this.isDisposed && !this.disposed.has(sceneId)) {
+      try {
+        this.callbacks.onSnapshotSaved?.(snapshot, revision);
+      } catch (error) {
+        // Auxiliary preview work must never retry a committed scene write.
+        console.warn("画板保存后回调失败", error);
+      }
+    }
   }
 
   private bumpGeneration(sceneId: string) {

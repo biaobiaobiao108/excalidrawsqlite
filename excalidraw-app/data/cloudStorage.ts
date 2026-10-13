@@ -585,10 +585,11 @@ export async function saveCloudSceneThumbnail(
   if (Number.isFinite(thumbnailVersion)) {
     headers["X-Thumbnail-Version"] = String(thumbnailVersion);
   }
+  const url = `/api/scenes/${encodeURIComponent(id)}/thumbnail${expectedRevision === undefined ? "" : `?revision=${expectedRevision}`}`;
 
   if (blob === null) {
     const res = await fetchWithTimeout(
-      `/api/scenes/${encodeURIComponent(id)}/thumbnail`,
+      url,
       {
         method: "DELETE",
         headers,
@@ -606,7 +607,7 @@ export async function saveCloudSceneThumbnail(
 
   headers["Content-Type"] = blob.type || "image/jpeg";
   const res = await fetchWithTimeout(
-    `/api/scenes/${encodeURIComponent(id)}/thumbnail${expectedRevision === undefined ? "" : `?revision=${expectedRevision}`}`,
+    url,
     {
       method: "PUT",
       headers,

@@ -91,6 +91,28 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     expect(restored).toMatchObject({ ok: true, deleted: false, folderId: null, revision: deleted.revision + 2 });
     const batch = await call("batch_manage_boards", { items: [{ action: "manage", boardId: board.boardId, expectedRevision: restored.revision, favorite: true }, { action: "restore", boardId: "nonexistent", expectedRevision: 1 }, { action: "restore", boardId: board.boardId, expectedRevision: restored.revision + 1 }] });
     expect(batch).toMatchObject({ ok: true, succeeded: 2, failed: 1, partial: true, results: [{ ok: true, favorite: true }, { ok: false, error: { code: "SCENE_NOT_FOUND" } }, { ok: true, noop: true }] });
+    const batchDelete = await call("batch_manage_boards", { items: [{ action: "delete", boardId: board.boardId, expectedRevision: restored.revision + 1 }] });
+    expect(batchDelete).toMatchObject({ ok: true, succeeded: 1, failed: 0, partial: false, results: [{ ok: true, action: "delete", deleted: true }] });
+    const batchRestore = await call("batch_manage_boards", { items: [{ action: "restore", boardId: board.boardId, expectedRevision: batchDelete.results[0].revision }] });
+    expect(batchRestore).toMatchObject({ ok: true, results: [{ ok: true, action: "restore", deleted: false }] });
+    const recentIds: string[] = [];
+    for (const [index, openedAt] of [100, 300, 300, null].entries()) {
+      const recentBoard = await call("create_board", { name: `recent-regression-${index}` });
+      recentIds.push(recentBoard.boardId);
+      runtime.db.run("UPDATE scenes SET last_opened_at = ?, updated_at = ? WHERE id = ?", [openedAt, 1000 - index, recentBoard.boardId]);
+    }
+    const expectedRecent = [recentIds[1], recentIds[2]].sort().reverse().concat(recentIds[0]!);
+    let recentCursor: string | undefined;
+    const recentPageIds: string[] = [];
+    for (let index = 0; index < 3; index++) {
+      const recentPage = await call("list_boards", { view: "recent", query: "recent-regression-", limit: 1, ...(recentCursor ? { cursor: recentCursor } : {}) });
+      expect(recentPage.items).toHaveLength(1);
+      expect(recentPage.items[0].lastOpenedAt).not.toBeNull();
+      recentPageIds.push(recentPage.items[0].boardId);
+      recentCursor = recentPage.nextCursor;
+    }
+    expect(recentPageIds).toEqual(expectedRecent);
+    expect(recentCursor).toBeNull();
     const originalDuplicate = await call("create_folder", { name: "重复" });
     expect(await call("create_folder", { name: " 重复 " })).toMatchObject({ ok: false, error: { code: "FOLDER_NAME_EXISTS" } });
     const otherFolder = await call("create_folder", { name: "另一个" });

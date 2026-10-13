@@ -4,10 +4,12 @@ import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 export type ThumbnailSnapshot = {
   sceneId: string;
   elements: readonly ExcalidrawElement[];
-  appState: AppState;
+  appState: Partial<AppState>;
   files: BinaryFiles;
   /** Monotonic client-side version used to reject stale cross-tab uploads. */
   thumbnailVersion?: number;
+  /** Revision of the persisted content used to generate this preview. */
+  revision: number;
 };
 
 /**

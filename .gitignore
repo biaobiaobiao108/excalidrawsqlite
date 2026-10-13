@@ -35,3 +35,5 @@ server-build
 *.db-wal
 *.db-shm
 excalidraw-*-test-*
+.wrangler/
+out/

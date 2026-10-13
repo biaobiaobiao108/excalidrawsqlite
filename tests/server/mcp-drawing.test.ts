@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { CSS_NAMED_COLORS } from "../../server/color";
 import { CaptureUpdateAction, StoreSnapshot } from "@excalidraw/element/store";
 import type { OrderedExcalidrawElement, SceneElementsMap } from "@excalidraw/element/types";
 import {
@@ -38,6 +39,141 @@ const flow = () =>
     }),
   ]).elements;
 describe("MCP drawing contracts", () => {
+  it("connects binding-only arrows to native outlines regardless of input order", () => {
+    const specs = [
+      { type: "arrow", id: "edge", startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
+      shape("a"), { ...shape("b", 300), type: "ellipse" },
+    ].map((spec) => drawingElementSchema.parse(spec));
+    const created = createDrawingBatch(specs);
+    const edge = created.elements.find((element) => element.id === "edge")!;
+    expect(edge.type).toBe("arrow");
+    if (edge.type !== "arrow") throw new Error("expected arrow");
+    expect(edge.x).toBeGreaterThan(100);
+    expect(edge.x + edge.points[1][0]).toBeLessThan(300);
+    expect(edge.startBinding?.elementId).toBe("a");
+    expect(edge.endBinding?.elementId).toBe("b");
+    expect(created.created.map((element) => element.id)).toEqual(["edge", "a", "b"]);
+    const copy = createDrawingBatch(inputDrawingElements(created.elements).elements);
+    expect(inputDrawingElements(copy.elements)).toEqual(inputDrawingElements(created.elements));
+    const moved = updateDrawingElements(created.elements, [elementUpdateSchema.parse({ id: "a", dx: 20 })]);
+    expect(moved.elements.find((element) => element.id === "edge")!.x).toBeGreaterThan(edge.x);
+    expect(createDrawingBatch([specs[0]], created.elements.filter((element) => element.id !== "edge"))
+      .elements.find((element) => element.id === "edge")!.x).toBeGreaterThan(100);
+    for (const spec of [
+      { type: "arrow", startBinding: { elementId: "a" } },
+      { type: "arrow", startBinding: { elementId: "a" }, endBinding: { elementId: "b" }, startX: 0 },
+      { type: "arrow", startBinding: { elementId: "a" }, endBinding: { elementId: "b" }, rotation: 30 },
+    ]) expect(drawingElementSchema.safeParse(spec).success).toBe(false);
+    expect(() => createDrawingBatch([specs[0]])).toThrow("绑定目标");
+    expect(() => createDrawingBatch([shape("a"), drawingElementSchema.parse({ type: "arrow",
+      startBinding: { elementId: "a" }, endBinding: { elementId: "a" } })])).toThrow("自连接");
+    const inside = createDrawingBatch([shape("a"), shape("b", 300), drawingElementSchema.parse({ type: "arrow", id: "inside",
+      startBinding: { elementId: "a", fixedPoint: [0.25, 0.25], mode: "inside" },
+      endBinding: { elementId: "b", fixedPoint: [0.75, 0.75], mode: "inside" } })]).elements.find((element) => element.id === "inside")!;
+    expect(inside).toMatchObject({ x: 25, y: 20, points: [[0, 0], [350, 40]] });
+  });
+
+  it("moves batches with relative coordinates while retaining labels and bindings", () => {
+    const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("a"), text: "label", labelId: "caption" }),
+      shape("b", 300), drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[100, 40], [300, 40]],
+        startBinding: { elementId: "a" }, endBinding: { elementId: "b" } })]).elements;
+    const before = structuredClone(current);
+    const moved = updateDrawingElements(current, ["a", "b", "edge"].map((id) => elementUpdateSchema.parse({ id, dx: 30, dy: -20 })));
+    for (const old of current) {
+      const next = moved.elements.find((element) => element.id === old.id)!;
+      expect(next.x).toBeCloseTo(old.x + 30);
+      expect(next.y).toBeCloseTo(old.y - 20);
+    }
+    expect(moved.updatedCount).toBe(3);
+    expect(updateDrawingElements(moved.elements, [elementUpdateSchema.parse({ id: "a", dx: 0, dy: 0 })]).updatedCount).toBe(0);
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "caption", dx: 10 })])).toThrow("所属容器");
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "b", dx: 1_000_000 })])).toThrow("超出画布范围");
+    for (const input of [{ id: "a", x: 0, dx: 1 }, { id: "a", y: 0, dy: 1 },
+      { id: "edge", dx: 1, points: [[0, 0], [10, 10]] }]) expect(elementUpdateSchema.safeParse(input).success).toBe(false);
+    expect(current).toEqual(before);
+  });
+
+  it("accepts unchanged input projections as updates and checks the optional type", () => {
+    const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"), text: "label", labelId: "caption" }),
+      drawingElementSchema.parse({ type: "text", id: "free", x: 200, y: 200, text: "a long line", width: 60 }),
+      drawingElementSchema.parse({ type: "line", id: "line", points: [[0, 100], [100, 100]] }),
+      drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[100, 40], [200, 200]], startBinding: { elementId: "box" } }),
+    ]).elements;
+    const projection = inputDrawingElements(current);
+    expect(projection.labelOwners.get("caption")).toBe("box");
+    const updates = projection.elements.map((element) => elementUpdateSchema.parse(element));
+    expect(updateDrawingElements(current, updates).updatedCount).toBe(0);
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "box", type: "ellipse", x: 10 })])).toThrow("不支持类型转换");
+    const damaged = current.map((element) => element.id === "box" ? { ...element, width: 0 } : element);
+    expect(inputDrawingElements(damaged).labelOwners.size).toBe(0);
+  });
+
+  it("creates fixed-width text and preserves wrapping through updates and input copies", () => {
+    const text = "中文自动换行测试以及更多内容";
+    const current = createDrawingBatch([drawingElementSchema.parse({
+      type: "text", id: "fixed", x: 20, y: 30, text, width: 80,
+      fontSize: 20, textAlign: "right",
+    })]).elements;
+    const element = current[0];
+    if (element.type !== "text") throw new Error("expected text");
+    expect(element).toMatchObject({ x: 20, y: 30, width: 80, autoResize: false, originalText: text });
+    expect(element.text).toContain("\n");
+    expect(element.height).toBeGreaterThan(25);
+    const input = inputDrawingElements(current);
+    expect(input.warnings).toEqual([]);
+    expect(input.elements[0]).toMatchObject({ width: 80, autoResize: false, text });
+    expect(inputDrawingElements(createDrawingBatch(input.elements).elements)).toEqual(input);
+
+    const changed = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "fixed", text: `${text}${text}`, fontSize: 24 })]);
+    const updated = changed.elements[0];
+    if (updated.type !== "text") throw new Error("expected text");
+    expect(updated.width).toBe(80);
+    expect(updated.height).toBeGreaterThan(element.height);
+    expect(updated.version).toBeGreaterThan(element.version);
+    expect(updateDrawingElements(changed.elements, [elementUpdateSchema.parse({ id: "fixed", text: `${text}${text}`, fontSize: 24 })]).updatedCount).toBe(0);
+    const wider = updateDrawingElements(changed.elements, [elementUpdateSchema.parse({ id: "fixed", width: 160 })]).elements[0];
+    expect(wider.width).toBe(160);
+    expect(wider.height).toBeLessThan(updated.height);
+    const automatic = updateDrawingElements(changed.elements, [elementUpdateSchema.parse({ id: "fixed", autoResize: true })]).elements[0];
+    if (automatic.type !== "text") throw new Error("expected text");
+    expect(automatic.autoResize).toBe(true);
+    expect(automatic.text).toBe(automatic.originalText);
+    expect(automatic.width).toBeGreaterThan(80);
+    expect(current[0]).toEqual(element);
+  });
+
+  it("enables fixed width even at the current natural width and rejects unsupported text sizing", () => {
+    const current = createDrawingBatch([drawingElementSchema.parse({ type: "text", id: "free", x: 0, y: 0, text: "text" })]).elements;
+    const fixed = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "free", width: current[0].width })]);
+    expect(fixed.updatedCount).toBe(1);
+    expect(fixed.elements[0]).toMatchObject({ autoResize: false, width: current[0].width });
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "free", height: 100 })])).toThrow("height 由内容自动计算");
+    const bound = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"), text: "label", labelId: "label" })]).elements;
+    expect(() => updateDrawingElements(bound, [elementUpdateSchema.parse({ id: "label", width: 100 })])).toThrow("所属形状");
+    expect(() => updateDrawingElements(bound, [elementUpdateSchema.parse({ id: "box", autoResize: false })])).toThrow("仅独立文字");
+    for (const width of [0, -1, Infinity, NaN, 1_000_001])
+      expect(drawingElementSchema.safeParse({ type: "text", x: 0, y: 0, text: "a", width }).success).toBe(false);
+  });
+
+  it("lays out direct bound-label updates like updates through the container", () => {
+    for (const type of ["rectangle", "ellipse", "diamond"] as const) {
+      const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"),
+        type, text: "a", labelId: "caption", rotation: 30 })]).elements;
+      const before = structuredClone(current);
+      const changes = { text: "abcdefghijabcdefghijabcdefghij", fontSize: 24, textAlign: "right" as const };
+      const direct = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "caption", ...changes })]);
+      const throughContainer = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "box", ...changes })]);
+      const caption = direct.elements.find((element) => element.id === "caption")!;
+      const expected = throughContainer.elements.find((element) => element.id === "caption")!;
+      for (const key of ["text", "originalText", "x", "y", "width", "height", "angle", "fontSize", "textAlign"] as const)
+        expect(caption[key as keyof typeof caption]).toEqual(expected[key as keyof typeof expected]);
+      expect(caption.version).toBeGreaterThan(current.find((element) => element.id === "caption")!.version);
+      expect(direct.elements.find((element) => element.id === "box")).toEqual(current[0]);
+      expect(updateDrawingElements(direct.elements, [elementUpdateSchema.parse({ id: "caption", ...changes })]).updatedCount).toBe(0);
+      expect(current).toEqual(before);
+    }
+  });
+
   it("advances existing label versions so remote text, style and layout update the Store baseline", () => {
     let current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"),
       text: "old", labelId: "caption" })]).elements;
@@ -266,6 +402,36 @@ describe("MCP drawing contracts", () => {
         }),
       ]),
     ).toThrow("绑定目标");
+  });
+  it("accepts all standard CSS named colors while rejecting context-dependent colors", () => {
+    expect(CSS_NAMED_COLORS.length).toBe(148);
+    expect(new Set(CSS_NAMED_COLORS).size).toBe(148);
+    for (const name of CSS_NAMED_COLORS) {
+      expect(colorSchema.parse(name)).toBe(name);
+      expect(colorSchema.parse(` ${name.toUpperCase()} `)).toBe(name);
+    }
+    expect(drawingElementSchema.parse({ ...shape("purple"), strokeColor: "rebeccapurple" }).strokeColor).toBe("rebeccapurple");
+    for (const name of ["currentColor", "CanvasText", "inherit", "rebecca-purple"])
+      expect(colorSchema.safeParse(name).success).toBe(false);
+  });
+  it("reports missing deletion IDs and distinguishes explicitly removed elements from cascaded labels", () => {
+    const current = createDrawingBatch([
+      drawingElementSchema.parse({ ...shape("a"), text: "标签", labelId: "caption" }),
+      shape("b", 250),
+    ]).elements;
+    const before = structuredClone(current);
+    const removed = removeDrawingElements(current, ["a", "a", "ghost", "ghost"]);
+    expect(removed.elements.map((element) => element.id)).toEqual(["b"]);
+    expect(removed).toMatchObject({ removedCount: 2, requestedRemovedCount: 1,
+      cascadeRemovedCount: 1, notFoundIds: ["ghost"] });
+    expect(removeDrawingElements(current, ["a", "caption"])).toMatchObject({
+      removedCount: 2, requestedRemovedCount: 2, cascadeRemovedCount: 0, notFoundIds: [],
+    });
+    const missingOnly = removeDrawingElements(current, ["ghost"]);
+    expect(missingOnly).toMatchObject({ removedCount: 0, requestedRemovedCount: 0,
+      cascadeRemovedCount: 0, notFoundIds: ["ghost"] });
+    expect(missingOnly.elements[0]).toBe(current[0]);
+    expect(current).toEqual(before);
   });
   it("changes style in place and uses native binding updates when moving/resizing containers", () => {
     const current = flow();
