@@ -230,6 +230,8 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 
 修改形状标签样式可传 `update_element.update.labelStyle`，或通过 `update_board.updates` 一次修改多个标签；只合并传入的标签字段，不改形状样式，不需要删除重建。标签字体字段同时出现于顶层和 `labelStyle` 时，嵌套值优先。已有 `labelId` 只用于核对稳定身份，传不同 ID 明确报错；给无标签形状新增文字时可同时指定 `text/labelId/labelStyle`。绑定标签跟随容器旋转，不支持独立于容器的旋转。
 
+绑定标签的文字颜色使用 `strokeColor`，创建时默认继承形状颜色。如果把形状的 `strokeColor` 和 `backgroundColor` 设成相同颜色来隐藏边框，文字也可能与底色同色而不可见；应显式设置对比色，例如浅色胶囊节点使用 `labelStyle:{"strokeColor":"#1f2937"}`，深色底则选择浅色文字。
+
 独立 `text` 图元可传 `width` 固定文字框宽度并自动换行，例如 `{"type":"text","x":100,"y":100,"text":"这是一段需要自动换行的文字","width":160,"fontSize":20}`。省略 `width` 时按内容自动计算宽度；`height` 始终按换行后的内容与字号计算，不传 `height`。更新内容或字号会保留固定宽度并重新换行；`update_element.update` 或 `update_board.updates` 中传 `autoResize:true` 可恢复自动宽度（不能同时传 `width`）。`get_board.view=input` 保留独立文字的固定宽度，可直接用于跨画板复制。形状绑定标签的宽度由所属形状决定，需要调整时修改形状 `width`。
 
 创建或移动时 `folderId` 与 `folderName` 二选一，`folderId=null` 表示根目录，`folderName` 自动获取或创建文件夹；已有文件夹不修改外观，同名歧义报错。`create_board/update_board.tags` 表示完整标签列表，增删标签使用 `manage_board`。不修改内容地打开画板、保存或返回主页不再产生内容修订；恢复未保存草稿和真实编辑仍正常保存。

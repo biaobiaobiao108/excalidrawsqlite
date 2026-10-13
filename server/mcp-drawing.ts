@@ -137,7 +137,7 @@ const shapeFields = {
   height: dimension,
   text: z.string().max(2_000).optional(),
   labelId: idSchema.optional().describe("绑定文字图元的稳定 ID；复制 input 视图时保留，通常无需指定"),
-  labelStyle: labelStyleSchema.optional().describe("绑定文字的独立样式；省略时继承形状样式"),
+  labelStyle: labelStyleSchema.optional().describe("绑定文字的独立样式；省略时继承形状样式。文字颜色使用 strokeColor；若形状 strokeColor 与 backgroundColor 相同，继承的文字可能不可见，请显式设置 labelStyle.strokeColor 为与底色对比的颜色"),
   ...typography,
   ...style,
 };
@@ -214,7 +214,7 @@ export const elementUpdateSchema = z
     autoResize: z.boolean().optional().describe("仅独立文字使用；true 恢复自动宽度，false 保持固定宽度。传 width 自动启用固定宽度；文字高度始终由内容计算"),
     text: z.string().max(10_000).optional().describe("形状及其绑定标签最多 2000 字符；独立文字最多 10000 字符，空字符串清除形状标签"),
     labelId: idSchema.optional().describe("仅形状使用；新建标签可指定稳定 ID，已有标签只能传相同 ID，不能重命名"),
-    labelStyle: labelStyleSchema.optional().describe("仅形状的绑定文字使用；按字段合并独立样式，不修改形状样式；无标签时须同时提供非空 text"),
+    labelStyle: labelStyleSchema.optional().describe("仅形状的绑定文字使用；按字段合并独立样式，不修改形状样式；无标签时须同时提供非空 text。文字颜色使用 strokeColor；与底色同色可能不可见，请显式设置 labelStyle.strokeColor 为与底色对比的颜色"),
     ...typography,
     ...style,
     points: points.optional(),
