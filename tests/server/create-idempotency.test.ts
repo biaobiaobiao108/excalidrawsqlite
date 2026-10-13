@@ -5,7 +5,7 @@ import path from "node:path";
 import { createServerConfig } from "../../server/config";
 import { createRuntime } from "../../server/runtime";
 import { createRequestHandler } from "../../server/routes";
-import { MAX_CREATE_REQUESTS, registerMcpCreateSession, unregisterMcpCreateSession } from "../../server/create-idempotency";
+import { lookupMcpCreateReplay, MAX_CREATE_REQUESTS, registerMcpCreateSession, unregisterMcpCreateSession } from "../../server/create-idempotency";
 import type { ServerRuntime } from "../../server/types";
 
 const resources: Array<{ runtime: ServerRuntime; directory: string }> = [];
@@ -94,5 +94,32 @@ describe("persistent create idempotency", () => {
       unregisterMcpCreateSession(entry.runtime, "internal-test");
     }
     expect(await (await call(body, "internal-test")).json()).toMatchObject({ code: "INVALID_IDEMPOTENCY_PAYLOAD" });
+  });
+
+  it("preflights retries before folder side effects without changing records", async () => {
+    const { entry, call } = setup();
+    const intent = { tool: "create_board", args: { name: "已有画板", folderName: "原文件夹" } };
+    expect(lookupMcpCreateReplay(entry.runtime, undefined, intent)).toBeNull();
+    expect(lookupMcpCreateReplay(entry.runtime, "preflight-key", intent)).toBeNull();
+    registerMcpCreateSession(entry.runtime, "preflight-session");
+    let id: string;
+    try {
+      const response = await call({ name: "已有画板", idempotencyKey: "preflight-key", idempotencyPayload: intent }, "preflight-session");
+      id = (await response.json()).id;
+    } finally { unregisterMcpCreateSession(entry.runtime, "preflight-session"); }
+    entry.runtime.db.run("UPDATE scenes SET name = '当前名称', revision = 7, element_count = 9 WHERE id = ?", [id]);
+    const snapshot = entry.runtime.db.query("SELECT * FROM scene_create_requests").all();
+    const replay = lookupMcpCreateReplay(entry.runtime, "preflight-key", { args: { folderName: "原文件夹", name: "已有画板" }, tool: "create_board" });
+    expect(replay).toMatchObject({ id, name: "当前名称", revision: 7, element_count: 9, idempotentReplay: true });
+    expect(() => lookupMcpCreateReplay(entry.runtime, "preflight-key", { tool: "create_board", args: { name: "新请求" } })).toThrow("不同创建参数");
+    expect(entry.runtime.db.query("SELECT * FROM scene_create_requests").all()).toEqual(snapshot);
+    expect(entry.runtime.db.query("SELECT COUNT(*) AS count FROM folders").get()).toEqual({ count: 0 });
+    entry.runtime.db.run("UPDATE scenes SET deleted_at = ? WHERE id = ?", [Date.now(), id]);
+    expect(() => lookupMcpCreateReplay(entry.runtime, "preflight-key", intent)).toThrow("画板已删除");
+    entry.runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
+    expect(() => lookupMcpCreateReplay(entry.runtime, "preflight-key", intent)).toThrow("画板已删除");
+    entry.runtime.db.run("UPDATE scene_create_requests SET expires_at = 0");
+    expect(lookupMcpCreateReplay(entry.runtime, "preflight-key", intent)).toBeNull();
+    expect(entry.runtime.db.query("SELECT COUNT(*) AS count FROM scene_create_requests").get()).toEqual({ count: 1 });
   });
 });

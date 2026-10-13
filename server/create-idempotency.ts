@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { sha256Hex } from "./crypto";
 import { HttpError } from "./errors";
 import type { ServerRuntime } from "./types";
+import { getSceneSummary } from "./scenes";
 
 export const CREATE_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_CREATE_REQUESTS = 10_000;
@@ -77,4 +78,46 @@ export const findCreateReplay = (db: Database, request: NonNullable<ReturnType<t
 
 export const recordCreateRequest = (db: Database, request: NonNullable<ReturnType<typeof parseCreateRequest>>, sceneId: string, now: number) => {
   statements(db).insert.run(request.keyHash, request.payloadHash, sceneId, now + CREATE_REQUEST_TTL_MS);
+};
+
+const preflightQueries = new WeakMap<ServerRuntime, {
+  request: ReturnType<Database["query"]>;
+  summary: ReturnType<Database["query"]>;
+}>();
+
+/** Read-only MCP preflight before folder-name resolution or random drawing IDs.
+ * No reservation is made; the final POST transaction remains authoritative. */
+export const lookupMcpCreateReplay = (
+  runtime: ServerRuntime,
+  idempotencyKey: string | undefined,
+  intent: unknown,
+) => {
+  const request = parseCreateRequest({ idempotencyKey }, intent);
+  if (!request) return null;
+  let queries = preflightQueries.get(runtime);
+  if (!queries) {
+    queries = {
+      request: runtime.db.query(`SELECT payload_sha256, scene_id FROM scene_create_requests
+        WHERE key_sha256 = ? AND expires_at > ?`),
+      summary: runtime.db.query(`SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
+        scenes.revision, scenes.content_bytes AS size, scenes.element_count, scenes.tags_json,
+        scenes.is_favorite, scenes.folder_id, scenes.last_opened_at, scenes.thumbnail_file_id,
+        scenes.deleted_at, folders.name AS folder_name
+        FROM scenes LEFT JOIN folders ON folders.id = scenes.folder_id WHERE scenes.id = ?`),
+    };
+    preflightQueries.set(runtime, queries);
+  }
+  const stmts = queries;
+  return runtime.db.transaction(() => {
+    const record = stmts.request.get(request.keyHash, Date.now()) as { payload_sha256: string; scene_id: string } | null;
+    if (!record) return null;
+    if (record.payload_sha256 !== request.payloadHash) {
+      throw new HttpError(409, "IDEMPOTENCY_KEY_CONFLICT", "此 idempotencyKey 已用于不同创建参数；请为新操作使用新 key");
+    }
+    const row = stmts.summary.get(record.scene_id) as any;
+    if (!row || row.deleted_at != null) {
+      throw new HttpError(409, "IDEMPOTENT_BOARD_DELETED", "该幂等创建请求的画板已删除；如需新建请使用新 key");
+    }
+    return { ...getSceneSummary(row), idempotentReplay: true as const };
+  })();
 };
