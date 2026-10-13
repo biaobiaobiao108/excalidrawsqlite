@@ -4,6 +4,7 @@ import { getBoundTextMaxHeight, getBoundTextMaxWidth } from "@excalidraw/element
 import { LinearElementEditor } from "@excalidraw/element/linearElementEditor";
 import { distanceToElement } from "@excalidraw/element/distance";
 import { isBindableElement } from "@excalidraw/element/typeChecks";
+import { getInspectTextGeometry } from "./mcp-inspect-labels";
 
 export const LAYOUT_CHECKS = ["text_overlap", "text_overflow", "element_collision", "arrow_connection"] as const;
 export const inspectLayoutSchema = z.object({
@@ -12,13 +13,20 @@ export const inspectLayoutSchema = z.object({
 }).strict();
 type Check = typeof LAYOUT_CHECKS[number];
 type Point = [number, number];
-type Issue = { type: Check; severity: "error" | "warning"; elementIds: string[]; message: string; suggestion?: string };
+type Issue = { type: Check; severity: "error" | "warning"; elementIds: string[]; message: string; suggestion?: string;
+  metrics?: { overlapRatio?: number; overlapArea?: number; distance?: number };
+  suggestedUpdate?: { id: string; dx: number; dy: number } };
 const SCENE_LIMIT = 50_000, PAIR_LIMIT = 100_000, REFERENCE_LIMIT = 200_000, CELL_LIMIT = 256;
 const GROUP_LIMIT = 32, ISSUE_LIMIT = 100, POINT_LIMIT = 200_000, CELL_SIZE = 256;
 const cross = (a: Point, b: Point, p: Point) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-const area = (polygon: Point[]) => Math.abs(polygon.reduce((sum, p, i) => {
-  const next = polygon[(i + 1) % polygon.length]; return sum + p[0] * next[1] - p[1] * next[0];
-}, 0)) / 2;
+const area = (polygon: Point[]) => {
+  if (!polygon.length) return 0;
+  const origin = polygon[0];
+  return Math.abs(polygon.reduce((sum, p, i) => {
+    const next = polygon[(i + 1) % polygon.length];
+    return sum + (p[0] - origin[0]) * (next[1] - origin[1]) - (p[1] - origin[1]) * (next[0] - origin[0]);
+  }, 0)) / 2;
+};
 const within = (polygon: Point[], point: Point) => polygon.every((p, i) => cross(p, polygon[(i + 1) % polygon.length], point) >= -0.001);
 const contains = (outer: Point[], inner: Point[]) => inner.every((point) => within(outer, point));
 const validGeometry = (element: ExcalidrawElement) => [element.x, element.y, element.width, element.height, element.angle].every(Number.isFinite) && element.width > 0 && element.height > 0;
@@ -58,6 +66,17 @@ const keysFor = (polygon: Point[]) => {
   return keys;
 };
 const shape = (element: ExcalidrawElement) => ["rectangle", "ellipse", "diamond"].includes(element.type);
+const visible = (element: ExcalidrawElement) => element.opacity !== 0 &&
+  (element.type !== "text" || (typeof element.text === "string" && element.text.trim().length > 0));
+// A proposed translation clears this pair's bounding boxes only; callers must recheck the scene.
+const separation = (fixed: Point[], moving: Point[], id: string) => {
+  const bounds = (polygon: Point[]) => ({ left: Math.min(...polygon.map((p) => p[0])), right: Math.max(...polygon.map((p) => p[0])),
+    top: Math.min(...polygon.map((p) => p[1])), bottom: Math.max(...polygon.map((p) => p[1])) });
+  const a = bounds(fixed), b = bounds(moving);
+  return [{ id, dx: Math.ceil(a.right - b.left + 8), dy: 0 }, { id, dx: Math.floor(a.left - b.right - 8), dy: 0 },
+    { id, dx: 0, dy: Math.ceil(a.bottom - b.top + 8) }, { id, dx: 0, dy: Math.floor(a.top - b.bottom - 8) }]
+    .sort((first, second) => Math.abs(first.dx) + Math.abs(first.dy) - Math.abs(second.dx) - Math.abs(second.dy))[0];
+};
 
 /** Bounded read-only geometry; no persistent caches or inferred canvas boundaries. */
 export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z.infer<typeof inspectLayoutSchema> = {}) => {
@@ -70,10 +89,11 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
     const status = checkInfo[check]; if (!status) return; status.complete = false;
     if (!status.limitations.includes(reason)) status.limitations.push(reason);
   };
-  const issue = (check: Check, severity: Issue["severity"], elementIds: string[], message: string, suggestion?: string) => {
+  const issue = (check: Check, severity: Issue["severity"], elementIds: string[], message: string, suggestion?: string,
+    details: Pick<Issue, "metrics" | "suggestedUpdate"> = {}) => {
     const status = checkInfo[check]!;
     if (status.issues >= ISSUE_LIMIT) { incomplete(check, "提示超过 100 条，返回结果已截断"); return; }
-    status.issues++; issues.push({ type: check, severity, elementIds, message, ...(suggestion ? { suggestion } : {}) });
+    status.issues++; issues.push({ type: check, severity, elementIds, message, ...(suggestion ? { suggestion } : {}), ...details });
   };
   if (elements.length > SCENE_LIMIT) for (const check of selected) incomplete(check, "场景超过 50000 个图元，检查范围已截断");
   const active = elements.slice(0, SCENE_LIMIT).filter((element) => {
@@ -83,19 +103,26 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
     return !element.isDeleted;
   });
   const map = new Map(active.map((element) => [element.id, element]));
+  const labelBudget = { usedPoints: 0, maxPoints: POINT_LIMIT };
   const polygons = new Map<string, Point[]>(), groups = new Map<string, Set<string>>();
   for (const element of active) {
     if (element.type !== "text" && !shape(element)) continue;
-    if (!validGeometry(element)) {
+    if (element.type === "text" && typeof element.text !== "string") {
+      incomplete("text_overlap", "部分文字内容无效，已跳过"); incomplete("text_overflow", "部分文字内容无效，已跳过"); continue;
+    }
+    if (!visible(element)) continue;
+    let displayed = element;
+    if (element.type === "text" && checkInfo.text_overlap) {
+      const resolved = getInspectTextGeometry(element, map, labelBudget);
+      if (!resolved.geometry) { incomplete("text_overlap", resolved.reason!); continue; }
+      displayed = { ...element, ...resolved.geometry };
+    }
+    if (!validGeometry(displayed)) {
       for (const check of element.type === "text" ? ["text_overlap", "text_overflow"] as const : ["element_collision"] as const)
         incomplete(check, "部分图元几何无效，已跳过相关几何检查");
       continue;
     }
-    if (element.type === "text" && element.containerId && map.get(element.containerId)?.type === "arrow") {
-      incomplete("text_overlap", "箭头绑定标签位置由编辑器动态计算，已跳过其文字重叠检查");
-      continue;
-    }
-    polygons.set(element.id, polygonFor(element));
+    polygons.set(element.id, polygonFor(displayed));
     if (shape(element) && !Array.isArray(element.groupIds)) incomplete("element_collision", "部分图元缺少原生分组字段，分组关联检查已跳过");
     if (shape(element) && (element.groupIds?.length ?? 0) > GROUP_LIMIT) incomplete("element_collision", "部分图元分组超过 32 项，分组判定已截断");
     groups.set(element.id, new Set(Array.isArray(element.groupIds) ? element.groupIds.slice(0, GROUP_LIMIT) : []));
@@ -119,8 +146,12 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
         if (check === "element_collision" && (sameGroup(element, other) || contains(polygon, otherPolygon) || contains(otherPolygon, polygon))) continue;
         const overlap = intersectionArea(polygon, otherPolygon);
         if (overlap <= 1 || overlap / Math.min(area(polygon), area(otherPolygon)) < (check === "text_overlap" ? 0.08 : 0.15)) continue;
+        const suggestedUpdate = element.type !== "text" || !element.containerId ? separation(otherPolygon, polygon, element.id) : undefined;
         issue(check, "warning", [other.id, element.id], check === "text_overlap" ? "文字旋转矩形明显相交，可能影响阅读" : "形状发生明显部分覆盖，可能影响布局",
-          check === "text_overlap" ? "移动文字或调整字号与换行，复查实际显示效果" : "调整形状位置或间距；有意叠放可忽略");
+          suggestedUpdate ? `可将 ${element.id} 平移 dx=${suggestedUpdate.dx}, dy=${suggestedUpdate.dy}；仅分离这对图元，修改后须复查其他碰撞。有意叠放可忽略`
+            : "调整所属容器的位置、字号或换行；修改后复查实际显示效果",
+          { metrics: { overlapRatio: Math.round(overlap / Math.min(area(polygon), area(otherPolygon)) * 1000) / 1000,
+            overlapArea: Math.round(overlap * 100) / 100 }, ...(suggestedUpdate ? { suggestedUpdate } : {}) });
         if (checkInfo[check]!.issues >= ISSUE_LIMIT) { incomplete(check, "提示达到 100 条，后续检查已停止"); break outer; }
       }
       references += keys.length;
@@ -136,6 +167,10 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
         if (elements.length > SCENE_LIMIT) incomplete("text_overflow", "容器可能位于截断范围外，未判定为缺失");
         else issue("text_overflow", "error", [element.id, element.containerId], "绑定文字指向不存在或已删除的容器", "恢复容器或解除文字绑定");
         continue;
+      }
+      if (!visible(element)) continue;
+      if (container && shape(container) && (!validGeometry(container) || !validGeometry(element))) {
+        incomplete("text_overflow", "文字或所属容器几何无效，溢出检查已跳过"); continue;
       }
       if (container && shape(container) && validGeometry(container) && validGeometry(element)) {
         if (element.width > getBoundTextMaxWidth(container, element) + 1 || element.height > getBoundTextMaxHeight(container, element as ExcalidrawTextElementWithContainer) + 1 ||
@@ -165,7 +200,7 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
         points += element.points.length;
         let distance: number;
         try {
-          if (element.points.some((point) => !Array.isArray(point) || point.length < 2 || !point.every(Number.isFinite))) {
+          if (element.points.some((point) => !Array.isArray(point) || point.length !== 2 || !point.every(Number.isFinite))) {
             incomplete("arrow_connection", "部分箭头点无效，端点距离检查已跳过"); continue;
           }
           const point = LinearElementEditor.getPointAtIndexGlobalCoordinates(element, index, map);
@@ -173,14 +208,14 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
           distance = distanceToElement(target, map, point);
         } catch { incomplete("arrow_connection", "部分绑定轮廓无效，端点距离检查已跳过"); continue; }
         if (!Number.isFinite(distance)) { incomplete("arrow_connection", "部分绑定几何无效，端点距离检查已跳过"); continue; }
-        if (distance > Math.max(32, (target.strokeWidth || 1) * 4)) issue("arrow_connection", "warning", [element.id, target.id], `${side} 端点远离绑定目标实际旋转轮廓`, "重新建立绑定并调整箭头端点；特殊长间隙可忽略");
+        if (distance > Math.max(32, (target.strokeWidth || 1) * 4)) issue("arrow_connection", "warning", [element.id, target.id], `${side} 端点远离绑定目标实际旋转轮廓`, "重新建立绑定并调整箭头端点；特殊长间隙可忽略", { metrics: { distance: Math.round(distance * 100) / 100 } });
       }
     }
   }
   return {
     issues, summary: { errors: issues.filter((item) => item.severity === "error").length, warnings: issues.filter((item) => item.severity === "warning").length },
     complete: Object.values(checkInfo).every((check) => check.complete), checks: checkInfo, scannedElementCount: active.length,
-    budgets: { sceneElements: SCENE_LIMIT, comparisonsPerCheck: PAIR_LIMIT, referencesPerIndex: REFERENCE_LIMIT, issuesPerCheck: ISSUE_LIMIT, arrowPoints: POINT_LIMIT },
+    budgets: { sceneElements: SCENE_LIMIT, comparisonsPerCheck: PAIR_LIMIT, referencesPerIndex: REFERENCE_LIMIT, issuesPerCheck: ISSUE_LIMIT, arrowPoints: POINT_LIMIT, arrowLabelPoints: POINT_LIMIT },
     method: "rotated-convex-geometry",
     limitations: ["使用已存储文字尺寸，不进行真实字体或像素测量。椭圆用内接多边形估计，手绘笔触与圆角不作像素判断", "独立文字缺少明确容器时不推断溢出；无限画布不检查坐标正负或画布边界"],
   };

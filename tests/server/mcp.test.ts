@@ -60,7 +60,8 @@ describe("Excalidraw MCP endpoint", () => {
     });
     type Inspection = { boardId: string; revision: number; complete: boolean;
       summary: { errors: number; warnings: number };
-      issues: Array<{ type: string; severity: string; elementIds: string[]; message: string; suggestion?: string }> };
+      issues: Array<{ type: string; severity: string; elementIds: string[]; message: string; suggestion?: string;
+        metrics?: { overlapRatio?: number }; suggestedUpdate?: { id: string; dx: number; dy: number } }> };
     const invoke = async <T>(name: string, args: Record<string, unknown>) =>
       toolResult<T>(await client.callTool({ name, arguments: args }));
     try {
@@ -104,8 +105,11 @@ describe("Excalidraw MCP endpoint", () => {
       }
       const missing = await client.callTool({ name: "inspect_layout", arguments: { boardId: "missing-board" } });
       expect(missing.structuredContent).toMatchObject({ ok: false, error: { code: "SCENE_NOT_FOUND" } });
+      const overlap = full.issues.find((issue) => issue.type === "text_overlap" && issue.elementIds.includes("second"))!;
+      expect(overlap.metrics?.overlapRatio).toBeGreaterThan(0);
+      expect(overlap.suggestedUpdate?.id).toBe("second");
       const moved = await invoke<{ revision: number }>("update_board", { boardId: created.boardId,
-        updates: [{ id: "second", x: 0, y: 200 }], expectedRevision: created.revision });
+        updates: [overlap.suggestedUpdate!], expectedRevision: created.revision });
       const corrected = await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overlap"] });
       expect(corrected.revision).toBe(moved.revision);
       expect(corrected.issues.some((issue) => issue.elementIds.includes("first") && issue.elementIds.includes("second"))).toBe(false);

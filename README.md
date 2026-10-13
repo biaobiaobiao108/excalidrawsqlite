@@ -316,6 +316,10 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 调用 `inspect_layout` 时省略 `checks` 会检查全部四项。返回 `boardId/revision`、`summary.errors/warnings` 和 `issues`，每条问题包含 `type/severity/elementIds/message`，并可包含 `suggestion`。将涉及的 ID 用于 `update_board.updates`，保存时使用检查结果的 `revision` 作为 `expectedRevision`，再调用检查确认。检查本身不改变图元或修订号，成功 text 仍只给简短说明，不重复业务 JSON。
 
+重叠提示的 `metrics.overlapRatio/overlapArea` 提供相交比例与面积，箭头距离提示的 `metrics.distance` 为端点到目标轮廓的距离，单位均基于画布坐标。独立文字与形状还可返回 `suggestedUpdate:{id,dx,dy}`，可直接放入 `update_board.updates`；这只提供分离当前两个图元的候选方案，不保证整体布局合理，也不会自动执行。绑定文字不提供独立平移建议，以免破坏标签关系。透明图元和空白文字不参与视觉碰撞检查，断开的绑定仍可报告数据问题。
+
+箭头绑定标签的重叠检查使用原生路径计算显示位置，支持多段和旋转箭头，不依赖标签可能过时的存储坐标。异常路径、非原生水平标签或检查预算超限仍会明确返回检查未完成及原因。
+
 检测复用图元已存储的文字尺寸与换行结果，不重新测量中文或 Excalifont 字体像素；可能的几何遮挡会标记为 warning。正常的容器包含、背景叠放和箭头穿过背景不直接视为错误，没有绑定的装饰箭头也不报连接异常。无限画布没有隐含边界，负坐标合法。检测有明确预算，`complete=false` 时检查未完成；没有提示也不保证配色、拥挤程度、视觉层次或实际渲染效果正确。
 
 `compact` 保留图元 ID、类型、位置、尺寸、文字、非零旋转、折线点与箭头绑定目标，省略装饰样式；坐标字段仍为 `width/height`，不引入缩写。`compact/input` 视图按绑定标签 ID 筛选会返回其本体；文字搜索和类型筛选针对合并后的对象。需要可写描述请显式选择 `input` 并检查省略警告。
