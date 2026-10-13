@@ -71,17 +71,6 @@ export const initializeDatabase = (db: Database) => {
     );
   `);
 
-  // Retain tombstones when boards are removed: a retry must not resurrect one.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS scene_create_requests (
-      key_sha256 TEXT PRIMARY KEY,
-      payload_sha256 TEXT NOT NULL,
-      scene_id TEXT NOT NULL,
-      expires_at INTEGER NOT NULL
-    );
-  `);
-  db.run("CREATE INDEX IF NOT EXISTS idx_scene_create_requests_expiry ON scene_create_requests(expires_at)");
-
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_scenes_updated_at ON scenes(updated_at DESC)",
   );
@@ -129,7 +118,6 @@ export const initializeDatabase = (db: Database) => {
 
 export const performDatabaseMaintenance = (runtime: ServerRuntime) => {
   try {
-    runtime.db.query("DELETE FROM scene_create_requests WHERE expires_at <= ?").run(Date.now());
     runtime.db.run("PRAGMA wal_checkpoint(PASSIVE);");
   } catch (error) {
     console.info("[Database] WAL checkpoint failed", error);

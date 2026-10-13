@@ -9,7 +9,6 @@ import {
 import { randomHex, sha256Hex } from "./crypto";
 import { handleDevReloadRequest } from "./dev-reload";
 import { HttpError } from "./errors";
-import { findCreateReplay, isMcpCreateSession, parseCreateRequest, recordCreateRequest } from "./create-idempotency";
 import {
   cleanupExpiredSessions,
   clearSessionCookies,
@@ -74,9 +73,6 @@ import {
   validateId,
   validateMimeType,
   validateName,
-  validateTags,
-  validateFavorite,
-  validateFolderId,
 } from "./validation";
 
 import type { RequestAddressResolver, ServerRuntime } from "./types";
@@ -998,49 +994,17 @@ export const createRequestHandler = (
         const appState = hasOwn(body, "appState")
           ? validateAppState(body.appState)
           : {};
-        const tags = hasOwn(body, "tags") ? validateTags(body.tags) : [];
-        const favorite = hasOwn(body, "favorite") ? validateFavorite(body.favorite) : false;
-        const folderId = hasOwn(body, "folder_id") ? validateFolderId(body.folder_id) : null;
+        const { tags, favorite, folderId } = parseSceneMetadata(runtime, body);
         const fileIds = extractFileIds(elements);
         const elementsJson = JSON.stringify(elements);
         const appStateJson = JSON.stringify(appState);
         const tagsJson = JSON.stringify(tags);
         const contentBytes = Buffer.byteLength(elementsJson, "utf8");
         const now = Date.now();
-        if (hasOwn(body, "idempotencyPayload") && (!hasOwn(body, "idempotencyKey") || !isMcpCreateSession(runtime, getSessionToken(runtime, req)))) {
-          throw new HttpError(400, "INVALID_IDEMPOTENCY_PAYLOAD", "idempotencyPayload 仅供内部 MCP 创建请求使用");
-        }
-        const createRequest = parseCreateRequest(body, hasOwn(body, "idempotencyPayload") ? body.idempotencyPayload : {
-          id: hasOwn(body, "id") ? id : null,
-          name, elements, appState, tags, favorite, folderId,
-        });
-        const replay = { summary: null as ReturnType<typeof getSceneSummary> | null };
         await withStorageMutationLock(runtime, async () => {
-          // Check before attachment I/O. Retries return the current board even
-          // if its original attachments were replaced after creation.
-          if (createRequest) {
-            runtime.db.transaction(() => {
-              const replayId = findCreateReplay(runtime.db, createRequest, now);
-              if (!replayId) return;
-              const row = stmts.getSceneSummaryById.get(replayId) as any;
-              if (!row || row.deleted_at != null) throw new HttpError(409, "IDEMPOTENT_BOARD_DELETED", "该幂等创建请求的画板已删除；如需新建请使用新 key");
-              replay.summary = getSceneSummary(row);
-            }).immediate();
-            if (replay.summary) return;
-          }
           await assertReferencedFilesExist(runtime, fileIds);
           try {
             const transaction = runtime.db.transaction(() => {
-              if (createRequest) {
-                // Another process may have committed while file I/O yielded.
-                const replayId = findCreateReplay(runtime.db, createRequest, now);
-                if (replayId) {
-                  const row = stmts.getSceneSummaryById.get(replayId) as any;
-                  if (!row || row.deleted_at != null) throw new HttpError(409, "IDEMPOTENT_BOARD_DELETED", "该幂等创建请求的画板已删除；如需新建请使用新 key");
-                  replay.summary = getSceneSummary(row);
-                  return;
-                }
-              }
               // Attachment checks and the storage queue can yield after metadata
               // validation. Recheck inside the synchronous commit so deletion
               // cannot leave a board referencing a folder that no longer exists.
@@ -1067,7 +1031,6 @@ export const createRequestHandler = (
                 ],
               );
               syncSceneFileReferences(runtime, id, fileIds);
-              if (createRequest) recordCreateRequest(runtime.db, createRequest, id, now);
             });
             transaction.immediate();
           } catch (error: any) {
@@ -1081,7 +1044,6 @@ export const createRequestHandler = (
             throw error;
           }
         }, req.signal);
-        if (replay.summary) return jsonResponse(runtime, req, { ...replay.summary, idempotentReplay: true }, 200);
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
