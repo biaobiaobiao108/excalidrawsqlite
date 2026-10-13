@@ -280,6 +280,8 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 | `get_boards_batch` | 一次读取最多 20 块画板，共享字符预算，逐条返回错误或分页信息；与单读一样 `maxChars` 最少 1000，连必要元数据也放不下则明确报错；不是跨画板一致快照。 |
 | `create_board` | 一次创建并绘制，可同时设置背景、收藏、标签和 `folderId/folderName`；允许同名，省略图元创建空板。 |
 | `create_diagram` | 传入节点标题、正文和连接，自动绘制横向或纵向时间线、流程图；支持分支、循环与主题，可同时设置文件夹、标签和收藏。 |
+| `create_layout` | 创建卡片网格，指定列数、卡片宽度、间距与内边距；按内容估算行高，每张卡片使用原生分组。 |
+| `measure_text` | 创建前估算文字宽高、换行和行数，与 MCP 绘制使用同一估算器，返回 `estimated=true`。 |
 | `update_board` | 一次合并删除、新增、`updates` 原地修改和画板元数据，原子保存一个修订；顺序为删除→新增→原地修改。 |
 | `update_element` | 传 `update.id` 与待修改字段，保留图元 ID、连接和其余字段，改颜色无需回传完整 JSON。 |
 | `add_elements` / `remove_elements` | 单纯追加或按 ID 移除图元；普通绘图无需先创建空板再调用追加。 |
@@ -307,6 +309,22 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
   ]
 }
 ```
+
+复杂卡片排版可使用 `create_layout`，当前支持 `mode="grid"`。例如：
+
+```json
+{"name":"知识卡片","columns":2,"cardWidth":320,"gap":24,"padding":20,"cards":[{"id":"first","title":"概念","body":"固定宽度换行，按内容估算高度。"},{"id":"second","title":"实践","body":"背景、标题和正文共享原生分组。"}]}
+```
+
+每行高度以该行最高卡片计算，返回 `cards` 中每张卡片的 `groupId/elementIds` 与几何位置。独立绘制也可在图元描述中传 `groupId`，或用 `groupIds` 指定最多 8 层原生嵌套分组；相同分组在编辑器中可整体拖动。更新 `groupId:null` 或 `groupIds:[]` 解除分组，二者不能同时传。绑定文字继承所属形状的分组。`copy_elements` 为副本生成新分组，返回 `groupIdMap`，避免副本与原件联动；按 ID 的 MCP 修改与复制不会自动扩展到整个分组，需要整体移动时传卡片的全部 `elementIds`。
+
+卡片扣除两侧 `padding` 后的文字宽度，至少需要容纳一个对应字号的字符；过窄时会要求增大 `cardWidth`、减小内边距或字号。
+
+`measure_text` 接受 `text/fontFamily/fontSize/width`，返回 `width/height/text/originalText/lineCount`；`width` 固定换行宽度，省略时估算自然宽度。测量与网格使用现有 MCP 文字估算器，明确返回 `estimated=true`，不宣称浏览器字体测量精度，实际显示仍需打开画板确认。
+
+`create_board/create_diagram/create_layout` 可传 `idempotencyKey`（1–128 字符），记录有效期 24 小时。同一 key、相同创建参数重试，返回原画板当前摘要和 `idempotentReplay:true/addedCount:0`；不会重新创建，也不重复首次生成的图元 ID 或卡片映射，需要时用 `get_board` 读取。`responseMode` 不影响幂等参数判断；同一 key 改动业务参数返回冲突，应为新操作换 key。画板已删除时保留幂等墓碑并报冲突，记录过期后才能复用。记录有容量上限，满时明确报错，保持现有有效记录。
+
+自由绘图可在 `create_board/add_elements/update_board` 显式设 `autoBind:true`，对本次新增箭头尚未绑定的端点尝试连接 24 个画布单位以内的最近矩形、椭圆或菱形。默认关闭，保留显式绑定和箭头路径，距离接近的多个候选或推断自连接时不猜测。只检查新箭头，不修改已有装饰箭头；返回 `autoBinding` 的绑定列表、提示和 `complete`，超过容量时保持未处理端点，需改用显式绑定。
 
 创建复杂画板后，可以先检查几何布局，再按问题图元 ID 修改并复查：
 
