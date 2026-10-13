@@ -129,7 +129,7 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
             sceneId: ws.data.sceneId,
             revision: Number(row?.revision) || 0,
             updatedAt: Number(row?.updated_at) || Date.now(),
-            changeKind: row?.deleted_at ? "deleted" : "content",
+            changeKind: !row || row.deleted_at ? "deleted" : "content",
           }),
         );
       } else {
