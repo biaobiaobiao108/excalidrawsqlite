@@ -48,6 +48,73 @@ const toolResult = <T>(result: {
 };
 
 describe("Excalidraw MCP endpoint", () => {
+  it("inspects selected layout checks through the SDK without changing the board", async () => {
+    const directory = path.join(os.tmpdir(), `excalidraw-mcp-inspect-${crypto.randomUUID()}`);
+    const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
+      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "inspect-test" }) });
+    resources.push({ runtime, directory });
+    const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
+    const client = new Client({ name: "inspect-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+    const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/inspect-test"), {
+      fetch: (input, init) => handler.fetch(new Request(input, init)),
+    });
+    type Inspection = { boardId: string; revision: number; complete: boolean;
+      summary: { errors: number; warnings: number };
+      issues: Array<{ type: string; severity: string; elementIds: string[]; message: string; suggestion?: string }> };
+    const invoke = async <T>(name: string, args: Record<string, unknown>) =>
+      toolResult<T>(await client.callTool({ name, arguments: args }));
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      const tool = listed.tools.find((item) => item.name === "inspect_layout");
+      expect(tool?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+      const created = await invoke<{ boardId: string; revision: number }>("create_board", {
+        name: "检查布局", elements: [
+          { type: "text", id: "first", x: 0, y: 0, text: "重叠的第一段文字" },
+          { type: "text", id: "second", x: 0, y: 0, text: "重叠的第二段文字" },
+          { type: "rectangle", id: "tiny", x: 500, y: 0, width: 80, height: 20,
+            text: "绑定文字太长\n第二行\n第三行\n第四行", labelId: "overflow-label" },
+          { type: "arrow", id: "decoration", points: [[100, 500], [200, 500]] },
+        ],
+      });
+      const before = await invoke<Record<string, unknown>>("get_board", { boardId: created.boardId, view: "full" });
+      const full = await invoke<Inspection>("inspect_layout", { boardId: created.boardId });
+      expect(full.boardId).toBe(created.boardId);
+      expect(full.revision).toBe(created.revision);
+      expect(full.complete).toBe(true);
+      expect(full.summary.errors + full.summary.warnings).toBe(full.issues.length);
+      expect(full.issues).toContainEqual(expect.objectContaining({ type: "text_overlap", elementIds: expect.arrayContaining(["first", "second"]) }));
+      expect(full.issues.some((issue) => issue.type === "text_overflow" && issue.elementIds.includes("overflow-label"))).toBe(true);
+      expect(full.issues.some((issue) => issue.type === "arrow_connection" && issue.elementIds.includes("decoration"))).toBe(false);
+      for (const issue of full.issues) {
+        expect(["text_overlap", "text_overflow", "element_collision", "arrow_connection"]).toContain(issue.type);
+        expect(["warning", "error"]).toContain(issue.severity);
+        expect(issue.message.length).toBeGreaterThan(0);
+      }
+      const textOnly = await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overlap"] });
+      expect(textOnly.issues.length).toBeGreaterThan(0);
+      expect(textOnly.issues.every((issue) => issue.type === "text_overlap")).toBe(true);
+      const after = await invoke<Record<string, unknown>>("get_board", { boardId: created.boardId, view: "full" });
+      expect(after).toEqual(before);
+      const revision = runtime.db.query("SELECT revision FROM scenes WHERE id = ?").get(created.boardId);
+      expect(revision).toEqual({ revision: created.revision });
+      for (const checks of [["unknown"], []]) {
+        const invalid = await client.callTool({ name: "inspect_layout", arguments: { boardId: created.boardId, checks } });
+        expect(invalid.isError).toBe(true);
+      }
+      const missing = await client.callTool({ name: "inspect_layout", arguments: { boardId: "missing-board" } });
+      expect(missing.structuredContent).toMatchObject({ ok: false, error: { code: "SCENE_NOT_FOUND" } });
+      const moved = await invoke<{ revision: number }>("update_board", { boardId: created.boardId,
+        updates: [{ id: "second", x: 0, y: 200 }], expectedRevision: created.revision });
+      const corrected = await invoke<Inspection>("inspect_layout", { boardId: created.boardId, checks: ["text_overlap"] });
+      expect(corrected.revision).toBe(moved.revision);
+      expect(corrected.issues.some((issue) => issue.elementIds.includes("first") && issue.elementIds.includes("second"))).toBe(false);
+    } finally {
+      await client.close();
+      await handler.close();
+    }
+  });
+
   it("supports trusted HTTPS proxy origins and does not trust forwarded hosts on direct connections", async () => {
     for (const trustProxy of [false, true]) {
       const directory = path.join(os.tmpdir(), `excalidraw-mcp-proxy-${crypto.randomUUID()}`);
