@@ -42,6 +42,64 @@ const createPersistence = () => {
 };
 
 describe("cloud save queue", () => {
+  it("reports each committed preview snapshot with its own revision during overlapping edits", async () => {
+    const { persistence } = createPersistence();
+    let started!: () => void;
+    let release!: () => void;
+    const firstStarted = new Promise<void>((resolve) => { started = resolve; });
+    const firstReleased = new Promise<void>((resolve) => { release = resolve; });
+    const previews: Array<[string, number]> = [];
+    let writes = 0;
+    const queue = new CloudSaveQueue({
+      ...callbacks,
+      onSnapshotSaved: (saved, revision) => { previews.push([saved.name, revision]); },
+    }, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async (id) => {
+        if (++writes === 1) {
+          started();
+          await firstReleased;
+        }
+        return { success: true, id, updated_at: 1, revision: writes + 1 };
+      },
+    });
+    try {
+      await queue.ready();
+      queue.enqueue(snapshot("first"));
+      const saving = queue.flush("scene");
+      await firstStarted;
+      queue.enqueue(snapshot("latest"));
+      expect(previews).toEqual([]);
+      release();
+      expect(await saving).toBe("saved");
+      expect(previews).toEqual([["first", 2], ["latest", 3]]);
+    } finally {
+      release();
+      queue.dispose();
+    }
+  });
+
+  it("does not generate previews for rejected content writes", async () => {
+    const { persistence } = createPersistence();
+    let previews = 0;
+    const queue = new CloudSaveQueue({
+      ...callbacks, onSnapshotSaved: () => { previews++; },
+    }, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async () => { throw new CloudApiError("auth", 401, "AUTH_REQUIRED"); },
+    });
+    try {
+      await queue.ready();
+      queue.enqueue(snapshot("unsaved"));
+      expect(await queue.flush("scene")).toBe("auth");
+      expect(previews).toBe(0);
+    } finally {
+      queue.dispose();
+    }
+  });
+
   it("reuploads a cached attachment after server GC rejects its scene reference", async () => {
     const originalFetch = globalThis.fetch;
     const { persistence } = createPersistence();

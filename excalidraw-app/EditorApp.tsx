@@ -323,9 +323,29 @@ const ExcalidrawWrapper = (props: {
     setCurrentSceneId(sceneId);
   }, []);
 
+  const saveThumbnailDebounced = useMemo(
+    () => debounce(
+      (snapshot: ThumbnailSnapshot) => thumbnailSaveQueue.schedule(
+        snapshot,
+        createSceneThumbnail,
+        (sceneId, blob) => saveCloudSceneThumbnail(
+          sceneId, blob, snapshot.thumbnailVersion, snapshot.revision,
+        ),
+        (error) => console.warn("画板缩略图保存失败", error),
+      ),
+      1500,
+    ),
+    [thumbnailSaveQueue],
+  );
+
   const cloudSaveQueue = useMemo(
     () =>
       new CloudSaveQueue({
+        onSnapshotSaved: (snapshot, revision) => {
+          const thumbnailVersion = Math.max(Date.now(), thumbnailVersionRef.current + 1);
+          thumbnailVersionRef.current = thumbnailVersion;
+          saveThumbnailDebounced({ ...snapshot, revision, thumbnailVersion });
+        },
         onAuthRequired: (sceneId) => {
           setIsAuthOpen(true);
           setAuthSceneId(sceneId);
@@ -354,33 +374,7 @@ const ExcalidrawWrapper = (props: {
           }
         },
       }),
-    [setActiveCloudScene],
-  );
-
-  const saveThumbnailDebounced = useMemo(
-    () =>
-      debounce(
-        (snapshot: {
-          sceneId: string;
-          elements: readonly OrderedExcalidrawElement[];
-          appState: AppState;
-          files: BinaryFiles;
-          thumbnailVersion?: number;
-        }) => {
-          return thumbnailSaveQueue.schedule(
-            snapshot,
-            createSceneThumbnail,
-            (sceneId, blob) =>
-              saveCloudSceneThumbnail(sceneId, blob, snapshot.thumbnailVersion),
-            (error) => {
-              // A preview is auxiliary and must not affect the scene save.
-              console.warn("画板缩略图保存失败", error);
-            },
-          );
-        },
-        1500,
-      ),
-    [thumbnailSaveQueue],
+    [saveThumbnailDebounced],
   );
 
   useEffect(() => {
@@ -525,20 +519,8 @@ const ExcalidrawWrapper = (props: {
         appState: persistedAppState,
         files: referencedFiles,
       });
-      const thumbnailVersion = Math.max(
-        Date.now(),
-        thumbnailVersionRef.current + 1,
-      );
-      thumbnailVersionRef.current = thumbnailVersion;
-      saveThumbnailDebounced({
-        sceneId,
-        elements: persistedElements,
-        appState,
-        files: referencedFiles,
-        thumbnailVersion,
-      });
     },
-    [cloudSaveQueue, excalidrawAPI, saveThumbnailDebounced],
+    [cloudSaveQueue, excalidrawAPI],
   );
 
   const loadSelectedCloudScene = useCallback(
@@ -763,10 +745,6 @@ const ExcalidrawWrapper = (props: {
     }
     const loadId = cloudSceneLoadIdRef.current;
     try {
-      // Flush the latest preview before leaving the editor. The body and
-      // thumbnail remain independently best-effort, but a normal in-app
-      // navigation must not race the preview debounce/upload.
-      const pendingThumbnail = saveThumbnailDebounced.flush();
       const persistedElements = snapshot.elements.filter(
         (element: any) => element?.isDeleted !== true,
       );
@@ -800,11 +778,12 @@ const ExcalidrawWrapper = (props: {
       ) {
         cloudPersistenceSignatureRef.current = signature;
         cloudPersistenceDirtyRef.current = false;
-        await pendingThumbnail;
+        // Saving the body schedules its preview with the committed revision.
+        // Flush that debounce afterwards so navigation retains the latest preview.
+        await saveThumbnailDebounced.flush();
         await thumbnailSaveQueue.flush();
         return true;
       }
-      await pendingThumbnail;
       return false;
     } catch (error: any) {
       setCloudSaveStatus("error");

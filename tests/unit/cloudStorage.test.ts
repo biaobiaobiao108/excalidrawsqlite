@@ -5,7 +5,27 @@ import {
   fetchCloudScenePage,
   fetchWithTimeout,
   saveFilesToCloud,
+  saveCloudSceneThumbnail,
 } from "../../excalidraw-app/data/cloudStorage";
+
+it("sends the content revision for both thumbnail uploads and empty-board deletions", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<[string, string | undefined, string | undefined]> = [];
+  try {
+    globalThis.fetch = (async (input, init) => {
+      requests.push([String(input), init?.method, new Headers(init?.headers).get("X-Thumbnail-Version") || undefined]);
+      return Response.json({ success: true, id: "scene", thumbnail_file_id: null });
+    }) as typeof fetch;
+    await saveCloudSceneThumbnail("scene", new Blob(["preview"], { type: "image/png" }), 123, 7);
+    await saveCloudSceneThumbnail("scene", null, 124, 8);
+    expect(requests).toEqual([
+      ["/api/scenes/scene/thumbnail?revision=7", "PUT", "123"],
+      ["/api/scenes/scene/thumbnail?revision=8", "DELETE", "124"],
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 describe("cloud file upload", () => {
   for (const webCrypto of [true, false]) {
