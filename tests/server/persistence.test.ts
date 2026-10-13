@@ -801,18 +801,20 @@ describe("cloud persistence server", () => {
   });
 
   it("guards concurrent scene saves with an atomic revision check", async () => {
-    const { handler } = createTestRuntime();
+    const { handler, runtime } = createTestRuntime();
     const cookie = await authenticate(handler);
 
-    const upload = await request(handler, "/api/files/file_race", {
-      method: "PUT",
-      headers: {
-        Cookie: cookie,
-        "Content-Type": "image/png",
-      },
-      body: new Uint8Array([1, 2, 3]),
-    });
-    expect(upload.status).toBe(201);
+    for (const [fileId, byte] of [["file_race_a", 1], ["file_race_b", 2]] as const) {
+      const upload = await request(handler, `/api/files/${fileId}`, {
+        method: "PUT",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "image/png",
+        },
+        body: new Uint8Array([byte, 2, 3]),
+      });
+      expect(upload.status).toBe(201);
+    }
 
     const createdResponse = await jsonRequest(
       handler,
@@ -822,13 +824,13 @@ describe("cloud persistence server", () => {
     );
     const created = await responseJson<{ revision: number }>(createdResponse);
 
-    const save = (elementId: string) =>
+    const save = (elementId: string, fileId: string) =>
       jsonRequest(
         handler,
         "/api/scenes/scene_race",
         {
           elements: [
-            { id: elementId, type: "image", fileId: "file_race" },
+            { id: elementId, type: "image", fileId },
           ],
           appState: {},
           baseRevision: created.revision,
@@ -836,7 +838,10 @@ describe("cloud persistence server", () => {
         { method: "PUT", headers: { Cookie: cookie } },
       );
 
-    const responses = await Promise.all([save("element-a"), save("element-b")]);
+    const responses = await Promise.all([
+      save("element-a", "file_race_a"),
+      save("element-b", "file_race_b"),
+    ]);
     expect(responses.map((response) => response.status).sort()).toEqual([
       200,
       409,
@@ -847,10 +852,15 @@ describe("cloud persistence server", () => {
     });
     const scene = await responseJson<{
       revision: number;
-      elements: Array<{ id: string }>;
+      elements: Array<{ id: string; fileId: string }>;
     }>(sceneResponse);
     expect(scene.revision).toBe(created.revision + 1);
-    expect(["element-a", "element-b"]).toContain(scene.elements[0]?.id);
+    const winningElement = scene.elements[0];
+    expect(["element-a", "element-b"]).toContain(winningElement?.id);
+    const references = await runtime.db
+      .query("SELECT file_id FROM scene_files WHERE scene_id = ?")
+      .all<{ file_id: string }>("scene_race");
+    expect(references.map(({ file_id }) => file_id)).toEqual([winningElement?.fileId]);
   });
 
   it("paginates scene summaries and supports conditional scene reads", async () => {
@@ -1535,6 +1545,50 @@ describe("cloud persistence server", () => {
         permanentlyDeleted,
       ),
     ).toMatchObject({ ids, permanent: true });
+  });
+
+  it("does not partially apply a scene batch when a revision changes after validation", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const ids = ["scene_batch_race_a", "scene_batch_race_b"];
+    for (const id of ids) {
+      const created = await jsonRequest(
+        handler,
+        "/api/scenes",
+        { id, name: id, elements: [] },
+        { headers: { Cookie: cookie } },
+      );
+      expect(created.status).toBe(201);
+    }
+
+    const originalRun = runtime.db.run.bind(runtime.db);
+    let injectedRace = false;
+    runtime.db.run = (sql, values) => {
+      if (!injectedRace && sql.startsWith("UPDATE scenes") && sql.includes("json_each(?)")) {
+        injectedRace = true;
+        originalRun("UPDATE scenes SET revision = revision + 1 WHERE id = ?", [ids[1]]);
+      }
+      return originalRun(sql, values);
+    };
+    try {
+      const response = await jsonRequest(
+        handler,
+        "/api/scenes/batch",
+        { scenes: ids.map((id) => ({ id, revision: 1 })) },
+        { method: "PATCH", headers: { Cookie: cookie } },
+      );
+      expect(response.status).toBe(409);
+    } finally {
+      runtime.db.run = originalRun;
+    }
+
+    const rows = await runtime.db
+      .query("SELECT id, deleted_at, revision FROM scenes WHERE id IN (?, ?)")
+      .all<{ id: string; deleted_at: number | null; revision: number }>(...ids);
+    expect(rows).toHaveLength(2);
+    expect(rows.every(({ deleted_at }) => deleted_at === null)).toBe(true);
+    expect(rows.find(({ id }) => id === ids[0])?.revision).toBe(1);
+    expect(rows.find(({ id }) => id === ids[1])?.revision).toBe(2);
   });
 
   it("persists board metadata, folders, recent opens and thumbnails", async () => {

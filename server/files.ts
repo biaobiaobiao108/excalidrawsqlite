@@ -691,7 +691,8 @@ export const assertReferencedFilesExist = async (
   fileIds: string[],
 ) => {
   const rowsById = new Map<string, { storage_path: string | null }>();
-  const queryChunkSize = 500;
+  // D1 currently limits the number of bound parameters in a statement to 100.
+  const queryChunkSize = 100;
   for (let offset = 0; offset < fileIds.length; offset += queryChunkSize) {
     const chunk = fileIds.slice(offset, offset + queryChunkSize);
     if (!chunk.length) {
@@ -760,6 +761,7 @@ export const getSceneFileReferenceMutationStatements = async (
   sceneId: string,
   fileIds: string[],
   guardRevision?: number,
+  guardContentSha256?: string,
 ) => {
   const statements = getSceneFileReferenceStatements(runtime);
   const existingFileIds = new Set(
@@ -774,10 +776,13 @@ export const getSceneFileReferenceMutationStatements = async (
       batch.push({
         sql: guardRevision === undefined
           ? "DELETE FROM scene_files WHERE scene_id = ? AND file_id = ?"
-          : "DELETE FROM scene_files WHERE scene_id = ? AND file_id = ? AND EXISTS (SELECT 1 FROM scenes WHERE id = ? AND revision = ? AND deleted_at IS NULL)",
+          : `DELETE FROM scene_files WHERE scene_id = ? AND file_id = ? AND EXISTS (
+              SELECT 1 FROM scenes WHERE id = ? AND revision = ? AND deleted_at IS NULL
+              ${guardContentSha256 === undefined ? "" : "AND content_sha256 = ?"}
+            )`,
         values: guardRevision === undefined
           ? [sceneId, fileId]
-          : [sceneId, fileId, sceneId, guardRevision],
+          : [sceneId, fileId, sceneId, guardRevision, ...(guardContentSha256 === undefined ? [] : [guardContentSha256])],
       });
     }
   }
@@ -786,10 +791,14 @@ export const getSceneFileReferenceMutationStatements = async (
       batch.push({
         sql: guardRevision === undefined
           ? "INSERT OR IGNORE INTO scene_files (scene_id, file_id) VALUES (?, ?)"
-          : "INSERT OR IGNORE INTO scene_files (scene_id, file_id) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM scenes WHERE id = ? AND revision = ? AND deleted_at IS NULL)",
+          : `INSERT OR IGNORE INTO scene_files (scene_id, file_id)
+             SELECT ?, ? WHERE EXISTS (
+               SELECT 1 FROM scenes WHERE id = ? AND revision = ? AND deleted_at IS NULL
+               ${guardContentSha256 === undefined ? "" : "AND content_sha256 = ?"}
+             )`,
         values: guardRevision === undefined
           ? [sceneId, fileId]
-          : [sceneId, fileId, sceneId, guardRevision],
+          : [sceneId, fileId, sceneId, guardRevision, ...(guardContentSha256 === undefined ? [] : [guardContentSha256])],
       });
     }
   }

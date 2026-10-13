@@ -674,6 +674,7 @@ export const createRequestHandler = (
         const isRestore = !isPermanent && body.deleted === false;
         const now = Date.now();
         const changedEntries: typeof entries = [];
+        const expectedStates: Array<typeof entries[number] & { deleted: boolean }> = [];
         for (const entry of entries) {
             const existing = await stmts.getSceneStateById.get(entry.id) as {
               id: string;
@@ -691,26 +692,45 @@ export const createRequestHandler = (
                 "选中的画板已发生变化，请刷新列表后重新选择",
               );
             }
+            expectedStates.push({ ...entry, deleted: existing.deleted_at !== null });
             if (isPermanent || (isRestore ? existing.deleted_at !== null : existing.deleted_at === null)) {
               changedEntries.push(entry);
             }
         }
 
-        const statements = [];
-        for (const entry of changedEntries) {
-            if (isPermanent) {
-              statements.push({ sql: "DELETE FROM scene_files WHERE scene_id = ?", values: [entry.id] });
-              statements.push({ sql: "DELETE FROM scenes WHERE id = ? AND deleted_at IS NOT NULL AND revision = ?", values: [entry.id, entry.revision] });
-            } else if (isRestore) {
-              statements.push({ sql: "UPDATE scenes SET deleted_at = NULL, updated_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND deleted_at IS NOT NULL", values: [now, entry.id, entry.revision] });
-            } else {
-              statements.push({ sql: "UPDATE scenes SET deleted_at = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND deleted_at IS NULL", values: [now, now, entry.id, entry.revision] });
-            }
-        }
-        const results = await runtime.db.batch(statements);
-        const sceneResults = isPermanent ? results.filter((_result, index) => index % 2 === 1) : results;
-        if (sceneResults.some((result) => result.changes !== 1)) {
-          throw new HttpError(409, "SCENE_SELECTION_STALE", "选中的画板已发生变化，请刷新列表后重新选择");
+        if (changedEntries.length) {
+          // One statement makes the operation all-or-nothing even if a scene
+          // changes after the initial validation query. Permanent deletion
+          // relies on the scene_files foreign-key cascade in the same statement.
+          const allEntriesJson = JSON.stringify(expectedStates);
+          const changedIdsJson = JSON.stringify(changedEntries.map(({ id }) => id));
+          const stateGuard = `(
+            SELECT COUNT(*)
+            FROM json_each(?) AS selected
+            JOIN scenes ON scenes.id = json_extract(selected.value, '$.id')
+            WHERE scenes.revision = CAST(json_extract(selected.value, '$.revision') AS INTEGER)
+              AND (scenes.deleted_at IS NOT NULL) = CAST(json_extract(selected.value, '$.deleted') AS INTEGER)
+          ) = ?`;
+          const sql = isPermanent
+            ? `DELETE FROM scenes
+               WHERE id IN (SELECT value FROM json_each(?))
+                 AND deleted_at IS NOT NULL
+                 AND ${stateGuard}`
+            : `UPDATE scenes
+               SET deleted_at = ${isRestore ? "NULL" : "?"},
+                   updated_at = ?, revision = revision + 1
+               WHERE id IN (SELECT value FROM json_each(?))
+                 AND deleted_at IS ${isRestore ? "NOT NULL" : "NULL"}
+                 AND ${stateGuard}`;
+          const values = isPermanent
+            ? [changedIdsJson, allEntriesJson, entries.length]
+            : isRestore
+              ? [now, changedIdsJson, allEntriesJson, entries.length]
+              : [now, now, changedIdsJson, allEntriesJson, entries.length];
+          const result = await runtime.db.run(sql, values);
+          if (result.changes !== changedEntries.length) {
+            throw new HttpError(409, "SCENE_SELECTION_STALE", "选中的画板已发生变化，请刷新列表后重新选择");
+          }
         }
         for (const entry of changedEntries) {
           publishSceneChanged(runtime, {
@@ -1417,7 +1437,13 @@ export const createRequestHandler = (
         await withStorageMutationLock(runtime, async () => {
           await assertSceneFolderExists(folderId);
           await assertReferencedFilesExist(runtime, fileIds);
-          const referenceMutations = await getSceneFileReferenceMutationStatements(runtime, id, fileIds, revision);
+          const referenceMutations = await getSceneFileReferenceMutationStatements(
+            runtime,
+            id,
+            fileIds,
+            revision,
+            contentSha256,
+          );
           const [result] = await runtime.db.batch([
             {
               sql: `UPDATE scenes
