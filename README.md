@@ -334,7 +334,9 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 调用 `inspect_layout` 时省略 `checks` 会检查全部四项。返回 `boardId/revision`、`summary.errors/warnings` 和 `issues`，每条问题包含 `type/severity/elementIds/message`，并可包含 `suggestion`。将涉及的 ID 用于 `update_board.updates`，保存时使用检查结果的 `revision` 作为 `expectedRevision`，再调用检查确认。检查本身不改变图元或修订号，成功 text 仍只给简短说明，不重复业务 JSON。
 
-重叠提示的 `metrics.overlapRatio/overlapArea` 提供相交比例与面积，箭头距离提示的 `metrics.distance` 为端点到目标轮廓的距离，单位均基于画布坐标。独立文字与形状还可返回 `suggestedUpdate:{id,dx,dy}`，可直接放入 `update_board.updates`；这只提供分离当前两个图元的候选方案，不保证整体布局合理，也不会自动执行。绑定文字不提供独立平移建议，以免破坏标签关系。透明图元和空白文字不参与视觉碰撞检查，断开的绑定仍可报告数据问题。
+重叠提示的 `metrics.overlapRatio/overlapArea` 提供相交比例与面积，箭头距离提示的 `metrics.distance` 为端点到目标轮廓的距离，单位均基于画布坐标。独立文字重叠可返回 `suggestedUpdate:{id,dx,dy}`，可直接放入 `update_board.updates`；这只提供分离当前两个图元的候选方案，不保证整体布局合理，也不会自动执行。绑定文字和形状碰撞不提供独立平移建议，避免破坏标签、阴影与背景叠层。大小接近且偏移很小的实心矩形标为 `metrics.possibleLayering=true`，仍保留确认提示，不断言设计错误。透明图元和空白文字不参与视觉碰撞检查，断开的绑定仍可报告数据问题。
+
+`text_overflow` 同时检查原生绑定标签和明确结构的分组卡片：`create_layout` 的背景与标题/正文通过分组及图元角色名称关联，即使文字完全移出卡片也能找到背景，并按固定文字宽度恢复可确定的内边距。普通分组只有唯一实心矩形候选时才作结构推断，多个背景无法确定则不猜测；没有分组的独立文字不会按附近矩形推断归属。`checks.text_overflow.checkedContainers/checkedPairs` 表示实际检查的容器关系，`skippedNoContainer` 表示未找到容器的文字数，不能将其视为容器边界检查通过。`skippedAmbiguousContainer` 表示容器歧义，歧义、异常或预算截断会标记检查未完成。分组索引和候选比较都有上限，统计分别见 `groupReferences/groupCandidatePairs`。
 
 箭头绑定标签的重叠检查使用原生路径计算显示位置，支持多段和旋转箭头，不依赖标签可能过时的存储坐标。异常路径、非原生水平标签或检查预算超限仍会明确返回检查未完成及原因。
 

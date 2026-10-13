@@ -2,12 +2,41 @@ import { describe, expect, it } from "bun:test";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import { createDrawingBatch, drawingElementSchema } from "../../server/mcp-drawing";
 import { inspectLayout, inspectLayoutSchema } from "../../server/mcp-inspect";
+import { buildDrawingLayout, layoutSchema } from "../../server/mcp-layout";
 
 const scene = (specs: unknown[]) => createDrawingBatch(specs.map((spec) => drawingElementSchema.parse(spec))).elements;
 const text = (id: string, x: number, y = 0, rotation = 0) => ({ type: "text", id, x, y, text: "中文文字", fontSize: 20, rotation });
 const rectangle = (id: string, x = 0, y = 0, width = 100, height = 100) => ({ type: "rectangle", id, x, y, width, height });
 
 describe("MCP read-only layout diagnostics", () => {
+  it("checks grouped card padding even when text remains inside the outer rectangle", () => {
+    const layout = buildDrawingLayout(layoutSchema.parse({ cards: [{ id: "card", title: "标题", body: "正文" }] }));
+    const elements = createDrawingBatch(layout.elements).elements;
+    expect(inspectLayout(elements, { checks: ["text_overflow"] }).issues).toEqual([]);
+    const displaced = elements.map((element) => element.id === "card:body" ? { ...element, x: element.x - 5 } : element);
+    const result = inspectLayout(displaced, { checks: ["text_overflow"] });
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0].elementIds).toEqual(["card:body", "card:background"]);
+    expect(result.checks.text_overflow).toMatchObject({ checkedContainers: 2, checkedPairs: 2, skippedNoContainer: 0 });
+    expect(result.checks.text_overflow?.groupCandidatePairs).toBeGreaterThan(0);
+    const noContainer = inspectLayout(scene([text("free", 0)]), { checks: ["text_overflow"] });
+    expect(noContainer.checks.text_overflow).toMatchObject({ checkedContainers: 0, skippedNoContainer: 1 });
+  });
+  it("never prescribes a destructive shape move and identifies likely shadow layers as uncertain", () => {
+    const shadow = scene([{ ...rectangle("shadow", 6, 6, 400, 560), fillStyle: "solid", backgroundColor: "#eeeeee" },
+      { ...rectangle("card", 0, 0, 400, 560), fillStyle: "solid", backgroundColor: "white" }]);
+    const snapshot = structuredClone(shadow);
+    const result = inspectLayout(shadow, { checks: ["element_collision"] });
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0].metrics?.possibleLayering).toBe(true);
+    expect(result.issues[0].message).toContain("疑似阴影");
+    expect(result.issues[0].suggestedUpdate).toBeUndefined();
+    expect(shadow).toEqual(snapshot);
+    const collision = inspectLayout(scene([rectangle("a"), rectangle("b", 40)]), { checks: ["element_collision"] });
+    expect(collision.issues).toHaveLength(1);
+    expect(collision.issues[0].metrics?.possibleLayering).toBeUndefined();
+    expect(collision.issues[0].suggestedUpdate).toBeUndefined();
+  });
   it("ignores invisible and blank content while preserving data integrity diagnostics", () => {
     const elements = scene([text("visible", 0), text("hidden", 0), text("blank", 0), rectangle("box"), rectangle("hidden-box", 20)]);
     const hidden = elements.map((element) => element.id.startsWith("hidden") ? { ...element, opacity: 0 } :

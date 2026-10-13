@@ -5,6 +5,7 @@ import { LinearElementEditor } from "@excalidraw/element/linearElementEditor";
 import { distanceToElement } from "@excalidraw/element/distance";
 import { isBindableElement } from "@excalidraw/element/typeChecks";
 import { getInspectTextGeometry } from "./mcp-inspect-labels";
+import { createInspectCardResolver } from "./mcp-inspect-cards";
 
 export const LAYOUT_CHECKS = ["text_overlap", "text_overflow", "element_collision", "arrow_connection"] as const;
 export const inspectLayoutSchema = z.object({
@@ -14,7 +15,7 @@ export const inspectLayoutSchema = z.object({
 type Check = typeof LAYOUT_CHECKS[number];
 type Point = [number, number];
 type Issue = { type: Check; severity: "error" | "warning"; elementIds: string[]; message: string; suggestion?: string;
-  metrics?: { overlapRatio?: number; overlapArea?: number; distance?: number };
+  metrics?: { overlapRatio?: number; overlapArea?: number; distance?: number; possibleLayering?: boolean };
   suggestedUpdate?: { id: string; dx: number; dy: number } };
 const SCENE_LIMIT = 50_000, PAIR_LIMIT = 100_000, REFERENCE_LIMIT = 200_000, CELL_LIMIT = 256;
 const GROUP_LIMIT = 32, ISSUE_LIMIT = 100, POINT_LIMIT = 200_000, CELL_SIZE = 256;
@@ -68,6 +69,15 @@ const keysFor = (polygon: Point[]) => {
 const shape = (element: ExcalidrawElement) => ["rectangle", "ellipse", "diamond"].includes(element.type);
 const visible = (element: ExcalidrawElement) => element.opacity !== 0 &&
   (element.type !== "text" || (typeof element.text === "string" && element.text.trim().length > 0));
+const possibleLayering = (a: ExcalidrawElement, b: ExcalidrawElement) => {
+  if (a.type !== "rectangle" || b.type !== "rectangle" || a.fillStyle !== "solid" || b.fillStyle !== "solid" ||
+    a.backgroundColor === "transparent" || b.backgroundColor === "transparent") return false;
+  const angle = Math.abs(Math.atan2(Math.sin(a.angle - b.angle), Math.cos(a.angle - b.angle)));
+  const offset = Math.hypot(a.x + a.width / 2 - b.x - b.width / 2, a.y + a.height / 2 - b.y - b.height / 2);
+  return angle <= Math.PI / 180 && Math.min(a.width, b.width) / Math.max(a.width, b.width) >= 0.95 &&
+    Math.min(a.height, b.height) / Math.max(a.height, b.height) >= 0.95 &&
+    offset <= Math.min(20, Math.min(a.width, b.width, a.height, b.height) * 0.05);
+};
 // A proposed translation clears this pair's bounding boxes only; callers must recheck the scene.
 const separation = (fixed: Point[], moving: Point[], id: string) => {
   const bounds = (polygon: Point[]) => ({ left: Math.min(...polygon.map((p) => p[0])), right: Math.max(...polygon.map((p) => p[0])),
@@ -84,7 +94,10 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
   const issues: Issue[] = [];
   const checkInfo = Object.fromEntries(selected.map((name) => [name, {
     complete: true, checkedElements: 0, checkedPairs: 0, issues: 0, limitations: [] as string[],
-  }])) as Partial<Record<Check, { complete: boolean; checkedElements: number; checkedPairs: number; issues: number; limitations: string[] }>>;
+    ...(name === "text_overflow" ? { skippedNoContainer: 0, skippedAmbiguousContainer: 0, checkedContainers: 0 } : {}),
+  }])) as Partial<Record<Check, { complete: boolean; checkedElements: number; checkedPairs: number; issues: number; limitations: string[];
+    skippedNoContainer?: number; skippedAmbiguousContainer?: number; checkedContainers?: number;
+    groupCandidatePairs?: number; groupReferences?: number }>>;
   const incomplete = (check: Check, reason: string) => {
     const status = checkInfo[check]; if (!status) return; status.complete = false;
     if (!status.limitations.includes(reason)) status.limitations.push(reason);
@@ -146,12 +159,16 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
         if (check === "element_collision" && (sameGroup(element, other) || contains(polygon, otherPolygon) || contains(otherPolygon, polygon))) continue;
         const overlap = intersectionArea(polygon, otherPolygon);
         if (overlap <= 1 || overlap / Math.min(area(polygon), area(otherPolygon)) < (check === "text_overlap" ? 0.08 : 0.15)) continue;
-        const suggestedUpdate = element.type !== "text" || !element.containerId ? separation(otherPolygon, polygon, element.id) : undefined;
-        issue(check, "warning", [other.id, element.id], check === "text_overlap" ? "文字旋转矩形明显相交，可能影响阅读" : "形状发生明显部分覆盖，可能影响布局",
+        const layering = check === "element_collision" && possibleLayering(element, other);
+        // Shape overlaps may be a deliberate shadow or background. Geometry alone cannot safely prescribe a move.
+        const suggestedUpdate = check === "text_overlap" && element.type === "text" && !element.containerId ? separation(otherPolygon, polygon, element.id) : undefined;
+        issue(check, "warning", [other.id, element.id], check === "text_overlap" ? "文字旋转矩形明显相交，可能影响阅读"
+          : layering ? "近似大小的矩形小幅错开，疑似阴影或背景叠层，请确认是否有意设计" : "形状发生明显部分覆盖，可能影响布局",
           suggestedUpdate ? `可将 ${element.id} 平移 dx=${suggestedUpdate.dx}, dy=${suggestedUpdate.dy}；仅分离这对图元，修改后须复查其他碰撞。有意叠放可忽略`
-            : "调整所属容器的位置、字号或换行；修改后复查实际显示效果",
+            : check === "element_collision" ? "先确认图层用途；有意叠放可忽略。仅凭几何无法安全建议位移"
+              : "调整所属容器的位置、字号或换行；修改后复查实际显示效果",
           { metrics: { overlapRatio: Math.round(overlap / Math.min(area(polygon), area(otherPolygon)) * 1000) / 1000,
-            overlapArea: Math.round(overlap * 100) / 100 }, ...(suggestedUpdate ? { suggestedUpdate } : {}) });
+            overlapArea: Math.round(overlap * 100) / 100, ...(layering ? { possibleLayering: true } : {}) }, ...(suggestedUpdate ? { suggestedUpdate } : {}) });
         if (checkInfo[check]!.issues >= ISSUE_LIMIT) { incomplete(check, "提示达到 100 条，后续检查已停止"); break outer; }
       }
       references += keys.length;
@@ -159,6 +176,7 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
     }
   }
   if (checkInfo.text_overflow) {
+    const resolver = createInspectCardResolver(active);
     for (const element of active) {
       if (element.type !== "text") continue;
       checkInfo.text_overflow.checkedElements++;
@@ -173,12 +191,36 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
         incomplete("text_overflow", "文字或所属容器几何无效，溢出检查已跳过"); continue;
       }
       if (container && shape(container) && validGeometry(container) && validGeometry(element)) {
+        checkInfo.text_overflow.checkedPairs++;
+        checkInfo.text_overflow.checkedContainers!++;
         if (element.width > getBoundTextMaxWidth(container, element) + 1 || element.height > getBoundTextMaxHeight(container, element as ExcalidrawTextElementWithContainer) + 1 ||
           !contains(polygonFor(container), polygonFor(element)))
           issue("text_overflow", "warning", [element.id, container.id], "绑定文字超过原生容器可用文字区域", "增大容器，或减少文字内容与字号");
         continue;
       }
+      if (container) continue; // Arrow labels are not constrained to a shape interior.
+      const resolved = resolver.resolve(element);
+      if (!resolved.container) {
+        if (resolved.reason === "no_container") checkInfo.text_overflow.skippedNoContainer!++;
+        else if (resolved.reason === "ambiguous") {
+          checkInfo.text_overflow.skippedAmbiguousContainer!++;
+          incomplete("text_overflow", "部分分组存在多个背景候选，无法可靠确定文字容器");
+        } else incomplete("text_overflow", "部分分组容器检查因无效数据或容量限制跳过");
+        continue;
+      }
+      if (!validGeometry(element)) { incomplete("text_overflow", "部分分组文字几何无效，已跳过溢出检查"); continue; }
+      const card = resolved.container, padding = resolved.padding;
+      checkInfo.text_overflow.checkedPairs++;
+      checkInfo.text_overflow.checkedContainers!++;
+      const interior = { ...card, x: card.x + padding, y: card.y + padding,
+        width: card.width - 2 * padding, height: card.height - 2 * padding };
+      if (!contains(polygonFor(interior), polygonFor(element))) issue("text_overflow", "warning", [element.id, card.id],
+        resolved.heuristic ? "文字超出同组唯一背景矩形；分组容器为结构推断，请确认卡片用途" : "卡片文字超出所属背景的内边界",
+        "调整文字位置、换行或卡片尺寸；保留原生分组，修改后复查");
     }
+    checkInfo.text_overflow.groupCandidatePairs = resolver.stats.pairs;
+    checkInfo.text_overflow.groupReferences = resolver.stats.references;
+    if (!resolver.stats.complete) for (const limitation of resolver.stats.limitations) incomplete("text_overflow", limitation);
   }
   if (checkInfo.arrow_connection) {
     let points = 0;
@@ -217,6 +259,8 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
     complete: Object.values(checkInfo).every((check) => check.complete), checks: checkInfo, scannedElementCount: active.length,
     budgets: { sceneElements: SCENE_LIMIT, comparisonsPerCheck: PAIR_LIMIT, referencesPerIndex: REFERENCE_LIMIT, issuesPerCheck: ISSUE_LIMIT, arrowPoints: POINT_LIMIT, arrowLabelPoints: POINT_LIMIT },
     method: "rotated-convex-geometry",
-    limitations: ["使用已存储文字尺寸，不进行真实字体或像素测量。椭圆用内接多边形估计，手绘笔触与圆角不作像素判断", "独立文字缺少明确容器时不推断溢出；无限画布不检查坐标正负或画布边界"],
+    limitations: ["使用已存储文字尺寸，不进行真实字体或像素测量。椭圆用内接多边形估计，手绘笔触与圆角不作像素判断",
+      "分组仅在明确卡片结构或唯一背景候选时推断容器；没有关联的文字统计为 skippedNoContainer，不代表检查过容器边界。无限画布不检查坐标正负或画布边界",
+      "形状碰撞不提供自动位移建议；疑似阴影或背景叠层仅供确认，几何无法确定设计意图"],
   };
 };
