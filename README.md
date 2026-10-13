@@ -120,6 +120,7 @@ MCP_TOKEN="replace-with-a-local-mcp-token"
 - 构建命令：`bun install --frozen-lockfile && bun run build:frontend`
 - 部署命令：`bunx wrangler deploy`
 - 根目录：仓库根目录（包含 `wrangler.jsonc`）
+- Build Variables：`BUN_VERSION=1.4.3`（Cloudflare Builds 当前默认 Bun 版本低于项目要求）
 
 首次部署后，Cloudflare 会创建 D1 和 R2 资源并在 Worker 设置中显示绑定。打开 **D1 → 对应数据库 → Console**，执行 [`migrations-d1/0001_baseline.sql`](migrations-d1/0001_baseline.sql) 的 SQL，完成首次 schema 初始化。后续 migration 也在本地验证后，通过对应 D1 Console 执行；GitHub Actions 只做质量检查，不发布。请只从 Cloudflare Dashboard 的 Git Builds 部署，避免本地 `wrangler deploy` 把自动生成的账号资源 ID 写回工作区。
 
