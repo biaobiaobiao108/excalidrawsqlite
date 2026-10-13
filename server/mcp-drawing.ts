@@ -41,10 +41,6 @@ export { colorSchema } from "./color";
 const coordinate = z.number().finite().min(-1_000_000).max(1_000_000);
 const dimension = z.number().finite().positive().max(1_000_000);
 const idSchema = z.string().min(1).max(128);
-const grouping = {
-  groupId: idSchema.nullable().optional().describe("原生分组 ID；相同 ID 的图元可整体拖动。null 解除分组；不能与 groupIds 同传"),
-  groupIds: z.array(idSchema).max(8).refine((ids) => new Set(ids).size === ids.length, "分组 ID 不得重复").optional().describe("原生嵌套分组，从内到外，最多 8 层；[] 解除分组。通常使用 groupId 即可"),
-};
 const roundness = z
   .union([
     z.number().finite().min(0).max(1_000),
@@ -134,7 +130,6 @@ const points = z
   );
 const labelStyleSchema = z.object({ ...typography, ...style }).strict();
 const shapeFields = {
-  ...grouping,
   id: idSchema.optional().describe("可选稳定 ID，供同批箭头 binding 引用"),
   x: coordinate,
   y: coordinate,
@@ -147,7 +142,6 @@ const shapeFields = {
   ...style,
 };
 const linearFields = {
-  ...grouping,
   id: idSchema.optional(),
   startX: coordinate.optional(),
   startY: coordinate.optional(),
@@ -178,7 +172,6 @@ export const drawingElementSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("text"),
-      ...grouping,
       id: idSchema.optional(),
       x: coordinate,
       y: coordinate,
@@ -207,11 +200,10 @@ export const drawingElementSchema = z.discriminatedUnion("type", [
     })
     .strict()
     .refine(validateArrow, "请提供 points 或完整且不同的起终点；也可仅传两端 binding 自动连接（不能同时传 rotation）"),
-]).refine((value) => value.groupId === undefined || value.groupIds === undefined, "groupId 与 groupIds 不能同时提供");
+]);
 export const elementUpdateSchema = z
   .object({
     id: idSchema,
-    ...grouping,
     type: z.enum(["rectangle", "ellipse", "diamond", "text", "line", "arrow"]).optional().describe("可直接使用 input 视图的图元作为 updates；必须与现有类型相同，不支持类型转换"),
     x: coordinate.optional(),
     y: coordinate.optional(),
@@ -236,7 +228,6 @@ export const elementUpdateSchema = z
     endArrowhead: arrowhead.optional(),
   })
   .strict()
-  .refine((value) => value.groupId === undefined || value.groupIds === undefined, "groupId 与 groupIds 不能同时提供")
   .refine((value) => !(value.dx !== undefined && value.x !== undefined) && !(value.dy !== undefined && value.y !== undefined), "dx 与 x、dy 与 y 不能同时提供")
   .refine((value) => value.dx === undefined && value.dy === undefined || [value.points, value.startX, value.startY, value.endX, value.endY].every((field) => field === undefined), "相对平移不能与 points 或起终点坐标同时提供")
   .refine((value) => value.autoResize !== true || value.width === undefined, "autoResize=true 时不能同时提供 width")
@@ -262,7 +253,6 @@ const fontId = (font: unknown): FontFamilyValues =>
     : (({ Excalifont: 5, system: 13, WenKai: 11 }[String(font)] ||
         5) as FontFamilyValues);
 const props = (spec: Partial<Spec> | Update): Record<string, unknown> => ({
-  ...(spec.groupIds !== undefined ? { groupIds: [...spec.groupIds] } : spec.groupId !== undefined ? { groupIds: spec.groupId === null ? [] : [spec.groupId] } : {}),
   ...Object.fromEntries(
     Object.keys(style)
       .filter(
@@ -340,16 +330,6 @@ const layoutFreeText = (
     y: element.y,
     width: autoResize ? measured.width : fixedWidth,
   };
-};
-/** Uses the same bounded server estimator as MCP text creation, not browser font metrics. */
-export const measureDrawingText = (spec: { text: string; fontSize?: number; fontFamily?: string | number; width?: number }) => {
-  const element = layoutFreeText(newTextElement({ x: 0, y: 0, text: spec.text,
-    fontSize: spec.fontSize, fontFamily: fontId(spec.fontFamily) }), spec.width);
-  return { text: element.text, originalText: element.originalText, width: element.width,
-    height: element.height, fontSize: element.fontSize, fontFamily: element.fontFamily,
-    lineCount: element.text.split("\n").length, estimated: true as const,
-    measurement: "server-estimate" as const,
-    note: "与 MCP 创建文字使用同一估算器；中文按字号、其他字符约 0.58 倍字号估宽。浏览器实际字体、字形和回退字体可能不同，请通过预览复查。" };
 };
 export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
   if ((spec.type === "rectangle" || spec.type === "ellipse" || spec.type === "diamond") &&
@@ -913,7 +893,7 @@ export const inputDrawingElements = (current: readonly ExcalidrawElement[]) => {
   });
   for (const element of active) {
     const fields: string[] = [];
-    if (element.groupIds.length > 8) fields.push("groupIds");
+    if (element.groupIds.length) fields.push("groupIds");
     if (element.frameId) fields.push("frameId");
     if (element.locked) fields.push("locked");
     if (element.link) fields.push("link");
@@ -925,7 +905,7 @@ export const inputDrawingElements = (current: readonly ExcalidrawElement[]) => {
       if (element.containerId && !element.autoResize) fields.push("autoResize", "width");
     }
     if (fields.length) warnings.push({ elementId: element.id, fields });
-    const base = { id: element.id, type: element.type, ...writableStyle(element), ...(element.groupIds.length <= 8 && element.groupIds.length ? { groupIds: [...element.groupIds] } : {}) };
+    const base = { id: element.id, type: element.type, ...writableStyle(element) };
     let candidate: Record<string, unknown>;
     if (["rectangle", "ellipse", "diamond"].includes(element.type)) {
       candidate = {

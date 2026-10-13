@@ -347,8 +347,7 @@ describe("MCP drawing contracts", () => {
     const input = inputDrawingElements([modified, image]);
     expect(input.elements.map((e) => e.id)).toEqual(["a"]);
     expect(input.unsupportedElementIds).toEqual(["image"]);
-    expect(input.elements[0].groupIds).toEqual(["group"]);
-    expect(input.warnings).toContainEqual({ elementId: "a", fields: ["frameId", "locked", "link"] });
+    expect(input.warnings).toContainEqual({ elementId: "a", fields: ["groupIds", "frameId", "locked", "link"] });
   });
   it("rejects misspelled nested fields and invalid styles", () => {
     for (const extra of [

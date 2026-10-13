@@ -30,15 +30,6 @@ export const copyDrawingSelection = (
     selected.add(owner);
   }
   const usedIds = new Set(target.map((element) => element.id));
-  const usedGroupIds = new Set(target.flatMap((element) => [...element.groupIds]));
-  const groupIdMap: Record<string, string> = Object.create(null);
-  const copyGroup = (id: string) => {
-    if (groupIdMap[id]) return groupIdMap[id];
-    let next: string;
-    do { next = `group_${randomBase64Url(12)}`; } while (usedGroupIds.has(next));
-    usedGroupIds.add(next);
-    return groupIdMap[id] = next;
-  };
   const idMap: Record<string, string> = Object.create(null);
   const allocate = (id: string) => {
     if (idMap[id]) return idMap[id];
@@ -57,7 +48,6 @@ export const copyDrawingSelection = (
   }
   const elements = projection.elements.filter((spec) => selected.has(spec.id!)).map((spec) => {
     const copied = { ...spec, id: idMap[spec.id!] };
-    if (copied.groupIds) copied.groupIds = copied.groupIds.map(copyGroup);
     if (copied.type === "line" || copied.type === "arrow") {
       copied.points = copied.points!.map(([x, y]) => [x + dx, y + dy]);
       if (copied.type === "arrow") {
@@ -80,5 +70,5 @@ export const copyDrawingSelection = (
     return parsed.data;
   });
   const warnings = projection.warnings.filter((warning) => Object.hasOwn(idMap, warning.elementId));
-  return { elements, idMap, groupIdMap, warnings };
+  return { elements, idMap, warnings };
 };
