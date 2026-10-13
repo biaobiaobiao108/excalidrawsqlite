@@ -232,8 +232,10 @@ const upsertPreparedFile = async (
   prepared: PreparedFile,
   createdAt?: number,
   updatedAt?: number,
+  assertCanWrite?: () => void,
 ) => {
   return withStorageMutationLock(runtime, async () => {
+    assertCanWrite?.();
     if (prepared.byteLength > runtime.config.maxFileBytes) {
       throw getFileTooLargeError(runtime.config.maxFileBytes);
     }
@@ -262,6 +264,7 @@ const upsertPreparedFile = async (
       previous.mime_type.toLowerCase() === mimeType.toLowerCase() &&
       (await fileExists(filePath))
     ) {
+      assertCanWrite?.();
       // An identical upload still renews the orphan grace period; explicit
       // thumbnail versions retain their monotonic ordering instead.
       const nextUpdatedAt = Math.max(previous.updated_at, now);
@@ -285,6 +288,7 @@ const upsertPreparedFile = async (
       ? await finalizeAtomicFileWrite(filePath, prepared.tempPath)
       : await writeFileAtomically(filePath, prepared.data!);
     try {
+      assertCanWrite?.();
       runtime.db.run(
         `INSERT INTO files
            (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
@@ -401,6 +405,7 @@ export const upsertStagedFile = async (
   prepared: PreparedFile,
   createdAt?: number,
   updatedAt?: number,
+  assertCanWrite?: () => void,
 ) => {
   try {
     return await upsertPreparedFile(
@@ -410,6 +415,7 @@ export const upsertStagedFile = async (
       prepared,
       createdAt,
       updatedAt,
+      assertCanWrite,
     );
   } finally {
     if (prepared.tempPath) {
