@@ -120,6 +120,22 @@ export const CustomSelect = ({
         ownerWindow.innerWidth;
       const viewportHeight = ownerDocument.documentElement.clientHeight ||
         ownerWindow.innerHeight;
+      const isMobileViewport = viewportWidth <= 720;
+      const maxMenuHeight = isMobileViewport
+        ? Math.min(420, Math.round(viewportHeight * 0.62))
+        : MENU_MAX_HEIGHT;
+      const maxWidth = Math.max(
+        0,
+        viewportWidth - MENU_VIEWPORT_PADDING * 2,
+      );
+      const width = Math.min(
+        isMobileViewport
+          ? Math.max(triggerRect.width, Math.min(280, maxWidth))
+          : triggerRect.width,
+        maxWidth,
+      );
+      // Measure after applying the menu width before choosing its placement.
+      menu.style.width = `${width}px`;
       const availableAbove = Math.max(
         0,
         triggerRect.top - MENU_GAP - MENU_VIEWPORT_PADDING,
@@ -128,7 +144,7 @@ export const CustomSelect = ({
         0,
         viewportHeight - triggerRect.bottom - MENU_GAP - MENU_VIEWPORT_PADDING,
       );
-      const desiredHeight = Math.min(menu.scrollHeight, MENU_MAX_HEIGHT);
+      const desiredHeight = Math.min(menu.scrollHeight, maxMenuHeight);
       let placement = menuPlacement;
 
       if (
@@ -144,19 +160,17 @@ export const CustomSelect = ({
 
       const availableHeight =
         placement === "top" ? availableAbove : availableBelow;
-      const maxHeight = Math.min(MENU_MAX_HEIGHT, availableHeight);
+      const maxHeight = Math.min(maxMenuHeight, availableHeight);
       const renderedHeight = Math.min(menu.scrollHeight, maxHeight);
-      const width = Math.min(
-        triggerRect.width,
-        Math.max(0, viewportWidth - MENU_VIEWPORT_PADDING * 2),
+      const minLeft = MENU_VIEWPORT_PADDING;
+      const maxLeft = Math.max(
+        minLeft,
+        viewportWidth - MENU_VIEWPORT_PADDING - width,
       );
-      const left = Math.min(
-        Math.max(triggerRect.left, MENU_VIEWPORT_PADDING),
-        Math.max(
-          MENU_VIEWPORT_PADDING,
-          viewportWidth - MENU_VIEWPORT_PADDING - width,
-        ),
-      );
+      const preferredLeft = isMobileViewport
+        ? triggerRect.left + (triggerRect.width - width) / 2
+        : triggerRect.left;
+      const left = Math.min(Math.max(preferredLeft, minLeft), maxLeft);
       const top = placement === "top"
         ? triggerRect.top - MENU_GAP - renderedHeight
         : triggerRect.bottom + MENU_GAP;

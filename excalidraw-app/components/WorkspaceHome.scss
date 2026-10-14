@@ -315,6 +315,10 @@
   gap: 0.3rem;
 }
 
+.workspace-nav-shell {
+  display: contents;
+}
+
 .workspace-nav button,
 .folder-row > button:first-child {
   display: flex;
@@ -1635,6 +1639,53 @@
     overflow-x: auto;
     padding: 0.6rem 0 0.65rem;
     border-block-end: 0;
+    scrollbar-width: none;
+  }
+
+  .workspace-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .workspace-nav-shell {
+    position: relative;
+    display: block;
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+
+  .workspace-nav-shell::before,
+  .workspace-nav-shell::after {
+    position: absolute;
+    z-index: 1;
+    inset-block: 0.55rem 0.6rem;
+    inline-size: 1.35rem;
+    content: "";
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms ease;
+  }
+
+  .workspace-nav-shell::before {
+    inset-inline-start: 0;
+    background: linear-gradient(
+      90deg,
+      var(--workspace-sidebar),
+      transparent
+    );
+  }
+
+  .workspace-nav-shell::after {
+    inset-inline-end: 0;
+    background: linear-gradient(
+      270deg,
+      var(--workspace-sidebar),
+      transparent
+    );
+  }
+
+  .workspace-nav-shell.has-overflow-left::before,
+  .workspace-nav-shell.has-overflow-right::after {
+    opacity: 1;
   }
 
   .workspace-nav button {
@@ -1680,14 +1731,15 @@
   }
 
   .section-tools {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     inline-size: 100%;
     gap: 0.35rem;
   }
 
   .section-tools .custom-select {
-    flex: 1 1 125px;
-    max-inline-size: min(100%, 180px);
+    flex: 1 1 0;
+    min-inline-size: 0;
+    max-inline-size: none;
   }
 
   .section-tools .custom-select__trigger {
@@ -1695,7 +1747,12 @@
   }
 
   .board-grid {
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.8rem;
+  }
+
+  .board-grid-virtual-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .board-grid .board-card {
@@ -1728,25 +1785,47 @@
 
   .board-grid .board-card-footer {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     min-block-size: 0;
-    padding: 0.75rem 0.85rem;
+    gap: 0.45rem 0.65rem;
+    padding: 0.7rem 0.8rem 0.75rem;
   }
 
   .board-grid .board-card-mobile-title {
     display: block;
+    grid-column: 1 / -1;
+    min-inline-size: 0;
+    font-size: 1rem;
+    line-height: 1.4;
   }
 
-  .board-grid .board-card-updated {
-    order: 0;
+  .board-grid .board-card-badges {
+    grid-column: 1;
+    inline-size: 100%;
+    block-size: 1.5rem;
+    margin: 0;
   }
 
-  .board-grid .board-card-created {
-    order: 0;
+  .board-grid .board-card-folder {
+    display: inline-flex;
   }
 
   .board-grid .board-card-actions {
-    align-self: start;
+    grid-column: 2;
+    align-self: center;
+    justify-content: end;
+    block-size: 36px;
+    gap: 0.2rem;
+  }
+
+  .board-grid .board-card-actions .icon-button {
+    inline-size: 36px;
+    block-size: 36px;
+  }
+
+  .board-grid .board-card-meta-row {
+    display: none;
   }
 }
 
