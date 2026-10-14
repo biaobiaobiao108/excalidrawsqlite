@@ -1289,12 +1289,17 @@ export const WorkspaceHome = ({
   onPreloadScene?: () => void;
 }) => {
   const rootRef = useRef<HTMLDivElement>(null);
+  const workspaceNavRef = useRef<HTMLElement | null>(null);
   const boardGridRef = useRef<HTMLDivElement>(null);
   const pendingBoardGridFocusRef = useRef<PendingBoardGridFocus | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [boardGridMetrics, setBoardGridMetrics] = useState({
     rowGap: BOARD_GRID_INITIAL_GAP,
     scrollMargin: 0,
+  });
+  const [workspaceNavOverflow, setWorkspaceNavOverflow] = useState({
+    left: false,
+    right: false,
   });
   const [scenes, setScenes] = useState<CloudSceneSummary[]>(
     () =>
@@ -1775,6 +1780,41 @@ export const WorkspaceHome = ({
     () => new Map(folders.map((folder) => [folder.id, folder.scene_count])),
     [folders],
   );
+
+  const updateWorkspaceNavOverflow = useCallback(() => {
+    const nav = workspaceNavRef.current;
+    if (!nav) {
+      return;
+    }
+    const next = {
+      left: nav.scrollLeft > 1,
+      right: nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 1,
+    };
+    setWorkspaceNavOverflow((current) =>
+      current.left === next.left && current.right === next.right
+        ? current
+        : next,
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    const nav = workspaceNavRef.current;
+    if (!nav) {
+      return;
+    }
+    updateWorkspaceNavOverflow();
+    const observer = new ResizeObserver(updateWorkspaceNavOverflow);
+    observer.observe(nav);
+    nav.querySelectorAll("button").forEach((button) => observer.observe(button));
+    nav.addEventListener("scroll", updateWorkspaceNavOverflow, { passive: true });
+    const ownerWindow = nav.ownerDocument.defaultView;
+    ownerWindow?.addEventListener("resize", updateWorkspaceNavOverflow);
+    return () => {
+      observer.disconnect();
+      nav.removeEventListener("scroll", updateWorkspaceNavOverflow);
+      ownerWindow?.removeEventListener("resize", updateWorkspaceNavOverflow);
+    };
+  }, [updateWorkspaceNavOverflow, workspaceStats]);
 
   const filteredScenes = useMemo(() => {
     const options = displayedPageOptions;
@@ -2851,63 +2891,73 @@ export const WorkspaceHome = ({
               </label>
             </div>
           </header>
-          <nav className="workspace-nav" aria-label="画板导航">
-            <button
-              data-workspace-view="all"
-              className={
-                view === "all" && !selectedFolderId ? "is-selected" : ""
-              }
-              onClick={() => {
-                setView("all");
-                setSelectedFolderId(null);
-              }}
-              type="button"
+          <div
+            className={`workspace-nav-shell${
+              workspaceNavOverflow.left ? " has-overflow-left" : ""
+            }${workspaceNavOverflow.right ? " has-overflow-right" : ""}`}
+          >
+            <nav
+              ref={workspaceNavRef}
+              className="workspace-nav"
+              aria-label="画板导航"
             >
-              <GridIcon />
-              所有画板
-              <span>{workspaceStats?.sceneCount ?? "…"}</span>
-            </button>
-            <button
-              data-workspace-view="recent"
-              className={view === "recent" ? "is-selected" : ""}
-              onClick={() => {
-                setView("recent");
-                setSelectedFolderId(null);
-              }}
-              type="button"
-            >
-              <ClockIcon />
-              最近打开
-            </button>
-            <button
-              data-workspace-view="favorites"
-              className={view === "favorites" ? "is-selected" : ""}
-              onClick={() => {
-                setView("favorites");
-                setSelectedFolderId(null);
-              }}
-              type="button"
-            >
-              <StarIcon />
-              收藏
-              <span>{workspaceStats?.favoriteCount ?? "…"}</span>
-            </button>
-            <button
-              data-workspace-view="trash"
-              className={view === "trash" ? "is-selected" : ""}
-              onClick={() => {
-                setView("trash");
-                setSelectedFolderId(null);
-              }}
-              type="button"
-            >
-              <TrashIcon />
-              回收站
-              {!!workspaceStats?.trashCount && (
-                <span>{workspaceStats.trashCount}</span>
-              )}
-            </button>
-          </nav>
+              <button
+                data-workspace-view="all"
+                className={
+                  view === "all" && !selectedFolderId ? "is-selected" : ""
+                }
+                onClick={() => {
+                  setView("all");
+                  setSelectedFolderId(null);
+                }}
+                type="button"
+              >
+                <GridIcon />
+                所有画板
+                <span>{workspaceStats?.sceneCount ?? "…"}</span>
+              </button>
+              <button
+                data-workspace-view="recent"
+                className={view === "recent" ? "is-selected" : ""}
+                onClick={() => {
+                  setView("recent");
+                  setSelectedFolderId(null);
+                }}
+                type="button"
+              >
+                <ClockIcon />
+                最近打开
+              </button>
+              <button
+                data-workspace-view="favorites"
+                className={view === "favorites" ? "is-selected" : ""}
+                onClick={() => {
+                  setView("favorites");
+                  setSelectedFolderId(null);
+                }}
+                type="button"
+              >
+                <StarIcon />
+                收藏
+                <span>{workspaceStats?.favoriteCount ?? "…"}</span>
+              </button>
+              <button
+                data-workspace-view="trash"
+                className={view === "trash" ? "is-selected" : ""}
+                onClick={() => {
+                  setView("trash");
+                  setSelectedFolderId(null);
+                }}
+                type="button"
+              >
+                <TrashIcon />
+                回收站
+                {!!workspaceStats?.trashCount && (
+                  <span>{workspaceStats.trashCount}</span>
+                )}
+              </button>
+            </nav>
+          </div>
           <div className="folder-heading">
             <span>文件夹</span>
             <button
@@ -3016,7 +3066,10 @@ export const WorkspaceHome = ({
                     onChange={(folderId) => setSelectedFolderId(folderId || null)}
                     ariaLabel="按文件夹筛选"
                     options={[
-                      { value: "", label: "所有文件夹" },
+                      {
+                        value: "",
+                        label: `所有文件夹 (${workspaceStats?.sceneCount ?? "…"})`,
+                      },
                       ...folders.map((folder) => ({
                         value: folder.id,
                         label: `${folder.name} (${folderSceneCounts.get(folder.id) || 0})`,

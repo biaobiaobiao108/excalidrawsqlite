@@ -315,6 +315,10 @@
   gap: 0.3rem;
 }
 
+.workspace-nav-shell {
+  display: contents;
+}
+
 .workspace-nav button,
 .folder-row > button:first-child {
   display: flex;
@@ -1635,6 +1639,53 @@
     overflow-x: auto;
     padding: 0.6rem 0 0.65rem;
     border-block-end: 0;
+    scrollbar-width: none;
+  }
+
+  .workspace-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .workspace-nav-shell {
+    position: relative;
+    display: block;
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+
+  .workspace-nav-shell::before,
+  .workspace-nav-shell::after {
+    position: absolute;
+    z-index: 1;
+    inset-block: 0.55rem 0.6rem;
+    inline-size: 1.35rem;
+    content: "";
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms ease;
+  }
+
+  .workspace-nav-shell::before {
+    inset-inline-start: 0;
+    background: linear-gradient(
+      90deg,
+      var(--workspace-sidebar),
+      transparent
+    );
+  }
+
+  .workspace-nav-shell::after {
+    inset-inline-end: 0;
+    background: linear-gradient(
+      270deg,
+      var(--workspace-sidebar),
+      transparent
+    );
+  }
+
+  .workspace-nav-shell.has-overflow-left::before,
+  .workspace-nav-shell.has-overflow-right::after {
+    opacity: 1;
   }
 
   .workspace-nav button {
