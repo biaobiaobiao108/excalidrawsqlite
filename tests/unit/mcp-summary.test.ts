@@ -104,7 +104,28 @@ describe("MCP operation summaries", () => {
     expect(summary.split("\n")).toHaveLength(2);
     expect(summary).toContain("…」；新增 2 个图元；boardId=stable；修订号 8");
     expect(summary).toContain("直达链接：https://test.example/board unsafe line");
-    expect(formatMcpSummary("create_board", { boardId: "stable", addedCount: 1, url: "https://test.example/" + "x".repeat(2000) }).length).toBeLessThanOrEqual(1024);
+  });
+
+  it("preserves long valid links and drops optional details before shortening locating information", () => {
+    const url = "https://test.example/" + "x".repeat(800);
+    const summary = formatMcpSummary("create_board", { name: "名称".repeat(1000), boardId: "stable", revision: 2, addedCount: 1, url });
+    expect(summary).toContain(`\n直达链接：${url}`);
+    expect(summary).toContain("boardId=stable");
+    expect(summary.length).toBeLessThanOrEqual(1024);
+    const tightUrl = "https://test.example/" + "x".repeat(970);
+    const compact = formatMcpSummary("create_board", { name: "名称".repeat(1000), boardId: "stable", revision: 999, addedCount: 12345, url: tightUrl });
+    expect(compact).toContain(`\n直达链接：${tightUrl}`);
+    expect(compact).toContain("boardId=stable");
+    expect(compact).not.toContain("名称");
+    expect(compact.length).toBeLessThanOrEqual(1024);
+  });
+
+  it("omits oversized links explicitly instead of returning a broken URL", () => {
+    const summary = formatMcpSummary("create_board", { boardId: "stable", addedCount: 1, url: "https://test.example/" + "x".repeat(2000) });
+    expect(summary).toContain("boardId=stable");
+    expect(summary).toContain("直达链接过长，使用 boardId 定位");
+    expect(summary).not.toContain("https://test.example/");
+    expect(summary.length).toBeLessThanOrEqual(1024);
   });
 
   it("errors retain their specific reason, and unknown operations are identified", () => {

@@ -100,6 +100,13 @@ export const formatMcpSummary = (operation: string, data: Data): string => {
   }
   const firstLine = shorten(parts.filter(Boolean).join("；"), 1024);
   const url = includeUrl ? singleLine(data.url) : "";
-  if (!url || firstLine.length + 8 >= 1024) return firstLine;
-  return `${firstLine}\n直达链接：${shorten(url, 1024 - firstLine.length - 6)}`;
+  if (!url) return firstLine;
+  const urlLine = `\n直达链接：${url}`;
+  if (firstLine.length + urlLine.length <= 1024) return firstLine + urlLine;
+  const action = data.idempotentReplay === true ? "返回已有画板" : "已创建画板";
+  const compact = [action, `新增 ${count(data, "addedCount")} 个图元`, ...boardLocation(data)].join("；");
+  if (compact.length + urlLine.length <= 1024) return compact + urlLine;
+  const location = [action, ...boardLocation({ boardId: data.boardId })].join("；");
+  if (location.length + urlLine.length <= 1024) return location + urlLine;
+  return `${location}；直达链接过长，使用 boardId 定位`;
 };
