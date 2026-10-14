@@ -39,6 +39,7 @@ export interface WorkspaceCommandPaletteProps {
   onChangeView: (view: BoardView) => void;
   onSelectFolder: (folderId: string | null) => void;
   onChangeSort: (sort: SortMode) => void;
+  onSearch: (query: string) => void;
   onEmptyTrash: () => void;
   onReload: () => void;
 }
@@ -275,6 +276,7 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
   onChangeView,
   onSelectFolder,
   onChangeSort,
+  onSearch,
   onEmptyTrash,
   onReload,
 }) => {
@@ -650,7 +652,17 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     };
 
     const matchedActions = allActions.filter(matches);
-    const matchedScenes = sceneCommands.filter(matches);
+    const searchCommand: PaletteCommand = {
+      id: "action-global-search",
+      category: "常用操作",
+      label: `搜索 “${query.trim()}”`,
+      keywords: ["搜索", "search", query.trim()],
+      icon: searchIcon,
+      perform: () => {
+        onClose();
+        onSearch(query.trim());
+      },
+    };
 
     // 智能识别新建意图并动态生成置顶指令
     const dynamicActions: PaletteCommand[] = [];
@@ -696,13 +708,13 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
         cat === "常用操作"
           ? [...dynamicActions, ...matchedActions]
           : matchedActions;
-      const items = [...actionsForCat, ...matchedScenes].filter(
-        (item) => item.category === cat,
-      );
+      const items = actionsForCat.filter((item) => item.category === cat);
       if (items.length > 0) {
         groups.push({ category: cat, items });
       }
     }
+    // 搜索命令是针对整段输入的兜底操作，始终放在所有匹配命令之后。
+    groups.push({ category: "常用操作", items: [searchCommand] });
     return groups;
   }, [
     query,
@@ -715,6 +727,7 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     selectedFolderId,
     onCreateScene,
     onClose,
+    onSearch,
     recordRecent,
   ]);
 
