@@ -3015,8 +3015,6 @@ export const WorkspaceHome = ({
                     value={selectedFolderId || ""}
                     onChange={(folderId) => setSelectedFolderId(folderId || null)}
                     ariaLabel="按文件夹筛选"
-                    mobileSheet
-                    mobileTitle="选择文件夹"
                     options={[
                       { value: "", label: "所有文件夹" },
                       ...folders.map((folder) => ({
@@ -3031,8 +3029,6 @@ export const WorkspaceHome = ({
                   value={sort}
                   onChange={(nextSort) => setSort(nextSort as SortMode)}
                   ariaLabel="排序方式"
-                  mobileSheet
-                  mobileTitle="选择排序方式"
                   options={SORT_OPTIONS}
                 />
               </div>

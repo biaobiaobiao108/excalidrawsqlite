@@ -23,8 +23,6 @@ type CustomSelectProps = {
   className?: string;
   disabled?: boolean;
   menuPlacement?: "bottom" | "top";
-  mobileSheet?: boolean;
-  mobileTitle?: string;
   size?: "compact" | "field" | "language";
   style?: React.CSSProperties;
 };
@@ -61,42 +59,20 @@ export const CustomSelect = ({
   className = "",
   disabled = false,
   menuPlacement = "bottom",
-  mobileSheet = false,
-  mobileTitle,
   size = "compact",
   style,
 }: CustomSelectProps) => {
   const [open, setOpen] = useState(false);
-  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const sheetRef = useRef<HTMLDivElement>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const listboxId = useId();
-  const useMobileSheet = mobileSheet && isMobileViewport;
 
   const selectedIndex = options.findIndex((option) => option.value === value);
   const selectedOption = options[selectedIndex];
   const highlightedOption = options[highlightedIndex];
-
-  useEffect(() => {
-    if (!mobileSheet) {
-      return;
-    }
-    const ownerWindow = rootRef.current?.ownerDocument.defaultView;
-    if (!ownerWindow) {
-      return;
-    }
-    const media = ownerWindow.matchMedia("(max-width: 720px)");
-    const updateViewport = () => setIsMobileViewport(media.matches);
-    updateViewport();
-    media.addEventListener("change", updateViewport);
-    return () => media.removeEventListener("change", updateViewport);
-  }, [mobileSheet]);
 
   useEffect(() => {
     if (!open) {
@@ -112,8 +88,7 @@ export const CustomSelect = ({
       if (
         event.target instanceof Node &&
         !rootRef.current?.contains(event.target) &&
-        !menuRef.current?.contains(event.target) &&
-        !sheetRef.current?.contains(event.target)
+        !menuRef.current?.contains(event.target)
       ) {
         setOpen(false);
       }
@@ -126,7 +101,7 @@ export const CustomSelect = ({
   }, [open]);
 
   useLayoutEffect(() => {
-    if (!open || useMobileSheet) {
+    if (!open) {
       setMenuPosition(null);
       return;
     }
@@ -145,6 +120,19 @@ export const CustomSelect = ({
         ownerWindow.innerWidth;
       const viewportHeight = ownerDocument.documentElement.clientHeight ||
         ownerWindow.innerHeight;
+      const isMobileViewport = viewportWidth <= 720;
+      const maxMenuHeight = isMobileViewport
+        ? Math.min(420, Math.round(viewportHeight * 0.62))
+        : MENU_MAX_HEIGHT;
+      const width = Math.min(
+        isMobileViewport
+          ? viewportWidth - MENU_VIEWPORT_PADDING * 2
+          : triggerRect.width,
+        Math.max(0, viewportWidth - MENU_VIEWPORT_PADDING * 2),
+      );
+      // Measure after applying the mobile width so wrapped long names have
+      // their real height before choosing whether the menu opens above/below.
+      menu.style.width = `${width}px`;
       const availableAbove = Math.max(
         0,
         triggerRect.top - MENU_GAP - MENU_VIEWPORT_PADDING,
@@ -153,7 +141,7 @@ export const CustomSelect = ({
         0,
         viewportHeight - triggerRect.bottom - MENU_GAP - MENU_VIEWPORT_PADDING,
       );
-      const desiredHeight = Math.min(menu.scrollHeight, MENU_MAX_HEIGHT);
+      const desiredHeight = Math.min(menu.scrollHeight, maxMenuHeight);
       let placement = menuPlacement;
 
       if (
@@ -169,19 +157,17 @@ export const CustomSelect = ({
 
       const availableHeight =
         placement === "top" ? availableAbove : availableBelow;
-      const maxHeight = Math.min(MENU_MAX_HEIGHT, availableHeight);
+      const maxHeight = Math.min(maxMenuHeight, availableHeight);
       const renderedHeight = Math.min(menu.scrollHeight, maxHeight);
-      const width = Math.min(
-        triggerRect.width,
-        Math.max(0, viewportWidth - MENU_VIEWPORT_PADDING * 2),
-      );
-      const left = Math.min(
-        Math.max(triggerRect.left, MENU_VIEWPORT_PADDING),
-        Math.max(
-          MENU_VIEWPORT_PADDING,
-          viewportWidth - MENU_VIEWPORT_PADDING - width,
-        ),
-      );
+      const left = isMobileViewport
+        ? (viewportWidth - width) / 2
+        : Math.min(
+            Math.max(triggerRect.left, MENU_VIEWPORT_PADDING),
+            Math.max(
+              MENU_VIEWPORT_PADDING,
+              viewportWidth - MENU_VIEWPORT_PADDING - width,
+            ),
+          );
       const top = placement === "top"
         ? triggerRect.top - MENU_GAP - renderedHeight
         : triggerRect.bottom + MENU_GAP;
@@ -214,28 +200,7 @@ export const CustomSelect = ({
       ownerWindow.visualViewport?.removeEventListener("resize", updatePosition);
       ownerWindow.visualViewport?.removeEventListener("scroll", updatePosition);
     };
-  }, [open, menuPlacement, options.length, useMobileSheet]);
-
-  useLayoutEffect(() => {
-    if (open && useMobileSheet && highlightedIndex >= 0) {
-      optionRefs.current[highlightedIndex]?.focus();
-    }
-  }, [highlightedIndex, open, useMobileSheet]);
-
-  useEffect(() => {
-    if (!open || !useMobileSheet) {
-      return;
-    }
-    const ownerDocument = rootRef.current?.ownerDocument;
-    if (!ownerDocument) {
-      return;
-    }
-    const previousOverflow = ownerDocument.body.style.overflow;
-    ownerDocument.body.style.overflow = "hidden";
-    return () => {
-      ownerDocument.body.style.overflow = previousOverflow;
-    };
-  }, [open, useMobileSheet]);
+  }, [open, menuPlacement, options.length]);
 
   const focusTrigger = () => {
     triggerRef.current?.focus();
@@ -342,41 +307,19 @@ export const CustomSelect = ({
     }
   };
 
-  const handleOptionKeyDown = (
-    event: React.KeyboardEvent<HTMLButtonElement>,
-    index: number,
-  ) => {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const direction = event.key === "ArrowDown" ? 1 : -1;
-      setHighlightedIndex(findNextEnabledIndex(index, direction));
-    } else if (event.key === "Home" || event.key === "End") {
-      event.preventDefault();
-      setHighlightedIndex(findBoundaryEnabledIndex(event.key === "End"));
-    } else if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      if (options[index]) {
-        selectOption(options[index]);
-      }
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      closeMenu();
-    }
-  };
-
   const portalTarget =
     rootRef.current?.closest("dialog") || rootRef.current?.ownerDocument.body;
-  const optionList = (
+  const menu = open && options.length > 0 && (
     <div
       ref={menuRef}
       id={listboxId}
       className={`custom-select__menu custom-select__menu--${
         menuPosition?.placement || menuPlacement
-      } ${useMobileSheet ? "custom-select__menu--sheet" : ""}`.trim()}
+      }`}
       role="listbox"
       aria-label={ariaLabel}
-      aria-hidden={!useMobileSheet && !menuPosition}
-      style={useMobileSheet ? undefined : {
+      aria-hidden={!menuPosition}
+      style={{
         top: menuPosition?.top ?? 0,
         left: menuPosition?.left ?? 0,
         width: menuPosition?.width ?? 0,
@@ -387,11 +330,10 @@ export const CustomSelect = ({
       {options.map((option, index) => (
         <button
           key={option.value}
-          ref={(element) => { optionRefs.current[index] = element; }}
           id={`${listboxId}-option-${option.value}`}
           type="button"
           role="option"
-          tabIndex={useMobileSheet && index === highlightedIndex ? 0 : -1}
+          tabIndex={-1}
           aria-selected={option.value === value}
           className={`custom-select__option ${
             option.value === value ? "is-selected" : ""
@@ -402,7 +344,6 @@ export const CustomSelect = ({
           onMouseEnter={() => setHighlightedIndex(index)}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => selectOption(option)}
-          onKeyDown={(event) => handleOptionKeyDown(event, index)}
         >
           <span className="custom-select__option-label">
             {option.label}
@@ -416,57 +357,6 @@ export const CustomSelect = ({
       ))}
     </div>
   );
-  const menu = open && options.length > 0 && (useMobileSheet ? (
-    <div
-      ref={sheetRef}
-      className="custom-select__mobile-backdrop"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) {
-          closeMenu();
-        }
-      }}
-    >
-      <section
-        className="custom-select__mobile-sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-label={mobileTitle || ariaLabel}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            closeMenu();
-          } else if (event.key === "Tab") {
-            const first = closeButtonRef.current;
-            const last = optionRefs.current[highlightedIndex];
-            if (
-              event.shiftKey && event.target === first && last
-            ) {
-              event.preventDefault();
-              last.focus();
-            } else if (!event.shiftKey && event.target === last && first) {
-              event.preventDefault();
-              first.focus();
-            }
-          }
-        }}
-      >
-        <div className="custom-select__mobile-handle" aria-hidden="true" />
-        <div className="custom-select__mobile-heading">
-          <h2>{mobileTitle || ariaLabel}</h2>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            className="custom-select__mobile-close"
-            aria-label="关闭"
-            onClick={closeMenu}
-          >
-            ×
-          </button>
-        </div>
-        {optionList}
-      </section>
-    </div>
-  ) : optionList);
 
   return (
     <div
@@ -481,7 +371,7 @@ export const CustomSelect = ({
         type="button"
         className="custom-select__trigger"
         aria-label={ariaLabel}
-        aria-haspopup={useMobileSheet ? "dialog" : "listbox"}
+        aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}
         disabled={disabled}
