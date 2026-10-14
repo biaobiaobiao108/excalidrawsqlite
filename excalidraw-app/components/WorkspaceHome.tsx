@@ -1325,7 +1325,6 @@ export const WorkspaceHome = ({
   const [sort, setSort] = useState<SortMode>("updated");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [sceneSelection, setSceneSelection] = useState<BoardSelectionState>(
     () => ({ ids: new Set(), anchorId: null }),
   );
@@ -1363,7 +1362,6 @@ export const WorkspaceHome = ({
     sort,
     searchQuery.trim(),
     selectedFolderId || "",
-    selectedTag || "",
   ].join("|");
   const pageQueryKeyRef = useRef(pageQueryKey);
   pageQueryKeyRef.current = pageQueryKey;
@@ -1371,13 +1369,11 @@ export const WorkspaceHome = ({
   const previousSearchQueryRef = useRef(searchQuery.trim());
   const pageTransitionPending = loadedPageQueryKeyRef.current !== pageQueryKey;
   const hasDisplayedFilters = Boolean(
-    displayedPageOptions.query || displayedPageOptions.tag ||
-      displayedPageOptions.folderId,
+    displayedPageOptions.query || displayedPageOptions.folderId,
   );
   const currentPageOptions: CloudScenePageOptions = {
     trash: view === "trash",
     query: searchQuery.trim() || undefined,
-    tag: view === "trash" ? undefined : selectedTag || undefined,
     folderId: view === "trash" ? undefined : selectedFolderId,
     favorite: view === "favorites",
     opened: view === "recent",
@@ -1544,16 +1540,13 @@ export const WorkspaceHome = ({
     if (!workspaceStats) {
       return;
     }
-    if (selectedTag && !workspaceStats.tags.includes(selectedTag)) {
-      setSelectedTag(null);
-    }
     if (
       selectedFolderId &&
       !folders.some((folder) => folder.id === selectedFolderId)
     ) {
       setSelectedFolderId(null);
     }
-  }, [workspaceStats, folders, selectedTag, selectedFolderId]);
+  }, [workspaceStats, folders, selectedFolderId]);
 
   const getCurrentPageOptions = useCallback(
     (cursor: string | null = null) => ({
@@ -1778,14 +1771,6 @@ export const WorkspaceHome = ({
     };
   }, []);
 
-  const allTags = useMemo(
-    () =>
-      [...(workspaceStats?.tags || [])].sort((a, b) =>
-        a.localeCompare(b, "zh-CN"),
-      ),
-    [workspaceStats?.tags],
-  );
-
   const folderSceneCounts = useMemo(
     () => new Map(folders.map((folder) => [folder.id, folder.scene_count])),
     [folders],
@@ -1806,9 +1791,6 @@ export const WorkspaceHome = ({
         !options.trash && options.folderId &&
         scene.folder_id !== options.folderId
       ) {
-        return false;
-      }
-      if (!options.trash && options.tag && !scene.tags.includes(options.tag)) {
         return false;
       }
       if (!normalizedQuery) {
@@ -2007,7 +1989,6 @@ export const WorkspaceHome = ({
     pageQueryKey,
     searchQuery,
     selectedFolderId,
-    selectedTag,
     sort,
     shouldVirtualizeBoardGrid,
     updateBoardGridMetrics,
@@ -2727,13 +2708,12 @@ export const WorkspaceHome = ({
         onSelect: () => void loadWorkspace(),
       },
     );
-    if (searchQuery || selectedTag || selectedFolderId) {
+    if (searchQuery || selectedFolderId) {
       items.push({
         label: "清除筛选",
         icon: "close",
         onSelect: () => {
           setSearchQuery("");
-          setSelectedTag(null);
           setSelectedFolderId(null);
         },
       });
@@ -2754,7 +2734,6 @@ export const WorkspaceHome = ({
           onSelect: () => {
             setView("all");
             setSelectedFolderId(null);
-            setSelectedTag(null);
             setSearchQuery("");
           },
         },
@@ -2828,7 +2807,6 @@ export const WorkspaceHome = ({
                   event.preventDefault();
                   setView("all");
                   setSelectedFolderId(null);
-                  setSelectedTag(null);
                   setSearchQuery("");
                 }
               }}
@@ -3043,18 +3021,6 @@ export const WorkspaceHome = ({
                         value: folder.id,
                         label: `${folder.name} (${folderSceneCounts.get(folder.id) || 0})`,
                       })),
-                    ]}
-                  />
-                )}
-                {(allTags.length > 0 || selectedTag) && view !== "trash" && (
-                  <CustomSelect
-                    className="workspace-select-tag"
-                    value={selectedTag || ""}
-                    onChange={(tag) => setSelectedTag(tag || null)}
-                    ariaLabel="按标签筛选"
-                    options={[
-                      { value: "", label: "所有标签" },
-                      ...allTags.map((tag) => ({ value: tag, label: tag })),
                     ]}
                   />
                 )}
