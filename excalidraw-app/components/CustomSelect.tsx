@@ -125,13 +125,10 @@ export const CustomSelect = ({
         ? Math.min(420, Math.round(viewportHeight * 0.62))
         : MENU_MAX_HEIGHT;
       const width = Math.min(
-        isMobileViewport
-          ? viewportWidth - MENU_VIEWPORT_PADDING * 2
-          : triggerRect.width,
+        triggerRect.width,
         Math.max(0, viewportWidth - MENU_VIEWPORT_PADDING * 2),
       );
-      // Measure after applying the mobile width so wrapped long names have
-      // their real height before choosing whether the menu opens above/below.
+      // Measure after applying the menu width before choosing its placement.
       menu.style.width = `${width}px`;
       const availableAbove = Math.max(
         0,
@@ -159,15 +156,13 @@ export const CustomSelect = ({
         placement === "top" ? availableAbove : availableBelow;
       const maxHeight = Math.min(maxMenuHeight, availableHeight);
       const renderedHeight = Math.min(menu.scrollHeight, maxHeight);
-      const left = isMobileViewport
-        ? (viewportWidth - width) / 2
-        : Math.min(
-            Math.max(triggerRect.left, MENU_VIEWPORT_PADDING),
-            Math.max(
-              MENU_VIEWPORT_PADDING,
-              viewportWidth - MENU_VIEWPORT_PADDING - width,
-            ),
-          );
+      const left = Math.min(
+        Math.max(triggerRect.left, MENU_VIEWPORT_PADDING),
+        Math.max(
+          MENU_VIEWPORT_PADDING,
+          viewportWidth - MENU_VIEWPORT_PADDING - width,
+        ),
+      );
       const top = placement === "top"
         ? triggerRect.top - MENU_GAP - renderedHeight
         : triggerRect.bottom + MENU_GAP;

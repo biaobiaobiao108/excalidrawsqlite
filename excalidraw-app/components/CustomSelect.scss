@@ -215,10 +215,7 @@
   }
 
   .custom-select__option-label {
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
   }
 }
 
