@@ -706,13 +706,15 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     for (const cat of categoryOrder) {
       const actionsForCat =
         cat === "常用操作"
-          ? [searchCommand, ...dynamicActions, ...matchedActions]
+          ? [...dynamicActions, ...matchedActions]
           : matchedActions;
       const items = actionsForCat.filter((item) => item.category === cat);
       if (items.length > 0) {
         groups.push({ category: cat, items });
       }
     }
+    // 搜索命令是针对整段输入的兜底操作，始终放在所有匹配命令之后。
+    groups.push({ category: "常用操作", items: [searchCommand] });
     return groups;
   }, [
     query,
