@@ -126,7 +126,8 @@
   min-inline-size: 0;
   box-sizing: border-box;
   max-inline-size: calc(100vw - 1rem);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 0.25rem;
   border: 1px solid var(--custom-select-border);
   border-radius: 10px;
@@ -141,6 +142,7 @@
   align-items: center;
   gap: 0.65rem;
   inline-size: 100%;
+  box-sizing: border-box;
   min-block-size: 34px;
   padding: 0 0.55rem;
   border: 0;
