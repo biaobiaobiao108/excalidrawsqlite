@@ -13,7 +13,7 @@ type Context = {
   runtime: ServerRuntime;
   api: ManagementApi;
   result: (value: Record<string, unknown>) => ToolResult;
-  safeTool: <T>(handler: (args: T) => Promise<ToolResult>) => (args: T) => Promise<ToolResult>;
+  safeTool: <T>(handler: (args: T) => Promise<ToolResult>, operation: string) => (args: T) => Promise<ToolResult>;
   boardUrl: (id: string) => string;
 };
 type Folder = { id: string; name: string; icon: string; color: string; scene_count: number; [key: string]: unknown };
@@ -123,7 +123,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
     if (cursor && offset === 0) throw new HttpError(400, "INVALID_CURSOR", "文件夹分页游标无效，请重新从第一页读取");
     const page = folders.slice(offset, offset + limit);
     return result({ folders: page, nextCursor: offset + limit < folders.length ? page.at(-1)!.id : null });
-  }));
+  }, "list_folders"));
   let tagQuery = tagQueryCache.get(runtime);
   if (!tagQuery) {
     tagQuery = runtime.db.query("SELECT tag.value AS name, COUNT(DISTINCT scenes.id) AS boardCount FROM scenes, json_each(scenes.tags_json) AS tag WHERE scenes.deleted_at IS NULL AND tag.type = 'text' AND tag.value > ? GROUP BY tag.value ORDER BY tag.value LIMIT ?");
@@ -134,20 +134,20 @@ export function registerManagementTools(server: McpServer, context: Context) {
     const rows = await tagsStatement.all<{ name: string; boardCount: number }>(cursor ?? "", limit + 1);
     const tags = rows.slice(0, limit);
     return result({ tags, nextCursor: rows.length > limit ? tags.at(-1)!.name : null });
-  }));
+  }, "list_tags"));
   const folderCreateSchema = z.strictObject({ name: z.string().trim().min(1).max(80), icon: iconSchema.optional(), color: colorSchema.optional() });
-  server.registerTool("create_folder", { description: "创建文件夹并返回 ID；名称去除首尾空白、区分大小写，已存在时报 FOLDER_NAME_EXISTS。需要复用时使用 ensure_folder。", inputSchema: compactMcpSchema(folderCreateSchema), annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false } }, safeTool(async (args) => result(await api<Folder>("/api/folders", "POST", args))));
+  server.registerTool("create_folder", { description: "创建文件夹并返回 ID；名称去除首尾空白、区分大小写，已存在时报 FOLDER_NAME_EXISTS。需要复用时使用 ensure_folder。", inputSchema: compactMcpSchema(folderCreateSchema), annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false } }, safeTool(async (args) => result(await api<Folder>("/api/folders", "POST", args)), "create_folder"));
   server.registerTool("ensure_folder", { description: "按去除首尾空白后的精确名称查找或创建文件夹（区分大小写），返回 created；已有文件夹保持颜色和图标，历史同名歧义时报错并要求使用 folderId。", inputSchema: compactMcpSchema(folderCreateSchema), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
     const { folder, created } = await ensureNamedFolder(args, api);
     return result({ ...folder, created });
-  }));
+  }, "ensure_folder"));
   server.registerTool("update_folder", { description: "改名、颜色和图标可在一次调用中合并；folderId/folderName 二选一用于精确定位。", inputSchema: compactMcpSchema(z.strictObject({ ...folderFields, name: z.string().trim().min(1).max(80).optional(), icon: iconSchema.optional(), color: colorSchema.optional() })), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
     const existing = await findFolder(args, api);
     if (!existing) throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
     const metadata = { name: args.name ?? existing.name, icon: args.icon ?? existing.icon, color: args.color?.toLowerCase() ?? existing.color };
     const noop = metadata.name === existing.name && metadata.icon === existing.icon && metadata.color === existing.color;
     return result({ ...(noop ? existing : await api<Folder>(`/api/folders/${encodeURIComponent(existing.id)}`, "PATCH", metadata)), noop });
-  }));
+  }, "update_folder"));
   server.registerTool("delete_folder", { description: "删除文件夹并将其中画板移到根目录，保留全部画板；dryRun=true 预览，执行必须 confirm=true，可传 expectedBoardCount 防止数量变化误操作。", inputSchema: compactMcpSchema(z.strictObject({ ...folderFields, dryRun: z.boolean().default(false), confirm: z.boolean().optional(), expectedBoardCount: z.number().int().nonnegative().optional() })), annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
     const folder = await findFolder(args, api);
     if (!folder) throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
@@ -155,12 +155,13 @@ export function registerManagementTools(server: McpServer, context: Context) {
     if (args.dryRun) return result({ folder, wouldMoveBoards: boardCount, dryRun: true });
     if (args.confirm !== true) throw new HttpError(400, "CONFIRM_REQUIRED", "删除文件夹需要 confirm=true；可先 dryRun=true 预览");
     if (args.expectedBoardCount !== undefined && boardCount !== args.expectedBoardCount) throw new HttpError(409, "FOLDER_CHANGED", "文件夹画板数量发生变化，请重新预览");
-    return result({ ...await api<Record<string, unknown>>(`/api/folders/${encodeURIComponent(folder.id)}`, "DELETE"), movedBoards: boardCount });
-  }));
-  server.registerTool("manage_board", { description: "一次合并画板改名、收藏、移入文件夹和标签增删替换，不读取或回传完整图元；相同内容返回 noop 且不递增 revision。", inputSchema: compactMcpSchema(metadataSchema), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => result(await manage(args))));
+    return result({ ...await api<Record<string, unknown>>(`/api/folders/${encodeURIComponent(folder.id)}`, "DELETE"),
+      folderId: folder.id, name: folder.name, movedBoards: boardCount });
+  }, "delete_folder"));
+  server.registerTool("manage_board", { description: "一次合并画板改名、收藏、移入文件夹和标签增删替换，不读取或回传完整图元；相同内容返回 noop 且不递增 revision。", inputSchema: compactMcpSchema(metadataSchema), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => result(await manage(args)), "manage_board"));
   const stateSchema = z.strictObject({ boardId: z.string().min(1).max(128), expectedRevision: expectedRevisionSchema });
-  server.registerTool("delete_board", { description: "将画板软删除到回收站，保留内容和附件，可用 restore_board 还原；实际状态变化 revision+1，已删除时 noop。可传 expectedRevision 防止旧版本操作；没有永久删除选项。", inputSchema: compactMcpSchema(stateSchema), annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ boardId, expectedRevision }) => result(await setDeleted(boardId, true, expectedRevision))));
-  server.registerTool("restore_board", { description: "从回收站恢复画板；实际还原 revision+1，已恢复时 noop。使用最新回执的 expectedRevision，删除再还原也会使旧版本失效。", inputSchema: compactMcpSchema(stateSchema), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ boardId, expectedRevision }) => result(await setDeleted(boardId, false, expectedRevision))));
+  server.registerTool("delete_board", { description: "将画板软删除到回收站，保留内容和附件，可用 restore_board 还原；实际状态变化 revision+1，已删除时 noop。可传 expectedRevision 防止旧版本操作；没有永久删除选项。", inputSchema: compactMcpSchema(stateSchema), annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ boardId, expectedRevision }) => result(await setDeleted(boardId, true, expectedRevision)), "delete_board"));
+  server.registerTool("restore_board", { description: "从回收站恢复画板；实际还原 revision+1，已恢复时 noop。使用最新回执的 expectedRevision，删除再还原也会使旧版本失效。", inputSchema: compactMcpSchema(stateSchema), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ boardId, expectedRevision }) => result(await setDeleted(boardId, false, expectedRevision)), "restore_board"));
   const batchRevision = z.number().int().positive().describe("每项必须提供当前修订号，可来自 list_boards 或上次写入返回");
   const batchItemSchema = metadataSchema.extend({ action: z.enum(["manage", "delete", "restore"]), expectedRevision: batchRevision }).superRefine((item, ctx) => {
     if (item.action === "manage") return;
@@ -182,6 +183,6 @@ export function registerManagementTools(server: McpServer, context: Context) {
     }
     const succeeded = outcomes.filter((item) => item.ok).length;
     return result({ results: outcomes, succeeded, failed: outcomes.length - succeeded, partial: succeeded > 0 && succeeded < outcomes.length });
-  }));
+  }, "batch_manage_boards"));
 }
 

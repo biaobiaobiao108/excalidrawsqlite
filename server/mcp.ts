@@ -17,6 +17,7 @@ import { measureTextSchema, layoutSchema, buildDrawingLayout } from "./mcp-layou
 import { autoBindArrowEndpoints } from "./mcp-autobind";
 import { registerMcpCreateSession, unregisterMcpCreateSession, lookupMcpCreateReplay } from "./create-idempotency";
 import { inspectLayout, inspectLayoutSchema } from "./mcp-inspect";
+import { formatMcpSummary } from "./mcp-summary";
 
 import { randomBase64Url, timingSafeEqual } from "./crypto";
 import { HttpError } from "./errors";
@@ -28,7 +29,8 @@ import type { ServerRuntime } from "./types";
 export const MCP_PATH = "/mcp";
 
 const getMcpServerInstructions = (runtime: ServerRuntime) => [
-  "Excalidraw 白板支持搜索、读取及批量绘制。流程图/时间线优先 create_diagram 一次传 nodes/edges 自动排版；自定义绘图用 create_board 一次传入名称和全部 elements，不要先建空板再逐个绘制。",
+  "Excalidraw 白板支持搜索、读取及批量绘制。流程图、时间线、分层架构和泳道优先 create_diagram 一次传 nodes/edges 自动排版；自定义绘图用 create_board 一次传入名称和全部 elements，不要先建空板再逐个绘制。",
+  "create_diagram.layout=architecture 用 regions 的 parentId 描述最多两级箱体；swimlane 用平级 regions 描述泳道，默认横向推进。所有节点通过 regionId 指向叶区域，高级模式省略 edges 不自动连线。区域按输入顺序排列，返回背景/标题/分组 ID、nodeRegions 和 bounds；跨区域连线真实绑定节点但不归入区域分组，正常模板可用 inspect_layout 复查。",
   "每次最多 1,000 个图元描述；形状 text 自动绑定文字。可给节点指定 id，箭头仅传 startBinding/endBinding.elementId 即自动连接同批或已有节点；自连接或同中心节点须显式坐标。折线 points 使用绝对画布坐标；二点仍可用 startX/startY/endX/endY。字段严格校验，不能输入原始内部字段。",
   "独立 text 可传 width 固定宽度并自动换行，height 始终按内容计算，不传 height；省略 width 默认自动宽度。更新 width 会保持固定宽度，更新 autoResize=true 恢复自动宽度；绑定标签尺寸请修改所属形状。",
   "卡片排版可用 create_layout 一次传 cards/title/body、columns、cardWidth、gap、padding，自动生成原生分组网格；mode 当前仅 grid。measure_text 返回同一服务端估算器的换行和尺寸，estimated=true，非浏览器字体测量。groupId 把多个图元组成编辑器可整体拖动的原生组，groupIds 支持最多8层，从内到外；MCP移动/复制按指定 IDs，整张卡片使用 cards.elementIds。copy_elements 隔离新旧组并返回 groupIdMap。",
@@ -96,9 +98,7 @@ const result = (value: Record<string, unknown>) => measureMcpPhase("responseBuil
     ...(value.folder && typeof value.folder === "object"
       ? { folder: cleanBoardRecord(value.folder as Record<string, unknown>) } : {}),
   };
-  return { structuredContent, content: [{ type: "text" as const, text: value.error
-    ? `操作失败：${(value.error as { message: string }).message}`
-    : "操作成功；详情见 structuredContent。" }] };
+  return { structuredContent, content: [] as Array<{ type: "text"; text: string }> };
 });
 
 const responseModeSchema = z.enum(["minimal", "ids"]).optional()
@@ -132,14 +132,16 @@ const positionReceipt = (elements: readonly ExcalidrawElement[], id: string) => 
 
 const makeSafeTool = <T>(handler: (args: T) => Promise<ReturnType<typeof result>>, trace = false, operation = "tool") =>
   async (args: T) => traceMcpTool(trace, operation, async () => {
+    let completed: ReturnType<typeof result>;
     try {
-      return await handler(args);
+      completed = await handler(args);
     } catch (error) {
       if (error instanceof HttpError) {
-        return result({ error: { code: error.code, message: error.message } });
-      }
-      throw error;
+        completed = result({ error: { code: error.code, message: error.message } });
+      } else throw error;
     }
+    return measureMcpPhase("responseBuildMs", () => ({ ...completed,
+      content: [{ type: "text" as const, text: formatMcpSummary(operation, completed.structuredContent) }] }));
   });
 
 const expectedRevisionSchema = z.number().int().positive().optional()
@@ -242,7 +244,7 @@ export const createMcpRequestHandler = (
           { name: "excalidrawsqlite", version: "1.0.0" },
           { maxToolInputElements: 100_000, instructions: getMcpServerInstructions(runtime) },
         );
-        const safeTool = <T>(handler: (args: T) => Promise<ReturnType<typeof result>>, operation = "management") =>
+        const safeTool = <T>(handler: (args: T) => Promise<ReturnType<typeof result>>, operation: string) =>
           makeSafeTool(handler, runtime.config.mcpTrace, operation);
         const boardUrl = (id: string) => {
           const origin = requestInfo ? getRequestOrigin(runtime, requestInfo) : "";
@@ -481,9 +483,9 @@ export const createMcpRequestHandler = (
         );
 
         server.registerTool("create_diagram", {
-          title: "自动绘制流程图或时间线",
-          description: "一次传节点标题/正文与连接，自动排版并创建画板，无需计算坐标。最多100节点/200连接，默认纵向流程图与forest主题；省略edges按顺序连接，[]不连线，edges.endArrowhead=null为无箭头连接。节点id可直接用于后续更新。复杂自定义图元用create_board。",
-          inputSchema: compactMcpSchema(diagramSchema.extend({ ...boardMetadataSchema, responseMode: responseModeSchema, idempotencyKey: idempotencyKeySchema })),
+          title: "自动绘制流程、架构或泳道图",
+          description: "一次传节点标题/正文与连接自动排版。layout支持flowchart/timeline/architecture/swimlane，最多100节点/200连接/24区域。architecture区域最多两级，swimlane平级且默认横向；高级模式传regions与nodes.regionId，省略edges不连线，普通模式省略edges按顺序连接。edges.endArrowhead=null为无箭头绑定连接。返回区域ID/分组/节点归属/边界；文字尺寸为服务端估算，创建后inspect_layout复查。",
+          inputSchema: compactMcpSchema(diagramSchema.safeExtend({ ...boardMetadataSchema, responseMode: responseModeSchema, idempotencyKey: idempotencyKeySchema })),
           annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false },
         }, safeTool(async (args) => {
           const intent = createIntent("create_diagram", args);
@@ -503,6 +505,8 @@ export const createMcpRequestHandler = (
           return result({ boardId: board.id, name: board.name, revision: board.revision,
             nodeCount: diagram.nodeCount, edgeCount: diagram.edgeCount, layout: diagram.layout,
             direction: diagram.direction, theme: diagram.theme, elementCount: drawing.elements.length,
+            ...("regions" in diagram ? { regions: diagram.regions, bounds: diagram.bounds,
+              nodeRegions: diagram.nodeRegions, estimated: diagram.estimated } : {}),
             ...drawingReceipt(drawing.created, args.responseMode), url: boardUrl(board.id) });
         }, "create_diagram"));
 

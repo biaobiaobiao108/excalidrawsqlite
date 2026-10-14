@@ -178,7 +178,7 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 | `inspect_layout` | 只读检查文字重叠、容器文字溢出、可能的元素碰撞与已绑定箭头异常；返回问题图元 ID、严重程度、建议和检测完整性，便于修改后复查。 |
 | `get_boards_batch` | 一次读取最多 20 块画板，共享字符预算，逐条返回错误或分页信息；与单读一样 `maxChars` 最少 1000，连必要元数据也放不下则明确报错；不是跨画板一致快照。 |
 | `create_board` | 一次创建并绘制，可同时设置背景、收藏、标签和 `folderId/folderName`；允许同名，省略图元创建空板。 |
-| `create_diagram` | 传入节点标题、正文和连接，自动绘制横向或纵向时间线、流程图；支持分支、循环与主题，可同时设置文件夹、标签和收藏。 |
+| `create_diagram` | 自动绘制流程图、时间线、分层架构箱体或多泳道关系图；支持区域、原生分组与真实绑定连线，可同时设置文件夹、标签和收藏。 |
 | `create_layout` | 创建卡片网格，指定列数、卡片宽度、间距与内边距；按内容估算行高，每张卡片使用原生分组。 |
 | `measure_text` | 创建前估算文字宽高、换行和行数，与 MCP 绘制使用同一估算器，返回 `estimated=true`。 |
 | `update_board` | 一次合并删除、新增、`updates` 原地修改和画板元数据，原子保存一个修订；顺序为删除→新增→原地修改。 |
@@ -209,6 +209,48 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 }
 ```
 
+高级布局使用同一个 `create_diagram`，选择 `layout="architecture"` 或 `layout="swimlane"`，新增 `regions` 和 `nodes[].regionId`。最多 24 个区域、100 个节点、200 条边；每个节点必须属于有效叶区域，重复 ID、空区域、循环父级、超深嵌套和无效引用会明确报错。高级模式省略 `edges` 时不自动连接；流程图与时间线保留原来的顺序连接默认值。
+
+分层架构支持两级箱体，外层按输入顺序沿主方向排列，子箱体沿交叉方向排列；叶区域内节点按输入顺序分行，每行最多三列。默认纵向，也支持 `direction="horizontal"`。以下调用创建接入层和包含计算、数据模块的双层平台箱体：
+
+```json
+{
+  "name": "服务架构全景",
+  "layout": "architecture",
+  "regions": [
+    { "id": "access", "title": "接入层" },
+    { "id": "platform", "title": "平台层" },
+    { "id": "compute", "title": "计算模块", "parentId": "platform" },
+    { "id": "data", "title": "数据模块", "parentId": "platform" }
+  ],
+  "nodes": [
+    { "id": "gateway", "title": "API 网关", "body": "统一鉴权与限流", "regionId": "access" },
+    { "id": "worker", "title": "任务服务", "body": "处理业务任务", "regionId": "compute" },
+    { "id": "cache", "title": "缓存服务", "body": "共享结果缓存", "regionId": "data" }
+  ],
+  "edges": [{ "from": "gateway", "to": "worker" }, { "from": "worker", "to": "cache" }]
+}
+```
+
+泳道使用平级区域，按连接关系分层，所有泳道共享阶段位置。默认横向推进、泳道上下排列；`direction="vertical"` 时上下推进、泳道左右排列。支持分支、回路和自连接，以下调用创建跨系统泳道：
+
+```json
+{
+  "name": "订单跨系统流程",
+  "layout": "swimlane",
+  "regions": [{ "id": "web", "title": "客户端" }, { "id": "service", "title": "业务服务" }, { "id": "storage", "title": "数据存储" }],
+  "nodes": [
+    { "id": "submit", "title": "提交订单", "regionId": "web" },
+    { "id": "validate", "title": "校验库存", "body": "库存不足时返回客户端", "regionId": "service" },
+    { "id": "persist", "title": "保存订单", "regionId": "storage" },
+    { "id": "notify", "title": "显示结果", "regionId": "web" }
+  ],
+  "edges": [{ "from": "submit", "to": "validate" }, { "from": "validate", "to": "persist" }, { "from": "persist", "to": "notify" }]
+}
+```
+
+区域背景、标题和节点共享原生嵌套分组；跨区域连线不归入任一区域的分组，但两端真实绑定节点，移动节点时连接跟随。返回 `regions` 中的 `regionId/backgroundId/titleId/groupId/nodeIds/elementIds/bounds`、`nodeRegions` 和全图 `bounds`；按 ID 的 MCP 操作仍需显式传要修改或复制的 ID。布局复用文字估算器并返回 `estimated=true`，不会把结果宣称为浏览器字体测量。连线通过节点及区域标题之间的留白通道或外围绕行，复杂关系仍可能交叉，生成后可以用 `inspect_layout` 复查。
+
 复杂卡片排版可使用 `create_layout`，当前支持 `mode="grid"`。例如：
 
 ```json
@@ -231,7 +273,7 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 {"boardId":"画板ID","checks":["text_overlap","text_overflow","element_collision","arrow_connection"]}
 ```
 
-调用 `inspect_layout` 时省略 `checks` 会检查全部四项。返回 `boardId/revision`、`summary.errors/warnings` 和 `issues`，每条问题包含 `type/severity/elementIds/message`，并可包含 `suggestion`。将涉及的 ID 用于 `update_board.updates`，保存时使用检查结果的 `revision` 作为 `expectedRevision`，再调用检查确认。检查本身不改变图元或修订号，成功 text 仍只给简短说明，不重复业务 JSON。
+调用 `inspect_layout` 时省略 `checks` 会检查全部四项。返回 `boardId/revision`、`summary.errors/warnings` 和 `issues`，每条问题包含 `type/severity/elementIds/message`，并可包含 `suggestion`。将涉及的 ID 用于 `update_board.updates`，保存时使用检查结果的 `revision` 作为 `expectedRevision`，再调用检查确认。检查本身不改变图元或修订号，text 摘要显示错误、警告、完成情况及容器跳过数量，不重复业务 JSON。
 
 重叠提示的 `metrics.overlapRatio/overlapArea` 提供相交比例与面积，箭头距离提示的 `metrics.distance` 为端点到目标轮廓的距离，单位均基于画布坐标。独立文字重叠可返回 `suggestedUpdate:{id,dx,dy}`，可直接放入 `update_board.updates`；这只提供分离当前两个图元的候选方案，不保证整体布局合理，也不会自动执行。绑定文字和形状碰撞不提供独立平移建议，避免破坏标签、阴影与背景叠层。大小接近且偏移很小的实心矩形标为 `metrics.possibleLayering=true`，仍保留确认提示，不断言设计错误。透明图元和空白文字不参与视觉碰撞检查，断开的绑定仍可报告数据问题。
 
@@ -275,7 +317,7 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 
 软删除和还原的实际状态变化也递增 `revision` 并更新 `updated_at`；重复相同状态返回 `noop`，不递增。删除后还原会使旧的 `expectedRevision` 失效，调用方应使用最新回执版本。`list_tags.nextCursor` 是按标签名排序的边界，SQL 读取名称大于该边界的标签，不要求该标签仍存在；分页不是一致快照，期间改名或新增可能影响后续页，完整重新核对时从第一页读取。
 
-业务结果的完整机器数据仅在 `structuredContent`，成功文本 `content` 给简短说明，不重复传输业务 JSON；客户端应读取结构化结果。客户端须检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。业务错误的文本保留具体原因。绘图写入默认 `responseMode=minimal`，返回修订号、数量和画板 URL，无需再次读取全文确认成功；`copy_elements` 始终额外返回 `idMap/warnings`。`create_board/add_elements/update_board/create_diagram/copy_elements` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是本体数量，`elementCount` 是全画板当前图元数量。
+业务结果的完整机器数据仅在 `structuredContent`，成功文本 `content` 为按工具生成的极简中文摘要，不重复业务 JSON、图元或列表正文。通常一至两行，最长 1024 字符；单画板操作附 `boardId`，新建或幂等返回已有画板时再附完整直达链接。摘要显示实际数量、无变化、分页或截断、批量成功与失败、检查未完成等状态；文字测量明确标为估算。超长名称优先缩短，直达链接不会被截断成不可用 URL，无法容纳时提示按 `boardId` 定位。客户端仍应读取结构化结果并检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。业务错误的文本保留具体原因。绘图写入默认 `responseMode=minimal`，返回修订号、数量和画板 URL，无需再次读取全文确认成功；`copy_elements` 始终额外返回 `idMap/warnings`。`create_board/add_elements/update_board/create_diagram/copy_elements` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是本体数量，`elementCount` 是全画板当前图元数量。
 
 `remove_elements` 和 `update_board` 的删除反馈包含 `notFoundIds`（去重后的缺失请求 ID）、`removedCount`（含绑定文字的实际删除总数）、`requestedRemovedCount`（显式请求且存在的图元数）、`cascadeRemovedCount`（未显式请求的级联删除数）及 `elementCount`（操作后的全板图元数）。缺失 ID 不使整次操作失败，仍返回缺失清单；只删除不存在的 ID 时返回 `noop`，不递增修订号。删除标签 ID 只删除标签，删除形状才联动删除其标签。
 
