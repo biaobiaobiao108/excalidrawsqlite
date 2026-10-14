@@ -1,25 +1,28 @@
 import * as z from "zod/v4";
 import { HttpError } from "./errors";
 import { createDrawingElements, drawingElementSchema } from "./mcp-drawing";
+import { buildRegionDiagram } from "./mcp-diagram-regions";
 
 const nodeId = z.string().trim().min(1).max(80);
 export const diagramSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  layout: z.enum(["timeline", "flowchart"]).optional().describe("timeline 按节点顺序；flowchart 按连接分层，支持分支和循环"),
+  layout: z.enum(["timeline", "flowchart", "architecture", "swimlane"]).optional().describe("timeline 按顺序；flowchart 按连接分层；architecture 两层箱体；swimlane 共享阶段泳道"),
   direction: z.enum(["vertical", "horizontal"]).optional(),
   theme: z.enum(["forest", "paper", "ocean"]).optional(),
   nodes: z.array(z.object({
     id: nodeId.describe("画板内的稳定图元 ID，供 edges 和后续更新引用"),
     title: z.string().trim().min(1).max(120),
     body: z.string().max(1_800).optional(),
+    regionId: nodeId.optional(),
   }).strict()).min(1).max(100),
+  regions: z.array(z.object({ id: nodeId, title: z.string().trim().min(1).max(120), parentId: nodeId.optional() }).strict()).min(1).max(24).optional(),
   edges: z.array(z.object({ from: nodeId, to: nodeId,
     endArrowhead: z.literal("arrow").nullable().optional().describe("默认 arrow；null 为无箭头连接，仍随节点移动"),
   }).strict()).max(200)
-    .optional().describe("省略则按节点顺序连接；[] 表示无连线，可包含分支、回路与自连接"),
+    .optional().describe("经典布局省略则按节点顺序连接；高级布局省略则无连线；[] 为无连线，支持分支、回路与自连接"),
 }).strict();
 
-type Diagram = z.infer<typeof diagramSchema>;
+export type Diagram = z.infer<typeof diagramSchema>;
 type Spec = z.infer<typeof drawingElementSchema>;
 type Point = [number, number];
 type Box = { x: number; y: number; width: number; height: number; rank: number };
@@ -88,13 +91,14 @@ const flowRanks = (ids: string[], edges: Diagram["edges"]): Map<string, number> 
 /** Produce bounded standard writable specs; persistence is handled by create_board. */
 export const buildDiagram = (input: Diagram) => {
   const args = diagramSchema.parse({ name: input.name, layout: input.layout,
-    direction: input.direction, theme: input.theme, nodes: input.nodes, edges: input.edges });
+    direction: input.direction, theme: input.theme, nodes: input.nodes, edges: input.edges, regions: input.regions });
   const layout = args.layout ?? "flowchart", direction = args.direction ?? "vertical";
   const theme = args.theme ?? "forest", style = themes[theme];
   const ids = args.nodes.map((node) => node.id), unique = new Set(ids);
   if (unique.size !== ids.length)
     throw new HttpError(400, "DUPLICATE_NODE_ID", "nodes.id 必须唯一");
-  const edges: NonNullable<Diagram["edges"]> = args.edges ?? ids.slice(1).map((to, index) => ({ from: ids[index], to }));
+  const advanced = layout === "architecture" || layout === "swimlane";
+  const edges: NonNullable<Diagram["edges"]> = args.edges ?? (advanced ? [] : ids.slice(1).map((to, index) => ({ from: ids[index], to })));
   const connections = new Set<string>();
   for (const edge of edges) {
     if (!unique.has(edge.from) || !unique.has(edge.to))
@@ -120,6 +124,9 @@ export const buildDiagram = (input: Diagram) => {
     const label = createDrawingElements(card).find((element) => element.type === "text");
     return Math.max(100, Math.ceil((label?.height ?? 0) + 48));
   });
+  if (advanced) return buildRegionDiagram(args, cards, heights, flowRanks(ids, edges), edges, style);
+  if (args.regions || args.nodes.some((node) => node.regionId !== undefined))
+    throw new HttpError(400, "INVALID_DIAGRAM_REGION", "regions 和 regionId 仅用于 architecture 或 swimlane");
   const height = Math.max(...heights), mainSize = direction === "vertical" ? height : width;
   const crossSize = direction === "vertical" ? width : height;
   const rows = new Map<number, string[]>();
