@@ -47,6 +47,7 @@ import { WorkspaceDialog } from "./WorkspaceDialog";
 import { CustomSelect } from "./CustomSelect";
 import { WorkspaceCommandPalette } from "./WorkspaceCommandPalette";
 import { refreshWorkspacePage } from "./workspace-page-refresh";
+import { parseWorkspaceSearchQuery } from "./workspace-search";
 import { ThumbnailRepairQueue } from "../data/thumbnailRepairQueue";
 import {
   applyBoardSelectionClick,
@@ -1374,11 +1375,13 @@ export const WorkspaceHome = ({
   const previousSearchQueryRef = useRef(searchQuery.trim());
   const pageTransitionPending = loadedPageQueryKeyRef.current !== pageQueryKey;
   const hasDisplayedFilters = Boolean(
-    displayedPageOptions.query || displayedPageOptions.folderId,
+    displayedPageOptions.query ||
+      displayedPageOptions.tag ||
+      displayedPageOptions.folderId,
   );
   const currentPageOptions: CloudScenePageOptions = {
     trash: view === "trash",
-    query: searchQuery.trim() || undefined,
+    ...parseWorkspaceSearchQuery(searchQuery),
     folderId: view === "trash" ? undefined : selectedFolderId,
     favorite: view === "favorites",
     opened: view === "recent",
@@ -1388,6 +1391,12 @@ export const WorkspaceHome = ({
   currentPageRef.current = { key: pageQueryKey, options: currentPageOptions };
   const loadedScenesRef = useRef({ scenes, trashScenes });
   loadedScenesRef.current = { scenes, trashScenes };
+
+  const searchWorkspace = useCallback((query: string) => {
+    setView("all");
+    setSelectedFolderId(null);
+    setSearchQuery(query);
+  }, []);
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
   const updateSceneSelection = useCallback((next: BoardSelectionState) => {
@@ -3263,6 +3272,7 @@ export const WorkspaceHome = ({
           setView("all");
         }}
         onChangeSort={setSort}
+        onSearch={searchWorkspace}
         onEmptyTrash={handleEmptyTrash}
         onReload={loadWorkspace}
       />
