@@ -18,6 +18,21 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     const response = await client.callTool({ name, arguments: args });
     expect(response.isError, JSON.stringify(response)).not.toBe(true);
     const data = response.structuredContent as Record<string, any>;
+    expect(response.content).toHaveLength(1);
+    const summary = response.content[0];
+    expect(summary.type).toBe("text");
+    if (summary.type === "text") {
+      expect(summary.text.length).toBeLessThanOrEqual(1024);
+      expect(summary.text).not.toContain("详情见 structuredContent");
+      if (typeof data.boardId === "string") expect(summary.text).toContain(data.boardId);
+      if (data.ok && name === "ensure_folder") expect(summary.text).toContain(data.created ? "已创建" : "已复用");
+      if (data.ok && name === "create_folder") expect(summary.text).toContain("已创建");
+      if (data.noop) expect(summary.text).toContain("无需修改");
+      if (name === "batch_manage_boards") {
+        expect(summary.text).toContain(`成功 ${data.succeeded}`);
+        expect(summary.text).toContain(`失败 ${data.failed}`);
+      }
+    }
     for (const folder of [data, ...(data.folders || []), ...(data.folder ? [data.folder] : [])]) {
       if (typeof folder.icon === "string") {
         for (const key of ["scene_count", "created_at", "updated_at"])

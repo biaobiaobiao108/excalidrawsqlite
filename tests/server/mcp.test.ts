@@ -28,8 +28,15 @@ const toolResult = <T>(result: {
 }) => {
   expect(result.isError).not.toBe(true);
   expect(result.structuredContent).toMatchObject({ ok: true });
-  expect(result.content).toEqual([{ type: "text", text: "操作成功；详情见 structuredContent。" }]);
+  expect(result.content).toHaveLength(1);
+  expect(result.content[0].type).toBe("text");
+  const summary = result.content[0].text!;
+  expect(summary.length).toBeGreaterThan(0);
+  expect(summary.length).toBeLessThanOrEqual(1024);
+  expect(summary).not.toContain("详情见 structuredContent");
+  expect(summary.startsWith("{")).toBe(false);
   const data = result.structuredContent as Record<string, unknown>;
+  if (typeof data.boardId === "string") expect(summary).toContain(data.boardId);
   const records = [data, ...["items", "boards", "results"].flatMap((key) =>
     Array.isArray(data[key]) ? data[key] as Record<string, unknown>[] : [])];
   for (const record of records) {
