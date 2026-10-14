@@ -1680,14 +1680,15 @@
   }
 
   .section-tools {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     inline-size: 100%;
     gap: 0.35rem;
   }
 
   .section-tools .custom-select {
-    flex: 1 1 125px;
-    max-inline-size: min(100%, 180px);
+    flex: 1 1 0;
+    min-inline-size: 0;
+    max-inline-size: none;
   }
 
   .section-tools .custom-select__trigger {
