@@ -187,7 +187,8 @@ export const buildDiagram = (input: Diagram) => {
     }
     // Remove consecutive duplicate corners, preserving meaningful turns.
     points = points.filter((point, i) => !i || point[0] !== points[i - 1][0] || point[1] !== points[i - 1][1]);
-    elements.push(drawingElementSchema.parse({ type: "arrow", id: allocateId(index), points,
+    elements.push(drawingElementSchema.parse({ type: "arrow", id: allocateId(index), x: start[0], y: start[1],
+      points: points.map((point) => [point[0] - start[0], point[1] - start[1]]),
       startBinding: { elementId: edge.from, fixedPoint: startFixed },
       endBinding: { elementId: edge.to, fixedPoint: endFixed },
       strokeColor: style.strokeColor, roughness: 0, endArrowhead: edge.endArrowhead === undefined ? "arrow" : edge.endArrowhead }));

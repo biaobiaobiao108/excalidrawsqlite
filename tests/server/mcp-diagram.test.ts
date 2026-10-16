@@ -23,6 +23,16 @@ describe("MCP semantic diagrams", () => {
       const axis = direction === "vertical" ? "y" : "x";
       expect(shapes.map((e) => e[axis])).toEqual([...shapes.map((e) => e[axis])].sort((a, b) => a - b));
       result.elements.forEach((element) => expect(drawingElementSchema.safeParse(element).success).toBe(true));
+      for (const connector of result.elements.filter((element) => element.type === "arrow")) {
+        const from = shapes.find((shape) => shape.id === connector.startBinding!.elementId)!;
+        const to = shapes.find((shape) => shape.id === connector.endBinding!.elementId)!;
+        const end = connector.points!.at(-1)!;
+        expect(connector.points![0]).toEqual([0, 0]);
+        expect([connector.x, connector.y]).toEqual(direction === "vertical"
+          ? [from.x + from.width / 2, from.y + from.height] : [from.x + from.width, from.y + from.height / 2]);
+        expect([connector.x! + end[0], connector.y! + end[1]]).toEqual(direction === "vertical"
+          ? [to.x + to.width / 2, to.y] : [to.x, to.y + to.height / 2]);
+      }
       expect(buildDiagram({ name: "时间线", layout: "timeline", direction, nodes }).elements).toEqual(result.elements);
       const created = createDrawingBatch(result.elements);
       expect(created.created.length).toBe(11);
