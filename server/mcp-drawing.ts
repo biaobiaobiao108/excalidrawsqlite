@@ -127,11 +127,11 @@ const arrowhead = z
   ])
   .nullable();
 const points = z
-  .array(z.tuple([coordinate, coordinate]))
+  .array(z.tuple([z.number().finite().min(-2_000_000).max(2_000_000), z.number().finite().min(-2_000_000).max(2_000_000)]))
   .min(2)
   .max(1_000)
   .describe(
-    "默认按顺序给出绝对画布坐标；同时传 x/y 原点时改为相对原点的坐标。支持多段折线，不与 startX/startY/endX/endY 混用",
+    "相对于 x/y 原点的坐标，支持多段折线；须同时提供 x 和 y，所有全局点坐标须在允许范围内",
   );
 const labelStyleSchema = z.object({ ...typography, ...style }).strict();
 const shapeFields = {
@@ -150,35 +150,22 @@ const shapeFields = {
 const linearFields = {
   ...grouping,
   id: idSchema.optional(),
-  x: coordinate.optional().describe("与 y 成对提供，作为 points 的原点；传原点后 points 使用相对坐标，不与起终点字段混用"),
-  y: coordinate.optional().describe("与 x 成对提供，作为 points 的原点；省略原点时 points 使用绝对坐标"),
-  startX: coordinate.optional(),
-  startY: coordinate.optional(),
-  endX: coordinate.optional(),
-  endY: coordinate.optional(),
+  x: coordinate.optional().describe("与 y 成对提供，作为相对 points 的原点"),
+  y: coordinate.optional().describe("与 x 成对提供，作为相对 points 的原点"),
   points: points.optional(),
   ...style,
 };
 const validateLinear = (value: Record<string, unknown>) => {
-  if ((value.x !== undefined || value.y !== undefined) &&
-    (value.x === undefined || value.y === undefined || value.points === undefined)) return false;
-  const ends = [value.startX, value.startY, value.endX, value.endY];
-  if (value.points !== undefined) {
-    if (ends.some((v) => v !== undefined)) return false;
-    const ps = value.points as number[][];
-    if (value.x !== undefined && ps.some(([x, y]) => !coordinate.safeParse(x + (value.x as number)).success ||
-      !coordinate.safeParse(y + (value.y as number)).success)) return false;
-    return ps.some((p) => p[0] !== ps[0][0] || p[1] !== ps[0][1]);
-  }
-  return (
-    ends.every((v) => v !== undefined) &&
-    (ends[0] !== ends[2] || ends[1] !== ends[3])
-  );
+  if (value.x === undefined || value.y === undefined || value.points === undefined) return false;
+  const ps = value.points as number[][];
+  if (ps.some(([x, y]) => !coordinate.safeParse(x + (value.x as number)).success ||
+    !coordinate.safeParse(y + (value.y as number)).success)) return false;
+  return ps.some((p) => p[0] !== ps[0][0] || p[1] !== ps[0][1]);
 };
 const isAutomaticArrow = (value: Record<string, unknown>) => value.type === "arrow" &&
-  ["points", "x", "y", "startX", "startY", "endX", "endY"].every((key) => value[key] === undefined);
+  ["points", "x", "y"].every((key) => value[key] === undefined);
 const validateArrow = (value: Record<string, unknown>) => isAutomaticArrow(value)
-  ? !!value.startBinding && !!value.endBinding && !value.rotation
+  ? !!value.startBinding && !!value.endBinding && value.rotation === undefined
   : validateLinear(value);
 export const drawingElementSchema = z.discriminatedUnion("type", [
   z.object({ type: z.enum(["rectangle", "ellipse", "diamond"]), ...shapeFields }).strict(),
@@ -201,7 +188,7 @@ export const drawingElementSchema = z.discriminatedUnion("type", [
   z
     .object({ type: z.literal("line"), ...linearFields })
     .strict()
-    .refine(validateLinear, "请提供 points 或完整且不同的起终点；x/y 原点须成对且仅与 points 使用，偏移后的坐标须在允许范围内")
+    .refine(validateLinear, "请同时提供 x/y 原点和不同的相对 points，所有全局点坐标须在允许范围内")
     .describe("固定坐标线段或折线，不绑定节点；需要随节点移动的无箭头连线，请使用 arrow 并传 endArrowhead:null"),
   z
     .object({
@@ -213,7 +200,7 @@ export const drawingElementSchema = z.discriminatedUnion("type", [
       endArrowhead: arrowhead.optional().describe("终点箭头样式，默认 arrow；null 为无箭头，仍支持节点绑定和自动连接"),
     })
     .strict()
-    .refine(validateArrow, "请提供 points 或完整且不同的起终点；x/y 原点须成对且仅与 points 使用，偏移后的坐标须在允许范围内；也可仅传两端 binding 自动连接（不能同时传 rotation）"),
+    .refine(validateArrow, "请同时提供 x/y 原点和不同的相对 points，所有全局点坐标须在允许范围内；也可仅传两端 binding 自动连接（不能同时传 rotation）"),
 ]).refine((value) => value.groupId === undefined || value.groupIds === undefined, "groupId 与 groupIds 不能同时提供");
 export const elementUpdateSchema = z
   .object({
@@ -222,8 +209,8 @@ export const elementUpdateSchema = z
     type: z.enum(["rectangle", "ellipse", "diamond", "text", "line", "arrow"]).optional().describe("可直接使用 input 视图的图元作为 updates；必须与现有类型相同，不支持类型转换"),
     x: coordinate.optional().describe("绝对 X；线性图元同时传 points 时，须与 y 成对作为相对点原点"),
     y: coordinate.optional().describe("绝对 Y；线性图元同时传 points 时，须与 x 成对作为相对点原点"),
-    dx: coordinate.optional().describe("相对平移 X；不能与 x、points 或起终点坐标同时传入，绑定文字请移动容器"),
-    dy: coordinate.optional().describe("相对平移 Y；不能与 y、points 或起终点坐标同时传入，绑定文字请移动容器"),
+    dx: coordinate.optional().describe("相对平移 X；不能与 x 或 points 同时传入，绑定文字请移动容器"),
+    dy: coordinate.optional().describe("相对平移 Y；不能与 y 或 points 同时传入，绑定文字请移动容器"),
     width: dimension.optional(),
     height: dimension.optional(),
     autoResize: z.boolean().optional().describe("仅独立文字使用；true 恢复自动宽度，false 保持固定宽度。传 width 自动启用固定宽度；文字高度始终由内容计算"),
@@ -233,10 +220,6 @@ export const elementUpdateSchema = z
     ...typography,
     ...style,
     points: points.optional(),
-    startX: coordinate.optional(),
-    startY: coordinate.optional(),
-    endX: coordinate.optional(),
-    endY: coordinate.optional(),
     startBinding: binding.optional(),
     endBinding: binding.optional(),
     startArrowhead: arrowhead.optional(),
@@ -245,7 +228,8 @@ export const elementUpdateSchema = z
   .strict()
   .refine((value) => value.groupId === undefined || value.groupIds === undefined, "groupId 与 groupIds 不能同时提供")
   .refine((value) => !(value.dx !== undefined && value.x !== undefined) && !(value.dy !== undefined && value.y !== undefined), "dx 与 x、dy 与 y 不能同时提供")
-  .refine((value) => value.dx === undefined && value.dy === undefined || [value.points, value.startX, value.startY, value.endX, value.endY].every((field) => field === undefined), "相对平移不能与 points 或起终点坐标同时提供")
+  .refine((value) => value.dx === undefined && value.dy === undefined || value.points === undefined, "相对平移不能与 points 同时提供")
+  .refine((value) => value.points === undefined || validateLinear(value), "修改 points 时 x/y 原点须成对提供，points 须不同且所有全局点坐标须在允许范围内")
   .refine((value) => value.autoResize !== true || value.width === undefined, "autoResize=true 时不能同时提供 width")
   .refine((v) => Object.keys(v).length > 1, "请提供至少一个修改字段");
 type Spec = z.infer<typeof drawingElementSchema>;
@@ -352,10 +336,17 @@ export const measureDrawingText = (spec: { text: string; fontSize?: number; font
     measurement: "server-estimate" as const,
     note: "与 MCP 创建文字使用同一估算器；CJK 宽字符、全角形式与 emoji 字素簇约 1em，Latin 及半角字符约 0.58em，组合附加符号不额外占宽。常用歧义标点在含中日韩文的整行按 1em，其余按 0.58em。lineHeight 为原生行高倍率，lineHeightPx 为像素行高；实际字体、字形与回退字体可能不同。" };
 };
-const absoluteLinearPoints = (value: { points?: [number, number][]; x?: number; y?: number;
-  startX?: number; startY?: number; endX?: number; endY?: number }): number[][] => value.points
-  ? value.points.map(([x, y]) => [x + (value.x ?? 0), y + (value.y ?? 0)])
-  : [[value.startX!, value.startY!], [value.endX!, value.endY!]];
+const linearGeometry = (value: { points?: [number, number][]; x?: number; y?: number }) => {
+  const points = value.points!;
+  const [offsetX, offsetY] = points[0];
+  return {
+    x: value.x! + offsetX,
+    y: value.y! + offsetY,
+    points: points.map(([x, y]) => pointFrom<LocalPoint>(x - offsetX, y - offsetY)),
+    width: Math.max(...points.map(([x]) => x)) - Math.min(...points.map(([x]) => x)),
+    height: Math.max(...points.map(([, y]) => y)) - Math.min(...points.map(([, y]) => y)),
+  };
+};
 
 export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
   if ((spec.type === "rectangle" || spec.type === "ellipse" || spec.type === "diamond") &&
@@ -365,9 +356,7 @@ export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
   if (spec.type === "line" || spec.type === "arrow") {
     const opts = {
       ...base,
-      ...geometry(
-        isAutomaticArrow(spec) ? [[0, 0], [1, 1]] : absoluteLinearPoints(spec),
-      ),
+      ...(isAutomaticArrow(spec) ? geometry([[0, 0], [1, 1]]) : linearGeometry(spec)),
     };
     return [
       spec.type === "line"
@@ -626,14 +615,18 @@ export const updateDrawingElements = (
         `形状标签最多 2000 字符，图元 ${patch.id} 收到 ${patch.text.length} 字符`,
       );
     const linear = element.type === "arrow" || element.type === "line";
+    if (linear && patch.points === undefined && (patch.x !== undefined || patch.y !== undefined) &&
+      element.points.some(([x, y]) => !coordinate.safeParse((patch.x ?? element.x) + x).success ||
+        !coordinate.safeParse((patch.y ?? element.y) + y).success))
+      throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "移动后的线性图元点坐标超出画布范围");
     if (
       !linear &&
-      ["points", "startX", "startY", "endX", "endY"].some((key) => key in patch)
+      patch.points !== undefined
     )
       throw new HttpError(
         400,
         "INVALID_ELEMENT_UPDATE",
-        "只有直线和箭头支持 points 或起终点",
+        "只有直线和箭头支持 points",
       );
     if (
       element.type !== "arrow" &&
@@ -671,24 +664,16 @@ export const updateDrawingElements = (
       "endArrowhead",
     ] as const)
       if (patch[key] !== undefined) changes[key] = patch[key];
-    if (
-      linear &&
-      (patch.points ||
-        [patch.startX, patch.startY, patch.endX, patch.endY].some(
-          (v) => v !== undefined,
-        ))
-    ) {
+    if (linear && patch.points) {
       if (!validateLinear(patch))
         throw new HttpError(
           400,
           "INVALID_ELEMENT_UPDATE",
-          "请提供 points 或完整且不同的起终点；x/y 原点须成对且仅与 points 使用，偏移后的坐标须在允许范围内",
+          "修改 points 时 x/y 原点须成对提供，points 须不同且所有全局点坐标须在允许范围内",
         );
       Object.assign(
         changes,
-        geometry(
-          absoluteLinearPoints(patch),
-        ),
+        linearGeometry(patch),
       );
     }
     const labelIdForComparison =
@@ -954,7 +939,9 @@ export const inputDrawingElements = (current: readonly ExcalidrawElement[]) => {
     } else if (element.type === "line" || element.type === "arrow") {
       candidate = {
         ...base,
-        points: element.points.map(([x, y]) => [element.x + x, element.y + y]),
+        x: element.x,
+        y: element.y,
+        points: element.points.map(([x, y]) => [x, y]),
       };
       if (element.type === "arrow") Object.assign(candidate, {
         startBinding: element.startBinding,
