@@ -60,10 +60,35 @@ export const formatMcpSummary = (operation: string, data: Data): string => {
     case "inspect_layout": {
       const summary = record(data.summary);
       const overflow = record(record(data.checks).text_overflow);
-      parts = [`布局检查：${count(summary, "errors")} 个错误，${count(summary, "warnings")} 个警告`, data.complete === true ? "检查已完成" : "检查未完成", ...boardLocation(data)];
+      const covered = data.complete === true && count(overflow, "skippedNoContainer") === 0 && count(overflow, "skippedAmbiguousContainer") === 0 && overflow.status !== "partial" && overflow.status !== "not_executed";
+      parts = [`布局检查：${count(summary, "errors")} 个错误，${count(summary, "warnings")} 个警告`, covered ? "检查已完成" : "检查未完成", ...boardLocation(data)];
+      if (overflow.status === "not_executed" || (count(overflow, "checkedContainers") === 0 && count(overflow, "skippedNoContainer") > 0))
+        parts.push("文字溢出检查未执行：没有可确认的文字容器，请设置 groupId 或绑定标签；不能视为无溢出");
+      else if (overflow.status === "partial") parts.push("文字溢出仅检查了部分容器，不能视为全部通过");
       if (count(overflow, "skippedNoContainer")) parts.push(`${count(overflow, "skippedNoContainer")} 个文字未找到容器，已跳过溢出检查`);
       if (count(overflow, "skippedAmbiguousContainer")) parts.push(`${count(overflow, "skippedAmbiguousContainer")} 个文字容器存在歧义，已跳过`);
-      break;
+      const issues = list(data, "issues").map(record);
+      const byType = new Map<string, number>();
+      for (const item of issues) {
+        const type = singleLine(item.type);
+        if (type) byType.set(type, (byType.get(type) ?? 0) + 1);
+      }
+      if (byType.size) parts.push([...byType].slice(0, 4).map(([type, total]) => `${shorten(type, 32)}×${total}`).join("，"));
+      const overlaps = issues.filter((item) => item.type === "text_overlap" && typeof record(item.metrics).overlapDepth === "number");
+      const largest = overlaps.reduce<Data | undefined>((current, item) => !current || count(record(item.metrics), "overlapDepth") > count(record(current.metrics), "overlapDepth") ? item : current, undefined);
+      if (largest) parts.push(`最大几何重叠 ${number(count(record(largest.metrics), "overlapDepth"))} px（ratio ${number(count(record(largest.metrics), "overlapRatio"))}）`);
+      const heading = shorten(parts.join("；"), 1024);
+      let examples = "";
+      const locationSuffix = "；完整定位见 structuredContent.issues";
+      for (const item of [...issues].sort((first, second) => Number(second.severity === "error") - Number(first.severity === "error")).slice(0, 3)) {
+        const ids = list(item, "elementIds").slice(0, 2).map(singleLine).filter(Boolean);
+        const update = record(item.suggestedUpdate);
+        const example = `${singleLine(item.severity) || "warning"}/${shorten(singleLine(item.type), 32)}${item.severityHint ? `/${shorten(singleLine(item.severityHint), 16)}` : ""}：${ids.join(" ↔ ")}${typeof update.dx === "number" && typeof update.dy === "number" ? `，候选 dx=${update.dx}, dy=${update.dy}` : ""}`;
+        const candidate = examples ? `${examples}；${example}` : `示例：${example}`;
+        if (heading.length + 1 + candidate.length + locationSuffix.length > 1024) break;
+        examples = candidate;
+      }
+      return heading + (examples ? `\n${examples}${locationSuffix}` : "");
     }
     case "measure_text":
       parts = [`文字估算：${number(count(data, "width"))} × ${number(count(data, "height"))} px，${count(data, "lineCount")} 行`];

@@ -16,8 +16,9 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
   const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/management-test"), { fetch: async (input, init) => handler.fetch(new Request(input, init)) });
   const call = async (name: string, args: Record<string, unknown>) => {
     const response = await client.callTool({ name, arguments: args });
-    expect(response.isError, JSON.stringify(response)).not.toBe(true);
     const data = response.structuredContent as Record<string, any>;
+    if (data.ok === false) expect(response.isError).toBe(true);
+    else expect(response.isError).not.toBe(true);
     expect(response.content).toHaveLength(1);
     const summary = response.content[0];
     expect(summary.type).toBe("text");

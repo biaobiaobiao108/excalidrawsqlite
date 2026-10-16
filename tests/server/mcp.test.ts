@@ -269,7 +269,7 @@ describe("Excalidraw MCP endpoint", () => {
       const full = await invoke<Inspection>("inspect_layout", { boardId: created.boardId });
       expect(full.boardId).toBe(created.boardId);
       expect(full.revision).toBe(created.revision);
-      expect(full.complete).toBe(true);
+      expect(full.complete).toBe(false);
       expect(full.summary.errors + full.summary.warnings).toBe(full.issues.length);
       expect(full.issues).toContainEqual(expect.objectContaining({ type: "text_overlap", elementIds: expect.arrayContaining(["first", "second"]) }));
       expect(full.issues.some((issue) => issue.type === "text_overflow" && issue.elementIds.includes("overflow-label"))).toBe(true);
@@ -629,7 +629,7 @@ describe("Excalidraw MCP endpoint", () => {
         const conflict = await client.callTool({ name, arguments: { boardId: complete.boardId, expectedRevision: 1,
           ...(name === "remove_elements" ? { elementIds: [complete.requestedElementIds[1]] }
             : { elements: [{ type: "text", x: 0, y: 0, text: "不会写入" }] }) } });
-        expect(conflict.isError).not.toBe(true);
+        expect(conflict.isError).toBe(true);
         expect(conflict.structuredContent).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
       }
       const emptyUpdate = await client.callTool({ name: "update_board", arguments: { boardId: complete.boardId } });

@@ -33,6 +33,9 @@ const getMcpServerInstructions = (runtime: ServerRuntime) => [
   "create_diagram.layout=architecture 用 regions 的 parentId 描述最多两级箱体；swimlane 用平级 regions 描述泳道，默认横向推进。所有节点通过 regionId 指向叶区域，高级模式省略 edges 不自动连线。区域按输入顺序排列，返回背景/标题/分组 ID、nodeRegions 和 bounds；跨区域连线真实绑定节点但不归入区域分组，正常模板可用 inspect_layout 复查。",
   "每次最多 1,000 个图元描述；形状 text 自动绑定文字。可给节点指定 id，箭头仅传 startBinding/endBinding.elementId 即自动连接同批或已有节点；自连接或同中心节点须显式坐标。折线 points 使用绝对画布坐标；二点仍可用 startX/startY/endX/endY。字段严格校验，不能输入原始内部字段。",
   "独立 text 可传 width 固定宽度并自动换行，height 始终按内容计算，不传 height；省略 width 默认自动宽度。更新 width 会保持固定宽度，更新 autoResize=true 恢复自动宽度；绑定标签尺寸请修改所属形状。",
+  "手工绘制卡片背景和独立文字时，请设置相同 groupId 或使用形状绑定标签，以明确文字归属。text_overflow.status 区分 completed/partial/not_executed/not_applicable；没有可检查容器时 complete=false，不等于无溢出。inferTextContainers 默认关闭，显式开启才按文字起点推断唯一矩形，多候选时跳过；几何推断仅供确认，无法恢复已完全移出的自由文字归属。",
+  "get_board.view=input 的 elements 始终可直接写回。独立文字只读高度及行高位于同页 elementGeometry（按 elementId 对应），不要把 elementGeometry 合并到 updates；文字 height 仍不接受手工设置。measure_text 返回 lineHeight 倍率、lineHeightPx 与 lineCount，不应把估算当作实际字体测量。",
+  "单次工具业务失败同时返回 isError=true、structuredContent.ok=false 和 error.code/message，客户端应处理这两类错误信号。参数校验失败可能仅有 isError 和 text。批处理成功执行时整体不标 isError，须逐项检查 ok/error，并查看 partial 与成功失败数量。",
   "卡片排版可用 create_layout 一次传 cards/title/body、columns、cardWidth、gap、padding，自动生成原生分组网格；mode 当前仅 grid。measure_text 返回同一服务端估算器的换行和尺寸，estimated=true，非浏览器字体测量。groupId 把多个图元组成编辑器可整体拖动的原生组，groupIds 支持最多8层，从内到外；MCP移动/复制按指定 IDs，整张卡片使用 cards.elementIds。copy_elements 隔离新旧组并返回 groupIdMap。",
   "create_board/create_diagram/create_layout 可传 idempotencyKey，在24小时内相同key与参数重试返回已有画板当前摘要及 addedCount=0，不重新创建；responseMode 可改变，其他参数改变须换key。重放不回新随机图元/卡片映射，需 get_board 读取；已删除画板重放拒绝。create_board/add_elements/update_board 的 autoBind 默认 false，开启仅尝试绑定新增箭头未绑定端点，保留端点坐标和显式绑定；歧义/预算结果见 autoBinding，装饰箭头无需开启。",
   "创建后用 inspect_layout 检查文字重叠、绑定或分组卡片文字溢出、可能的元素碰撞与箭头绑定异常；可用 checks 选择检查项。该工具只读，按 issues.elementIds 使用 update_board 修复后重新检查。issues.metrics 为重叠程度或距离；仅独立文字重叠提供 suggestedUpdate 候选，应用后须复查整个布局。形状碰撞不提供自动位移，possibleLayering 表示疑似阴影/背景叠层，须确认设计意图。检查 text_overflow 的 checkedContainers 与 skippedNoContainer/skippedAmbiguousContainer，跳过的文字不等于溢出检查通过。未绑定的装饰箭头与负坐标不是错误；complete=false 表示部分检查未完成，不能视为检查通过。几何估算不能判断配色、视觉层次或实际字体像素。",
@@ -141,6 +144,7 @@ const makeSafeTool = <T>(handler: (args: T) => Promise<ReturnType<typeof result>
       } else throw error;
     }
     return measureMcpPhase("responseBuildMs", () => ({ ...completed,
+      ...(completed.structuredContent.ok === false ? { isError: true } : {}),
       content: [{ type: "text" as const, text: formatMcpSummary(operation, completed.structuredContent) }] }));
   });
 
@@ -295,6 +299,7 @@ export const createMcpRequestHandler = (
             matchedCount: matches.length, nextOffset: null, truncated: false,
             pointCoordinateSystem: view === "full" ? "relative" : "absolute",
             ...(writable ? { unsupportedElementIds: writable.unsupportedElementIds, warnings: writable.warnings } : {}),
+            ...(writable ? { elementGeometry: [] as Record<string, unknown>[] } : {}),
             ...(selected ? { notFoundIds: elementIds!.filter((id) => !allIds!.has(id)) } : {}) };
           // Budget is charged per element rather than serializing another complete scene.
           // Reserve digits for the pagination offset and the outer structured result.
@@ -303,6 +308,8 @@ export const createMcpRequestHandler = (
             throw new HttpError(400, "READ_BUDGET_TOO_SMALL", "画板元数据超过字符预算，请增加 maxChars 或使用 elements/summary。");
           }
           const elements: Record<string, unknown>[] = [];
+          const elementGeometry: Record<string, unknown>[] = [];
+          const nativeElements = writable ? new Map(board.elements.map((element) => [element.id, element])) : null;
           let index = offset;
           while (index < matches.length && elements.length < limit) {
             const current = matches[index];
@@ -311,16 +318,21 @@ export const createMcpRequestHandler = (
               ...(current.type === "arrow" || current.type === "line"
                 ? { points: current.points.map((point) => [point[0] + current.x, point[1] + current.y]) } : {}),
             };
-            const cost = JSON.stringify(element).length + 1;
+            const native = nativeElements?.get(current.id);
+            const geometry = native?.type === "text" ? { elementId: native.id, height: native.height,
+              lineHeight: native.lineHeight, lineHeightPx: native.fontSize * native.lineHeight,
+              lineCount: native.text.split("\n").length } : null;
+            const cost = JSON.stringify(element).length + 1 + (geometry ? JSON.stringify(geometry).length + 1 : 0);
             if (chars + cost > maxChars) break;
             chars += cost;
             elements.push(element as unknown as Record<string, unknown>);
+            if (geometry) elementGeometry.push(geometry);
             index++;
           }
           if (index === offset && index < matches.length) {
             throw new HttpError(400, "READ_BUDGET_TOO_SMALL", `图元 ${matches[index].id} 超过字符预算；请增加 maxChars 或改用 elements。`);
           }
-          return { ...metadata, elements, returnedElementCount: elements.length,
+          return { ...metadata, elements, ...(writable ? { elementGeometry } : {}), returnedElementCount: elements.length,
             nextOffset: index < matches.length ? index : null, truncated: index < matches.length };
         };
 
@@ -377,7 +389,8 @@ export const createMcpRequestHandler = (
             description: "默认 compact 只读视图保留文字、几何、连接，标签折入本体且省略装饰样式；elements 含样式；input 返回可直接用于 update_board.updates 的描述，type 仅核对类型，已有 ID 不能追加；复制优先 copy_elements。input/紧凑视图按标签 ID 筛选返回本体。truncated/nextOffset 表示分页截断；仅 input 返回 unsupportedElementIds/warnings 表示无法可写投影，省略图元不代表空板。input/紧凑 points 绝对坐标，full 相对坐标。",
             inputSchema: compactMcpSchema(z.object({
               boardId: z.string().min(1).max(128),
-              view: z.enum(["summary", "compact", "elements", "full", "input"]).optional(),
+              view: z.enum(["summary", "compact", "elements", "full", "input"]).optional()
+                .describe("input.elements 可直接写回，文字只读高度/行高在同页 elementGeometry，勿合并进 updates；其他视图用于阅读"),
               elementIds: z.array(z.string().min(1).max(128)).min(1).max(1_000).optional(),
               query: z.string().trim().min(1).max(120).optional().describe("搜索文字；compact/input 匹配合并后的标签，type 筛选合并后的本体类型；elements/full 匹配独立文字"),
               type: z.enum(["rectangle", "ellipse", "diamond", "text", "line", "arrow", "image", "freedraw", "frame", "magicframe", "embeddable", "iframe"]).optional(),
@@ -399,10 +412,10 @@ export const createMcpRequestHandler = (
           description: "只读检查文字重叠、容器内文字溢出、可能的元素碰撞和已绑定箭头连接异常。默认检查全部四项，可用 checks 筛选。使用现有图元尺寸，无浏览器或字体像素测量；正常包含、装饰箭头和无限画布负坐标不视为错误。不自动修改；根据 issues.elementIds 调用 update_board 后复查。complete=false 表示预算截断，未发现问题不保证视觉正确。",
           inputSchema: compactMcpSchema(inspectLayoutSchema.extend({ boardId: z.string().min(1).max(128) })),
           annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        }, safeTool(async ({ boardId, checks }) => {
+        }, safeTool(async ({ boardId, checks, inferTextContainers }) => {
           const current = await api<SceneData>(`/api/scenes/${encodeURIComponent(boardId)}`, "GET");
           return result({ boardId, revision: current.revision,
-            ...measureMcpPhase("transformMs", () => inspectLayout(current.elements, { checks })) });
+            ...measureMcpPhase("transformMs", () => inspectLayout(current.elements, { checks, inferTextContainers })) });
         }, "inspect_layout"));
 
         server.registerTool("measure_text", {
