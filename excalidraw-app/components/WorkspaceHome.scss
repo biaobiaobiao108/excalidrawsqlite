@@ -13,6 +13,7 @@
   overflow-x: clip;
   overflow-y: auto;
   overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   scrollbar-gutter: stable;
   background: var(--workspace-bg);
   color: var(--workspace-text);
@@ -594,8 +595,6 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 360px;
   container-type: inline-size;
   min-inline-size: 0;
   overflow: clip;
