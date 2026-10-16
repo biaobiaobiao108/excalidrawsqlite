@@ -62,9 +62,10 @@ const createTarHeader = (
 
 const createPaxPath = (pathValue: string) => {
   const body = `path=${pathValue}\n`;
-  let recordLength = body.length + 2;
-  while (String(recordLength).length + body.length + 1 !== recordLength) {
-    recordLength = String(recordLength).length + body.length + 1;
+  const bodyByteLength = textEncoder.encode(body).byteLength;
+  let recordLength = bodyByteLength + 2;
+  while (String(recordLength).length + bodyByteLength + 1 !== recordLength) {
+    recordLength = String(recordLength).length + bodyByteLength + 1;
   }
   return textEncoder.encode(`${recordLength} ${body}`);
 };
