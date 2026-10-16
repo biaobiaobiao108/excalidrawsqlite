@@ -435,7 +435,8 @@ describe("Excalidraw MCP endpoint", () => {
         "create_folder", "update_folder", "delete_folder", "manage_board", "delete_board", "restore_board", "batch_manage_boards",
       ]));
       expect(tools.tools.map((tool) => tool.name).some((name) => /clear_trash|purge|permanent/.test(name))).toBe(false);
-      expect(client.getInstructions()).toContain("一次传入名称和全部 elements");
+      expect(client.getInstructions()).toContain("一次提交全部内容");
+      expect(client.getInstructions()!.length).toBeLessThanOrEqual(1600);
 
       const created = toolResult<{ boardId: string; name: string; revision: number }>(
         await client.callTool({

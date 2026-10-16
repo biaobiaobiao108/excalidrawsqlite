@@ -29,26 +29,14 @@ import type { ServerRuntime } from "./types";
 export const MCP_PATH = "/mcp";
 
 const getMcpServerInstructions = (runtime: ServerRuntime) => [
-  "Excalidraw 白板支持搜索、读取及批量绘制。流程图、时间线、分层架构和泳道优先 create_diagram 一次传 nodes/edges 自动排版；自定义绘图用 create_board 一次传入名称和全部 elements，不要先建空板再逐个绘制。",
-  "create_diagram.layout=architecture 用 regions 的 parentId 描述最多两级箱体；swimlane 用平级 regions 描述泳道，默认横向推进。所有节点通过 regionId 指向叶区域，高级模式省略 edges 不自动连线。区域按输入顺序排列，返回背景/标题/分组 ID、nodeRegions 和 bounds；跨区域连线真实绑定节点但不归入区域分组，正常模板可用 inspect_layout 复查。",
-  "每次最多 1,000 个图元描述；形状 text 自动绑定文字。可给节点指定 id，箭头仅传 startBinding/endBinding.elementId 即自动连接同批或已有节点；自连接或同中心节点须显式坐标。折线 points 使用绝对画布坐标；二点仍可用 startX/startY/endX/endY。字段严格校验，不能输入原始内部字段。",
-  "独立 text 可传 width 固定宽度并自动换行，height 始终按内容计算，不传 height；省略 width 默认自动宽度。更新 width 会保持固定宽度，更新 autoResize=true 恢复自动宽度；绑定标签尺寸请修改所属形状。",
-  "手工绘制卡片背景和独立文字时，请设置相同 groupId 或使用形状绑定标签，以明确文字归属。text_overflow.status 区分 completed/partial/not_executed/not_applicable；没有可检查容器时 complete=false，不等于无溢出。inferTextContainers 默认关闭，显式开启才按文字起点推断唯一矩形，多候选时跳过；几何推断仅供确认，无法恢复已完全移出的自由文字归属。",
-  "get_board.view=input 的 elements 始终可直接写回。独立文字只读高度及行高位于同页 elementGeometry（按 elementId 对应），不要把 elementGeometry 合并到 updates；文字 height 仍不接受手工设置。measure_text 返回 lineHeight 倍率、lineHeightPx 与 lineCount，不应把估算当作实际字体测量。",
-  "单次工具业务失败同时返回 isError=true、structuredContent.ok=false 和 error.code/message，客户端应处理这两类错误信号。参数校验失败可能仅有 isError 和 text。批处理成功执行时整体不标 isError，须逐项检查 ok/error，并查看 partial 与成功失败数量。",
-  "卡片排版可用 create_layout 一次传 cards/title/body、columns、cardWidth、gap、padding，自动生成原生分组网格；mode 当前仅 grid。measure_text 返回同一服务端估算器的换行和尺寸，estimated=true，非浏览器字体测量。groupId 把多个图元组成编辑器可整体拖动的原生组，groupIds 支持最多8层，从内到外；MCP移动/复制按指定 IDs，整张卡片使用 cards.elementIds。copy_elements 隔离新旧组并返回 groupIdMap。",
-  "create_board/create_diagram/create_layout 可传 idempotencyKey，在24小时内相同key与参数重试返回已有画板当前摘要及 addedCount=0，不重新创建；responseMode 可改变，其他参数改变须换key。重放不回新随机图元/卡片映射，需 get_board 读取；已删除画板重放拒绝。create_board/add_elements/update_board 的 autoBind 默认 false，开启仅尝试绑定新增箭头未绑定端点，保留端点坐标和显式绑定；歧义/预算结果见 autoBinding，装饰箭头无需开启。",
-  "创建后用 inspect_layout 检查文字重叠、绑定或分组卡片文字溢出、可能的元素碰撞与箭头绑定异常；可用 checks 选择检查项。该工具只读，按 issues.elementIds 使用 update_board 修复后重新检查。issues.metrics 为重叠程度或距离；仅独立文字重叠提供 suggestedUpdate 候选，应用后须复查整个布局。形状碰撞不提供自动位移，possibleLayering 表示疑似阴影/背景叠层，须确认设计意图。检查 text_overflow 的 checkedContainers 与 skippedNoContainer/skippedAmbiguousContainer，跳过的文字不等于溢出检查通过。未绑定的装饰箭头与负坐标不是错误；complete=false 表示部分检查未完成，不能视为检查通过。几何估算不能判断配色、视觉层次或实际字体像素。",
-  "需要无箭头且随节点移动的连线，使用 arrow + endArrowhead:null（默认 startArrowhead 为 null）；line 为固定坐标线段，不支持绑定。create_diagram.edges 也可传 endArrowhead:null，适合思维导图/组织结构。",
-  "修改优先 update_board 一次合并添加、removeElementIds、updates 原地修改及元数据；只改一个图元用 update_element，保留 ID 和绑定。dx/dy 可相对平移，无需读取坐标，同轴不与 x/y 或折线坐标混用。expectedRevision 是可选的已读修订号，服务端始终使用乐观锁；冲突后重新判断，禁止盲目重试。",
-  "get_board.input 返回可写描述，elements 可直接用于 update_board.updates，type 仅核对类型；不能直接追加已有 ID。复制优先 copy_elements：选 ID 自动换新 ID、平移、重连内部箭头，返回 idMap；targetBoardId 省略为同板，跨板外部绑定必须解绑。绑定文字合并到形状，标签 ID 筛选返回本体，points 是绝对坐标，rotation 是度。truncated/nextOffset 表示分页或预算截断；input 的 unsupportedElementIds/warnings 表示投影省略，不能视为空板。常规阅读使用 compact；full 仅调试或小批量检查，包含原生内部字段且 points 是相对坐标。",
-  "create_board 可同时设置 folderId/folderName、favorite、tags；folderName 会幂等获取或创建文件夹，重名歧义报错。文件夹用 list/ensure/create/update/delete_folder。manage_board 一次管理收藏、标签、移动和改名，batch_manage_boards 批量管理逐条返回结果。",
-  `delete_board 只软删除，restore_board 还原；MCP 不提供永久删除或清空回收站。${runtime.config.trashRetentionDays === 0 ? "当前回收站自动清理已禁用。" : `当前回收站保留 ${runtime.config.trashRetentionDays} 天，超期后由定期维护自动清理。`}delete_folder 仅移画板至根目录，正式执行需 confirm=true，可先 dryRun 查看影响。`,
-  "完整业务结果位于 structuredContent，成功 text 仅给简短说明，不重复数据。检查 ok 与 error.code；schema 拒绝可能只有 isError=true 和 text，客户端也必须读取该错误。画板标识统一 boardId，元数据使用 elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt。图元和文件夹仍使用 id。绘图写工具默认 responseMode=minimal 仅回数量/修订号/URL；copy_elements 始终额外返回 idMap/warnings。需要自动 ID 时设 ids 返回 elementMap（inputIndex 对应本体与 labelId）、requestedElementIds（本体）、generatedElementIds（附属文字）。addedCount 是实际新建图元数，elementCount 是全板当前图元数。批读每项有 ok，partial 表示成功失败混合，truncated 仅表示内容/预算截断。",
-  "list_boards.view=recent 只列打开过的画板，默认按 lastOpenedAt 倒序；view=all,sort=opened 则包含从未打开的画板并置于末尾。create_diagram 的边 ID 默认 diagram_edge_<从0起序号>，与节点ID冲突时加后缀；准确映射用 responseMode=ids 的 elementMap，后续可用 update_element 改箭头样式。remove_elements/update_board 回传 notFoundIds，removedCount 包含级联删除，cascadeRemovedCount 是未显式请求的附属删除数。",
-  "update_element 输入 {boardId,update:{id,...}}，update_board 使用 {boardId,updates:[{id,...}]}；新增放 elements，可与 updates 同次提交，先新增再修改。update_element 回传最终 x/y/width/height 和现有绑定标签 label 几何。图元读取的 elementCount 是含标签的原生总数，viewElementCount 是当前视图筛选前总数，matchedCount 是筛选匹配数，returnedElementCount 是本页数。移动/复制的 ELEMENT_OVERLAP warnings 为高比例旋转外接框重叠提示，不阻止保存；检查有容量上限，overlapCheck.complete=false 表示未完成，不能把没有提示视为保证不重叠。",
-  "REST /api/scenes 使用原生 Excalidraw 图元；MCP 使用简化绘图描述，禁止混用两种格式。可在同一画板使用两条通道编辑，但每次应基于最新修订号增量合并，不能用投影覆盖原生场景，已有图片/自由画笔在 MCP 增量更新中会保留。maxChars 限制业务结果的字符预算；分页不意味着按页读取存储，极大画板优先 summary 和筛选。",
-  "不支持图片上传、自由绘制或直接输入原始 Excalidraw JSON；工具接受矩形、椭圆、菱形、文字、直线和箭头。输入必须为 JSON 对象，多行字符串遵循 JSON 转义规则。",
+  "狐涂画板 MCP 使用简化绘图描述，参数以工具 schema 为准，不接受原生 Excalidraw JSON。",
+  "创建时一次提交全部内容：自由绘图用 create_board，流程/时间线/架构/泳道用 create_diagram，卡片网格用 create_layout；创建重试复用 idempotencyKey。",
+  "修改用 update_board 批量原地更新，复制用 copy_elements；保留已有图元 ID 和连接。已读版本通过 expectedRevision 校验，冲突后重新读取判断，不盲目重试。",
+  "常规读取用 get_board 的 compact，修改前用 input；仅 elements 可直接作为 updates，只读 elementGeometry 不可写回。分页、截断及 unsupportedElementIds/warnings 不代表完整场景，不能据此覆盖全板。",
+  "文字 width 控制换行，height 自动计算。形状 text 为绑定标签，复杂卡片的独立文字与背景用 groupId 关联；需要随节点移动的连线用绑定 arrow，无箭头时 endArrowhead=null。MCP 移动/复制只处理指定 IDs，不自动扩展整个分组。",
+  "structuredContent 是完整结果，text 是简要摘要。单次失败检查 isError 和 ok/error；参数校验可能仅有 isError/text，批处理须逐项检查 ok/error。",
+  "创建后 inspect_layout 检查，再按图元 ID 修改并复查；complete=false 或容器跳过不等于通过。诊断和文字尺寸均为几何估算，建议需结合设计意图判断，工具不自动修复。",
+  `delete_board 仅移入回收站，restore_board 还原，无永久删除工具。${runtime.config.trashRetentionDays === 0 ? "回收站自动清理已禁用。" : `回收站保留 ${runtime.config.trashRetentionDays} 天后自动清理。`}`,
 ].join(" ");
 
 type ApiHandler = (req: Request) => Promise<Response>;
