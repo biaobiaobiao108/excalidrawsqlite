@@ -790,7 +790,7 @@ export const createMcpRequestHandler = (
         const headers = new Headers({
           "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
           "Access-Control-Allow-Headers":
-            "Accept, Content-Type, Last-Event-Id, Mcp-Method, Mcp-Name, Mcp-Protocol-Version, Mcp-Session-Id",
+            "Accept, Authorization, Content-Type, Last-Event-Id, Mcp-Method, Mcp-Name, Mcp-Protocol-Version, Mcp-Session-Id, X-MCP-Token",
           "Access-Control-Max-Age": "600",
         });
         const origin = req.headers.get("origin");
@@ -801,13 +801,18 @@ export const createMcpRequestHandler = (
         return response(runtime, req, null, { status: 204, headers });
       }
 
-      const providedToken = new TextEncoder().encode(getPathToken(req));
-      const tokenBytes = new TextEncoder().encode(expectedToken);
-      if (!timingSafeEqual(providedToken, tokenBytes)) {
+      const providedToken = getPathToken(req);
+      const providedHash = new Uint8Array(
+        new Bun.CryptoHasher("sha256").update(providedToken).digest(),
+      );
+      const expectedHash = new Uint8Array(
+        new Bun.CryptoHasher("sha256").update(expectedToken).digest(),
+      );
+      if (!timingSafeEqual(providedHash, expectedHash) || providedToken !== expectedToken) {
         return jsonResponse(
           runtime,
           req,
-          { error: "MCP URL 令牌无效或缺失", code: "MCP_UNAUTHORIZED" },
+          { error: "MCP 授权令牌无效或缺失", code: "MCP_UNAUTHORIZED" },
           401,
         );
       }

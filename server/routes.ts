@@ -172,6 +172,10 @@ const writeRateLimitResponse = (
   req: Request,
   requestAddressResolver?: RequestAddressResolver,
 ) => {
+  const sessionToken = getSessionToken(runtime, req);
+  if (sessionToken && isMcpCreateSession(runtime, sessionToken)) {
+    return null;
+  }
   const rate = consumeRateLimit(
     runtime.writeAttempts,
     getClientKey(runtime, req, requestAddressResolver),
