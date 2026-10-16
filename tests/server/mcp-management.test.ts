@@ -134,10 +134,8 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     expect(await call("create_folder", { name: " 重复 " })).toMatchObject({ ok: false, error: { code: "FOLDER_NAME_EXISTS" } });
     const otherFolder = await call("create_folder", { name: "另一个" });
     expect(await call("update_folder", { folderId: otherFolder.id, name: "重复" })).toMatchObject({ ok: false, error: { code: "FOLDER_NAME_EXISTS" } });
-    // Existing databases can contain old duplicate names. Do not migrate/delete them.
-    runtime.db.run("INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", ["folder_legacy_duplicate", "重复", "folder", "#315f4c", 1, 1]);
-    expect(await call("ensure_folder", { name: "重复" })).toMatchObject({ ok: false, error: { code: "AMBIGUOUS_FOLDER" } });
-    expect(await call("manage_board", { boardId: board.boardId, folderName: "重复" })).toMatchObject({ ok: false, error: { code: "AMBIGUOUS_FOLDER" } });
+    expect(await call("ensure_folder", { name: " 重复 " })).toMatchObject({ ok: true, id: originalDuplicate.id, created: false });
+    expect(await call("manage_board", { boardId: board.boardId, folderName: "重复" })).toMatchObject({ ok: true, folderId: originalDuplicate.id });
     expect(await call("manage_board", { boardId: board.boardId, folderId: originalDuplicate.id })).toMatchObject({ ok: true, folderId: originalDuplicate.id });
     const concurrent = await Promise.all(Array.from({ length: 4 }, () => call("ensure_folder", { name: "并发文件夹" })));
     expect(new Set(concurrent.map((item) => item.id)).size).toBe(1);

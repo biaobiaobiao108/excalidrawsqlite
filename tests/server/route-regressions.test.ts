@@ -94,6 +94,10 @@ describe("route failure and realtime regressions", () => {
       const operations = [
         () => request("/api/scenes/corrupt_revision"),
         () => request("/api/scenes/corrupt_revision/summary"),
+        () => request("/api/scenes/corrupt_revision/thumbnail", {
+          method: "PUT", headers: { "Content-Type": "image/png" }, body: new Uint8Array([1]),
+        }),
+        () => request("/api/scenes/corrupt_revision/thumbnail", { method: "DELETE" }),
         () => json("/api/scenes/corrupt_revision", { name: "禁止写入" }, "PATCH"),
         () => json("/api/scenes/corrupt_revision", { elements: [], appState: {} }, "PUT"),
         () => request("/api/scenes/corrupt_revision", { method: "DELETE" }),

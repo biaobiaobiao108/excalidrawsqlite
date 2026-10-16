@@ -29,9 +29,7 @@ async function findFolder(input: { folderId?: string | null; folderName?: string
   if (input.folderId === undefined && input.folderName === undefined) throw new HttpError(400, "INVALID_FOLDER_SELECTOR", "请提供 folderId 或 folderName");
   if (input.folderId !== undefined && input.folderName !== undefined) throw new HttpError(400, "INVALID_FOLDER", "folderId 与 folderName 不能同时传入");
   const folders = await api<Folder[]>("/api/folders", "GET");
-  const matches = folders.filter((folder) => input.folderId !== undefined ? folder.id === input.folderId : folder.name.trim() === input.folderName?.trim());
-  if (matches.length > 1) throw new HttpError(409, "AMBIGUOUS_FOLDER", "存在多个同名文件夹，请使用 folderId");
-  return matches[0];
+  return folders.find((folder) => input.folderId !== undefined ? folder.id === input.folderId : folder.name === input.folderName);
 }
 
 async function ensureNamedFolder(args: { name: string; icon?: string; color?: string }, api: ManagementApi) {
@@ -138,7 +136,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
   }, "list_tags"));
   const folderCreateSchema = z.strictObject({ name: z.string().trim().min(1).max(80), icon: iconSchema.optional(), color: colorSchema.optional() });
   server.registerTool("create_folder", { description: "创建文件夹并返回 ID；名称去除首尾空白、区分大小写，已存在时报 FOLDER_NAME_EXISTS。需要复用时使用 ensure_folder。", inputSchema: compactMcpSchema(folderCreateSchema), annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false } }, safeTool(async (args) => result(await api<Folder>("/api/folders", "POST", args)), "create_folder"));
-  server.registerTool("ensure_folder", { description: "按去除首尾空白后的精确名称查找或创建文件夹（区分大小写），返回 created；已有文件夹保持颜色和图标，历史同名歧义时报错并要求使用 folderId。", inputSchema: compactMcpSchema(folderCreateSchema), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
+  server.registerTool("ensure_folder", { description: "按去除首尾空白后的精确名称查找或创建文件夹（区分大小写），返回 created；已有文件夹保持颜色和图标。", inputSchema: compactMcpSchema(folderCreateSchema), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
     const { folder, created } = await ensureNamedFolder(args, api);
     return result({ ...folder, created });
   }, "ensure_folder"));

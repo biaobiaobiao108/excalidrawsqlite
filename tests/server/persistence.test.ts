@@ -96,6 +96,10 @@ describe("cloud persistence server", () => {
     const created = await jsonRequest(handler, "/api/folders", { name: " 项目 " });
     expect(created.status).toBe(201);
     const folder = await responseJson<{ id: string; updated_at: number }>(created);
+    expect(() => runtime.db.run(
+      "INSERT INTO folders (id, name, icon, color, created_at, updated_at) SELECT 'duplicate_folder', name, icon, color, created_at, updated_at FROM folders WHERE id = ?",
+      [folder.id],
+    )).toThrow("UNIQUE constraint failed: folders.name");
     const duplicate = await jsonRequest(handler, "/api/folders", { name: "项目" });
     expect(duplicate.status).toBe(409);
     expect(await responseJson(duplicate)).toMatchObject({ code: "FOLDER_NAME_EXISTS" });
@@ -113,6 +117,26 @@ describe("cloud persistence server", () => {
     expect(runtime.db.query("SELECT updated_at, revision FROM scenes WHERE id = ?").get(board.id)).toEqual(stored);
     const conflict = await jsonRequest(handler, `/api/scenes/${board.id}`, { favorite: true, baseRevision: 999 }, { method: "PATCH" });
     expect(conflict.status).toBe(409);
+  });
+
+  it("requires null for root-folder writes and retains the empty root-folder query", async () => {
+    const { handler, runtime } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
+    const folder = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/folders", { name: "目录" }));
+    const board = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/scenes", { name: "目录内画板", folder_id: folder.id }));
+    const before = runtime.db.query("SELECT * FROM scenes WHERE id = ?").get(board.id);
+    for (const method of ["POST", "PATCH", "PUT"]) {
+      const pathname = method === "POST" ? "/api/scenes" : `/api/scenes/${board.id}`;
+      const rejected = await jsonRequest(handler, pathname, { folder_id: "" }, { method });
+      expect(rejected.status).toBe(400);
+      expect(await responseJson(rejected)).toMatchObject({ code: "INVALID_ID" });
+      expect(runtime.db.query("SELECT * FROM scenes WHERE id = ?").get(board.id)).toEqual(before);
+    }
+    const root = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/scenes", { name: "根目录", folder_id: null }));
+    const listing = await responseJson<{ items: Array<{ id: string }> }>(await request(handler, "/api/scenes?folder_id="));
+    expect(listing.items.map((item) => item.id)).toEqual([root.id]);
+    const moved = await jsonRequest(handler, `/api/scenes/${board.id}`, { folder_id: null }, { method: "PATCH" });
+    expect(moved.status).toBe(200);
+    expect(await responseJson(moved)).toMatchObject({ folder_id: null });
   });
 
   it("authorizes workspace statistics and returns an empty workspace", async () => {

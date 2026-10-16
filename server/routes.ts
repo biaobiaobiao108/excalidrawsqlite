@@ -547,7 +547,7 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
         "SELECT id, name, icon, color FROM folders WHERE id = ?",
       ),
       getFolderNameConflict: runtime.db.query(
-        "SELECT id FROM folders WHERE trim(name) = ? AND id != ? LIMIT 1",
+        "SELECT id FROM folders WHERE name = ? AND id != ? LIMIT 1",
       ),
       getFileUpdatedAt: runtime.db.query(
         "SELECT updated_at FROM files WHERE id = ?",
@@ -1195,8 +1195,7 @@ export const createRequestHandler = (
         }
         const now = Date.now();
         runtime.db.transaction(() => {
-          // Existing duplicates remain addressable by ID; only a rename must be unique.
-          if (name !== existing.name && stmts.getFolderNameConflict.get(name, id)) {
+          if (stmts.getFolderNameConflict.get(name, id)) {
             throw new HttpError(409, "FOLDER_NAME_EXISTS", "同名文件夹已存在，请更换名称");
           }
           runtime.db.run(
@@ -1409,10 +1408,10 @@ export const createRequestHandler = (
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
-        const sceneRevision = Number(
+        const sceneRevision = storedSceneRevision(
           (stmts.getSceneRevision.get(id) as { revision: number } | null)
             ?.revision,
-        ) || 1;
+        );
         const rawContentType = req.headers.get("content-type") || "";
         const contentType = rawContentType.split(";")[0].trim().toLowerCase();
         if (
@@ -1523,10 +1522,10 @@ export const createRequestHandler = (
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
-        const sceneRevision = Number(
+        const sceneRevision = storedSceneRevision(
           (stmts.getSceneRevision.get(id) as { revision: number } | null)
             ?.revision,
-        ) || 1;
+        );
         const thumbnailId = `thumbnail_${sha256Hex(id)}`;
         const thumbnailVersion = parseThumbnailVersion(req);
         const revisionParam = url.searchParams.get("revision");

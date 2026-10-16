@@ -125,7 +125,7 @@ export const validateFavorite = (value: unknown) => {
 };
 
 export const validateFolderId = (value: unknown) => {
-  if (value === null || value === "") {
+  if (value === null) {
     return null;
   }
   return validateId(value, "scene");
