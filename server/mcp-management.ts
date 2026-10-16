@@ -65,8 +65,8 @@ const metadataSchema = z.strictObject({
   favorite: z.boolean().optional(),
   folderId: z.string().min(1).max(128).nullable().optional().describe("移入文件夹；null 移到根目录，与 folderName 二选一"),
   folderName: folderFields.folderName.describe("精确文件夹名，不存在则自动创建"),
-  tags: tagsSchema.optional(),
-  tagMode: z.enum(["replace", "add", "remove"]).optional().describe("传 tags 时必须显式指定；replace+空数组清空标签"),
+  tags: tagsSchema.optional().describe("完整标签列表，省略 tagMode 时默认 replace；空数组清空标签"),
+  tagMode: z.enum(["replace", "add", "remove"]).optional().describe("传 tags 时默认 replace；add/remove 明确追加/移除，指定 tagMode 必须同时传 tags"),
 });
 type ManageInput = z.infer<typeof metadataSchema>;
 const queryCache = new WeakMap<ServerRuntime, ReturnType<ServerRuntime["db"]["query"]>>();
@@ -100,10 +100,11 @@ export function registerManagementTools(server: McpServer, context: Context) {
     const current = readSummary(runtime, input.boardId);
     assertRevision(current.revision, input.expectedRevision);
     if (current.deleted_at !== null) throw new HttpError(404, "SCENE_NOT_FOUND", "画板已删除，请先 restore_board");
-    if ((input.tags === undefined) !== (input.tagMode === undefined)) throw new HttpError(400, "INVALID_TAGS", "tags 与 tagMode 必须一起提供");
+    if (input.tags === undefined && input.tagMode !== undefined) throw new HttpError(400, "INVALID_TAGS", "指定 tagMode 时必须同时提供 tags");
     if (![input.name, input.favorite, input.folderId, input.folderName, input.tags].some((value) => value !== undefined)) throw new HttpError(400, "INVALID_METADATA", "至少提供一项改名、收藏、移动或标签操作");
     const folderId = await resolveFolder(input, api);
-    const tags = input.tags === undefined ? current.tags : validateTags(input.tagMode === "replace" ? input.tags : input.tagMode === "add" ? [...new Set([...current.tags, ...input.tags])] : current.tags.filter((tag) => !input.tags!.includes(tag)));
+    const tagMode = input.tagMode ?? "replace";
+    const tags = input.tags === undefined ? current.tags : validateTags(tagMode === "replace" ? input.tags : tagMode === "add" ? [...new Set([...current.tags, ...input.tags])] : current.tags.filter((tag) => !input.tags!.includes(tag)));
     const metadata = { name: input.name ?? current.name, favorite: input.favorite ?? current.favorite, folder_id: folderId === undefined ? current.folder_id : folderId, tags };
     const noop = metadata.name === current.name && metadata.favorite === current.favorite && metadata.folder_id === current.folder_id && tags.length === current.tags.length && tags.every((tag) => current.tags.includes(tag));
     const board = noop ? current : await api<Record<string, unknown>>(`/api/scenes/${encodeURIComponent(input.boardId)}`, "PATCH", { ...metadata, baseRevision: current.revision });

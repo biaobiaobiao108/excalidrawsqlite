@@ -77,7 +77,8 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     await Bun.sleep(5);
     expect(await call("manage_board", { boardId: board.boardId, favorite: false, tags: ["进展"], tagMode: "add" })).toMatchObject({ ok: true, noop: true, revision: managed.revision });
     expect(runtime.db.query("SELECT revision, updated_at FROM scenes WHERE id = ?").get(board.boardId)).toEqual(savedMetadata);
-    expect(await call("manage_board", { boardId: board.boardId, tags: ["计划"] })).toMatchObject({ ok: false, error: { code: "INVALID_TAGS" } });
+    expect(await call("manage_board", { boardId: board.boardId, tags: ["计划", "进展"] })).toMatchObject({ ok: true, noop: true, tags: ["计划", "进展"] });
+    expect(await call("manage_board", { boardId: board.boardId, tagMode: "add" })).toMatchObject({ ok: false, error: { code: "INVALID_TAGS" } });
     expect(await call("manage_board", { boardId: board.boardId, favorite: true, expectedRevision: board.revision })).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
     const invalidMetadata = await client.callTool({ name: "manage_board", arguments: { boardId: board.boardId, favourit: true } });
     expect(invalidMetadata.isError).toBe(true);
