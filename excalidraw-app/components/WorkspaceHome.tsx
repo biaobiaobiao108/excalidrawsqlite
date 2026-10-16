@@ -1297,6 +1297,7 @@ export const WorkspaceHome = ({
   const [boardGridMetrics, setBoardGridMetrics] = useState({
     rowGap: BOARD_GRID_INITIAL_GAP,
     scrollMargin: 0,
+    columns: BOARD_GRID_COLUMNS,
   });
   const [workspaceNavOverflow, setWorkspaceNavOverflow] = useState({
     left: false,
@@ -1909,14 +1910,21 @@ export const WorkspaceHome = ({
       gridRect.top - rootRect.top - root.clientTop + root.scrollTop,
     );
 
+    const templateColumns = style.gridTemplateColumns.trim().split(/\s+/).filter(Boolean);
+    const columns = Math.max(
+      1,
+      templateColumns.length || (gridRect.width <= 640 ? 1 : BOARD_GRID_COLUMNS),
+    );
+
     setBoardGridMetrics((current) => {
       if (
         Math.abs(current.rowGap - rowGap) < 0.1 &&
-        Math.abs(current.scrollMargin - scrollMargin) < 0.5
+        Math.abs(current.scrollMargin - scrollMargin) < 0.5 &&
+        current.columns === columns
       ) {
         return current;
       }
-      return { rowGap, scrollMargin };
+      return { rowGap, scrollMargin, columns };
     });
   }, []);
 
@@ -1927,13 +1935,14 @@ export const WorkspaceHome = ({
 
   const shouldVirtualizeBoardGrid =
     filteredScenes.length > BOARD_GRID_VIRTUALIZATION_THRESHOLD;
+  const boardGridColumns = boardGridMetrics.columns;
   const boardGridRowCount = Math.ceil(
-    filteredScenes.length / BOARD_GRID_COLUMNS,
+    filteredScenes.length / boardGridColumns,
   );
   const getBoardGridRowKey = useCallback(
     (index: number) =>
-      `${BOARD_GRID_COLUMNS}:${filteredScenes[index * BOARD_GRID_COLUMNS]?.id || index}`,
-    [filteredScenes],
+      `${boardGridColumns}:${filteredScenes[index * boardGridColumns]?.id || index}`,
+    [boardGridColumns, filteredScenes],
   );
   const boardGridVirtualizer = useVirtualizer({
     count: shouldVirtualizeBoardGrid ? boardGridRowCount : 0,
@@ -3146,7 +3155,7 @@ export const WorkspaceHome = ({
                   >
                     {boardGridVirtualizer.getVirtualItems().map((virtualRow) => {
                       const startIndex =
-                        virtualRow.index * BOARD_GRID_COLUMNS;
+                        virtualRow.index * boardGridColumns;
                       return (
                         <div
                           key={virtualRow.key}
@@ -3156,13 +3165,14 @@ export const WorkspaceHome = ({
                           style={
                             {
                               transform: `translateY(${virtualRow.start - boardGridMetrics.scrollMargin}px)`,
+                              gridTemplateColumns: `repeat(${boardGridColumns}, minmax(0, 1fr))`,
                             } as React.CSSProperties
                           }
                         >
                           {filteredScenes
                             .slice(
                               startIndex,
-                              startIndex + BOARD_GRID_COLUMNS,
+                              startIndex + boardGridColumns,
                             )
                             .map(renderBoardCard)}
                         </div>
