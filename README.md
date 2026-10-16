@@ -293,9 +293,9 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 | `delete_board` / `restore_board` | 仅软删除或还原，没有永久删除参数；回收站受 `TRASH_RETENTION_DAYS` 保留期限约束。 |
 | `batch_manage_boards` | 最多 100 项 `manage/delete/restore`，每项必传 `expectedRevision`；独立执行，返回逐项结果、`noop` 和 `partial`。 |
 
-每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字；需要 ID 时传 `responseMode=ids`，按本体与自动文字分别返回。可指定稳定 `id`，新建箭头只传 `startBinding/endBinding.elementId` 即自动连接同批或已有节点，无需计算端点；自连接或同中心节点须显式传坐标。移动/缩放节点时保留连接；`points` 是绝对画布坐标，支持多段折线，不与二点坐标字段混用。删除形状同时删除绑定文字并清理引用。
+每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字；需要 ID 时传 `responseMode=ids`，按本体与自动文字分别返回。可指定稳定 `id`，新建箭头只传 `startBinding/endBinding.elementId` 即自动连接同批或已有节点，无需计算端点；自连接或同中心节点须显式传坐标。移动/缩放节点时保留连接；显式路径统一为 `x/y` 原点加相对 `points`，支持多段折线。删除形状同时删除绑定文字并清理引用。
 
-`line/arrow` 也支持原点加相对点，例如 `{"type":"line","x":100,"y":200,"points":[[0,0],[80,40]]}` 等价于绝对 `points:[[100,200],[180,240]]`。`x/y` 原点须成对提供，且仅与 `points` 配合，不与起终点字段或自动端点定位混用；偏移后的坐标仍受范围校验。更新线性图元时，相同规则适用于 `x/y + points`；只传 `x` 或 `y` 则保留原有绝对移动行为。读取 `input/compact` 始终返回不带原点的绝对 `points`，可直接写回，不会重复偏移。
+`line/arrow` 显式路径须提供 `x/y + points`，例如 `{"type":"line","x":100,"y":200,"points":[[0,0],[80,40]]}` 表示从 (100,200) 到 (180,240)。不接受起终点字段或省略原点的路径。所有全局点坐标仍受范围校验。更新路径时同样须提供 `x/y + points`；仅传 `x` 或 `y` 则平移原有路径。所有读取视图统一返回图元 `x/y` 与相对 `points`，`input` 可直接写回。
 
 `manage_board` 和批量 `action=manage` 单传 `tags` 时默认 `tagMode="replace"`，与创建和更新画板的完整标签列表语义一致，`tags:[]` 清空标签。只想追加或移除时须显式使用 `add/remove`；单独传 `tagMode` 而没有 `tags` 仍会明确报错。
 
@@ -412,7 +412,7 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 图元读取视图（不含 `summary`）回传 `elementCount`（含绑定标签的原生总数）、`viewElementCount`（当前视图在筛选前的总数）、`matchedCount`（筛选后匹配数）与 `returnedElementCount`（本页实际返回数）。例如原生 5 个图元中含两个绑定标签，`compact` 全读的四个数字是 5、3、3、3；分页只返回一个时最后一个数字为 1。`full/elements` 保留标签为独立图元，因此其视图总数会不同。
 
-跨板复制使用 `get_board.view=input` 或批读的 `input` 视图：返回的 `elements` 严格符合写入 schema，可交给 `create_board` 或其他画板的 `add_elements`。形状标签折叠为 `text/labelId/labelStyle`，保留标签 ID 和独立样式。图元视图（compact/elements/input/full）的 `truncated/nextOffset` 表示分页或字符预算截断；summary 只返回元数据；仅 input 返回的 `unsupportedElementIds/warnings` 表示不可写图元或属性被省略，与分页无关。图片、自由画笔及分组、框架等不能通过这个视图完整复制；跳过图元时警告说明原因，省略不代表空画板，原始内容未删除。向同一画板追加已有 ID 会报冲突，原地修改应使用 `update_element` 或 `update_board.updates`。紧凑视图与 `input` 的折线点均为绝对坐标；`full` 为内部相对坐标，需加图元 `x/y`，返回的 `pointCoordinateSystem` 明确标注。`rotation` 单位为度，input 输出舍入至 10 位小数，文字 `x/y` 是左上角。绑定的 `fixedPoint` 允许越出 `[0,1]`，遵循原生绑定归一化范围，支持回读回写。
+跨板复制使用 `get_board.view=input` 或批读的 `input` 视图：返回的 `elements` 严格符合写入 schema，可交给 `create_board` 或其他画板的 `add_elements`。形状标签折叠为 `text/labelId/labelStyle`，保留标签 ID 和独立样式。图元视图（compact/elements/input/full）的 `truncated/nextOffset` 表示分页或字符预算截断；summary 只返回元数据；仅 input 返回的 `unsupportedElementIds/warnings` 表示不可写图元或属性被省略，与分页无关。图片、自由画笔及分组、框架等不能通过这个视图完整复制；跳过图元时警告说明原因，省略不代表空画板，原始内容未删除。向同一画板追加已有 ID 会报冲突，原地修改应使用 `update_element` 或 `update_board.updates`。所有视图的折线点均相对于图元 `x/y`，返回的 `pointCoordinateSystem` 为 `relative`。`rotation` 单位为度，input 输出舍入至 10 位小数，文字 `x/y` 是左上角。绑定的 `fixedPoint` 允许越出 `[0,1]`，遵循原生绑定归一化范围，支持回读回写。
 
 绘图回执在 `responseMode=ids` 时返回 `requestedElementIds`（输入图元本体）、`generatedElementIds`（自动生成的绑定文字）和 `elementMap`（按 `inputIndex` 对应本体及 `labelId`），不再提供混合两种角色的 `elementIds` 回执；读取筛选和移除操作的 `elementIds` 入参仍表示待操作的图元。MCP 画板输入和结果统一使用 `boardId`，不提供 `id` 别名，包括列表、单读、批读、创建及管理结果；图元和文件夹各自的 `id` 不变。画板元数据统一为 `elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt`；文件夹使用 `boardCount/createdAt/updatedAt`，不透传对应数据库命名字段。省略内部缩略图哈希和存储大小。批读的 `partial` 表示成功与失败混合，`truncated` 仅表示内容或字符预算截断；画板不存在不会触发 `truncated`，无需续读。
 
