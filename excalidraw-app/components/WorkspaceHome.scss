@@ -568,6 +568,7 @@
 .board-grid-virtualized {
   display: block;
   position: relative;
+  overflow-anchor: none;
 }
 
 .board-grid-virtual-row {
