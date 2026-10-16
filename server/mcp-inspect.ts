@@ -207,7 +207,14 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
       checkInfo.text_overflow.checkedElements++;
       if (!visible(element)) continue;
       const container = element.containerId ? map.get(element.containerId) : undefined;
-      if (container?.type === "arrow") continue; // Arrow labels have no constrained shape interior.
+      if (container?.type === "arrow") {
+        // Only valid native arrow labels are inapplicable; malformed label geometry is an unchecked case.
+        if (!(checkInfo.text_overlap && polygons.has(element.id))) {
+          const label = getInspectTextGeometry(element, map, labelBudget);
+          if (!label.geometry) { applicableTexts++; incomplete("text_overflow", label.reason!); }
+        }
+        continue;
+      }
       applicableTexts++;
       if (element.containerId && !container) {
         if (elements.length > SCENE_LIMIT) incomplete("text_overflow", "容器可能位于截断范围外，未判定为缺失");

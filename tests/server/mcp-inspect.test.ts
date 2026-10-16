@@ -22,6 +22,8 @@ describe("MCP read-only layout diagnostics", () => {
     const arrowLabels = scene([text("label", 0), { type: "arrow", id: "arrow", points: [[0, 0], [100, 100]] }])
       .map((element) => element.type === "text" ? { ...element, containerId: "arrow" } : element);
     expect(inspectLayout(arrowLabels, { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "not_applicable", complete: true });
+    const malformedArrow = arrowLabels.map((element) => element.type === "arrow" ? { ...element, points: [] } : element);
+    expect(inspectLayout(malformedArrow, { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "not_executed", complete: false });
   });
 
   it("requires opt-in to infer a free text container by its starting point and exposes heuristic overflow", () => {
