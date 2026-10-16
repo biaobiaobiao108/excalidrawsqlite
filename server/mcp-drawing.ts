@@ -131,7 +131,7 @@ const points = z
   .min(2)
   .max(1_000)
   .describe(
-    "按顺序给出绝对画布坐标，支持多段折线；不能与 startX/startY/endX/endY 混用",
+    "默认按顺序给出绝对画布坐标；同时传 x/y 原点时改为相对原点的坐标。支持多段折线，不与 startX/startY/endX/endY 混用",
   );
 const labelStyleSchema = z.object({ ...typography, ...style }).strict();
 const shapeFields = {
@@ -150,6 +150,8 @@ const shapeFields = {
 const linearFields = {
   ...grouping,
   id: idSchema.optional(),
+  x: coordinate.optional().describe("与 y 成对提供，作为 points 的原点；传原点后 points 使用相对坐标，不与起终点字段混用"),
+  y: coordinate.optional().describe("与 x 成对提供，作为 points 的原点；省略原点时 points 使用绝对坐标"),
   startX: coordinate.optional(),
   startY: coordinate.optional(),
   endX: coordinate.optional(),
@@ -158,10 +160,14 @@ const linearFields = {
   ...style,
 };
 const validateLinear = (value: Record<string, unknown>) => {
+  if ((value.x !== undefined || value.y !== undefined) &&
+    (value.x === undefined || value.y === undefined || value.points === undefined)) return false;
   const ends = [value.startX, value.startY, value.endX, value.endY];
   if (value.points !== undefined) {
     if (ends.some((v) => v !== undefined)) return false;
     const ps = value.points as number[][];
+    if (value.x !== undefined && ps.some(([x, y]) => !coordinate.safeParse(x + (value.x as number)).success ||
+      !coordinate.safeParse(y + (value.y as number)).success)) return false;
     return ps.some((p) => p[0] !== ps[0][0] || p[1] !== ps[0][1]);
   }
   return (
@@ -170,7 +176,7 @@ const validateLinear = (value: Record<string, unknown>) => {
   );
 };
 const isAutomaticArrow = (value: Record<string, unknown>) => value.type === "arrow" &&
-  ["points", "startX", "startY", "endX", "endY"].every((key) => value[key] === undefined);
+  ["points", "x", "y", "startX", "startY", "endX", "endY"].every((key) => value[key] === undefined);
 const validateArrow = (value: Record<string, unknown>) => isAutomaticArrow(value)
   ? !!value.startBinding && !!value.endBinding && !value.rotation
   : validateLinear(value);
@@ -195,7 +201,7 @@ export const drawingElementSchema = z.discriminatedUnion("type", [
   z
     .object({ type: z.literal("line"), ...linearFields })
     .strict()
-    .refine(validateLinear, "请提供 points 或完整且不同的起终点，不能同时提供")
+    .refine(validateLinear, "请提供 points 或完整且不同的起终点；x/y 原点须成对且仅与 points 使用，偏移后的坐标须在允许范围内")
     .describe("固定坐标线段或折线，不绑定节点；需要随节点移动的无箭头连线，请使用 arrow 并传 endArrowhead:null"),
   z
     .object({
@@ -207,15 +213,15 @@ export const drawingElementSchema = z.discriminatedUnion("type", [
       endArrowhead: arrowhead.optional().describe("终点箭头样式，默认 arrow；null 为无箭头，仍支持节点绑定和自动连接"),
     })
     .strict()
-    .refine(validateArrow, "请提供 points 或完整且不同的起终点；也可仅传两端 binding 自动连接（不能同时传 rotation）"),
+    .refine(validateArrow, "请提供 points 或完整且不同的起终点；x/y 原点须成对且仅与 points 使用，偏移后的坐标须在允许范围内；也可仅传两端 binding 自动连接（不能同时传 rotation）"),
 ]).refine((value) => value.groupId === undefined || value.groupIds === undefined, "groupId 与 groupIds 不能同时提供");
 export const elementUpdateSchema = z
   .object({
     id: idSchema,
     ...grouping,
     type: z.enum(["rectangle", "ellipse", "diamond", "text", "line", "arrow"]).optional().describe("可直接使用 input 视图的图元作为 updates；必须与现有类型相同，不支持类型转换"),
-    x: coordinate.optional(),
-    y: coordinate.optional(),
+    x: coordinate.optional().describe("绝对 X；线性图元同时传 points 时，须与 y 成对作为相对点原点"),
+    y: coordinate.optional().describe("绝对 Y；线性图元同时传 points 时，须与 x 成对作为相对点原点"),
     dx: coordinate.optional().describe("相对平移 X；不能与 x、points 或起终点坐标同时传入，绑定文字请移动容器"),
     dy: coordinate.optional().describe("相对平移 Y；不能与 y、points 或起终点坐标同时传入，绑定文字请移动容器"),
     width: dimension.optional(),
@@ -346,6 +352,11 @@ export const measureDrawingText = (spec: { text: string; fontSize?: number; font
     measurement: "server-estimate" as const,
     note: "与 MCP 创建文字使用同一估算器；CJK 宽字符、全角形式与 emoji 字素簇约 1em，Latin 及半角字符约 0.58em，组合附加符号不额外占宽。常用歧义标点在含中日韩文的整行按 1em，其余按 0.58em。lineHeight 为原生行高倍率，lineHeightPx 为像素行高；实际字体、字形与回退字体可能不同。" };
 };
+const absoluteLinearPoints = (value: { points?: [number, number][]; x?: number; y?: number;
+  startX?: number; startY?: number; endX?: number; endY?: number }): number[][] => value.points
+  ? value.points.map(([x, y]) => [x + (value.x ?? 0), y + (value.y ?? 0)])
+  : [[value.startX!, value.startY!], [value.endX!, value.endY!]];
+
 export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
   if ((spec.type === "rectangle" || spec.type === "ellipse" || spec.type === "diamond") &&
     spec.labelStyle?.rotation !== undefined && Math.abs(spec.labelStyle.rotation - (spec.rotation ?? 0)) > 1e-10)
@@ -355,10 +366,7 @@ export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
     const opts = {
       ...base,
       ...geometry(
-        isAutomaticArrow(spec) ? [[0, 0], [1, 1]] : spec.points || [
-          [spec.startX!, spec.startY!],
-          [spec.endX!, spec.endY!],
-        ],
+        isAutomaticArrow(spec) ? [[0, 0], [1, 1]] : absoluteLinearPoints(spec),
       ),
     };
     return [
@@ -674,15 +682,12 @@ export const updateDrawingElements = (
         throw new HttpError(
           400,
           "INVALID_ELEMENT_UPDATE",
-          "请提供 points 或完整且不同的起终点",
+          "请提供 points 或完整且不同的起终点；x/y 原点须成对且仅与 points 使用，偏移后的坐标须在允许范围内",
         );
       Object.assign(
         changes,
         geometry(
-          patch.points || [
-            [patch.startX!, patch.startY!],
-            [patch.endX!, patch.endY!],
-          ],
+          absoluteLinearPoints(patch),
         ),
       );
     }

@@ -39,6 +39,32 @@ const flow = () =>
     }),
   ]).elements;
 describe("MCP drawing contracts", () => {
+  it("accepts explicit origins with local line points while preserving absolute input round trips", () => {
+    for (const type of ["line", "arrow"] as const) {
+      const local = drawingElementSchema.parse({ type, id: "edge", x: 100, y: -50, points: [[10, 20], [-40, 30], [80, 90]] });
+      const native = createDrawingBatch([local]).elements;
+      expect(native[0]).toMatchObject({ x: 110, y: -30, points: [[0, 0], [-50, 10], [70, 70]] });
+      const projected = inputDrawingElements(native).elements[0];
+      expect(projected).toMatchObject({ points: [[110, -30], [60, -20], [180, 40]] });
+      expect(projected).not.toHaveProperty("x");
+      expect(updateDrawingElements(native, [elementUpdateSchema.parse(projected)]).updatedCount).toBe(0);
+      const moved = updateDrawingElements(native, [elementUpdateSchema.parse({ id: "edge", x: 200, y: 300, points: [[0, 0], [50, 20]] })]);
+      expect(moved.elements[0]).toMatchObject({ x: 200, y: 300, points: [[0, 0], [50, 20]] });
+      expect(native[0].x).toBe(110);
+    }
+  });
+
+  it("rejects incomplete, mixed or overflowing linear origins rather than ignoring them", () => {
+    for (const input of [
+      { x: 10, points: [[0, 0], [10, 10]] },
+      { x: 10, y: 20, startX: 0, startY: 0, endX: 10, endY: 10 },
+      { x: 999_999, y: 0, points: [[0, 0], [2, 0]] },
+      { x: 10, y: 20, startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
+    ]) expect(drawingElementSchema.safeParse({ type: "arrow", ...input }).success).toBe(false);
+    const native = createDrawingBatch([drawingElementSchema.parse({ type: "line", id: "edge", points: [[0, 0], [10, 0]] })]).elements;
+    expect(() => updateDrawingElements(native, [elementUpdateSchema.parse({ id: "edge", x: 10, points: [[0, 0], [10, 0]] })])).toThrow("x/y 原点须成对");
+    expect(updateDrawingElements(native, [elementUpdateSchema.parse({ id: "edge", x: 25 })]).elements[0].x).toBe(25);
+  });
   it("connects binding-only arrows to native outlines regardless of input order", () => {
     const specs = [
       { type: "arrow", id: "edge", startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
