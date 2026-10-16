@@ -604,4 +604,42 @@ describe("MCP drawing contracts", () => {
       ]),
     ).toThrow("不存在");
   });
+
+  it("synchronizes arrow endpoint coordinates when updating arrow binding targets", () => {
+    const current = createDrawingBatch([
+      shape("n1", 0),
+      shape("n2", 200),
+      drawingElementSchema.parse({
+        type: "rectangle",
+        id: "n3",
+        x: 0,
+        y: 200,
+        width: 100,
+        height: 80,
+      }),
+      drawingElementSchema.parse({
+        type: "arrow",
+        id: "arrow1",
+        x: 100,
+        y: 50,
+        points: [[0, 0], [100, 0]],
+        startBinding: { elementId: "n1" },
+        endBinding: { elementId: "n2" },
+      }),
+    ]).elements;
+
+    // Retarget endBinding from n2 to n3
+    const updated = updateDrawingElements(current, [
+      elementUpdateSchema.parse({
+        id: "arrow1",
+        endBinding: { elementId: "n3" },
+      }),
+    ]);
+    expect(updated.updatedCount).toBe(1);
+    const arrow = updated.elements.find((e) => e.id === "arrow1") as any;
+    expect(arrow.endBinding?.elementId).toBe("n3");
+    // Verify the end point moved towards n3 in the y direction
+    const endPointGlobalY = arrow.y + arrow.points[arrow.points.length - 1][1];
+    expect(endPointGlobalY).toBeGreaterThanOrEqual(180);
+  });
 });

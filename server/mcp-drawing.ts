@@ -477,14 +477,18 @@ const connect = (
           "INVALID_BINDING",
           `绑定目标不存在或不可绑定：${value.elementId}`,
         );
-      const fixedPoint = value.fixedPoint
+      const hasExplicitPoints =
+        "points" in request || "x" in request || "y" in request;
+      const fixedPoint: [number, number] = value.fixedPoint
         ? normalizeFixedPoint(value.fixedPoint)
-        : calculateFixedPointForNonElbowArrowBinding(
-            arrow as NonDeleted<typeof arrow>,
-            target as NonDeleted<typeof target>,
-            key === "startBinding" ? "start" : "end",
-            map as unknown as NonDeletedSceneElementsMap,
-          ).fixedPoint;
+        : hasExplicitPoints
+          ? calculateFixedPointForNonElbowArrowBinding(
+              arrow as NonDeleted<typeof arrow>,
+              target as NonDeleted<typeof target>,
+              key === "startBinding" ? "start" : "end",
+              map as unknown as NonDeletedSceneElementsMap,
+            ).fixedPoint
+          : [0.5, 0.5];
       map.set(
         arrow.id,
         newElementWith(
@@ -498,6 +502,157 @@ const connect = (
           } as never,
         ),
       );
+    }
+    if (arrow && isArrowElement(arrow) && ("startBinding" in request || "endBinding" in request)) {
+      const hasExplicitPoints = "points" in request || "x" in request || "y" in request;
+      if (!hasExplicitPoints) {
+        const currentArrow = map.get(arrow.id)! as typeof arrow;
+        const startId = currentArrow.startBinding?.elementId;
+        const endId = currentArrow.endBinding?.elementId;
+        const startTarget = startId ? map.get(startId) : null;
+        const endTarget = endId ? map.get(endId) : null;
+        const currStart: [number, number] = [
+          currentArrow.x + currentArrow.points[0][0],
+          currentArrow.y + currentArrow.points[0][1],
+        ];
+        const currEnd: [number, number] = [
+          currentArrow.x +
+            currentArrow.points[currentArrow.points.length - 1][0],
+          currentArrow.y +
+            currentArrow.points[currentArrow.points.length - 1][1],
+        ];
+        const isNearTarget = (
+          point: [number, number],
+          target: ExcalidrawElement,
+        ) => {
+          const dx = Math.max(
+            target.x - point[0],
+            0,
+            point[0] - (target.x + target.width),
+          );
+          const dy = Math.max(
+            target.y - point[1],
+            0,
+            point[1] - (target.y + target.height),
+          );
+          return Math.hypot(dx, dy) <= 24;
+        };
+        const needRebindStart =
+          "startBinding" in request &&
+          startTarget &&
+          isBindableElement(startTarget) &&
+          !isNearTarget(currStart, startTarget);
+        const needRebindEnd =
+          "endBinding" in request &&
+          endTarget &&
+          isBindableElement(endTarget) &&
+          !isNearTarget(currEnd, endTarget);
+
+        if (needRebindStart || needRebindEnd) {
+          const reqStart = "startBinding" in request ? (request as Update).startBinding : undefined;
+          const reqEnd = "endBinding" in request ? (request as Update).endBinding : undefined;
+          const startPoint: [number, number] =
+            needRebindStart && startTarget && isBindableElement(startTarget)
+              ? getGlobalFixedPointForBindableElement(
+                  reqStart?.fixedPoint ?? [0.5, 0.5],
+                  startTarget,
+                  map as ElementsMap,
+                )
+              : currStart;
+          const endPoint: [number, number] =
+            needRebindEnd && endTarget && isBindableElement(endTarget)
+              ? getGlobalFixedPointForBindableElement(
+                  reqEnd?.fixedPoint ?? [0.5, 0.5],
+                  endTarget,
+                  map as ElementsMap,
+                )
+              : currEnd;
+          if (startPoint[0] !== endPoint[0] || startPoint[1] !== endPoint[1]) {
+            const placed = newElementWith(currentArrow, {
+              ...geometry([startPoint, endPoint]),
+              startBinding: currentArrow.startBinding
+                ? {
+                    ...currentArrow.startBinding,
+                    fixedPoint: reqStart
+                      ? (reqStart.fixedPoint ? normalizeFixedPoint(reqStart.fixedPoint) : [0.5, 0.5])
+                      : currentArrow.startBinding.fixedPoint,
+                  }
+                : null,
+              endBinding: currentArrow.endBinding
+                ? {
+                    ...currentArrow.endBinding,
+                    fixedPoint: reqEnd
+                      ? (reqEnd.fixedPoint ? normalizeFixedPoint(reqEnd.fixedPoint) : [0.5, 0.5])
+                      : currentArrow.endBinding.fixedPoint,
+                  }
+                : null,
+            });
+            map.set(placed.id, placed);
+            const adjustedStart =
+              startTarget && isBindableElement(startTarget)
+                ? updateBoundPoint(
+                    placed as NonDeleted<typeof placed>,
+                    "startBinding",
+                    placed.startBinding,
+                    startTarget,
+                    map as ElementsMap,
+                  )
+                : null;
+            const adjustedEnd =
+              endTarget && isBindableElement(endTarget)
+                ? updateBoundPoint(
+                    placed as NonDeleted<typeof placed>,
+                    "endBinding",
+                    placed.endBinding,
+                    endTarget,
+                    map as ElementsMap,
+                  )
+                : null;
+            const finalStart: [number, number] = adjustedStart
+              ? [placed.x + adjustedStart[0], placed.y + adjustedStart[1]]
+              : startPoint;
+            const finalEnd: [number, number] = adjustedEnd
+              ? [placed.x + adjustedEnd[0], placed.y + adjustedEnd[1]]
+              : endPoint;
+            if (finalStart[0] !== finalEnd[0] || finalStart[1] !== finalEnd[1]) {
+              let finalPlaced = newElementWith(placed, geometry([finalStart, finalEnd]));
+              const startBinding = finalPlaced.startBinding;
+              const endBinding = finalPlaced.endBinding;
+              let nextStartBinding = startBinding;
+              let nextEndBinding = endBinding;
+              if (startBinding && startTarget && isBindableElement(startTarget) && (!reqStart || !reqStart.fixedPoint)) {
+                nextStartBinding = {
+                  ...startBinding,
+                  fixedPoint: calculateFixedPointForNonElbowArrowBinding(
+                    finalPlaced as NonDeleted<typeof finalPlaced>,
+                    startTarget as NonDeleted<typeof startTarget>,
+                    "start",
+                    map as unknown as NonDeletedSceneElementsMap,
+                  ).fixedPoint,
+                };
+              }
+              if (endBinding && endTarget && isBindableElement(endTarget) && (!reqEnd || !reqEnd.fixedPoint)) {
+                nextEndBinding = {
+                  ...endBinding,
+                  fixedPoint: calculateFixedPointForNonElbowArrowBinding(
+                    finalPlaced as NonDeleted<typeof finalPlaced>,
+                    endTarget as NonDeleted<typeof endTarget>,
+                    "end",
+                    map as unknown as NonDeletedSceneElementsMap,
+                  ).fixedPoint,
+                };
+              }
+              if (nextStartBinding !== startBinding || nextEndBinding !== endBinding) {
+                finalPlaced = newElementWith(finalPlaced, {
+                  startBinding: nextStartBinding,
+                  endBinding: nextEndBinding,
+                } as never);
+              }
+              map.set(placed.id, finalPlaced);
+            }
+          }
+        }
+      }
     }
   }
   for (const element of map.values()) {
@@ -824,8 +979,9 @@ export const updateDrawingElements = (
     scene.replaceAllElements(structuredClone(connected), {
       skipValidation: true,
     });
+    const nonDeletedMap = scene.getNonDeletedElementsMap();
     const changed = applied
-      .map((patch) => scene.getNonDeletedElementsMap().get(patch.id))
+      .map((patch) => nonDeletedMap.get(patch.id))
       .filter((element) => element !== undefined);
     for (const element of changed)
       updateBoundElements(element, scene, { simultaneouslyUpdated: changed });
