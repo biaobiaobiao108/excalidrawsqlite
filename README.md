@@ -289,11 +289,15 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 | `list_folders` / `list_tags` | 分页读取文件夹、标签及画板计数。 |
 | `ensure_folder` / `create_folder` | 按精确名称幂等获取或创建，或明确创建新文件夹；同名歧义要求使用 ID。 |
 | `update_folder` / `delete_folder` | 修改名称、图标、颜色；删除仅把画板移至根目录，`dryRun=true` 预览，执行需 `confirm=true`，可校验 `expectedBoardCount`。 |
-| `manage_board` | 一次合并改名、收藏、移动与标签操作；`tags` 必须与 `tagMode=replace/add/remove` 同传，相同元数据返回 `noop`。 |
+| `manage_board` | 一次合并改名、收藏、移动与标签操作；单传 `tags` 默认替换，`tagMode=add/remove` 显式追加/移除，相同元数据返回 `noop`。 |
 | `delete_board` / `restore_board` | 仅软删除或还原，没有永久删除参数；回收站受 `TRASH_RETENTION_DAYS` 保留期限约束。 |
 | `batch_manage_boards` | 最多 100 项 `manage/delete/restore`，每项必传 `expectedRevision`；独立执行，返回逐项结果、`noop` 和 `partial`。 |
 
 每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字；需要 ID 时传 `responseMode=ids`，按本体与自动文字分别返回。可指定稳定 `id`，新建箭头只传 `startBinding/endBinding.elementId` 即自动连接同批或已有节点，无需计算端点；自连接或同中心节点须显式传坐标。移动/缩放节点时保留连接；`points` 是绝对画布坐标，支持多段折线，不与二点坐标字段混用。删除形状同时删除绑定文字并清理引用。
+
+`line/arrow` 也支持原点加相对点，例如 `{"type":"line","x":100,"y":200,"points":[[0,0],[80,40]]}` 等价于绝对 `points:[[100,200],[180,240]]`。`x/y` 原点须成对提供，且仅与 `points` 配合，不与起终点字段或自动端点定位混用；偏移后的坐标仍受范围校验。更新线性图元时，相同规则适用于 `x/y + points`；只传 `x` 或 `y` 则保留原有绝对移动行为。读取 `input/compact` 始终返回不带原点的绝对 `points`，可直接写回，不会重复偏移。
+
+`manage_board` 和批量 `action=manage` 单传 `tags` 时默认 `tagMode="replace"`，与创建和更新画板的完整标签列表语义一致，`tags:[]` 清空标签。只想追加或移除时须显式使用 `add/remove`；单独传 `tagMode` 而没有 `tags` 仍会明确报错。
 
 无箭头但需要随节点移动的连线使用 `{"type":"arrow","startBinding":{"elementId":"parent"},"endBinding":{"elementId":"child"},"endArrowhead":null}`；`startArrowhead` 默认也为 `null`。`line` 是固定坐标线段，原生编辑器的绑定跟随逻辑只处理 `arrow`，因此不为 `line` 添加另一套绑定语义。自动布局时 `create_diagram.edges` 也可传 `{"from":"parent","to":"child","endArrowhead":null}`，适用于思维导图或组织结构，省略则保留默认箭头。
 
