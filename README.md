@@ -378,13 +378,23 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 重叠提示的 `metrics.overlapRatio/overlapArea` 提供相交比例与面积，箭头距离提示的 `metrics.distance` 为端点到目标轮廓的距离，单位均基于画布坐标。独立文字重叠可返回 `suggestedUpdate:{id,dx,dy}`，可直接放入 `update_board.updates`；这只提供分离当前两个图元的候选方案，不保证整体布局合理，也不会自动执行。绑定文字和形状碰撞不提供独立平移建议，避免破坏标签、阴影与背景叠层。大小接近且偏移很小的实心矩形标为 `metrics.possibleLayering=true`，仍保留确认提示，不断言设计错误。透明图元和空白文字不参与视觉碰撞检查，断开的绑定仍可报告数据问题。
 
-`text_overflow` 同时检查原生绑定标签和明确结构的分组卡片：`create_layout` 的背景与标题/正文通过分组及图元角色名称关联，即使文字完全移出卡片也能找到背景，并按固定文字宽度恢复可确定的内边距。普通分组只有唯一实心矩形候选时才作结构推断，多个背景无法确定则不猜测；没有分组的独立文字不会按附近矩形推断归属。`checks.text_overflow.checkedContainers/checkedPairs` 表示实际检查的容器关系，`skippedNoContainer` 表示未找到容器的文字数，不能将其视为容器边界检查通过。`skippedAmbiguousContainer` 表示容器歧义，歧义、异常或预算截断会标记检查未完成。分组索引和候选比较都有上限，统计分别见 `groupReferences/groupCandidatePairs`。
+`text_overflow` 同时检查原生绑定标签和明确结构的分组卡片：`create_layout` 的背景与标题/正文通过分组及图元角色名称关联，即使文字完全移出卡片也能找到背景，并按固定文字宽度恢复可确定的内边距。普通分组只有唯一实心矩形候选时才作结构推断，多个背景无法确定则不猜测。`checks.text_overflow.checkedContainers/checkedPairs` 表示实际检查的容器关系，`skippedNoContainer` 表示未找到容器的文字数，`skippedAmbiguousContainer` 表示容器歧义；任一未覆盖、异常或预算截断都会令 `complete=false`。`status` 明确区分 `completed`（覆盖完成）、`partial`（只检查了部分）、`not_executed`（没有执行可确认的容器边界检查）和 `not_applicable`（没有适用文字，例如只有合法箭头标签），不应把零问题或零容器视为无溢出。分组索引和候选比较都有上限，统计分别见 `groupReferences/groupCandidatePairs`。
+
+手工卡片优先给背景和独立文字设置相同 `groupId`，或使用形状绑定标签。未分组文字默认不凭位置猜容器；需要时显式传 `inspect_layout({boardId,checks:["text_overflow"],inferTextContainers:true})`，只对无绑定、无分组文字按旋转后的文字起点推断唯一实心矩形，并将结果标为几何启发式。多个候选仍会跳过，几何索引及比较有容量上限；独立文字完全移出所有候选后无法恢复其原归属，不能替代分组或绑定。
+
+文字重叠按几何相交面积比例至少 0.08 且面积大于 1 检测。每项 `severityHint` 根据比例分为 `negligible`（小于 0.1）、`minor`（0.1 至小于 0.5）和 `major`（至少 0.5），`metrics.overlapDepth` 为沿旋转多边形分离轴的最小脱离平移深度，单位为画布单位。它们描述几何程度，不保证实际文字可读性，低比例也不自动忽略。诊断 text 另列问题类型计数、最多 3 项图元 ID/严重性示例和最大几何重叠，保持两行及 1024 字符上限。
 
 箭头绑定标签的重叠检查使用原生路径计算显示位置，支持多段和旋转箭头，不依赖标签可能过时的存储坐标。异常路径、非原生水平标签或检查预算超限仍会明确返回检查未完成及原因。
 
 检测复用图元已存储的文字尺寸与换行结果，不重新测量中文或 Excalifont 字体像素；可能的几何遮挡会标记为 warning。正常的容器包含、背景叠放和箭头穿过背景不直接视为错误，没有绑定的装饰箭头也不报连接异常。无限画布没有隐含边界，负坐标合法。检测有明确预算，`complete=false` 时检查未完成；没有提示也不保证配色、拥挤程度、视觉层次或实际渲染效果正确。
 
 `compact` 保留图元 ID、类型、位置、尺寸、文字、非零旋转、折线点与箭头绑定目标，省略装饰样式；坐标字段仍为 `width/height`，不引入缩写。`compact/input` 视图按绑定标签 ID 筛选会返回其本体；文字搜索和类型筛选针对合并后的对象。需要可写描述请显式选择 `input` 并检查省略警告。
+
+`input.elements` 保持严格可写：独立文字的派生高度不混入写入描述。新增同页只读 `elementGeometry:[{elementId,height,lineHeight,lineHeightPx,lineCount}]` 提供修复布局需要的高度和行高，按 `elementId` 与独立文字对应，参与 `maxChars` 预算、筛选和分页；批读 `view=input` 同样提供。直接把 `elements` 传入 `updates` 即可，勿把 `elementGeometry` 字段合并进去；文字高度仍由内容重算，手工设置会报错。
+
+`measure_text` 现返回原生 `lineHeight` 倍率和 `lineHeightPx`，行数继续使用已有 `lineCount`，不增加重复的 `lines` 别名。估宽按中日韩宽字符、全角形式及组合 emoji 约 1em、拉丁及半角字符约 0.58em 计算，组合附加符号不重复计宽；常用模糊宽度标点在整行有中日韩语境时按 1em 估算，西文语境保留窄估算。此规则复用于创建与布局，仍属于估算，无法替代实际字体排版。
+
+单次工具业务失败现在同时标记 `isError:true` 和 `structuredContent.ok:false`，保留 `error.code/message` 与错误 text；参数校验也可仅有 `isError` 和 text。批处理执行完成时，某些或全部条目失败仍通过条目 `ok/error` 和汇总数量表达，不把正常执行的聚合调用标为顶层异常。
 
 复制优先使用 `copy_elements`，例如 `{"boardId":"来源画板","elementIds":["start","decision","edge"],"dx":300,"dy":0}`。省略 `targetBoardId` 为同板复制，`dx/dy` 默认各为 20；跨板复制时传目标 ID，重叠原位置可设 `dx=dy=0`。形状及标签自动生成新 ID，选中标签会复制其所属形状；选择集内部箭头自动重连，外部绑定默认解绑，只有同板可设 `externalBindings=preserve` 保留。始终返回 `idMap`（含标签）和 `warnings`；省略原生元数据会给出警告，所选图元不能投影则整次拒绝。`expectedRevision` 校验目标修订号，`sourceExpectedRevision` 可校验来源修订号。
 
