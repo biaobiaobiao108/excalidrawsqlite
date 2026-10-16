@@ -6,7 +6,7 @@ import { createDrawingBatch, drawingElementSchema, elementUpdateSchema, updateDr
 const scene = (extra: Record<string, unknown>[] = []) => createDrawingBatch([
   { type: "rectangle", id: "a", x: 0, y: 0, width: 100, height: 100, roughness: 0 },
   { type: "ellipse", id: "b", x: 300, y: 0, width: 100, height: 100 },
-  { type: "arrow", id: "edge", points: [[110, 50], [200, 80], [290, 50]] }, ...extra,
+  { type: "arrow", id: "edge", x: 0, y: 0, points: [[110, 50], [200, 80], [290, 50]] }, ...extra,
 ].map((spec) => drawingElementSchema.parse(spec))).elements;
 
 describe("MCP opt-in arrow attachment", () => {
@@ -53,7 +53,7 @@ describe("MCP opt-in arrow attachment", () => {
       .toMatchObject({ startBinding: { elementId: "same" }, endBinding: { elementId: "b" } });
     const self = createDrawingBatch([
       { type: "rectangle", id: "box", x: 0, y: 0, width: 100, height: 100 },
-      { type: "arrow", id: "loop", points: [[-5, 50], [50, -5]] },
+      { type: "arrow", id: "loop", x: 0, y: 0, points: [[-5, 50], [50, -5]] },
     ].map((spec) => drawingElementSchema.parse(spec))).elements;
     const skipped = autoBindArrowEndpoints(self, ["loop"]);
     expect(skipped.bindings).toEqual([]);
@@ -63,7 +63,7 @@ describe("MCP opt-in arrow attachment", () => {
   it("uses rotated outlines and skips distant decoration with an explicit work bound", () => {
     const rotated = createDrawingBatch([
       { type: "rectangle", id: "box", x: 0, y: 0, width: 100, height: 100, rotation: 45, roundness: null },
-      { type: "arrow", id: "edge", points: [[128, 50], [300, 200]] },
+      { type: "arrow", id: "edge", x: 0, y: 0, points: [[128, 50], [300, 200]] },
     ].map((spec) => drawingElementSchema.parse(spec))).elements;
     expect(autoBindArrowEndpoints(rotated, ["edge"], { maxDistance: 10 }).bindings)
       .toEqual([{ elementId: "edge", endpoint: "startBinding", targetId: "box" }]);

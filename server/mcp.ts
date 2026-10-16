@@ -285,7 +285,7 @@ export const createMcpRequestHandler = (
           const allIds = selected ? new Set([...source.map((element) => element.id), ...labelOwners?.keys() || []]) : null;
           const metadata = { ...base, viewElementCount: source.length, returnedElementCount: 0,
             matchedCount: matches.length, nextOffset: null, truncated: false,
-            pointCoordinateSystem: view === "full" ? "relative" : "absolute",
+            pointCoordinateSystem: "relative",
             ...(writable ? { unsupportedElementIds: writable.unsupportedElementIds, warnings: writable.warnings } : {}),
             ...(writable ? { elementGeometry: [] as Record<string, unknown>[] } : {}),
             ...(selected ? { notFoundIds: elementIds!.filter((id) => !allIds!.has(id)) } : {}) };
@@ -304,7 +304,7 @@ export const createMcpRequestHandler = (
             const element = view === "full" || view === "input" || view === "compact" ? current : {
               ...compactElement(current),
               ...(current.type === "arrow" || current.type === "line"
-                ? { points: current.points.map((point) => [point[0] + current.x, point[1] + current.y]) } : {}),
+                ? { points: current.points } : {}),
             };
             const native = nativeElements?.get(current.id);
             const geometry = native?.type === "text" ? { elementId: native.id, height: native.height,
@@ -374,7 +374,7 @@ export const createMcpRequestHandler = (
           "get_board",
           {
             title: "读取画板",
-            description: "默认 compact 只读视图保留文字、几何、连接，标签折入本体且省略装饰样式；elements 含样式；input 返回可直接用于 update_board.updates 的描述，type 仅核对类型，已有 ID 不能追加；复制优先 copy_elements。input/紧凑视图按标签 ID 筛选返回本体。truncated/nextOffset 表示分页截断；仅 input 返回 unsupportedElementIds/warnings 表示无法可写投影，省略图元不代表空板。input/紧凑 points 绝对坐标，full 相对坐标。",
+            description: "默认 compact 只读视图保留文字、几何、连接，标签折入本体且省略装饰样式；elements 含样式；input 返回可直接用于 update_board.updates 的描述，type 仅核对类型，已有 ID 不能追加；复制优先 copy_elements。input/紧凑视图按标签 ID 筛选返回本体。truncated/nextOffset 表示分页截断；仅 input 返回 unsupportedElementIds/warnings 表示无法可写投影，省略图元不代表空板。所有视图的 points 均相对图元 x/y 原点。",
             inputSchema: compactMcpSchema(z.object({
               boardId: z.string().min(1).max(128),
               view: z.enum(["summary", "compact", "elements", "full", "input"]).optional()

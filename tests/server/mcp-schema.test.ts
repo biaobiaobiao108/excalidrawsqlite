@@ -32,7 +32,7 @@ describe("compact MCP schemas", () => {
     expect(drawingElementSchema.safeParse({ type: "text", x: 0, y: 0, text: "a", width: 100 }).success).toBe(true);
     expect(drawingElementSchema.safeParse({ type: "text", x: 0, y: 0, text: "a", height: 100 }).success).toBe(false);
     expect(drawingElementSchema.safeParse({ type: "text", x: 0, y: 0, text: "a", width: 100, autoResize: true }).success).toBe(false);
-    expect(drawingElementSchema.safeParse({ type: "line", points: [[0, 0], [10, 10]], endBinding: { elementId: "a" } }).success).toBe(false);
+    expect(drawingElementSchema.safeParse({ type: "line", x: 0, y: 0, points: [[0, 0], [10, 10]], endBinding: { elementId: "a" } }).success).toBe(false);
   });
 
   it("preserves transforms, defaults, refinements and successful values", async () => {

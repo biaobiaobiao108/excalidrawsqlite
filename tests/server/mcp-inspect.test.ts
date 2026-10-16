@@ -19,7 +19,7 @@ describe("MCP read-only layout diagnostics", () => {
     const mixed = scene([{ ...rectangle("card"), text: "标签" }, text("free", 300)]);
     expect(inspectLayout(mixed, { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "partial", checkedContainers: 1, skippedNoContainer: 1 });
     expect(inspectLayout([], { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "not_applicable", complete: true });
-    const arrowLabels = scene([text("label", 0), { type: "arrow", id: "arrow", points: [[0, 0], [100, 100]] }])
+    const arrowLabels = scene([text("label", 0), { type: "arrow", id: "arrow", x: 0, y: 0, points: [[0, 0], [100, 100]] }])
       .map((element) => element.type === "text" ? { ...element, containerId: "arrow" } : element);
     expect(inspectLayout(arrowLabels, { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "not_applicable", complete: true });
     const malformedArrow = arrowLabels.map((element) => element.type === "arrow" ? { ...element, points: [] } : element);
@@ -140,7 +140,7 @@ describe("MCP read-only layout diagnostics", () => {
 
   it("excludes container containment, frames, same-group composition and arrow crossings", () => {
     const elements = scene([rectangle("background", -100, -100, 500, 500), rectangle("a"), rectangle("b", 20),
-      { type: "arrow", id: "decoration", points: [[0, 0], [100, 100]] }]);
+      { type: "arrow", id: "decoration", x: 0, y: 0, points: [[0, 0], [100, 100]] }]);
     const grouped = elements.map((element) => ["a", "b"].includes(element.id) ? { ...element, groupIds: ["card"] } : element);
     expect(inspectLayout(grouped, { checks: ["element_collision", "arrow_connection"] }).issues).toEqual([]);
     const result = inspectLayout(elements, { checks: ["element_collision"] });
@@ -157,7 +157,7 @@ describe("MCP read-only layout diagnostics", () => {
     } : element);
     const result = inspectLayout(broken, { checks: ["arrow_connection"] });
     expect(result.summary).toEqual({ errors: 1, warnings: 1 });
-    const inside = scene([rectangle("large", 0, 0, 1000, 1000), { type: "arrow", id: "inside", points: [[500, 500], [1500, 500]], startBinding: { elementId: "large", mode: "inside", fixedPoint: [0.5, 0.5] } }]);
+    const inside = scene([rectangle("large", 0, 0, 1000, 1000), { type: "arrow", id: "inside", x: 0, y: 0, points: [[500, 500], [1500, 500]], startBinding: { elementId: "large", mode: "inside", fixedPoint: [0.5, 0.5] } }]);
     expect(inspectLayout(inside, { checks: ["arrow_connection"] }).issues).toEqual([]);
   });
 
@@ -181,7 +181,7 @@ describe("MCP read-only layout diagnostics", () => {
     ] as unknown as ExcalidrawElement[];
     expect(inspectLayout(malformed, { checks: ["arrow_connection"] }).complete).toBe(false);
     expect(inspectLayout([malformed[1]], { checks: ["arrow_connection"] }).complete).toBe(true);
-    const labels = scene([text("text", 0), { type: "arrow", id: "arrow", points: [[0, 0], [100, 100]] }]);
+    const labels = scene([text("text", 0), { type: "arrow", id: "arrow", x: 0, y: 0, points: [[0, 0], [100, 100]] }]);
     const bound = labels.map((element) => element.type === "text" ? { ...element, containerId: "arrow" } : element);
     const result = inspectLayout(bound, { checks: ["text_overlap"] });
     expect(result.complete).toBe(true);
@@ -190,7 +190,7 @@ describe("MCP read-only layout diagnostics", () => {
 
   it("checks arrow labels at their displayed location and never proposes moving a bound label", () => {
     const elements = scene([text("label", -900, -900), text("free", 160, -10),
-      { type: "arrow", id: "arrow", points: [[0, 0], [400, 0]] }]);
+      { type: "arrow", id: "arrow", x: 0, y: 0, points: [[0, 0], [400, 0]] }]);
     const bound = elements.map((element) => element.id === "label" && element.type === "text" ? { ...element, containerId: "arrow" } : element);
     const snapshot = structuredClone(bound);
     const result = inspectLayout(bound, { checks: ["text_overlap"] });

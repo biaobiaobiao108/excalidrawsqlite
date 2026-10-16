@@ -56,24 +56,18 @@ export const copyDrawingSelection = (
       allocate(spec.labelId);
   }
   const elements = projection.elements.filter((spec) => selected.has(spec.id!)).map((spec) => {
-    const copied = { ...spec, id: idMap[spec.id!] };
+    const copied = { ...spec, id: idMap[spec.id!], x: spec.x! + dx, y: spec.y! + dy };
     if (copied.groupIds) copied.groupIds = copied.groupIds.map(copyGroup);
-    if (copied.type === "line" || copied.type === "arrow") {
-      copied.points = copied.points!.map(([x, y]) => [x + dx, y + dy]);
-      if (copied.type === "arrow") {
-        for (const key of ["startBinding", "endBinding"] as const) {
-          const bound = copied[key];
-          if (!bound) continue;
-          copied[key] = idMap[bound.elementId]
-            ? { ...bound, elementId: idMap[bound.elementId] }
-            : preserveExternalBindings ? bound : null;
-        }
+    if (copied.type === "arrow") {
+      for (const key of ["startBinding", "endBinding"] as const) {
+        const bound = copied[key];
+        if (!bound) continue;
+        copied[key] = idMap[bound.elementId]
+          ? { ...bound, elementId: idMap[bound.elementId] }
+          : preserveExternalBindings ? bound : null;
       }
-    } else {
-      copied.x += dx;
-      copied.y += dy;
-      if (copied.type !== "text" && copied.labelId) copied.labelId = idMap[copied.labelId];
-    }
+    } else if (copied.type !== "text" && copied.type !== "line" && copied.labelId)
+      copied.labelId = idMap[copied.labelId];
     const parsed = drawingElementSchema.safeParse(copied);
     if (!parsed.success)
       throw new HttpError(400, "INVALID_COPY_OFFSET", "复制位移导致坐标超出允许范围，请减小 dx/dy");
