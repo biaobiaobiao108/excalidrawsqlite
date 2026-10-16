@@ -602,17 +602,18 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
         "显示设置",
       ];
 
+      const sceneTimestampMap = new Map(
+        scenes.map((s) => [`scene-${s.id}`, s.last_opened_at || s.updated_at || 0]),
+      );
+
       for (const cat of commonCategories) {
         if (cat === "画板") {
           const sortedRecentScenes = [...sceneCommands]
             .filter((cmd) => !recentIdSet.has(cmd.id))
             .sort((a, b) => {
-              const sceneA = scenes.find((s) => `scene-${s.id}` === a.id);
-              const sceneB = scenes.find((s) => `scene-${s.id}` === b.id);
-              return (
-                (sceneB?.last_opened_at || sceneB?.updated_at || 0) -
-                (sceneA?.last_opened_at || sceneA?.updated_at || 0)
-              );
+              const timeA = sceneTimestampMap.get(a.id) || 0;
+              const timeB = sceneTimestampMap.get(b.id) || 0;
+              return timeB - timeA;
             })
             .slice(0, 5);
 
@@ -652,6 +653,7 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     };
 
     const matchedActions = allActions.filter(matches);
+    const matchedScenes = sceneCommands.filter(matches);
     const searchCommand: PaletteCommand = {
       id: "action-global-search",
       category: "常用操作",
@@ -704,11 +706,14 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     ];
 
     for (const cat of categoryOrder) {
-      const actionsForCat =
-        cat === "常用操作"
-          ? [...dynamicActions, ...matchedActions]
-          : matchedActions;
-      const items = actionsForCat.filter((item) => item.category === cat);
+      let items: PaletteCommand[] = [];
+      if (cat === "常用操作") {
+        items = [...dynamicActions, ...matchedActions.filter((item) => item.category === cat)];
+      } else if (cat === "画板") {
+        items = matchedScenes;
+      } else {
+        items = matchedActions.filter((item) => item.category === cat);
+      }
       if (items.length > 0) {
         groups.push({ category: cat, items });
       }
