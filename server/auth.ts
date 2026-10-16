@@ -182,18 +182,12 @@ export const consumeRateLimit = (
   const current = bucket.get(key);
   if (!current || now - current.startedAt >= windowMs) {
     if (!current && bucket.size >= MAX_RATE_LIMIT_KEYS) {
-      let oldestKey: string | undefined;
-      let oldestStartedAt = Number.POSITIVE_INFINITY;
-      for (const [candidateKey, record] of bucket) {
-        if (record.startedAt < oldestStartedAt) {
-          oldestKey = candidateKey;
-          oldestStartedAt = record.startedAt;
-        }
-      }
+      const oldestKey = bucket.keys().next().value;
       if (oldestKey !== undefined) {
         bucket.delete(oldestKey);
       }
     }
+    bucket.delete(key);
     bucket.set(key, { startedAt: now, count: 1 });
     return { allowed: true, retryAfter: 0 };
   }

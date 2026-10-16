@@ -21,6 +21,7 @@ import {
 } from "../../server/files";
 import { BodyMemoryBudget } from "../../server/types";
 import { cleanupExpiredTrashScenes } from "../../server/scenes";
+import { consumeRateLimit } from "../../server/auth";
 
 const runtimes: ServerRuntime[] = [];
 const testDirectories: string[] = [];
@@ -399,10 +400,39 @@ describe("cloud persistence server", () => {
 
   it("requires explicit production authentication configuration", () => {
     expect(() => createServerConfig({ NODE_ENV: "production" })).toThrow();
+    expect(() =>
+      createServerConfig({ NODE_ENV: "production", AUTH_PASSWORD: "short" }),
+    ).toThrow("at least 8 characters");
+    expect(() =>
+      createServerConfig({
+        AUTH_PASSWORD: "a".repeat(257),
+      }),
+    ).toThrow("cannot exceed 256");
+    expect(
+      createServerConfig({
+        NODE_ENV: "production",
+        AUTH_PASSWORD: "secure-password-123",
+      }).authPassword,
+    ).toBe("secure-password-123");
     expect(
       createServerConfig({ NODE_ENV: "production", ALLOW_ANONYMOUS: "true" })
         .allowAnonymous,
     ).toBe(true);
+  });
+
+  it("evicts oldest rate limit entries in O(1) order when exceeding capacity", () => {
+    const bucket = new Map<string, { startedAt: number; count: number }>();
+    const now = Date.now();
+    for (let i = 0; i < 10_000; i++) {
+      bucket.set(`key-${i}`, { startedAt: now, count: 1 });
+    }
+    expect(bucket.size).toBe(10_000);
+    // Adding a 10001st key should evict key-0
+    const result = consumeRateLimit(bucket, "key-new", 5, 60_000);
+    expect(result.allowed).toBe(true);
+    expect(bucket.size).toBe(10_000);
+    expect(bucket.has("key-0")).toBe(false);
+    expect(bucket.has("key-new")).toBe(true);
   });
 
   it("binds development servers to all interfaces and preserves explicit host overrides", () => {
