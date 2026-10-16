@@ -36,6 +36,7 @@ import type {
 } from "@excalidraw/element/types";
 import { HttpError } from "./errors";
 import { colorSchema } from "./color";
+import { estimateTextLineWidth } from "./mcp-text-metrics";
 export { colorSchema } from "./color";
 
 const coordinate = z.number().finite().min(-1_000_000).max(1_000_000);
@@ -246,14 +247,7 @@ type Update = z.infer<typeof elementUpdateSchema>;
 setCustomTextMetricsProvider({
   getLineWidth(text, fontString) {
     const size = Number.parseFloat(fontString) || 20;
-    return [...text].reduce(
-      (sum, c) =>
-        sum +
-        (/[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff]/u.test(c)
-          ? size
-          : size * 0.58),
-      0,
-    );
+    return estimateTextLineWidth(text, size);
   },
 });
 const fontId = (font: unknown): FontFamilyValues =>
@@ -347,9 +341,10 @@ export const measureDrawingText = (spec: { text: string; fontSize?: number; font
     fontSize: spec.fontSize, fontFamily: fontId(spec.fontFamily) }), spec.width);
   return { text: element.text, originalText: element.originalText, width: element.width,
     height: element.height, fontSize: element.fontSize, fontFamily: element.fontFamily,
+    lineHeight: element.lineHeight, lineHeightPx: element.fontSize * element.lineHeight,
     lineCount: element.text.split("\n").length, estimated: true as const,
     measurement: "server-estimate" as const,
-    note: "与 MCP 创建文字使用同一估算器；中文按字号、其他字符约 0.58 倍字号估宽。浏览器实际字体、字形和回退字体可能不同，请通过预览复查。" };
+    note: "与 MCP 创建文字使用同一估算器；CJK 宽字符、全角形式与 emoji 字素簇约 1em，Latin 及半角字符约 0.58em，组合附加符号不额外占宽。常用歧义标点在含中日韩文的整行按 1em，其余按 0.58em。lineHeight 为原生行高倍率，lineHeightPx 为像素行高；实际字体、字形与回退字体可能不同。" };
 };
 export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
   if ((spec.type === "rectangle" || spec.type === "ellipse" || spec.type === "diamond") &&
