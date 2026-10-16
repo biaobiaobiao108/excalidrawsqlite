@@ -1294,7 +1294,10 @@ export const createRequestHandler = (
         }
         const updatedAt = Date.now();
         const revision = storedSceneRevision(existing.revision) + 1;
-        stmts.restoreScene.run(updatedAt, id, revision - 1);
+        const result = stmts.restoreScene.run(updatedAt, id, revision - 1);
+        if (result.changes !== 1) {
+          throw new HttpError(409, "REVISION_CONFLICT", "画板版本冲突或状态已变更");
+        }
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
@@ -1800,11 +1803,16 @@ export const createRequestHandler = (
         }
         const isPermanent = url.searchParams.get("permanent") === "true";
         if (isPermanent) {
+          let changes = 0;
           const transaction = runtime.db.transaction(() => {
             runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [id]);
-            runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
+            const deleted = runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
+            changes = deleted.changes;
           });
           transaction.immediate();
+          if (changes !== 1) {
+            throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+          }
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: id,
@@ -1832,7 +1840,10 @@ export const createRequestHandler = (
         }
         const now = Date.now();
         const revision = storedSceneRevision(existing.revision) + 1;
-        stmts.softDeleteScene.run(now, now, id, revision - 1);
+        const result = stmts.softDeleteScene.run(now, now, id, revision - 1);
+        if (result.changes !== 1) {
+          throw new HttpError(409, "REVISION_CONFLICT", "画板版本冲突或状态已变更");
+        }
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
