@@ -30,12 +30,12 @@ it("supports local linear origins and default tag replacement through the public
       { type: "arrow", id: "arrow", x: -100, y: -200, points: [[0, 0], [60, 30]] },
     ] });
     const input = await invoke("get_board", { boardId: board.boardId, view: "input" });
-    expect(input.elements[0].points).toEqual([[100, 200], [150, 220]]);
-    expect(input.elements[1].points).toEqual([[-100, -200], [-40, -170]]);
+    expect(input.elements[0]).toMatchObject({ x: 100, y: 200, points: [[0, 0], [50, 20]] });
+    expect(input.elements[1]).toMatchObject({ x: -100, y: -200, points: [[0, 0], [60, 30]] });
     expect(await invoke("update_board", { boardId: board.boardId, updates: input.elements })).toMatchObject({ noop: true, revision: board.revision });
     await invoke("update_element", { boardId: board.boardId, update: { id: "arrow", x: 300, y: 400, points: [[0, 0], [40, 10]] } });
     const updated = await invoke("get_board", { boardId: board.boardId, view: "input", elementIds: ["arrow"] });
-    expect(updated.elements[0].points).toEqual([[300, 400], [340, 410]]);
+    expect(updated.elements[0]).toMatchObject({ x: 300, y: 400, points: [[0, 0], [40, 10]] });
     const replaced = await invoke("manage_board", { boardId: board.boardId, tags: ["新标签"] });
     expect(replaced.tags).toEqual(["新标签"]);
     expect(await invoke("manage_board", { boardId: board.boardId, tags: ["新标签"] })).toMatchObject({ noop: true, revision: replaced.revision });
@@ -48,7 +48,21 @@ it("supports local linear origins and default tag replacement through the public
     const invalid = await client.callTool({ name: "add_elements", arguments: { boardId: board.boardId,
       elements: [{ type: "line", x: 100, points: [[0, 0], [10, 10]] }] } });
     expect(invalid.isError).toBe(true);
-    expect(JSON.stringify(invalid.content)).toContain("x/y 原点须成对");
+    expect(JSON.stringify(invalid.content)).toContain("x/y 原点");
+    for (const element of [
+      { type: "line", points: [[100, 200], [150, 220]] },
+      { type: "arrow", startX: 100, startY: 200, endX: 150, endY: 220 },
+    ]) {
+      const rejectedCreate = await client.callTool({ name: "add_elements", arguments: {
+        boardId: board.boardId, elements: [element],
+      } });
+      expect(rejectedCreate.isError).toBe(true);
+      const { type, ...geometry } = element;
+      const rejectedUpdate = await client.callTool({ name: "update_element", arguments: {
+        boardId: board.boardId, update: { id: type === "line" ? "line" : "arrow", ...geometry },
+      } });
+      expect(rejectedUpdate.isError).toBe(true);
+    }
     expect(runtime.db.query("SELECT revision FROM scenes WHERE id = ?").get(board.boardId)).toEqual(before);
   } finally {
     await client.close(); await handler.close(); runtime.db.close();

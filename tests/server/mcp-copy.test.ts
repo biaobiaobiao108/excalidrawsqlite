@@ -6,7 +6,7 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 const source = () => createDrawingBatch([
   { type: "rectangle", id: "a", x: 0, y: 0, width: 100, height: 80, text: "起点", labelId: "caption" },
   { type: "rectangle", id: "b", x: 300, y: 0, width: 100, height: 80 },
-  { type: "arrow", id: "edge", points: [[100, 40], [300, 40]], startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
+  { type: "arrow", id: "edge", x: 100, y: 40, points: [[0, 0], [200, 0]], startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
   { type: "text", id: "note", x: 0, y: 200, width: 80, text: "固定宽度文字复制测试" },
 ].map((value) => drawingElementSchema.parse(value))).elements;
 
