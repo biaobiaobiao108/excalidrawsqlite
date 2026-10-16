@@ -9,6 +9,52 @@ const text = (id: string, x: number, y = 0, rotation = 0) => ({ type: "text", id
 const rectangle = (id: string, x = 0, y = 0, width = 100, height = 100) => ({ type: "rectangle", id, x, y, width, height });
 
 describe("MCP read-only layout diagnostics", () => {
+  it("reports overflow execution coverage without inventing issues for unassociated text", () => {
+    const free = scene([text("free", 0)]);
+    const unchecked = inspectLayout(free, { checks: ["text_overflow"] });
+    expect(unchecked.issues).toEqual([]);
+    expect(unchecked.complete).toBe(false);
+    expect(unchecked.checks.text_overflow).toMatchObject({ status: "not_executed", complete: false, checkedContainers: 0, skippedNoContainer: 1 });
+    expect(unchecked.checks.text_overflow?.limitations.join(" ")).toContain("groupId");
+    const mixed = scene([{ ...rectangle("card"), text: "标签" }, text("free", 300)]);
+    expect(inspectLayout(mixed, { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "partial", checkedContainers: 1, skippedNoContainer: 1 });
+    expect(inspectLayout([], { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "not_applicable", complete: true });
+    const arrowLabels = scene([text("label", 0), { type: "arrow", id: "arrow", points: [[0, 0], [100, 100]] }])
+      .map((element) => element.type === "text" ? { ...element, containerId: "arrow" } : element);
+    expect(inspectLayout(arrowLabels, { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "not_applicable", complete: true });
+  });
+
+  it("requires opt-in to infer a free text container by its starting point and exposes heuristic overflow", () => {
+    const elements = scene([{ ...rectangle("background", 0, 0, 60, 40), fillStyle: "solid", backgroundColor: "white" }, text("long-text", 5, 5)]);
+    const snapshot = structuredClone(elements);
+    expect(inspectLayout(elements, { checks: ["text_overflow"] }).issues).toEqual([]);
+    const result = inspectLayout(elements, { checks: ["text_overflow"], inferTextContainers: true });
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0].elementIds).toEqual(["long-text", "background"]);
+    expect(result.issues[0].message).toContain("几何启发式");
+    expect(result.checks.text_overflow).toMatchObject({ status: "completed", checkedContainers: 1 });
+    expect(result.checks.text_overflow?.geometryCandidatePairs).toBeGreaterThan(0);
+    expect(elements).toEqual(snapshot);
+    const ambiguous = [...elements, { ...elements[0], id: "shadow", x: 2, y: 2 }];
+    const unclear = inspectLayout(ambiguous, { checks: ["text_overflow"], inferTextContainers: true });
+    expect(unclear.issues).toEqual([]);
+    expect(unclear.checks.text_overflow).toMatchObject({ status: "not_executed", skippedAmbiguousContainer: 1 });
+  });
+
+  it("describes small-to-major text overlaps with separation depth in canvas units including rotation", () => {
+    const original = scene([text("a", 0)])[0];
+    for (const angle of [0, Math.PI / 5]) for (const depth of [2, 4, 15]) {
+      const first = { ...original, angle: angle as typeof original.angle };
+      const offset = original.height - depth;
+      const second = { ...first, id: "b", x: first.x - Math.sin(angle) * offset, y: first.y + Math.cos(angle) * offset };
+      const result = inspectLayout([first, second], { checks: ["text_overlap"] });
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].metrics?.overlapDepth).toBeCloseTo(depth, 2);
+      expect(result.issues[0].severityHint).toBe(depth === 2 ? "negligible" : depth === 4 ? "minor" : "major");
+      expect(result.issues[0].severity).toBe("warning");
+    }
+  });
+
   it("checks grouped card padding even when text remains inside the outer rectangle", () => {
     const layout = buildDrawingLayout(layoutSchema.parse({ cards: [{ id: "card", title: "标题", body: "正文" }] }));
     const elements = createDrawingBatch(layout.elements).elements;

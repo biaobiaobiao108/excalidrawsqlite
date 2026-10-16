@@ -5,17 +5,19 @@ import { LinearElementEditor } from "@excalidraw/element/linearElementEditor";
 import { distanceToElement } from "@excalidraw/element/distance";
 import { isBindableElement } from "@excalidraw/element/typeChecks";
 import { getInspectTextGeometry } from "./mcp-inspect-labels";
-import { createInspectCardResolver } from "./mcp-inspect-cards";
+import { createInspectCardResolver, createInspectGeometryResolver } from "./mcp-inspect-cards";
 
 export const LAYOUT_CHECKS = ["text_overlap", "text_overflow", "element_collision", "arrow_connection"] as const;
 export const inspectLayoutSchema = z.object({
+  inferTextContainers: z.boolean().optional().describe("默认 false；显式开启后，仅对无分组和无绑定的独立文字，按起点所在的唯一实心矩形尝试几何容器推断；有歧义不猜，完全移出时无法恢复关联"),
   checks: z.array(z.enum(LAYOUT_CHECKS)).min(1).max(4).optional()
     .describe("可选检查项，默认全部；仅诊断，不修改画板。文字与碰撞基于现有几何尺寸，不是像素渲染"),
 }).strict();
 type Check = typeof LAYOUT_CHECKS[number];
 type Point = [number, number];
 type Issue = { type: Check; severity: "error" | "warning"; elementIds: string[]; message: string; suggestion?: string;
-  metrics?: { overlapRatio?: number; overlapArea?: number; distance?: number; possibleLayering?: boolean };
+  severityHint?: "negligible" | "minor" | "major";
+  metrics?: { overlapRatio?: number; overlapArea?: number; overlapDepth?: number; distance?: number; possibleLayering?: boolean };
   suggestedUpdate?: { id: string; dx: number; dy: number } };
 const SCENE_LIMIT = 50_000, PAIR_LIMIT = 100_000, REFERENCE_LIMIT = 200_000, CELL_LIMIT = 256;
 const GROUP_LIMIT = 32, ISSUE_LIMIT = 100, POINT_LIMIT = 200_000, CELL_SIZE = 256;
@@ -57,6 +59,22 @@ const intersectionArea = (subject: Point[], clip: Point[]) => {
   }
   return area(result);
 };
+// Minimum separating translation along either convex polygon's edge normals, in canvas units.
+const overlapDepth = (first: Point[], second: Point[]) => {
+  let minimum = Infinity;
+  for (const polygon of [first, second]) for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i], b = polygon[(i + 1) % polygon.length];
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (!length) continue;
+    const nx = -(b[1] - a[1]) / length, ny = (b[0] - a[0]) / length;
+    const project = (points: Point[]) => points.map((point) => (point[0] - a[0]) * nx + (point[1] - a[1]) * ny);
+    const p = project(first), q = project(second);
+    const pmin = Math.min(...p), pmax = Math.max(...p), qmin = Math.min(...q), qmax = Math.max(...q);
+    if (pmax <= qmin || qmax <= pmin) return 0;
+    minimum = Math.min(minimum, pmax - qmin, qmax - pmin);
+  }
+  return Number.isFinite(minimum) ? minimum : 0;
+};
 const keysFor = (polygon: Point[]) => {
   const xs = polygon.map((p) => p[0]), ys = polygon.map((p) => p[1]);
   const left = Math.floor(Math.min(...xs) / CELL_SIZE), right = Math.floor(Math.max(...xs) / CELL_SIZE);
@@ -94,16 +112,17 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
   const issues: Issue[] = [];
   const checkInfo = Object.fromEntries(selected.map((name) => [name, {
     complete: true, checkedElements: 0, checkedPairs: 0, issues: 0, limitations: [] as string[],
-    ...(name === "text_overflow" ? { skippedNoContainer: 0, skippedAmbiguousContainer: 0, checkedContainers: 0 } : {}),
+    ...(name === "text_overflow" ? { status: "completed", skippedNoContainer: 0, skippedAmbiguousContainer: 0, checkedContainers: 0 } : {}),
   }])) as Partial<Record<Check, { complete: boolean; checkedElements: number; checkedPairs: number; issues: number; limitations: string[];
+    status?: "completed" | "partial" | "not_applicable" | "not_executed";
     skippedNoContainer?: number; skippedAmbiguousContainer?: number; checkedContainers?: number;
-    groupCandidatePairs?: number; groupReferences?: number }>>;
+    groupCandidatePairs?: number; groupReferences?: number; geometryCandidatePairs?: number; geometryReferences?: number }>>;
   const incomplete = (check: Check, reason: string) => {
     const status = checkInfo[check]; if (!status) return; status.complete = false;
     if (!status.limitations.includes(reason)) status.limitations.push(reason);
   };
   const issue = (check: Check, severity: Issue["severity"], elementIds: string[], message: string, suggestion?: string,
-    details: Pick<Issue, "metrics" | "suggestedUpdate"> = {}) => {
+    details: Pick<Issue, "metrics" | "suggestedUpdate" | "severityHint"> = {}) => {
     const status = checkInfo[check]!;
     if (status.issues >= ISSUE_LIMIT) { incomplete(check, "提示超过 100 条，返回结果已截断"); return; }
     status.issues++; issues.push({ type: check, severity, elementIds, message, ...(suggestion ? { suggestion } : {}), ...details });
@@ -158,7 +177,8 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
         // Container containment and grouped card components are intentional composition.
         if (check === "element_collision" && (sameGroup(element, other) || contains(polygon, otherPolygon) || contains(otherPolygon, polygon))) continue;
         const overlap = intersectionArea(polygon, otherPolygon);
-        if (overlap <= 1 || overlap / Math.min(area(polygon), area(otherPolygon)) < (check === "text_overlap" ? 0.08 : 0.15)) continue;
+        const ratio = overlap / Math.min(area(polygon), area(otherPolygon));
+        if (overlap <= 1 || ratio + 1e-10 < (check === "text_overlap" ? 0.08 : 0.15)) continue;
         const layering = check === "element_collision" && possibleLayering(element, other);
         // Shape overlaps may be a deliberate shadow or background. Geometry alone cannot safely prescribe a move.
         const suggestedUpdate = check === "text_overlap" && element.type === "text" && !element.containerId ? separation(otherPolygon, polygon, element.id) : undefined;
@@ -167,8 +187,11 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
           suggestedUpdate ? `可将 ${element.id} 平移 dx=${suggestedUpdate.dx}, dy=${suggestedUpdate.dy}；仅分离这对图元，修改后须复查其他碰撞。有意叠放可忽略`
             : check === "element_collision" ? "先确认图层用途；有意叠放可忽略。仅凭几何无法安全建议位移"
               : "调整所属容器的位置、字号或换行；修改后复查实际显示效果",
-          { metrics: { overlapRatio: Math.round(overlap / Math.min(area(polygon), area(otherPolygon)) * 1000) / 1000,
-            overlapArea: Math.round(overlap * 100) / 100, ...(layering ? { possibleLayering: true } : {}) }, ...(suggestedUpdate ? { suggestedUpdate } : {}) });
+          { ...(check === "text_overlap" ? { severityHint: ratio + 1e-10 < 0.1 ? "negligible" as const
+            : ratio + 1e-10 < 0.5 ? "minor" as const : "major" as const } : {}),
+            metrics: { overlapRatio: Math.round(ratio * 1000) / 1000,
+            overlapArea: Math.round(overlap * 100) / 100, ...(check === "text_overlap" ? { overlapDepth: Math.round(overlapDepth(polygon, otherPolygon) * 100) / 100 } : {}),
+            ...(layering ? { possibleLayering: true } : {}) }, ...(suggestedUpdate ? { suggestedUpdate } : {}) });
         if (checkInfo[check]!.issues >= ISSUE_LIMIT) { incomplete(check, "提示达到 100 条，后续检查已停止"); break outer; }
       }
       references += keys.length;
@@ -177,16 +200,20 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
   }
   if (checkInfo.text_overflow) {
     const resolver = createInspectCardResolver(active);
+    let geometryResolver: ReturnType<typeof createInspectGeometryResolver> | undefined;
+    let applicableTexts = 0;
     for (const element of active) {
       if (element.type !== "text") continue;
       checkInfo.text_overflow.checkedElements++;
+      if (!visible(element)) continue;
       const container = element.containerId ? map.get(element.containerId) : undefined;
+      if (container?.type === "arrow") continue; // Arrow labels have no constrained shape interior.
+      applicableTexts++;
       if (element.containerId && !container) {
         if (elements.length > SCENE_LIMIT) incomplete("text_overflow", "容器可能位于截断范围外，未判定为缺失");
         else issue("text_overflow", "error", [element.id, element.containerId], "绑定文字指向不存在或已删除的容器", "恢复容器或解除文字绑定");
         continue;
       }
-      if (!visible(element)) continue;
       if (container && shape(container) && (!validGeometry(container) || !validGeometry(element))) {
         incomplete("text_overflow", "文字或所属容器几何无效，溢出检查已跳过"); continue;
       }
@@ -198,14 +225,20 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
           issue("text_overflow", "warning", [element.id, container.id], "绑定文字超过原生容器可用文字区域", "增大容器，或减少文字内容与字号");
         continue;
       }
-      if (container) continue; // Arrow labels are not constrained to a shape interior.
-      const resolved = resolver.resolve(element);
+      if (container) { incomplete("text_overflow", "文字所属容器类型不支持内部溢出检查，已跳过"); continue; }
+      let resolved = resolver.resolve(element);
+      let inferredGeometry = false;
+      if (resolved.reason === "no_container" && options.inferTextContainers && !element.containerId && Array.isArray(element.groupIds) && !element.groupIds.length) {
+        geometryResolver ??= createInspectGeometryResolver(active);
+        resolved = geometryResolver.resolve(element);
+        inferredGeometry = !!resolved.container;
+      }
       if (!resolved.container) {
         if (resolved.reason === "no_container") checkInfo.text_overflow.skippedNoContainer!++;
         else if (resolved.reason === "ambiguous") {
           checkInfo.text_overflow.skippedAmbiguousContainer!++;
-          incomplete("text_overflow", "部分分组存在多个背景候选，无法可靠确定文字容器");
-        } else incomplete("text_overflow", "部分分组容器检查因无效数据或容量限制跳过");
+          incomplete("text_overflow", "部分文字存在多个背景候选，无法可靠确定文字容器");
+        } else incomplete("text_overflow", "部分文字容器检查因无效数据或容量限制跳过");
         continue;
       }
       if (!validGeometry(element)) { incomplete("text_overflow", "部分分组文字几何无效，已跳过溢出检查"); continue; }
@@ -215,12 +248,23 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
       const interior = { ...card, x: card.x + padding, y: card.y + padding,
         width: card.width - 2 * padding, height: card.height - 2 * padding };
       if (!contains(polygonFor(interior), polygonFor(element))) issue("text_overflow", "warning", [element.id, card.id],
-        resolved.heuristic ? "文字超出同组唯一背景矩形；分组容器为结构推断，请确认卡片用途" : "卡片文字超出所属背景的内边界",
+        inferredGeometry ? "文字超出按文字起点几何推断的背景矩形，需确认归属；此结果属于几何启发式"
+          : resolved.heuristic ? "文字超出同组唯一背景矩形；分组容器为结构推断，请确认卡片用途" : "卡片文字超出所属背景的内边界",
         "调整文字位置、换行或卡片尺寸；保留原生分组，修改后复查");
     }
     checkInfo.text_overflow.groupCandidatePairs = resolver.stats.pairs;
     checkInfo.text_overflow.groupReferences = resolver.stats.references;
-    if (!resolver.stats.complete) for (const limitation of resolver.stats.limitations) incomplete("text_overflow", limitation);
+    if (applicableTexts && !resolver.stats.complete) for (const limitation of resolver.stats.limitations) incomplete("text_overflow", limitation);
+    if (geometryResolver) {
+      checkInfo.text_overflow.geometryCandidatePairs = geometryResolver.stats.pairs;
+      checkInfo.text_overflow.geometryReferences = geometryResolver.stats.references;
+      if (!geometryResolver.stats.complete) for (const limitation of geometryResolver.stats.limitations) incomplete("text_overflow", limitation);
+    }
+    if (checkInfo.text_overflow.skippedNoContainer! > 0)
+      incomplete("text_overflow", "部分独立文字未关联容器，未执行其溢出检查；请使用 groupId 或形状绑定文字建立归属，或显式开启 inferTextContainers 几何推断");
+    checkInfo.text_overflow.status = !applicableTexts && checkInfo.text_overflow.complete ? "not_applicable"
+      : checkInfo.text_overflow.complete ? "completed"
+        : checkInfo.text_overflow.checkedContainers! > 0 ? "partial" : "not_executed";
   }
   if (checkInfo.arrow_connection) {
     let points = 0;
@@ -260,7 +304,8 @@ export const inspectLayout = (elements: readonly ExcalidrawElement[], options: z
     budgets: { sceneElements: SCENE_LIMIT, comparisonsPerCheck: PAIR_LIMIT, referencesPerIndex: REFERENCE_LIMIT, issuesPerCheck: ISSUE_LIMIT, arrowPoints: POINT_LIMIT, arrowLabelPoints: POINT_LIMIT },
     method: "rotated-convex-geometry",
     limitations: ["使用已存储文字尺寸，不进行真实字体或像素测量。椭圆用内接多边形估计，手绘笔触与圆角不作像素判断",
-      "分组仅在明确卡片结构或唯一背景候选时推断容器；没有关联的文字统计为 skippedNoContainer，不代表检查过容器边界。无限画布不检查坐标正负或画布边界",
+      "默认仅依据绑定或明确分组关联检查容器；缺少关联的文字统计为 skippedNoContainer，不代表检查过容器边界。inferTextContainers 仅启用有界几何启发式，无法确认设计归属或找回完全移出的自由文字",
+      "overlapDepth 为旋转几何最小分离深度，单位是画布单位，不是字体像素；severityHint 仅按几何覆盖比例分级。无限画布不检查坐标正负或画布边界",
       "形状碰撞不提供自动位移建议；疑似阴影或背景叠层仅供确认，几何无法确定设计意图"],
   };
 };

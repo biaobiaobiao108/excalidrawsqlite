@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { ExcalidrawElement, ExcalidrawTextElement } from "@excalidraw/element/types";
 import { createDrawingBatch, drawingElementSchema } from "../../server/mcp-drawing";
 import { buildDrawingLayout, layoutSchema } from "../../server/mcp-layout";
-import { createInspectCardResolver } from "../../server/mcp-inspect-cards";
+import { createInspectCardResolver, createInspectGeometryResolver } from "../../server/mcp-inspect-cards";
 
 const card = () => createDrawingBatch(buildDrawingLayout(layoutSchema.parse({ cards: [{ id: "card", title: "标题", body: "中文正文" }], padding: 20 })).elements).elements;
 const plainScene = () => createDrawingBatch([
@@ -11,6 +11,20 @@ const plainScene = () => createDrawingBatch([
 ].map((spec) => drawingElementSchema.parse(spec))).elements;
 
 describe("MCP grouped card container resolution", () => {
+  it("bounds optional geometry inference and uses the rotated rectangle outline rather than its AABB", () => {
+    const elements = plainScene();
+    const background = { ...elements[0], groupIds: [], angle: Math.PI / 4 as ExcalidrawElement["angle"] };
+    const text = { ...elements[1], groupIds: [], x: 100, y: 100 } as ExcalidrawTextElement;
+    const resolver = createInspectGeometryResolver([background, text]);
+    expect(resolver.resolve(text).container?.id).toBe(background.id);
+    // This point is inside the rotated AABB but outside the actual diamond-shaped rectangle.
+    expect(resolver.resolve({ ...text, x: -30, y: -30 }).reason).toBe("no_container");
+    expect(createInspectGeometryResolver([background], { maxPairs: 0 }).resolve(text).reason).toBe("limit");
+    expect(createInspectGeometryResolver([background], { maxReferences: 0 }).resolve(text).reason).toBe("limit");
+    expect(createInspectGeometryResolver([background, { ...background, id: "shadow", x: 2 }]).resolve(text).reason).toBe("ambiguous");
+    expect(resolver.resolve({ ...text, groupIds: ["owned"] }).reason).toBe("no_container");
+    expect(resolver.resolve({ ...text, x: 1500 }).reason).toBe("no_container");
+  });
   it("resolves displaced create_layout body by native group and stable part IDs without scene mutation", () => {
     const elements = card().map((element) => element.id === "card:body" ? { ...element, x: element.x + 1500 } : element);
     const text = elements.find((element) => element.id === "card:body") as ExcalidrawTextElement;
