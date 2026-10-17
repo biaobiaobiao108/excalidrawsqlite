@@ -42,6 +42,63 @@ const createPersistence = () => {
 };
 
 describe("cloud save queue", () => {
+  it("serializes concurrent flushes without starving network completions", () => {
+    // A regression can spin in microtasks and prevent even the test runner's
+    // timeout from firing. Keep the real queue in a bounded child process.
+    const queueModule = new URL("../../excalidraw-app/data/cloudSync.ts", import.meta.url).href;
+    const result = Bun.spawnSync([process.execPath, "--eval", `
+      import { CloudSaveQueue } from ${JSON.stringify(queueModule)};
+      globalThis.BroadcastChannel = undefined;
+      let releaseFirst;
+      let signalFirst;
+      const firstStarted = new Promise(resolve => { signalFirst = resolve; });
+      const firstReleased = new Promise(resolve => { releaseFirst = resolve; });
+      const saved = [];
+      let activeWrites = 0;
+      let maxActiveWrites = 0;
+      const queue = new CloudSaveQueue({
+        onAuthRequired() {}, onConflict() {}, onError(error) { throw error; },
+      }, {
+        persistence: { load: async () => [], save: async () => {}, remove: async () => {} },
+        saveFilesToCloud: async () => {},
+        saveCloudScene: async (id) => {
+          maxActiveWrites = Math.max(maxActiveWrites, ++activeWrites);
+          if (id === "A") {
+            signalFirst();
+            await firstReleased;
+          } else {
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+          activeWrites--;
+          saved.push(id);
+          return { success: true, id, updated_at: 1, revision: 2 };
+        },
+      });
+      await queue.ready();
+      for (const sceneId of ["A", "B", "C"]) {
+        queue.enqueue({ sceneId, name: sceneId, elements: [], files: {},
+          appState: { viewBackgroundColor: "#ffffff", gridSize: 20 }, baseRevision: 1 });
+      }
+      const first = queue.flushAll();
+      await firstStarted;
+      const second = queue.flushAll();
+      const third = queue.flushAll();
+      releaseFirst();
+      await Promise.all([first, second, third]);
+      console.log(JSON.stringify({ saved, maxActiveWrites,
+        pending: ["A", "B", "C"].some(id => queue.hasPending(id)) }));
+      queue.dispose();
+    `], { timeout: 5000, stdout: "pipe", stderr: "pipe" });
+
+    expect(result.exitCode).toBe(0);
+    expect(new TextDecoder().decode(result.stderr)).toBe("");
+    expect(JSON.parse(new TextDecoder().decode(result.stdout))).toEqual({
+      saved: ["A", "B", "C"],
+      maxActiveWrites: 1,
+      pending: false,
+    });
+  }, 10_000);
+
   it("reports each committed preview snapshot with its own revision during overlapping edits", async () => {
     const { persistence } = createPersistence();
     let started!: () => void;
@@ -457,6 +514,40 @@ describe("cloud save queue", () => {
     queue.resumeAfterAuth("scene");
     expect(await queue.flush("scene")).toBe("saved");
     expect(savedNames).toEqual(["older", "newer"]);
+    queue.cancel("scene");
+  });
+
+  it("retries after the sign-in prompt is dismissed instead of staying blocked", async () => {
+    const { persistence } = createPersistence();
+    const statuses: string[] = [];
+    const queue = new CloudSaveQueue(
+      {
+        ...callbacks,
+        onStatusChange: (_sceneId, status) => statuses.push(status),
+      },
+      {
+        persistence,
+        saveFilesToCloud: async () => {},
+        saveCloudScene: async () => {
+          throw new CloudApiError("session expired", 401, "AUTH_REQUIRED");
+        },
+      },
+    );
+
+    queue.enqueue(snapshot("draft"));
+    expect(await queue.flush("scene")).toBe("auth");
+
+    // Editing while the prompt is open must not claim the save is queued.
+    statuses.length = 0;
+    queue.enqueue(snapshot("draft again"));
+    expect(statuses).toEqual([]);
+    expect(queue.getStatus("scene")).toBe("auth");
+
+    queue.releaseAuthBlock("scene");
+    expect(queue.getStatus("scene")).toBe("error");
+    // The recovered snapshot is still queued and can be retried.
+    expect(queue.hasPending("scene")).toBe(true);
+    expect(await queue.flush("scene")).toBe("auth");
     queue.cancel("scene");
   });
 
