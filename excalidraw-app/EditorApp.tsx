@@ -135,6 +135,19 @@ const LazyCloudConflictDialog = lazy(async () => {
 
 window.EXCALIDRAW_THROTTLE_RENDER = true;
 
+/**
+ * Cloud scenes still mirror their attachments into IndexedDB (undo and offline
+ * recovery rely on it), but the local-mode cleanup pass is skipped for them.
+ * Reclaim anything the loaded scene does not reference; `clearObsoleteFiles`
+ * only removes entries unused for more than a day, so boards the user just
+ * switched away from keep their cached files.
+ */
+const clearObsoleteLocalFiles = (currentFileIds: FileId[]) => {
+  void LocalData.fileStorage
+    .clearObsoleteFiles({ currentFileIds })
+    .catch(() => {});
+};
+
 let isSelfEmbedding = false;
 
 if (window.self !== window.top) {
@@ -276,6 +289,7 @@ const ExcalidrawWrapper = (props: {
     sceneId: string;
     snapshot: CloudSaveSnapshot;
   } | null>(null);
+  const [isCloudConflictDismissed, setIsCloudConflictDismissed] = useState(false);
   const [currentSceneId, setCurrentSceneId] = useState<string | null>(null);
   const [cloudSaveStatus, setCloudSaveStatus] =
     useState<CloudSaveStatus>("idle");
@@ -352,6 +366,7 @@ const ExcalidrawWrapper = (props: {
         },
         onConflict: (sceneId, snapshot) => {
           setCloudConflict({ sceneId, snapshot });
+          setIsCloudConflictDismissed(false);
         },
         onError: (error) => {
           setCloudSaveStatus("error");
@@ -419,10 +434,12 @@ const ExcalidrawWrapper = (props: {
       if (!excalidrawAPI) {
         return;
       }
-      const fileIds = getCloudFileIds(elements).filter(
+      const sceneFileIds = getCloudFileIds(elements);
+      const fileIds = sceneFileIds.filter(
         (fileId) => !excalidrawAPI.getFiles()[fileId]?.dataURL,
       );
       if (!fileIds.length) {
+        clearObsoleteLocalFiles(sceneFileIds);
         return;
       }
       const loadToken = FileStatusStore.beginLoading(fileIds);
@@ -451,6 +468,7 @@ const ExcalidrawWrapper = (props: {
             (id) => [id, "error"] as [FileId, "error"],
           ),
         ]);
+        clearObsoleteLocalFiles(sceneFileIds);
       } catch (error: any) {
         const isStale = Boolean(
           (sceneId &&
@@ -1464,10 +1482,11 @@ const ExcalidrawWrapper = (props: {
         renderTopRightUI={(isMobile) => {
           const isCloudSaveBusy =
             cloudSaveStatus === "saving" ||
-            cloudSaveStatus === "auth" ||
-            cloudSaveStatus === "conflict";
+            cloudSaveStatus === "auth";
           const cloudSaveLabel =
-            cloudSaveStatus === "saving"
+            cloudSaveStatus === "conflict"
+              ? "处理冲突"
+              : cloudSaveStatus === "saving"
               ? "保存中..."
               : cloudSaveStatus === "error"
               ? "重试保存"
@@ -1501,8 +1520,18 @@ const ExcalidrawWrapper = (props: {
                 }}
                 disabled={!currentSceneId || isCloudSaveBusy}
                 aria-busy={cloudSaveStatus === "saving"}
-                onClick={() => void saveCurrentCloudScene()}
-                title="将当前白板保存到云端"
+                onClick={() => {
+                  if (cloudSaveStatus === "conflict") {
+                    setIsCloudConflictDismissed(false);
+                  } else {
+                    void saveCurrentCloudScene();
+                  }
+                }}
+                title={
+                  cloudSaveStatus === "conflict"
+                    ? "处理云端保存冲突"
+                    : "将当前白板保存到云端"
+                }
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -1594,13 +1623,19 @@ const ExcalidrawWrapper = (props: {
               setIsAuthOpen(false);
               const authWaiters = authWaitersRef.current.splice(0);
               authWaiters.forEach((resolve) => resolve(false));
+              if (authSceneId) {
+                // Dismissing the prompt must not strand the queue in a
+                // permanently blocked state; surface it as a retryable error.
+                cloudSaveQueue.releaseAuthBlock(authSceneId);
+              }
               setAuthSceneId(null);
             }}
           />
         </Suspense>
         <Suspense fallback={null}>
           <LazyCloudConflictDialog
-            isOpen={!!cloudConflict}
+            isOpen={!!cloudConflict && !isCloudConflictDismissed}
+            onDismiss={() => setIsCloudConflictDismissed(true)}
             onReload={() => resolveCloudConflict(false)}
             onOverwrite={() => resolveCloudConflict(true)}
           />
