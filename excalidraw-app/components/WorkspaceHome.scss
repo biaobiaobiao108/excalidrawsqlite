@@ -508,6 +508,10 @@
 }
 
 .workspace-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   max-inline-size: 1720px;
   margin: 1.5rem auto 0;
   padding: 0.75rem 1rem;
@@ -516,6 +520,17 @@
   background: #fff6f6;
   color: #a13d3d;
   font-size: 0.86rem;
+}
+
+.workspace-error-retry {
+  flex: none;
+  padding: 0.15rem 0.65rem;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
 
 .all-boards-section {

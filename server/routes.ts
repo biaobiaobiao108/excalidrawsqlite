@@ -1174,7 +1174,7 @@ export const createRequestHandler = (
       }
 
       if (pathname.startsWith("/api/folders/") && req.method === "PATCH") {
-        const id = getPathId(pathname, "/api/folders/", "scene");
+        const id = getPathId(pathname, "/api/folders/", "folder");
         const body = requireJsonObject(
           await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
         );
@@ -1219,7 +1219,7 @@ export const createRequestHandler = (
       }
 
       if (pathname.startsWith("/api/folders/") && req.method === "DELETE") {
-        const id = getPathId(pathname, "/api/folders/", "scene");
+        const id = getPathId(pathname, "/api/folders/", "folder");
         const existing = stmts.getFolderById.get(id);
         if (!existing) {
           return jsonResponse(runtime, req, {
@@ -1348,13 +1348,15 @@ export const createRequestHandler = (
         }
         const sceneRevision = storedSceneRevision(versionRow.revision);
         const sceneUpdatedAt = Number(versionRow.updated_at) || 0;
+        // `POST /open` bumps last_opened_at on every visit but does not change
+        // the document. Keeping it out of the validator lets the browser reuse
+        // the cached body instead of re-downloading the whole scene each time.
         const etag = `"scene-${sha256Hex(
           JSON.stringify([
             id,
             sceneRevision,
             sceneUpdatedAt,
             versionRow.thumbnail_file_id,
-            versionRow.last_opened_at,
           ]),
         )}"`;
         const ifNoneMatch = req.headers.get("if-none-match");

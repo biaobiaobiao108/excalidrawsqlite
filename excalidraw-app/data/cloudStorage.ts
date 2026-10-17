@@ -3,6 +3,10 @@ import type { FileId } from "@excalidraw/element/types";
 import { getDeviceMemoryTier } from "@excalidraw/common";
 
 const CLOUD_API_TIMEOUT_MS = 10_000;
+// Deadlines for responses whose body can be megabytes (a whole board, an
+// image). The default 10s is tuned for small JSON calls and would abort a slow
+// but healthy transfer.
+const CLOUD_TRANSFER_TIMEOUT_MS = 60_000;
 const CLOUD_READ_RETRIES = 2;
 
 const uploadedCloudFileHashes = new WeakMap<object, string>();
@@ -471,6 +475,9 @@ export async function fetchCloudScene(
         `/api/scenes/${encodeURIComponent(id)}`,
         { headers },
         "获取云端画板失败",
+        // A board body can be several megabytes; the default deadline is tuned
+        // for small JSON calls and would abort a slow but healthy download.
+        CLOUD_TRANSFER_TIMEOUT_MS,
       );
       if (res.status === 304 && cached) {
         cloudSceneCache.delete(id);
@@ -850,6 +857,9 @@ export async function saveFilesToCloud(
       "保存云端图片失败",
     );
     await assertResponse(res, "保存云端图片失败");
+    // The acknowledgement is tiny, but leaving it unread keeps the request
+    // timeout armed for the whole window and holds the keep-alive connection.
+    await res.arrayBuffer();
     const etag = res.headers.get("etag");
     if (etag) {
       rememberCloudFileEtag(file.id, etag);
@@ -874,6 +884,7 @@ export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
         `/api/files/${encodeURIComponent(id)}`,
         { headers: { Accept: "application/octet-stream" } },
         "加载云端图片失败",
+        CLOUD_TRANSFER_TIMEOUT_MS,
       );
       await assertResponse(res, "加载云端图片失败");
       const contentType =

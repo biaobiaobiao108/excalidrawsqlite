@@ -182,9 +182,24 @@ export const consumeRateLimit = (
   const current = bucket.get(key);
   if (!current || now - current.startedAt >= windowMs) {
     if (!current && bucket.size >= MAX_RATE_LIMIT_KEYS) {
-      const oldestKey = bucket.keys().next().value;
-      if (oldestKey !== undefined) {
-        bucket.delete(oldestKey);
+      // Reclaim only counters whose window already elapsed. Dropping a live
+      // entry would let a caller that can mint many keys (spoofed
+      // X-Forwarded-For behind TRUST_PROXY) reset another client's budget, so
+      // an unseen key is refused once every slot is still active.
+      let retryAfter = Math.ceil(windowMs / 1000);
+      for (const [candidateKey, entry] of bucket) {
+        const elapsed = now - entry.startedAt;
+        if (elapsed >= windowMs) {
+          bucket.delete(candidateKey);
+          continue;
+        }
+        retryAfter = Math.min(
+          retryAfter,
+          Math.max(1, Math.ceil((windowMs - elapsed) / 1000)),
+        );
+      }
+      if (bucket.size >= MAX_RATE_LIMIT_KEYS) {
+        return { allowed: false, retryAfter };
       }
     }
     bucket.delete(key);

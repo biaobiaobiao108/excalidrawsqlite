@@ -22,6 +22,7 @@ import {
 import { BodyMemoryBudget } from "../../server/types";
 import { cleanupExpiredTrashScenes } from "../../server/scenes";
 import { consumeRateLimit } from "../../server/auth";
+import { STALE_FILE_ARTIFACT_MS } from "../../server/config";
 
 const runtimes: ServerRuntime[] = [];
 const testDirectories: string[] = [];
@@ -420,19 +421,28 @@ describe("cloud persistence server", () => {
     ).toBe(true);
   });
 
-  it("evicts oldest rate limit entries in O(1) order when exceeding capacity", () => {
+  it("keeps the rate limit bucket bounded without resetting live counters", () => {
     const bucket = new Map<string, { startedAt: number; count: number }>();
     const now = Date.now();
-    for (let i = 0; i < 10_000; i++) {
+    for (let i = 0; i < 9_999; i++) {
       bucket.set(`key-${i}`, { startedAt: now, count: 1 });
     }
+    bucket.set("key-expired", { startedAt: now - 61_000, count: 1 });
+
+    // An elapsed window frees a slot for a new key.
+    const accepted = consumeRateLimit(bucket, "key-new", 5, 60_000);
+    expect(accepted.allowed).toBe(true);
     expect(bucket.size).toBe(10_000);
-    // Adding a 10001st key should evict key-0
-    const result = consumeRateLimit(bucket, "key-new", 5, 60_000);
-    expect(result.allowed).toBe(true);
-    expect(bucket.size).toBe(10_000);
-    expect(bucket.has("key-0")).toBe(false);
+    expect(bucket.has("key-expired")).toBe(false);
     expect(bucket.has("key-new")).toBe(true);
+
+    // With every slot still live, a fresh key is refused rather than evicting
+    // a counter that may belong to another client.
+    const refused = consumeRateLimit(bucket, "key-other", 5, 60_000);
+    expect(refused.allowed).toBe(false);
+    expect(refused.retryAfter).toBe(60);
+    expect(bucket.has("key-0")).toBe(true);
+    expect(bucket.has("key-other")).toBe(false);
   });
 
   it("binds development servers to all interfaces and preserves explicit host overrides", () => {
@@ -980,16 +990,18 @@ describe("cloud persistence server", () => {
       headers: { Cookie: cookie },
     });
     expect(opened.status).toBe(200);
+    expect(
+      (await responseJson<{ lastOpenedAt: number }>(opened)).lastOpenedAt,
+    ).toBeGreaterThan(0);
+    // Opening only records last_opened_at, which is not part of the document
+    // the browser caches, so the validator must still match and avoid a full
+    // scene download on every visit.
     const afterOpen = await request(handler, "/api/scenes/scene_page_a", {
       headers: { Cookie: cookie, "If-None-Match": sceneEtag! },
     });
-    expect(afterOpen.status).toBe(200);
-    expect(
-      (await responseJson<{ last_opened_at: number }>(afterOpen))
-        .last_opened_at,
-    ).toBeGreaterThan(0);
+    expect(afterOpen.status).toBe(304);
 
-    const openedEtag = afterOpen.headers.get("etag");
+    const openedEtag = sceneEtag;
     const thumbnail = await request(
       handler,
       "/api/scenes/scene_page_a/thumbnail",
@@ -2433,19 +2445,33 @@ describe("cloud persistence server", () => {
 
   it("cleans abandoned final backup files while preserving active downloads", async () => {
     const { runtime, directory } = createTestRuntime();
+    const recentBackup = path.join(directory, "excalidraw-backup-copied.db");
     const staleBackup = path.join(directory, "excalidraw-backup-expired.db");
     const activeBackup = path.join(
       directory,
       "excalidraw-full-backup-active.tar",
     );
+    const staleStagingDir = path.join(
+      directory,
+      "excalidraw-backup-stage-interrupted",
+    );
+    await fs.writeFile(recentBackup, "copied");
     await fs.writeFile(staleBackup, "stale");
     await fs.writeFile(activeBackup, "active");
+    await fs.mkdir(staleStagingDir, { recursive: true });
+    await fs.writeFile(path.join(staleStagingDir, "attachment"), "linked");
+    const old = (Date.now() - STALE_FILE_ARTIFACT_MS - 60_000) / 1000;
+    await fs.utimes(staleBackup, old, old);
     runtime.activeBackupArtifacts.add(path.resolve(activeBackup));
 
     await cleanupStaleFileArtifacts(runtime);
 
+    // A finished backup copied into data/ by an operator is indistinguishable
+    // from an abandoned artifact, so age is the only safe criterion.
+    expect(existsSync(recentBackup)).toBe(true);
     expect(existsSync(staleBackup)).toBe(false);
     expect(existsSync(activeBackup)).toBe(true);
+    expect(existsSync(staleStagingDir)).toBe(false);
   });
 
   it("reports an unhealthy storage directory", async () => {
@@ -2692,6 +2718,11 @@ describe("cloud persistence server", () => {
       (await files.get("manifest.json")!.arrayBuffer()).byteLength +
       (await files.get("files/file_full_backup")!.arrayBuffer()).byteLength;
     expect(archiveBlob.size).toBeGreaterThan(rawPayloadBytes);
+    expect(
+      (await fs.readdir(directory)).filter((name) =>
+        name.startsWith("excalidraw-backup-stage-"),
+      ),
+    ).toHaveLength(0);
     runtime.config.maxBackupBytes = rawPayloadBytes;
     runtime.writeAttempts.clear();
     const tooLargeArchive = await request(handler, "/api/backup/full", {

@@ -1542,6 +1542,22 @@ export const WorkspaceHome = ({
       } else {
         setError(requestError?.message || "加载画板首页失败");
       }
+      // The page never committed. Leaving the loaded key pointing at the
+      // previous filter keeps the grid permanently inert (no interaction, no
+      // "load more", no retry), while rendering the old boards under the new
+      // heading would be misleading. Settle the key with an empty list.
+      if (loadedPageQueryKeyRef.current !== queryKey) {
+        loadedPageQueryKeyRef.current = queryKey;
+        if (options.trash) {
+          setTrashScenes([]);
+          setTrashSceneCursor(null);
+        } else {
+          setScenes([]);
+          setSceneCursor(null);
+        }
+        setPageTotalCount(0);
+        setDisplayedPageOptions(options);
+      }
     } finally {
       if (!isCurrent()) {
         return;
@@ -3051,7 +3067,14 @@ export const WorkspaceHome = ({
 
           {error && (
             <div className="workspace-error" role="alert">
-              {error}
+              <span>{error}</span>
+              <button
+                type="button"
+                className="workspace-error-retry"
+                onClick={() => void loadWorkspace()}
+              >
+                重试
+              </button>
             </div>
           )}
 

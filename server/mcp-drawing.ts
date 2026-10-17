@@ -655,17 +655,37 @@ const connect = (
       }
     }
   }
+  // Index arrows by the element they bind to in one pass. Rescanning every
+  // arrow for every element made this quadratic on large boards, and it runs on
+  // every create/update.
+  const arrowIdsByTarget = new Map<string, string[]>();
+  for (const arrow of map.values()) {
+    if (arrow.type !== "arrow") {
+      continue;
+    }
+    const targets = new Set<string>();
+    if (arrow.startBinding?.elementId) {
+      targets.add(arrow.startBinding.elementId);
+    }
+    if (arrow.endBinding?.elementId) {
+      targets.add(arrow.endBinding.elementId);
+    }
+    for (const targetId of targets) {
+      const arrowIds = arrowIdsByTarget.get(targetId);
+      if (arrowIds) {
+        arrowIds.push(arrow.id);
+      } else {
+        arrowIdsByTarget.set(targetId, [arrow.id]);
+      }
+    }
+  }
   for (const element of map.values()) {
     const bound = (element.boundElements || []).filter(
       (b) => b.type !== "arrow",
     );
-    for (const arrow of map.values())
-      if (
-        arrow.type === "arrow" &&
-        (arrow.startBinding?.elementId === element.id ||
-          arrow.endBinding?.elementId === element.id)
-      )
-        bound.push({ type: "arrow", id: arrow.id });
+    for (const arrowId of arrowIdsByTarget.get(element.id) || []) {
+      bound.push({ type: "arrow", id: arrowId });
+    }
     if (JSON.stringify(bound) !== JSON.stringify(element.boundElements || []))
       map.set(
         element.id,
