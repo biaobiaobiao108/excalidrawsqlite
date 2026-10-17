@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  BACKUP_STAGING_DIR_PREFIX,
   FILE_ID_PATTERN,
   ORPHAN_FILE_CLEANUP_BATCH_SIZE,
   ORPHAN_FILE_GRACE_MS,
@@ -360,12 +361,14 @@ export const stageRequestBodyToFile = async (
     runtime.config.maxFileBytes,
     req.signal,
   );
-  const writer = Bun.file(tempPath).writer({ highWaterMark: 64 * 1024 });
-  const reader = req.body.getReader();
-  const hash = new Bun.CryptoHasher("sha256");
-  let byteLength = 0;
+  let writer: ReturnType<ReturnType<typeof Bun.file>["writer"]> | undefined;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
   try {
+    reader = req.body.getReader();
+    writer = Bun.file(tempPath).writer({ highWaterMark: 64 * 1024 });
+    const hash = new Bun.CryptoHasher("sha256");
+    let byteLength = 0;
     while (true) {
       const result = await reader.read();
       if (result.done) {
@@ -389,12 +392,19 @@ export const stageRequestBodyToFile = async (
       sha256: hash.digest("hex"),
     };
   } catch (error) {
-    await Promise.resolve(writer.end()).catch(() => {});
+    try {
+      await writer?.end();
+    } catch {
+      // Closing a failed sink must not prevent temporary-file cleanup.
+    }
     await fs.promises.rm(tempPath, { force: true });
     throw error;
   } finally {
-    reader.releaseLock();
-    runtime.bodyMemoryBudget.release(reservedBytes);
+    try {
+      reader?.releaseLock();
+    } finally {
+      runtime.bodyMemoryBudget.release(reservedBytes);
+    }
   }
 };
 
@@ -746,6 +756,7 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
     await recoverInterruptedFileReplacements(runtime);
   });
   const cutoff = Date.now() - STALE_FILE_ARTIFACT_MS;
+  const dbDirectory = path.dirname(runtime.dbPath);
   const directories = [
     {
       directory: runtime.filesDir,
@@ -753,13 +764,20 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
       staleOnly: true,
     },
     {
-      directory: path.dirname(runtime.dbPath),
+      // A partially written artifact cannot be a deliberate copy, so an
+      // interrupted process may be cleaned up immediately.
+      directory: dbDirectory,
       pattern:
-        /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)(?:\.[A-Za-z0-9]+\.tmp)?$/,
-      // Backup paths are registered before opening/writing and stay registered
-      // until their response is complete. Any matching unregistered file came
-      // from an interrupted process and can be removed immediately at startup.
+        /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)\.[A-Za-z0-9]+\.tmp$/,
       staleOnly: false,
+    },
+    {
+      // Finished backups can be copied into data/ by an operator. Only reclaim
+      // them once they are older than the grace period, so a backup that simply
+      // lost its in-memory registration is not deleted on the next restart.
+      directory: dbDirectory,
+      pattern: /^excalidraw-(?:backup-.*\.db|full-backup-.*\.tar)$/,
+      staleOnly: true,
     },
   ];
   for (const { directory, pattern, staleOnly } of directories) {
@@ -808,6 +826,26 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
         console.info("[Files] 清理过期临时附件", { filePath });
       }
     }
+  }
+
+  // A staging directory only exists while a full backup is being written. A
+  // directory left behind belongs to an interrupted run and still holds hard
+  // links to every attachment, so reclaim it instead of leaking disk space.
+  for (const entry of await fs.promises.readdir(dbDirectory, {
+    withFileTypes: true,
+  })) {
+    if (
+      !entry.isDirectory() ||
+      !entry.name.startsWith(BACKUP_STAGING_DIR_PREFIX)
+    ) {
+      continue;
+    }
+    const stagingPath = path.join(dbDirectory, entry.name);
+    if (runtime.activeBackupArtifacts.has(path.resolve(stagingPath))) {
+      continue;
+    }
+    await fs.promises.rm(stagingPath, { recursive: true, force: true });
+    console.info("[Files] 清理备份暂存目录", { stagingPath });
   }
 };
 
