@@ -1136,6 +1136,7 @@ export type AppClassProperties = {
     fileCount: number;
     editorRenderScale: number;
     canvasPixels: number;
+    elementCanvasCache: { entries: number; pixels: number };
     history: {
       undoCount: number;
       redoCount: number;
