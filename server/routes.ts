@@ -157,6 +157,10 @@ const writeRateLimitResponse = async (
   req: Request,
   requestAddressResolver?: RequestAddressResolver,
 ) => {
+  const createSessionToken = req.headers.get("x-mcp-create-session");
+  if (isMcpCreateSession(runtime, createSessionToken)) {
+    return null;
+  }
   const rate = await consumeRateLimit(
     runtime,
     "write",
@@ -459,7 +463,7 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
         "SELECT id, name, icon, color FROM folders WHERE id = ?",
       ),
       getFolderNameConflict: runtime.db.query(
-        "SELECT id FROM folders WHERE trim(name) = ? AND id != ? LIMIT 1",
+        "SELECT id FROM folders WHERE name = ? AND id != ? LIMIT 1",
       ),
       getFileUpdatedAt: runtime.db.query(
         "SELECT updated_at FROM files WHERE id = ?",
@@ -947,7 +951,7 @@ export const createRequestHandler = (
       }
 
       if (pathname.startsWith("/api/folders/") && req.method === "PATCH") {
-        const id = getPathId(pathname, "/api/folders/", "scene");
+        const id = getPathId(pathname, "/api/folders/", "folder");
         const body = requireJsonObject(
           await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
         );
@@ -995,7 +999,7 @@ export const createRequestHandler = (
       }
 
       if (pathname.startsWith("/api/folders/") && req.method === "DELETE") {
-        const id = getPathId(pathname, "/api/folders/", "scene");
+        const id = getPathId(pathname, "/api/folders/", "folder");
         const existing = await stmts.getFolderById.get(id);
         if (!existing) {
           return jsonResponse(runtime, req, {
@@ -1063,7 +1067,10 @@ export const createRequestHandler = (
         }
         const updatedAt = Date.now();
         const revision = storedSceneRevision(existing.revision) + 1;
-        await stmts.restoreScene.run(updatedAt, id, revision - 1);
+        const result = await stmts.restoreScene.run(updatedAt, id, revision - 1);
+        if (result.changes !== 1) {
+          throw new HttpError(409, "REVISION_CONFLICT", "画板版本冲突或状态已变更");
+        }
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
@@ -1110,13 +1117,15 @@ export const createRequestHandler = (
         }
         const sceneRevision = storedSceneRevision(versionRow.revision);
         const sceneUpdatedAt = Number(versionRow.updated_at) || 0;
+        // `POST /open` bumps last_opened_at on every visit but does not change
+        // the document. Keeping it out of the validator lets the browser reuse
+        // the cached body instead of re-downloading the whole scene each time.
         const etag = `"scene-${await sha256Hex(
           JSON.stringify([
             id,
             sceneRevision,
             sceneUpdatedAt,
             versionRow.thumbnail_file_id,
-            versionRow.last_opened_at,
           ]),
         )}"`;
         const ifNoneMatch = req.headers.get("if-none-match");
@@ -1177,10 +1186,10 @@ export const createRequestHandler = (
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
-        const sceneRevision = Number(
+        const sceneRevision = storedSceneRevision(
           (await stmts.getSceneRevision.get(id) as { revision: number } | null)
             ?.revision,
-        ) || 1;
+        );
         const rawContentType = req.headers.get("content-type") || "";
         const contentType = rawContentType.split(";")[0].trim().toLowerCase();
         if (
@@ -1284,10 +1293,10 @@ export const createRequestHandler = (
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
-        const sceneRevision = Number(
+        const sceneRevision = storedSceneRevision(
           (await stmts.getSceneRevision.get(id) as { revision: number } | null)
             ?.revision,
-        ) || 1;
+        );
         const thumbnailId = `thumbnail_${await sha256Hex(id)}`;
         const thumbnailVersion = parseThumbnailVersion(req);
         const revisionParam = url.searchParams.get("revision");
@@ -1573,10 +1582,13 @@ export const createRequestHandler = (
         }
         const isPermanent = url.searchParams.get("permanent") === "true";
         if (isPermanent) {
-          await runtime.db.batch([
+          const [, deleted] = await runtime.db.batch([
             { sql: "DELETE FROM scene_files WHERE scene_id = ?", values: [id] },
             { sql: "DELETE FROM scenes WHERE id = ?", values: [id] },
           ]);
+          if (deleted.changes !== 1) {
+            throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+          }
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: id,
@@ -1604,7 +1616,10 @@ export const createRequestHandler = (
         }
         const now = Date.now();
         const revision = storedSceneRevision(existing.revision) + 1;
-        await stmts.softDeleteScene.run(now, now, id, revision - 1);
+        const result = await stmts.softDeleteScene.run(now, now, id, revision - 1);
+        if (result.changes !== 1) {
+          throw new HttpError(409, "REVISION_CONFLICT", "画板版本冲突或状态已变更");
+        }
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,

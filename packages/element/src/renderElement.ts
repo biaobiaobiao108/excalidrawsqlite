@@ -24,6 +24,7 @@ import {
   invariant,
   applyDarkModeFilter,
   isSafari,
+  getDeviceMemoryTier,
 } from "@excalidraw/common";
 
 import type {
@@ -67,6 +68,7 @@ import { getContainingFrame } from "./frame";
 import { getCornerRadius } from "./utils";
 
 import { ShapeCache } from "./shape";
+import { ElementCanvasCache } from "./elementCanvasCache";
 
 import type {
   ExcalidrawElement,
@@ -531,7 +533,7 @@ const drawElementOnCanvas = (
   }
 };
 
-export const elementWithCanvasCache = new WeakMap<
+export const elementWithCanvasCache = new ElementCanvasCache<
   ExcalidrawElement,
   ExcalidrawElementWithCanvas
 >();
@@ -547,7 +549,10 @@ const generateElementWithCanvas = (
     : {
         value: 1 as NormalizedZoomValue,
       };
-  const prevElementWithCanvas = elementWithCanvasCache.get(element);
+  const prevElementWithCanvas = elementWithCanvasCache.get(
+    element,
+    renderConfig.imageCache,
+  );
   const shouldRegenerateBecauseZoom =
     prevElementWithCanvas &&
     prevElementWithCanvas.zoomValue !== zoom.value &&
@@ -576,7 +581,18 @@ const generateElementWithCanvas = (
       return null;
     }
 
-    elementWithCanvasCache.set(element, elementWithCanvas);
+    const navigator = elementWithCanvas.canvas.ownerDocument.defaultView?.navigator;
+    const tier = getDeviceMemoryTier(
+      (navigator as (Navigator & { deviceMemory?: number }) | undefined)
+        ?.deviceMemory,
+      navigator?.userAgent || "",
+    );
+    elementWithCanvasCache.set(
+      element,
+      elementWithCanvas,
+      renderConfig.imageCache,
+      tier === "standard" ? 32_000_000 : tier === "low" ? 16_000_000 : 24_000_000,
+    );
 
     return elementWithCanvas;
   }
@@ -597,95 +613,101 @@ const drawElementFromCanvas = (
   const cy = ((y1 + y2) / 2 + appState.scrollY) * window.devicePixelRatio;
 
   context.save();
-  context.scale(1 / window.devicePixelRatio, 1 / window.devicePixelRatio);
+  try {
+    context.scale(1 / window.devicePixelRatio, 1 / window.devicePixelRatio);
 
-  const boundTextElement = getBoundTextElement(element, allElementsMap);
+    const boundTextElement = getBoundTextElement(element, allElementsMap);
 
-  if (isArrowElement(element) && boundTextElement) {
-    // punch the label "hole" by clipping the arrow's blit out of the label
-    // rect (even-odd) instead of baking a rotated arrow copy with a cleared
-    // hole into a separate (`maxDim`-squared!) canvas. The hole stays
-    // axis-aligned in scene space while the blit below rotates.
-    const [, , , , boundTextCx, boundTextCy] = getElementAbsoluteCoords(
-      boundTextElement,
-      allElementsMap,
+    if (isArrowElement(element) && boundTextElement) {
+      // punch the label "hole" by clipping the arrow's blit out of the label
+      // rect (even-odd) instead of baking a rotated arrow copy with a cleared
+      // hole into a separate (`maxDim`-squared!) canvas. The hole stays
+      // axis-aligned in scene space while the blit below rotates.
+      const [, , , , boundTextCx, boundTextCy] = getElementAbsoluteCoords(
+        boundTextElement,
+        allElementsMap,
+      );
+      // generously covers the arrow's blit at any rotation
+      const outerHalf =
+        Math.max(distance(x1, x2), distance(y1, y2)) * window.devicePixelRatio +
+        padding * 10;
+      context.beginPath();
+      context.rect(cx - outerHalf, cy - outerHalf, outerHalf * 2, outerHalf * 2);
+      context.rect(
+        (boundTextCx -
+          boundTextElement.width / 2 -
+          BOUND_TEXT_PADDING +
+          appState.scrollX) *
+          window.devicePixelRatio,
+        (boundTextCy -
+          boundTextElement.height / 2 -
+          BOUND_TEXT_PADDING +
+          appState.scrollY) *
+          window.devicePixelRatio,
+        (boundTextElement.width + BOUND_TEXT_PADDING * 2) *
+          window.devicePixelRatio,
+        (boundTextElement.height + BOUND_TEXT_PADDING * 2) *
+          window.devicePixelRatio,
+      );
+      context.clip("evenodd");
+    }
+
+    // we translate context to element center so that rotation and scale
+    // originates from the element center
+    context.translate(cx, cy);
+
+    context.rotate(element.angle);
+
+    if (
+      "scale" in elementWithCanvas.element &&
+      !isPendingImageElement(element, renderConfig)
+    ) {
+      context.scale(
+        elementWithCanvas.element.scale[0],
+        elementWithCanvas.element.scale[1],
+      );
+    }
+
+    // revert afterwards we don't have account for it during drawing
+    context.translate(-cx, -cy);
+
+    context.drawImage(
+      elementWithCanvas.canvas!,
+      (x1 + appState.scrollX) * window.devicePixelRatio -
+        (padding * elementWithCanvas.scale) / elementWithCanvas.scale,
+      (y1 + appState.scrollY) * window.devicePixelRatio -
+        (padding * elementWithCanvas.scale) / elementWithCanvas.scale,
+      elementWithCanvas.canvas!.width / elementWithCanvas.scale,
+      elementWithCanvas.canvas!.height / elementWithCanvas.scale,
     );
-    // generously covers the arrow's blit at any rotation
-    const outerHalf =
-      Math.max(distance(x1, x2), distance(y1, y2)) * window.devicePixelRatio +
-      padding * 10;
-    context.beginPath();
-    context.rect(cx - outerHalf, cy - outerHalf, outerHalf * 2, outerHalf * 2);
-    context.rect(
-      (boundTextCx -
-        boundTextElement.width / 2 -
-        BOUND_TEXT_PADDING +
-        appState.scrollX) *
-        window.devicePixelRatio,
-      (boundTextCy -
-        boundTextElement.height / 2 -
-        BOUND_TEXT_PADDING +
-        appState.scrollY) *
-        window.devicePixelRatio,
-      (boundTextElement.width + BOUND_TEXT_PADDING * 2) *
-        window.devicePixelRatio,
-      (boundTextElement.height + BOUND_TEXT_PADDING * 2) *
-        window.devicePixelRatio,
-    );
-    context.clip("evenodd");
-  }
 
-  // we translate context to element center so that rotation and scale
-  // originates from the element center
-  context.translate(cx, cy);
-
-  context.rotate(element.angle);
-
-  if (
-    "scale" in elementWithCanvas.element &&
-    !isPendingImageElement(element, renderConfig)
-  ) {
-    context.scale(
-      elementWithCanvas.element.scale[0],
-      elementWithCanvas.element.scale[1],
-    );
-  }
-
-  // revert afterwards we don't have account for it during drawing
-  context.translate(-cx, -cy);
-
-  context.drawImage(
-    elementWithCanvas.canvas!,
-    (x1 + appState.scrollX) * window.devicePixelRatio -
-      (padding * elementWithCanvas.scale) / elementWithCanvas.scale,
-    (y1 + appState.scrollY) * window.devicePixelRatio -
-      (padding * elementWithCanvas.scale) / elementWithCanvas.scale,
-    elementWithCanvas.canvas!.width / elementWithCanvas.scale,
-    elementWithCanvas.canvas!.height / elementWithCanvas.scale,
-  );
-
-  if (
-    import.meta.env.VITE_APP_DEBUG_ENABLE_TEXT_CONTAINER_BOUNDING_BOX ===
-      "true" &&
-    hasBoundTextElement(element)
-  ) {
-    const textElement = getBoundTextElement(
+    if (
+      import.meta.env.VITE_APP_DEBUG_ENABLE_TEXT_CONTAINER_BOUNDING_BOX ===
+        "true" &&
+      hasBoundTextElement(element)
+    ) {
+      const textElement = getBoundTextElement(
+        element,
+        allElementsMap,
+      ) as ExcalidrawTextElementWithContainer;
+      const coords = getContainerCoords(element);
+      context.strokeStyle = "#c92a2a";
+      context.lineWidth = 3;
+      context.strokeRect(
+        (coords.x + appState.scrollX) * window.devicePixelRatio,
+        (coords.y + appState.scrollY) * window.devicePixelRatio,
+        getBoundTextMaxWidth(element, textElement) * window.devicePixelRatio,
+        getBoundTextMaxHeight(element, textElement) * window.devicePixelRatio,
+      );
+    }
+  } finally {
+    context.restore();
+    elementWithCanvasCache.releaseUncached(
       element,
-      allElementsMap,
-    ) as ExcalidrawTextElementWithContainer;
-    const coords = getContainerCoords(element);
-    context.strokeStyle = "#c92a2a";
-    context.lineWidth = 3;
-    context.strokeRect(
-      (coords.x + appState.scrollX) * window.devicePixelRatio,
-      (coords.y + appState.scrollY) * window.devicePixelRatio,
-      getBoundTextMaxWidth(element, textElement) * window.devicePixelRatio,
-      getBoundTextMaxHeight(element, textElement) * window.devicePixelRatio,
+      elementWithCanvas,
+      renderConfig.imageCache,
     );
   }
-  context.restore();
-
-  // Clear the nested element we appended to the DOM
 };
 
 export const renderSelectionElement = (

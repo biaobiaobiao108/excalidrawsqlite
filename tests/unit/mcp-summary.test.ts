@@ -2,6 +2,40 @@ import { describe, expect, it } from "bun:test";
 import { formatMcpSummary } from "../../server/mcp-summary";
 
 describe("MCP operation summaries", () => {
+  it("does not claim successful overflow coverage when no containers were checked", () => {
+    const summary = formatMcpSummary("inspect_layout", { boardId: "free", complete: true, summary: { errors: 0, warnings: 0 },
+      checks: { text_overflow: { status: "not_executed", checkedContainers: 0, skippedNoContainer: 8 } } });
+    expect(summary).toContain("检查未完成");
+    expect(summary).toContain("文字溢出检查未执行");
+    expect(summary).toContain("groupId");
+    expect(summary).toContain("不能视为无溢出");
+    expect(summary).not.toContain("检查已完成");
+  });
+
+  it("locates diagnostic examples with types, severity and quantified overlap without dumping every issue", () => {
+    const summary = formatMcpSummary("inspect_layout", { boardId: "issues", complete: true, summary: { errors: 0, warnings: 2 },
+      issues: [ { type: "text_overlap", severity: "warning", severityHint: "minor", elementIds: ["source", "target"],
+        metrics: { overlapDepth: 5.5, overlapRatio: 0.22 }, suggestedUpdate: { id: "target", dx: 0, dy: 36 } },
+      { type: "text_overflow", severity: "warning", elementIds: ["body", "card"] } ] });
+    expect(summary).toContain("text_overlap×1");
+    expect(summary).toContain("text_overflow×1");
+    expect(summary).toContain("source ↔ target");
+    expect(summary).toContain("warning/text_overlap/minor");
+    expect(summary).toContain("最大几何重叠 5.5 px（ratio 0.22）");
+    expect(summary).toContain("dy=36");
+    expect(summary.split("\n")).toHaveLength(2);
+    expect(summary.length).toBeLessThanOrEqual(1024);
+  });
+
+  it("bounds diagnostic examples without truncating the board identity", () => {
+    const summary = formatMcpSummary("inspect_layout", { boardId: "b".repeat(128), complete: true,
+      summary: { errors: 0, warnings: 100 }, issues: Array.from({ length: 100 }, (_, index) => ({ type: "text_overlap", severity: "warning",
+        elementIds: [String(index).padEnd(128, "x"), String(index + 1).padEnd(128, "y")] })) });
+    expect(summary.length).toBeLessThanOrEqual(1024);
+    expect(summary).toContain(`boardId=${"b".repeat(128)}`);
+    expect(summary).toContain("示例");
+    expect(summary).not.toContain("99".padEnd(128, "x"));
+  });
   for (const operation of ["create_board", "create_diagram", "create_layout"]) {
     it(`${operation} identifies the board and idempotent replay`, () => {
       const data = { name: "系统全景图", addedCount: 222, boardId: "board-1", revision: 3, url: "https://board.test/board-1", elements: [{ text: "私人正文不要返回" }] };

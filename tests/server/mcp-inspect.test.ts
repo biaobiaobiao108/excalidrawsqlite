@@ -9,6 +9,54 @@ const text = (id: string, x: number, y = 0, rotation = 0) => ({ type: "text", id
 const rectangle = (id: string, x = 0, y = 0, width = 100, height = 100) => ({ type: "rectangle", id, x, y, width, height });
 
 describe("MCP read-only layout diagnostics", () => {
+  it("reports overflow execution coverage without inventing issues for unassociated text", () => {
+    const free = scene([text("free", 0)]);
+    const unchecked = inspectLayout(free, { checks: ["text_overflow"] });
+    expect(unchecked.issues).toEqual([]);
+    expect(unchecked.complete).toBe(false);
+    expect(unchecked.checks.text_overflow).toMatchObject({ status: "not_executed", complete: false, checkedContainers: 0, skippedNoContainer: 1 });
+    expect(unchecked.checks.text_overflow?.limitations.join(" ")).toContain("groupId");
+    const mixed = scene([{ ...rectangle("card"), text: "标签" }, text("free", 300)]);
+    expect(inspectLayout(mixed, { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "partial", checkedContainers: 1, skippedNoContainer: 1 });
+    expect(inspectLayout([], { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "not_applicable", complete: true });
+    const arrowLabels = scene([text("label", 0), { type: "arrow", id: "arrow", x: 0, y: 0, points: [[0, 0], [100, 100]] }])
+      .map((element) => element.type === "text" ? { ...element, containerId: "arrow" } : element);
+    expect(inspectLayout(arrowLabels, { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "not_applicable", complete: true });
+    const malformedArrow = arrowLabels.map((element) => element.type === "arrow" ? { ...element, points: [] } : element);
+    expect(inspectLayout(malformedArrow, { checks: ["text_overflow"] }).checks.text_overflow).toMatchObject({ status: "not_executed", complete: false });
+  });
+
+  it("requires opt-in to infer a free text container by its starting point and exposes heuristic overflow", () => {
+    const elements = scene([{ ...rectangle("background", 0, 0, 60, 40), fillStyle: "solid", backgroundColor: "white" }, text("long-text", 5, 5)]);
+    const snapshot = structuredClone(elements);
+    expect(inspectLayout(elements, { checks: ["text_overflow"] }).issues).toEqual([]);
+    const result = inspectLayout(elements, { checks: ["text_overflow"], inferTextContainers: true });
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0].elementIds).toEqual(["long-text", "background"]);
+    expect(result.issues[0].message).toContain("几何启发式");
+    expect(result.checks.text_overflow).toMatchObject({ status: "completed", checkedContainers: 1 });
+    expect(result.checks.text_overflow?.geometryCandidatePairs).toBeGreaterThan(0);
+    expect(elements).toEqual(snapshot);
+    const ambiguous = [...elements, { ...elements[0], id: "shadow", x: 2, y: 2 }];
+    const unclear = inspectLayout(ambiguous, { checks: ["text_overflow"], inferTextContainers: true });
+    expect(unclear.issues).toEqual([]);
+    expect(unclear.checks.text_overflow).toMatchObject({ status: "not_executed", skippedAmbiguousContainer: 1 });
+  });
+
+  it("describes small-to-major text overlaps with separation depth in canvas units including rotation", () => {
+    const original = scene([text("a", 0)])[0];
+    for (const angle of [0, Math.PI / 5]) for (const depth of [2, 4, 15]) {
+      const first = { ...original, angle: angle as typeof original.angle };
+      const offset = original.height - depth;
+      const second = { ...first, id: "b", x: first.x - Math.sin(angle) * offset, y: first.y + Math.cos(angle) * offset };
+      const result = inspectLayout([first, second], { checks: ["text_overlap"] });
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].metrics?.overlapDepth).toBeCloseTo(depth, 2);
+      expect(result.issues[0].severityHint).toBe(depth === 2 ? "negligible" : depth === 4 ? "minor" : "major");
+      expect(result.issues[0].severity).toBe("warning");
+    }
+  });
+
   it("checks grouped card padding even when text remains inside the outer rectangle", () => {
     const layout = buildDrawingLayout(layoutSchema.parse({ cards: [{ id: "card", title: "标题", body: "正文" }] }));
     const elements = createDrawingBatch(layout.elements).elements;
@@ -92,7 +140,7 @@ describe("MCP read-only layout diagnostics", () => {
 
   it("excludes container containment, frames, same-group composition and arrow crossings", () => {
     const elements = scene([rectangle("background", -100, -100, 500, 500), rectangle("a"), rectangle("b", 20),
-      { type: "arrow", id: "decoration", points: [[0, 0], [100, 100]] }]);
+      { type: "arrow", id: "decoration", x: 0, y: 0, points: [[0, 0], [100, 100]] }]);
     const grouped = elements.map((element) => ["a", "b"].includes(element.id) ? { ...element, groupIds: ["card"] } : element);
     expect(inspectLayout(grouped, { checks: ["element_collision", "arrow_connection"] }).issues).toEqual([]);
     const result = inspectLayout(elements, { checks: ["element_collision"] });
@@ -109,7 +157,7 @@ describe("MCP read-only layout diagnostics", () => {
     } : element);
     const result = inspectLayout(broken, { checks: ["arrow_connection"] });
     expect(result.summary).toEqual({ errors: 1, warnings: 1 });
-    const inside = scene([rectangle("large", 0, 0, 1000, 1000), { type: "arrow", id: "inside", points: [[500, 500], [1500, 500]], startBinding: { elementId: "large", mode: "inside", fixedPoint: [0.5, 0.5] } }]);
+    const inside = scene([rectangle("large", 0, 0, 1000, 1000), { type: "arrow", id: "inside", x: 0, y: 0, points: [[500, 500], [1500, 500]], startBinding: { elementId: "large", mode: "inside", fixedPoint: [0.5, 0.5] } }]);
     expect(inspectLayout(inside, { checks: ["arrow_connection"] }).issues).toEqual([]);
   });
 
@@ -133,7 +181,7 @@ describe("MCP read-only layout diagnostics", () => {
     ] as unknown as ExcalidrawElement[];
     expect(inspectLayout(malformed, { checks: ["arrow_connection"] }).complete).toBe(false);
     expect(inspectLayout([malformed[1]], { checks: ["arrow_connection"] }).complete).toBe(true);
-    const labels = scene([text("text", 0), { type: "arrow", id: "arrow", points: [[0, 0], [100, 100]] }]);
+    const labels = scene([text("text", 0), { type: "arrow", id: "arrow", x: 0, y: 0, points: [[0, 0], [100, 100]] }]);
     const bound = labels.map((element) => element.type === "text" ? { ...element, containerId: "arrow" } : element);
     const result = inspectLayout(bound, { checks: ["text_overlap"] });
     expect(result.complete).toBe(true);
@@ -142,7 +190,7 @@ describe("MCP read-only layout diagnostics", () => {
 
   it("checks arrow labels at their displayed location and never proposes moving a bound label", () => {
     const elements = scene([text("label", -900, -900), text("free", 160, -10),
-      { type: "arrow", id: "arrow", points: [[0, 0], [400, 0]] }]);
+      { type: "arrow", id: "arrow", x: 0, y: 0, points: [[0, 0], [400, 0]] }]);
     const bound = elements.map((element) => element.id === "label" && element.type === "text" ? { ...element, containerId: "arrow" } : element);
     const snapshot = structuredClone(bound);
     const result = inspectLayout(bound, { checks: ["text_overlap"] });

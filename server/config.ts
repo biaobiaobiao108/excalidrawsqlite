@@ -16,6 +16,7 @@ export const MAX_SCENE_NAME_LENGTH = 120;
 export const MAX_FOLDER_NAME_LENGTH = 80;
 export const MAX_TAGS = 12;
 export const MAX_TAG_LENGTH = 32;
+export const MIN_AUTH_PASSWORD_LENGTH_PRODUCTION = 8;
 export const MAX_AUTH_PASSWORD_LENGTH = 256;
 export const AUTH_ATTEMPTS_PER_WINDOW = 5;
 export const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -24,6 +25,7 @@ export const WRITE_RATE_WINDOW_MS = 60 * 1000;
 export const MAX_RATE_LIMIT_KEYS = 10_000;
 export const ORPHAN_FILE_GRACE_MS = 24 * 60 * 60 * 1000;
 export const STALE_FILE_ARTIFACT_MS = 60 * 60 * 1000;
+export const BACKUP_STAGING_DIR_PREFIX = "excalidraw-backup-stage-";
 export const ORPHAN_FILE_CLEANUP_BATCH_SIZE = 100;
 export const UNTRACKED_FILE_CLEANUP_BATCH_SIZE = 100;
 export const DEFAULT_TRASH_RETENTION_DAYS = 30;
@@ -62,10 +64,26 @@ export const createServerConfig = (
   const authPassword = env.AUTH_PASSWORD || "";
   const allowAnonymous = parseBooleanEnv(env.ALLOW_ANONYMOUS);
 
-  if (nodeEnv === "production" && !authPassword && !allowAnonymous) {
+  if (authPassword.length > MAX_AUTH_PASSWORD_LENGTH) {
     throw new Error(
-      "AUTH_PASSWORD must be configured in production, or explicitly set ALLOW_ANONYMOUS=true",
+      `AUTH_PASSWORD cannot exceed ${MAX_AUTH_PASSWORD_LENGTH} characters`,
     );
+  }
+
+  if (nodeEnv === "production") {
+    if (!authPassword && !allowAnonymous) {
+      throw new Error(
+        "AUTH_PASSWORD must be configured in production, or explicitly set ALLOW_ANONYMOUS=true",
+      );
+    }
+    if (
+      authPassword &&
+      authPassword.length < MIN_AUTH_PASSWORD_LENGTH_PRODUCTION
+    ) {
+      throw new Error(
+        `AUTH_PASSWORD must be at least ${MIN_AUTH_PASSWORD_LENGTH_PRODUCTION} characters long in production`,
+      );
+    }
   }
 
   return {

@@ -16,8 +16,9 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
   const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/management-test"), { fetch: async (input, init) => handler.fetch(new Request(input, init)) });
   const call = async (name: string, args: Record<string, unknown>) => {
     const response = await client.callTool({ name, arguments: args });
-    expect(response.isError, JSON.stringify(response)).not.toBe(true);
     const data = response.structuredContent as Record<string, any>;
+    if (data.ok === false) expect(response.isError).toBe(true);
+    else expect(response.isError).not.toBe(true);
     expect(response.content).toHaveLength(1);
     const summary = response.content[0];
     expect(summary.type).toBe("text");
@@ -76,7 +77,8 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     await Bun.sleep(5);
     expect(await call("manage_board", { boardId: board.boardId, favorite: false, tags: ["进展"], tagMode: "add" })).toMatchObject({ ok: true, noop: true, revision: managed.revision });
     expect(runtime.db.query("SELECT revision, updated_at FROM scenes WHERE id = ?").get(board.boardId)).toEqual(savedMetadata);
-    expect(await call("manage_board", { boardId: board.boardId, tags: ["计划"] })).toMatchObject({ ok: false, error: { code: "INVALID_TAGS" } });
+    expect(await call("manage_board", { boardId: board.boardId, tags: ["计划", "进展"] })).toMatchObject({ ok: true, noop: true, tags: ["计划", "进展"] });
+    expect(await call("manage_board", { boardId: board.boardId, tagMode: "add" })).toMatchObject({ ok: false, error: { code: "INVALID_TAGS" } });
     expect(await call("manage_board", { boardId: board.boardId, favorite: true, expectedRevision: board.revision })).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
     const invalidMetadata = await client.callTool({ name: "manage_board", arguments: { boardId: board.boardId, favourit: true } });
     expect(invalidMetadata.isError).toBe(true);
@@ -132,10 +134,8 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     expect(await call("create_folder", { name: " 重复 " })).toMatchObject({ ok: false, error: { code: "FOLDER_NAME_EXISTS" } });
     const otherFolder = await call("create_folder", { name: "另一个" });
     expect(await call("update_folder", { folderId: otherFolder.id, name: "重复" })).toMatchObject({ ok: false, error: { code: "FOLDER_NAME_EXISTS" } });
-    // Existing databases can contain old duplicate names. Do not migrate/delete them.
-    runtime.db.run("INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", ["folder_legacy_duplicate", "重复", "folder", "#315f4c", 1, 1]);
-    expect(await call("ensure_folder", { name: "重复" })).toMatchObject({ ok: false, error: { code: "AMBIGUOUS_FOLDER" } });
-    expect(await call("manage_board", { boardId: board.boardId, folderName: "重复" })).toMatchObject({ ok: false, error: { code: "AMBIGUOUS_FOLDER" } });
+    expect(await call("ensure_folder", { name: " 重复 " })).toMatchObject({ ok: true, id: originalDuplicate.id, created: false });
+    expect(await call("manage_board", { boardId: board.boardId, folderName: "重复" })).toMatchObject({ ok: true, folderId: originalDuplicate.id });
     expect(await call("manage_board", { boardId: board.boardId, folderId: originalDuplicate.id })).toMatchObject({ ok: true, folderId: originalDuplicate.id });
     const concurrent = await Promise.all(Array.from({ length: 4 }, () => call("ensure_folder", { name: "并发文件夹" })));
     expect(new Set(concurrent.map((item) => item.id)).size).toBe(1);

@@ -16,7 +16,9 @@ export const hasOwn = (value: object, key: string) =>
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-export const validateId = (value: unknown, kind: "file" | "scene") => {
+export type IdKind = "file" | "scene" | "folder";
+
+export const validateId = (value: unknown, kind: IdKind) => {
   const pattern = kind === "file" ? FILE_ID_PATTERN : SCENE_ID_PATTERN;
   if (typeof value !== "string" || !pattern.test(value)) {
     throw new HttpError(400, "INVALID_ID", "无效的资源 ID");
@@ -125,7 +127,7 @@ export const validateFavorite = (value: unknown) => {
 };
 
 export const validateFolderId = (value: unknown) => {
-  if (value === null || value === "") {
+  if (value === null) {
     return null;
   }
   return validateId(value, "scene");
@@ -156,7 +158,7 @@ export const validateAppState = (value: unknown) => {
 export const getPathId = (
   pathname: string,
   prefix: string,
-  kind: "file" | "scene",
+  kind: IdKind,
 ) => {
   const rawId = pathname.slice(prefix.length);
   if (!rawId || rawId.includes("/")) {

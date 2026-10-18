@@ -14,7 +14,7 @@ test("compact reading preserves labels, geometry and connections without paint/e
   const { elements } = createDrawingBatch([
     { id: "a", type: "rectangle", x: 20, y: 30, width: 100, height: 80, text: "开始", labelId: "caption", rotation: 30 },
     { id: "b", type: "ellipse", x: 300, y: 30, width: 100, height: 80, text: "结束" },
-    { id: "edge", type: "arrow", points: [[120, 70], [200, 70], [300, 70]], startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
+    { id: "edge", type: "arrow", x: 120, y: 70, points: [[0, 0], [80, 0], [180, 0]], startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
     { id: "free", type: "text", x: 0, y: 200, text: "注释" },
   ].map((spec) => drawingElementSchema.parse(spec)));
   const snapshot = structuredClone(elements);
@@ -57,11 +57,11 @@ test("default compact reads filter folded labels, paginate semantic objects and 
       elements: [
         { id: "a", type: "rectangle", x: 0, y: 0, width: 100, height: 80, text: "待办", labelId: "caption" },
         { id: "b", type: "ellipse", x: 200, y: 0, width: 100, height: 80, text: "完成" },
-        { id: "edge", type: "arrow", points: [[100, 40], [200, 40]], startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
+        { id: "edge", type: "arrow", x: 100, y: 40, points: [[0, 0], [100, 0]], startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
       ] });
     const compact = await call("get_board", { boardId: created.boardId });
     expect(compact).toMatchObject({ matchedCount: 3, elementCount: 5, viewElementCount: 3,
-      returnedElementCount: 3, truncated: false, pointCoordinateSystem: "absolute" });
+      returnedElementCount: 3, truncated: false, pointCoordinateSystem: "relative" });
     expect(compact.elements.map((element: any) => element.id)).toEqual(["a", "b", "edge"]);
     const selected = await call("get_board", { boardId: created.boardId, elementIds: ["caption", "a", "missing"] });
     expect(selected.elements).toHaveLength(1);

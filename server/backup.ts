@@ -7,6 +7,7 @@ import {
   getFilePath,
   withStorageMutationLock,
 } from "./files";
+import { BACKUP_STAGING_DIR_PREFIX } from "./config";
 import { randomHex } from "./crypto";
 import { HttpError } from "./errors";
 
@@ -62,9 +63,10 @@ const createTarHeader = (
 
 const createPaxPath = (pathValue: string) => {
   const body = `path=${pathValue}\n`;
-  let recordLength = body.length + 2;
-  while (String(recordLength).length + body.length + 1 !== recordLength) {
-    recordLength = String(recordLength).length + body.length + 1;
+  const bodyByteLength = textEncoder.encode(body).byteLength;
+  let recordLength = bodyByteLength + 2;
+  while (String(recordLength).length + bodyByteLength + 1 !== recordLength) {
+    recordLength = String(recordLength).length + bodyByteLength + 1;
   }
   return textEncoder.encode(`${recordLength} ${body}`);
 };
@@ -227,6 +229,47 @@ const registerBackupArtifact = (runtime: ServerRuntime, filePath: string) => {
   return () => runtime.activeBackupArtifacts.delete(resolved);
 };
 
+/**
+ * Freeze the attachments referenced by the database snapshot before the
+ * archive is written.
+ *
+ * Hard links make the bytes immutable from the archive writer's point of view:
+ * uploading a replacement attachment renames a new inode over the original
+ * path, and garbage collection only unlinks it, so the link keeps pointing at
+ * the version the snapshot describes. Linking is O(number of files) instead of
+ * O(bytes), which lets `createFullBackup` release the storage mutation lock
+ * before streaming the archive.
+ */
+const stageAttachments = async (
+  runtime: ServerRuntime,
+  stageDir: string,
+  filesQuery: ReturnType<Database["query"]>,
+) => {
+  await fs.promises.mkdir(stageDir, { recursive: true });
+  const staged = new Map<string, number>();
+  for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
+    if (!row.storage_path) {
+      continue;
+    }
+    const source = getFilePath(runtime, row.id);
+    if (!(await fileExists(source))) {
+      throw new Error(`附件文件缺失：${row.id}`);
+    }
+    const target = path.join(stageDir, row.id);
+    try {
+      await fs.promises.link(source, target);
+    } catch (error: any) {
+      if (error?.code !== "EEXIST") {
+        // Filesystems without hard link support still get a consistent copy;
+        // correctness is preserved, only the lock is held for longer.
+        await fs.promises.copyFile(source, target);
+      }
+    }
+    staged.set(row.id, Bun.file(target).size);
+  }
+  return staged;
+};
+
 const removeBackupArtifact = async (
   runtime: ServerRuntime,
   filePath: string,
@@ -277,112 +320,132 @@ export const createDatabaseSnapshot = async (
 export const createFullBackup = async (
   runtime: ServerRuntime,
   timestamp: string,
-) =>
-  withStorageMutationLock(runtime, async () => {
-    const snapshot = await createDatabaseSnapshot(runtime, timestamp);
-    let snapshotDb: Database | undefined;
-    try {
+) => {
+  if (!runtime.dbPath) {
+    throw new HttpError(501, "BACKUP_UNAVAILABLE", "Cloudflare Worker 不提供应用内数据库备份");
+  }
+  const stagingDir = path.join(
+    path.dirname(runtime.dbPath),
+    `${BACKUP_STAGING_DIR_PREFIX}${timestamp}-${randomHex(4)}`,
+  );
+  const unregisterStagingDir = registerBackupArtifact(runtime, stagingDir);
+  let snapshot:
+    | Awaited<ReturnType<typeof createDatabaseSnapshot>>
+    | undefined;
+  let snapshotDb: Database | undefined;
+  try {
+    let stagedFiles = new Map<string, number>();
+    // Phase 1 (locked): snapshot the database and freeze the attachments it
+    // references. Both steps cost O(files), not O(bytes), so uploads and scene
+    // writes wait for the snapshot only, never for the whole archive.
+    await withStorageMutationLock(runtime, async () => {
+      snapshot = await createDatabaseSnapshot(runtime, timestamp);
       snapshotDb = new Database(snapshot.tempBackupFile, {
         readonly: true,
       });
-      const filesQuery = snapshotDb.query(BACKUP_FILES_QUERY);
-      const createdAt = new Date().toISOString();
-      const prefix = manifestPrefix(createdAt);
-      const databaseFile = Bun.file(snapshot.tempBackupFile);
-      const baseArchiveBytes =
-        TAR_BLOCK_SIZE * 2 +
-        tarEntrySize("excalidraw.db", databaseFile.size);
-      let manifestBytes =
-        textEncoder.encode(prefix).byteLength +
-        textEncoder.encode(manifestSuffix).byteLength;
-      let rowCount = 0;
-
-      // Count and validate rows one at a time. The manifest remains bounded by
-      // MAX_BACKUP_BYTES without materializing either the row set or JSON text.
-      for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
-        const serializedBytes = textEncoder.encode(
-          serializeManifestFile(row),
-        ).byteLength;
-        manifestBytes += serializedBytes + (rowCount > 0 ? 1 : 0);
-        rowCount += 1;
-        ensureBackupWithinLimit(
-          baseArchiveBytes + tarEntrySize("manifest.json", manifestBytes),
-          runtime.config.maxBackupBytes,
-        );
-      }
-
-      let archiveBytes =
-        baseArchiveBytes + tarEntrySize("manifest.json", manifestBytes);
-      ensureBackupWithinLimit(archiveBytes, runtime.config.maxBackupBytes);
-      for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
-        if (!row.storage_path) {
-          continue;
-        }
-        const filePath = getFilePath(runtime, row.id);
-        if (!(await fileExists(filePath))) {
-          throw new Error(`附件文件缺失：${row.id}`);
-        }
-        archiveBytes += tarEntrySize(`files/${row.id}`, Bun.file(filePath).size);
-        ensureBackupWithinLimit(archiveBytes, runtime.config.maxBackupBytes);
-      }
-
-      const manifestSize = manifestBytes;
-
-      const archivePath = path.join(
-        path.dirname(runtime.dbPath!),
-        `excalidraw-full-backup-${timestamp}-${randomHex(4)}.tar`,
+      stagedFiles = await stageAttachments(
+        runtime,
+        stagingDir,
+        snapshotDb.query(BACKUP_FILES_QUERY),
       );
-      const tempArchivePath = `${archivePath}.${randomHex(8)}.tmp`;
-      const unregisterTemp = registerBackupArtifact(runtime, tempArchivePath);
-      const unregisterFinal = registerBackupArtifact(runtime, archivePath);
-      let archiveWriter:
-        | ReturnType<ReturnType<typeof Bun.file>["writer"]>
-        | undefined;
-      try {
-        const writer = Bun.file(tempArchivePath).writer({
-          highWaterMark: 64 * 1024,
-        });
-        archiveWriter = writer;
+    });
+    if (!snapshot || !snapshotDb) {
+      throw new Error("备份快照未准备完成");
+    }
+
+    // Phase 2 (unlocked): stream the archive from the staged attachments.
+    const filesQuery = snapshotDb.query(BACKUP_FILES_QUERY);
+    const createdAt = new Date().toISOString();
+    const prefix = manifestPrefix(createdAt);
+    const databaseFile = Bun.file(snapshot.tempBackupFile);
+    const baseArchiveBytes =
+      TAR_BLOCK_SIZE * 2 +
+      tarEntrySize("excalidraw.db", databaseFile.size);
+    let manifestBytes =
+      textEncoder.encode(prefix).byteLength +
+      textEncoder.encode(manifestSuffix).byteLength;
+    let rowCount = 0;
+
+    // Count and validate rows one at a time. The manifest remains bounded by
+    // MAX_BACKUP_BYTES without materializing either the row set or JSON text.
+    for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
+      const serializedBytes = textEncoder.encode(
+        serializeManifestFile(row),
+      ).byteLength;
+      manifestBytes += serializedBytes + (rowCount > 0 ? 1 : 0);
+      rowCount += 1;
+      ensureBackupWithinLimit(
+        baseArchiveBytes + tarEntrySize("manifest.json", manifestBytes),
+        runtime.config.maxBackupBytes,
+      );
+    }
+
+    let archiveBytes =
+      baseArchiveBytes + tarEntrySize("manifest.json", manifestBytes);
+    ensureBackupWithinLimit(archiveBytes, runtime.config.maxBackupBytes);
+    for (const [id, stagedSize] of stagedFiles) {
+      archiveBytes += tarEntrySize(`files/${id}`, stagedSize);
+      ensureBackupWithinLimit(archiveBytes, runtime.config.maxBackupBytes);
+    }
+
+    const manifestSize = manifestBytes;
+
+    const archivePath = path.join(
+      path.dirname(runtime.dbPath),
+      `excalidraw-full-backup-${timestamp}-${randomHex(4)}.tar`,
+    );
+    const tempArchivePath = `${archivePath}.${randomHex(8)}.tmp`;
+    const unregisterTemp = registerBackupArtifact(runtime, tempArchivePath);
+    const unregisterFinal = registerBackupArtifact(runtime, archivePath);
+    let archiveWriter:
+      | ReturnType<ReturnType<typeof Bun.file>["writer"]>
+      | undefined;
+    try {
+      const writer = Bun.file(tempArchivePath).writer({
+        highWaterMark: 64 * 1024,
+      });
+      archiveWriter = writer;
+      await writeTarFile(
+        writer,
+        "excalidraw.db",
+        snapshot.tempBackupFile,
+        databaseFile.size,
+      );
+      await writeTarManifest(writer, filesQuery, prefix, manifestSize);
+
+      for (const [id, stagedSize] of stagedFiles) {
         await writeTarFile(
           writer,
-          "excalidraw.db",
-          snapshot.tempBackupFile,
-          databaseFile.size,
+          `files/${id}`,
+          path.join(stagingDir, id),
+          stagedSize,
         );
-        await writeTarManifest(writer, filesQuery, prefix, manifestSize);
-
-        for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
-          if (!row.storage_path) {
-            continue;
-          }
-          const filePath = getFilePath(runtime, row.id);
-          if (!(await fileExists(filePath))) {
-            throw new Error(`附件文件缺失：${row.id}`);
-          }
-          const file = Bun.file(filePath);
-          await writeTarFile(writer, `files/${row.id}`, filePath, file.size);
-        }
-        await writer.write(new Uint8Array(TAR_BLOCK_SIZE * 2));
-        await writer.end();
-        await fs.promises.rename(tempArchivePath, archivePath);
-        unregisterTemp();
-      } catch (error) {
-        await Promise.resolve(archiveWriter?.end()).catch(() => {});
-        await fs.promises.rm(tempArchivePath, { force: true }).catch(() => {});
-        await fs.promises.rm(archivePath, { force: true }).catch(() => {});
-        unregisterTemp();
-        unregisterFinal();
-        throw error;
       }
-
-      const archiveFile = Bun.file(archivePath);
-      return {
-        archivePath,
-        size: archiveFile.size,
-        cleanup: () => removeBackupArtifact(runtime, archivePath),
-      };
-    } finally {
-      snapshotDb?.close();
-      await snapshot.cleanup().catch(() => {});
+      await writer.write(new Uint8Array(TAR_BLOCK_SIZE * 2));
+      await writer.end();
+      await fs.promises.rename(tempArchivePath, archivePath);
+      unregisterTemp();
+    } catch (error) {
+      await Promise.resolve(archiveWriter?.end()).catch(() => {});
+      await fs.promises.rm(tempArchivePath, { force: true }).catch(() => {});
+      await fs.promises.rm(archivePath, { force: true }).catch(() => {});
+      unregisterTemp();
+      unregisterFinal();
+      throw error;
     }
-  });
+
+    const archiveFile = Bun.file(archivePath);
+    return {
+      archivePath,
+      size: archiveFile.size,
+      cleanup: () => removeBackupArtifact(runtime, archivePath),
+    };
+  } finally {
+    snapshotDb?.close();
+    await snapshot?.cleanup().catch(() => {});
+    await fs.promises
+      .rm(stagingDir, { recursive: true, force: true })
+      .catch(() => {});
+    unregisterStagingDir();
+  }
+};

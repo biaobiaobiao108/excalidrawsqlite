@@ -188,11 +188,15 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 | `list_folders` / `list_tags` | 分页读取文件夹、标签及画板计数。 |
 | `ensure_folder` / `create_folder` | 按精确名称幂等获取或创建，或明确创建新文件夹；同名歧义要求使用 ID。 |
 | `update_folder` / `delete_folder` | 修改名称、图标、颜色；删除仅把画板移至根目录，`dryRun=true` 预览，执行需 `confirm=true`，可校验 `expectedBoardCount`。 |
-| `manage_board` | 一次合并改名、收藏、移动与标签操作；`tags` 必须与 `tagMode=replace/add/remove` 同传，相同元数据返回 `noop`。 |
+| `manage_board` | 一次合并改名、收藏、移动与标签操作；单传 `tags` 默认替换，`tagMode=add/remove` 显式追加/移除，相同元数据返回 `noop`。 |
 | `delete_board` / `restore_board` | 仅软删除或还原，没有永久删除参数；回收站受 `TRASH_RETENTION_DAYS` 保留期限约束。 |
 | `batch_manage_boards` | 最多 100 项 `manage/delete/restore`，每项必传 `expectedRevision`；独立执行，返回逐项结果、`noop` 和 `partial`。 |
 
-每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字；需要 ID 时传 `responseMode=ids`，按本体与自动文字分别返回。可指定稳定 `id`，新建箭头只传 `startBinding/endBinding.elementId` 即自动连接同批或已有节点，无需计算端点；自连接或同中心节点须显式传坐标。移动/缩放节点时保留连接；`points` 是绝对画布坐标，支持多段折线，不与二点坐标字段混用。删除形状同时删除绑定文字并清理引用。
+每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字；需要 ID 时传 `responseMode=ids`，按本体与自动文字分别返回。可指定稳定 `id`，新建箭头只传 `startBinding/endBinding.elementId` 即自动连接同批或已有节点，无需计算端点；自连接或同中心节点须显式传坐标。移动/缩放节点时保留连接；显式路径统一为 `x/y` 原点加相对 `points`，支持多段折线。删除形状同时删除绑定文字并清理引用。
+
+`line/arrow` 显式路径须提供 `x/y + points`，例如 `{"type":"line","x":100,"y":200,"points":[[0,0],[80,40]]}` 表示从 (100,200) 到 (180,240)。不接受起终点字段或省略原点的路径。所有全局点坐标仍受范围校验。更新路径时同样须提供 `x/y + points`；仅传 `x` 或 `y` 则平移原有路径。所有读取视图统一返回图元 `x/y` 与相对 `points`，`input` 可直接写回。
+
+`manage_board` 和批量 `action=manage` 单传 `tags` 时默认 `tagMode="replace"`，与创建和更新画板的完整标签列表语义一致，`tags:[]` 清空标签。只想追加或移除时须显式使用 `add/remove`；单独传 `tagMode` 而没有 `tags` 仍会明确报错。
 
 无箭头但需要随节点移动的连线使用 `{"type":"arrow","startBinding":{"elementId":"parent"},"endBinding":{"elementId":"child"},"endArrowhead":null}`；`startArrowhead` 默认也为 `null`。`line` 是固定坐标线段，原生编辑器的绑定跟随逻辑只处理 `arrow`，因此不为 `line` 添加另一套绑定语义。自动布局时 `create_diagram.edges` 也可传 `{"from":"parent","to":"child","endArrowhead":null}`，适用于思维导图或组织结构，省略则保留默认箭头。
 
@@ -277,13 +281,23 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 
 重叠提示的 `metrics.overlapRatio/overlapArea` 提供相交比例与面积，箭头距离提示的 `metrics.distance` 为端点到目标轮廓的距离，单位均基于画布坐标。独立文字重叠可返回 `suggestedUpdate:{id,dx,dy}`，可直接放入 `update_board.updates`；这只提供分离当前两个图元的候选方案，不保证整体布局合理，也不会自动执行。绑定文字和形状碰撞不提供独立平移建议，避免破坏标签、阴影与背景叠层。大小接近且偏移很小的实心矩形标为 `metrics.possibleLayering=true`，仍保留确认提示，不断言设计错误。透明图元和空白文字不参与视觉碰撞检查，断开的绑定仍可报告数据问题。
 
-`text_overflow` 同时检查原生绑定标签和明确结构的分组卡片：`create_layout` 的背景与标题/正文通过分组及图元角色名称关联，即使文字完全移出卡片也能找到背景，并按固定文字宽度恢复可确定的内边距。普通分组只有唯一实心矩形候选时才作结构推断，多个背景无法确定则不猜测；没有分组的独立文字不会按附近矩形推断归属。`checks.text_overflow.checkedContainers/checkedPairs` 表示实际检查的容器关系，`skippedNoContainer` 表示未找到容器的文字数，不能将其视为容器边界检查通过。`skippedAmbiguousContainer` 表示容器歧义，歧义、异常或预算截断会标记检查未完成。分组索引和候选比较都有上限，统计分别见 `groupReferences/groupCandidatePairs`。
+`text_overflow` 同时检查原生绑定标签和明确结构的分组卡片：`create_layout` 的背景与标题/正文通过分组及图元角色名称关联，即使文字完全移出卡片也能找到背景，并按固定文字宽度恢复可确定的内边距。普通分组只有唯一实心矩形候选时才作结构推断，多个背景无法确定则不猜测。`checks.text_overflow.checkedContainers/checkedPairs` 表示实际检查的容器关系，`skippedNoContainer` 表示未找到容器的文字数，`skippedAmbiguousContainer` 表示容器歧义；任一未覆盖、异常或预算截断都会令 `complete=false`。`status` 明确区分 `completed`（覆盖完成）、`partial`（只检查了部分）、`not_executed`（没有执行可确认的容器边界检查）和 `not_applicable`（没有适用文字，例如只有合法箭头标签），不应把零问题或零容器视为无溢出。分组索引和候选比较都有上限，统计分别见 `groupReferences/groupCandidatePairs`。
+
+手工卡片优先给背景和独立文字设置相同 `groupId`，或使用形状绑定标签。未分组文字默认不凭位置猜容器；需要时显式传 `inspect_layout({boardId,checks:["text_overflow"],inferTextContainers:true})`，只对无绑定、无分组文字按旋转后的文字起点推断唯一实心矩形，并将结果标为几何启发式。多个候选仍会跳过，几何索引及比较有容量上限；独立文字完全移出所有候选后无法恢复其原归属，不能替代分组或绑定。
+
+文字重叠按几何相交面积比例至少 0.08 且面积大于 1 检测。每项 `severityHint` 根据比例分为 `negligible`（小于 0.1）、`minor`（0.1 至小于 0.5）和 `major`（至少 0.5），`metrics.overlapDepth` 为沿旋转多边形分离轴的最小脱离平移深度，单位为画布单位。它们描述几何程度，不保证实际文字可读性，低比例也不自动忽略。诊断 text 另列问题类型计数、最多 3 项图元 ID/严重性示例和最大几何重叠，保持两行及 1024 字符上限。
 
 箭头绑定标签的重叠检查使用原生路径计算显示位置，支持多段和旋转箭头，不依赖标签可能过时的存储坐标。异常路径、非原生水平标签或检查预算超限仍会明确返回检查未完成及原因。
 
 检测复用图元已存储的文字尺寸与换行结果，不重新测量中文或 Excalifont 字体像素；可能的几何遮挡会标记为 warning。正常的容器包含、背景叠放和箭头穿过背景不直接视为错误，没有绑定的装饰箭头也不报连接异常。无限画布没有隐含边界，负坐标合法。检测有明确预算，`complete=false` 时检查未完成；没有提示也不保证配色、拥挤程度、视觉层次或实际渲染效果正确。
 
 `compact` 保留图元 ID、类型、位置、尺寸、文字、非零旋转、折线点与箭头绑定目标，省略装饰样式；坐标字段仍为 `width/height`，不引入缩写。`compact/input` 视图按绑定标签 ID 筛选会返回其本体；文字搜索和类型筛选针对合并后的对象。需要可写描述请显式选择 `input` 并检查省略警告。
+
+`input.elements` 保持严格可写：独立文字的派生高度不混入写入描述。新增同页只读 `elementGeometry:[{elementId,height,lineHeight,lineHeightPx,lineCount}]` 提供修复布局需要的高度和行高，按 `elementId` 与独立文字对应，参与 `maxChars` 预算、筛选和分页；批读 `view=input` 同样提供。直接把 `elements` 传入 `updates` 即可，勿把 `elementGeometry` 字段合并进去；文字高度仍由内容重算，手工设置会报错。
+
+`measure_text` 现返回原生 `lineHeight` 倍率和 `lineHeightPx`，行数继续使用已有 `lineCount`，不增加重复的 `lines` 别名。估宽按中日韩宽字符、全角形式及组合 emoji 约 1em、拉丁及半角字符约 0.58em 计算，组合附加符号不重复计宽；常用模糊宽度标点在整行有中日韩语境时按 1em 估算，西文语境保留窄估算。此规则复用于创建与布局，仍属于估算，无法替代实际字体排版。
+
+单次工具业务失败现在同时标记 `isError:true` 和 `structuredContent.ok:false`，保留 `error.code/message` 与错误 text；参数校验也可仅有 `isError` 和 text。批处理执行完成时，某些或全部条目失败仍通过条目 `ok/error` 和汇总数量表达，不把正常执行的聚合调用标为顶层异常。
 
 复制优先使用 `copy_elements`，例如 `{"boardId":"来源画板","elementIds":["start","decision","edge"],"dx":300,"dy":0}`。省略 `targetBoardId` 为同板复制，`dx/dy` 默认各为 20；跨板复制时传目标 ID，重叠原位置可设 `dx=dy=0`。形状及标签自动生成新 ID，选中标签会复制其所属形状；选择集内部箭头自动重连，外部绑定默认解绑，只有同板可设 `externalBindings=preserve` 保留。始终返回 `idMap`（含标签）和 `warnings`；省略原生元数据会给出警告，所选图元不能投影则整次拒绝。`expectedRevision` 校验目标修订号，`sourceExpectedRevision` 可校验来源修订号。
 
@@ -297,7 +311,7 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 
 图元读取视图（不含 `summary`）回传 `elementCount`（含绑定标签的原生总数）、`viewElementCount`（当前视图在筛选前的总数）、`matchedCount`（筛选后匹配数）与 `returnedElementCount`（本页实际返回数）。例如原生 5 个图元中含两个绑定标签，`compact` 全读的四个数字是 5、3、3、3；分页只返回一个时最后一个数字为 1。`full/elements` 保留标签为独立图元，因此其视图总数会不同。
 
-跨板复制使用 `get_board.view=input` 或批读的 `input` 视图：返回的 `elements` 严格符合写入 schema，可交给 `create_board` 或其他画板的 `add_elements`。形状标签折叠为 `text/labelId/labelStyle`，保留标签 ID 和独立样式。图元视图（compact/elements/input/full）的 `truncated/nextOffset` 表示分页或字符预算截断；summary 只返回元数据；仅 input 返回的 `unsupportedElementIds/warnings` 表示不可写图元或属性被省略，与分页无关。图片、自由画笔及分组、框架等不能通过这个视图完整复制；跳过图元时警告说明原因，省略不代表空画板，原始内容未删除。向同一画板追加已有 ID 会报冲突，原地修改应使用 `update_element` 或 `update_board.updates`。紧凑视图与 `input` 的折线点均为绝对坐标；`full` 为内部相对坐标，需加图元 `x/y`，返回的 `pointCoordinateSystem` 明确标注。`rotation` 单位为度，input 输出舍入至 10 位小数，文字 `x/y` 是左上角。绑定的 `fixedPoint` 允许越出 `[0,1]`，遵循原生绑定归一化范围，支持回读回写。
+跨板复制使用 `get_board.view=input` 或批读的 `input` 视图：返回的 `elements` 严格符合写入 schema，可交给 `create_board` 或其他画板的 `add_elements`。形状标签折叠为 `text/labelId/labelStyle`，保留标签 ID 和独立样式。图元视图（compact/elements/input/full）的 `truncated/nextOffset` 表示分页或字符预算截断；summary 只返回元数据；仅 input 返回的 `unsupportedElementIds/warnings` 表示不可写图元或属性被省略，与分页无关。图片、自由画笔及分组、框架等不能通过这个视图完整复制；跳过图元时警告说明原因，省略不代表空画板，原始内容未删除。向同一画板追加已有 ID 会报冲突，原地修改应使用 `update_element` 或 `update_board.updates`。所有视图的折线点均相对于图元 `x/y`，返回的 `pointCoordinateSystem` 为 `relative`。`rotation` 单位为度，input 输出舍入至 10 位小数，文字 `x/y` 是左上角。绑定的 `fixedPoint` 允许越出 `[0,1]`，遵循原生绑定归一化范围，支持回读回写。
 
 绘图回执在 `responseMode=ids` 时返回 `requestedElementIds`（输入图元本体）、`generatedElementIds`（自动生成的绑定文字）和 `elementMap`（按 `inputIndex` 对应本体及 `labelId`），不再提供混合两种角色的 `elementIds` 回执；读取筛选和移除操作的 `elementIds` 入参仍表示待操作的图元。MCP 画板输入和结果统一使用 `boardId`，不提供 `id` 别名，包括列表、单读、批读、创建及管理结果；图元和文件夹各自的 `id` 不变。画板元数据统一为 `elementCount/folderId/folderName/createdAt/updatedAt/lastOpenedAt/deletedAt`；文件夹使用 `boardCount/createdAt/updatedAt`，不透传对应数据库命名字段。省略内部缩略图哈希和存储大小。批读的 `partial` 表示成功与失败混合，`truncated` 仅表示内容或字符预算截断；画板不存在不会触发 `truncated`，无需续读。
 

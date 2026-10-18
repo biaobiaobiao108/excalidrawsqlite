@@ -28,17 +28,74 @@ const flow = () =>
     drawingElementSchema.parse({
       type: "arrow",
       id: "edge",
+      x: 100,
+      y: 40,
       points: [
-        [100, 40],
-        [175, 40],
-        [175, 100],
-        [250, 40],
+        [0, 0],
+        [75, 0],
+        [75, 60],
+        [150, 0],
       ],
       startBinding: { elementId: "a" },
       endBinding: { elementId: "b" },
     }),
   ]).elements;
 describe("MCP drawing contracts", () => {
+  it("normalizes relative line points and roundtrips canonical native origins without changes", () => {
+    for (const type of ["line", "arrow"] as const) {
+      const local = drawingElementSchema.parse({ type, id: "edge", x: 100, y: -50, points: [[10, 20], [-40, 30], [80, 90]] });
+      const native = createDrawingBatch([local]).elements;
+      expect(native[0]).toMatchObject({ x: 110, y: -30, points: [[0, 0], [-50, 10], [70, 70]] });
+      const projected = inputDrawingElements(native).elements[0];
+      expect(projected).toMatchObject({ x: 110, y: -30, points: [[0, 0], [-50, 10], [70, 70]] });
+      expect(updateDrawingElements(native, [elementUpdateSchema.parse(projected)]).updatedCount).toBe(0);
+      const moved = updateDrawingElements(native, [elementUpdateSchema.parse({ id: "edge", x: 200, y: 300, points: [[0, 0], [50, 20]] })]);
+      expect(moved.elements[0]).toMatchObject({ x: 200, y: 300, points: [[0, 0], [50, 20]] });
+      expect(native[0].x).toBe(110);
+    }
+  });
+
+  it("rejects incomplete, mixed or overflowing linear origins rather than ignoring them", () => {
+    for (const input of [
+      { x: 10, points: [[0, 0], [10, 10]] },
+      { x: 10, y: 20, startX: 0, startY: 0, endX: 10, endY: 10 },
+      { x: 999_999, y: 0, points: [[0, 0], [2, 0]] },
+      { x: 10, y: 20, startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
+    ]) expect(drawingElementSchema.safeParse({ type: "arrow", ...input }).success).toBe(false);
+    const native = createDrawingBatch([drawingElementSchema.parse({ type: "line", id: "edge", x: 0, y: 0, points: [[0, 0], [10, 0]] })]).elements;
+    expect(() => updateDrawingElements(native, [elementUpdateSchema.parse({ id: "edge", x: 10, points: [[0, 0], [10, 0]] })])).toThrow("x/y 原点须成对");
+    expect(updateDrawingElements(native, [elementUpdateSchema.parse({ id: "edge", x: 25 })]).elements[0].x).toBe(25);
+  });
+  it("rejects removed endpoint fields and points-only geometry on creation and update", () => {
+    for (const type of ["line", "arrow"] as const) {
+      for (const geometry of [
+        { points: [[0, 0], [100, 50]] },
+        { startX: 0, startY: 0, endX: 100, endY: 50 },
+        { x: 0, y: 0, points: [[0, 0], [100, 50]], endX: 100 },
+      ]) {
+        expect(drawingElementSchema.safeParse({ type, ...geometry }).success).toBe(false);
+        expect(elementUpdateSchema.safeParse({ id: "edge", ...geometry }).success).toBe(false);
+      }
+    }
+    expect(drawingElementSchema.safeParse({ type: "arrow", startBinding: { elementId: "a" },
+      endBinding: { elementId: "b" }, rotation: 0 }).success).toBe(false);
+  });
+  it("preserves decimal relative geometry exactly on projection updates and bounds translated points", () => {
+    const current = createDrawingBatch([drawingElementSchema.parse({ type: "line", id: "decimal",
+      x: 500_000.1, y: -400_000.2, points: [[0, 0], [0.3, -0.4], [-1.7, 2.9]], rotation: 17.5 })]).elements;
+    const projected = inputDrawingElements(current);
+    expect(projected.unsupportedElementIds).toEqual([]);
+    expect(updateDrawingElements(current, projected.elements.map((element) => elementUpdateSchema.parse(element))).updatedCount).toBe(0);
+    expect(inputDrawingElements(createDrawingBatch(projected.elements).elements)).toEqual(projected);
+    const acrossCanvas = createDrawingBatch([drawingElementSchema.parse({ type: "line", id: "wide",
+      x: -1_000_000, y: 0, points: [[0, 0], [2_000_000, 0]] })]).elements;
+    expect(inputDrawingElements(acrossCanvas).unsupportedElementIds).toEqual([]);
+    for (const patch of [{ id: "wide", x: -999_999 }, { id: "wide", dx: 1 },
+      { id: "wide", y: 1_000_000, dy: 1 }]) {
+      expect(() => updateDrawingElements(acrossCanvas, [elementUpdateSchema.parse(patch)])).toThrow();
+    }
+    expect(elementUpdateSchema.safeParse({ id: "wide", x: 999_999, y: 0, points: [[0, 0], [2, 0]] }).success).toBe(false);
+  });
   it("connects binding-only arrows to native outlines regardless of input order", () => {
     const specs = [
       { type: "arrow", id: "edge", startBinding: { elementId: "a" }, endBinding: { elementId: "b" } },
@@ -75,7 +132,7 @@ describe("MCP drawing contracts", () => {
 
   it("moves batches with relative coordinates while retaining labels and bindings", () => {
     const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("a"), text: "label", labelId: "caption" }),
-      shape("b", 300), drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[100, 40], [300, 40]],
+      shape("b", 300), drawingElementSchema.parse({ type: "arrow", id: "edge", x: 100, y: 40, points: [[0, 0], [200, 0]],
         startBinding: { elementId: "a" }, endBinding: { elementId: "b" } })]).elements;
     const before = structuredClone(current);
     const moved = updateDrawingElements(current, ["a", "b", "edge"].map((id) => elementUpdateSchema.parse({ id, dx: 30, dy: -20 })));
@@ -96,8 +153,8 @@ describe("MCP drawing contracts", () => {
   it("accepts unchanged input projections as updates and checks the optional type", () => {
     const current = createDrawingBatch([drawingElementSchema.parse({ ...shape("box"), text: "label", labelId: "caption" }),
       drawingElementSchema.parse({ type: "text", id: "free", x: 200, y: 200, text: "a long line", width: 60 }),
-      drawingElementSchema.parse({ type: "line", id: "line", points: [[0, 100], [100, 100]] }),
-      drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[100, 40], [200, 200]], startBinding: { elementId: "box" } }),
+      drawingElementSchema.parse({ type: "line", id: "line", x: 0, y: 100, points: [[0, 0], [100, 0]] }),
+      drawingElementSchema.parse({ type: "arrow", id: "edge", x: 100, y: 40, points: [[0, 0], [100, 160]], startBinding: { elementId: "box" } }),
     ]).elements;
     const projection = inputDrawingElements(current);
     expect(projection.labelOwners.get("caption")).toBe("box");
@@ -259,24 +316,25 @@ describe("MCP drawing contracts", () => {
     expect(current).toEqual(before);
     expect(Number(createDrawingBatch(inputDrawingElements(changed.elements).elements).elements.filter((e) => e.type === "text")[0].angle)).toBe(Math.PI / 4);
   });
-  it("roundtrips writable input with absolute bends, rotation, bindings and stable label IDs", () => {
+  it("roundtrips writable input with relative bends, rotation, bindings and stable label IDs", () => {
     const current = createDrawingBatch([
       drawingElementSchema.parse({ ...shape("a"), x: 50, y: 60, rotation: 30,
         text: "多行中文标签", labelId: "label-a", fontSize: 16,
         labelStyle: { strokeColor: "red", fontFamily: "system", textAlign: "left", fontSize: 18 },
         roundness: 12, opacity: 50.5 }),
       drawingElementSchema.parse({ type: "ellipse", id: "b", x: 300, y: 90, width: 100, height: 80 }),
-      drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[150, 100], [220, 140], [300, 190]],
+      drawingElementSchema.parse({ type: "arrow", id: "edge", x: 150, y: 100, points: [[0, 0], [70, 40], [150, 90]],
         startBinding: { elementId: "a" }, endBinding: { elementId: "b", fixedPoint: [0, 1.36] } }),
       drawingElementSchema.parse({ type: "text", id: "free", x: 20, y: 200, text: "独立文字", textAlign: "right", rotation: 15 }),
-      drawingElementSchema.parse({ type: "line", id: "line", points: [[-50, 20], [-10, 40], [60, 10]] }),
+      drawingElementSchema.parse({ type: "line", id: "line", x: -50, y: 20, points: [[0, 0], [40, 20], [110, -10]], rotation: 20 }),
     ]).elements;
     const input = inputDrawingElements(current);
     expect(input.unsupportedElementIds).toEqual([]);
     expect(input.elements.length).toBe(5);
     expect(input.elements.find((e) => e.id === "a")).toMatchObject({ labelId: "label-a" });
     expect(input.elements.find((e) => e.id === "a")!.rotation).toBe(30);
-    expect(input.elements.find((e) => e.id === "edge")).toMatchObject({ points: [[150, 100], [220, 140], [300, 190]], endBinding: { fixedPoint: [0, 1.36] } });
+    expect(input.elements.find((e) => e.id === "edge")).toMatchObject({ x: 150, y: 100, points: [[0, 0], [70, 40], [150, 90]], endBinding: { fixedPoint: [0, 1.36] } });
+    expect(updateDrawingElements(current, input.elements.map((e) => elementUpdateSchema.parse(e))).updatedCount).toBe(0);
     const copy = createDrawingBatch(input.elements.map((e) => drawingElementSchema.parse(e))).elements;
     expect(copy.map((e) => e.id)).toEqual(current.map((e) => e.id));
     expect(inputDrawingElements(copy)).toEqual(input);
@@ -286,13 +344,13 @@ describe("MCP drawing contracts", () => {
   it("accepts native orbit fixed points outside the target on write/read/write", () => {
     const current = createDrawingBatch([
       drawingElementSchema.parse({ type: "ellipse", id: "oval", x: 100, y: 100, width: 110, height: 110 }),
-      drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[0, 250], [100, 250]], endBinding: { elementId: "oval" } }),
+      drawingElementSchema.parse({ type: "arrow", id: "edge", x: 0, y: 250, points: [[0, 0], [100, 0]], endBinding: { elementId: "oval" } }),
     ]).elements;
     const edge = current.find((e) => e.id === "edge")!;
     expect(edge.type === "arrow" && edge.endBinding!.fixedPoint[1]).toBeGreaterThan(1);
     expect(inputDrawingElements(createDrawingBatch(inputDrawingElements(current).elements).elements))
       .toEqual(inputDrawingElements(current));
-    expect(drawingElementSchema.safeParse({ type: "arrow", points: [[0, 0], [1, 1]], endBinding: { elementId: "oval", fixedPoint: [0, Infinity] } }).success).toBe(false);
+    expect(drawingElementSchema.safeParse({ type: "arrow", x: 0, y: 0, points: [[0, 0], [1, 1]], endBinding: { elementId: "oval", fixedPoint: [0, Infinity] } }).success).toBe(false);
   });
   it("keeps shape-label limits consistent for shapes and direct bound-text updates", () => {
     for (const type of ["rectangle", "ellipse", "diamond"] as const) {
@@ -318,7 +376,7 @@ describe("MCP drawing contracts", () => {
   it("explains omitted oversized labels and dependent arrows in the input projection", () => {
     const current = createDrawingBatch([
       drawingElementSchema.parse({ ...shape("container"), text: "label", labelId: "label" }),
-      drawingElementSchema.parse({ type: "arrow", id: "edge", points: [[200, 40], [100, 40]], endBinding: { elementId: "container" } }),
+      drawingElementSchema.parse({ type: "arrow", id: "edge", x: 200, y: 40, points: [[0, 0], [-100, 0]], endBinding: { elementId: "container" } }),
     ]).elements.map((element) => element.type === "text"
       ? { ...element, text: "x".repeat(2_001), originalText: "x".repeat(2_001) }
       : element);
@@ -395,6 +453,8 @@ describe("MCP drawing contracts", () => {
       createDrawingBatch([
         drawingElementSchema.parse({
           type: "arrow",
+          x: 0,
+          y: 0,
           points: [
             [0, 0],
             [100, 0],
@@ -524,6 +584,8 @@ describe("MCP drawing contracts", () => {
       updateDrawingElements(current, [
         elementUpdateSchema.parse({
           id: "a",
+          x: 0,
+          y: 0,
           points: [
             [0, 0],
             [2, 2],
@@ -541,5 +603,43 @@ describe("MCP drawing contracts", () => {
         elementUpdateSchema.parse({ id: "missing", strokeColor: "red" }),
       ]),
     ).toThrow("不存在");
+  });
+
+  it("synchronizes arrow endpoint coordinates when updating arrow binding targets", () => {
+    const current = createDrawingBatch([
+      shape("n1", 0),
+      shape("n2", 200),
+      drawingElementSchema.parse({
+        type: "rectangle",
+        id: "n3",
+        x: 0,
+        y: 200,
+        width: 100,
+        height: 80,
+      }),
+      drawingElementSchema.parse({
+        type: "arrow",
+        id: "arrow1",
+        x: 100,
+        y: 50,
+        points: [[0, 0], [100, 0]],
+        startBinding: { elementId: "n1" },
+        endBinding: { elementId: "n2" },
+      }),
+    ]).elements;
+
+    // Retarget endBinding from n2 to n3
+    const updated = updateDrawingElements(current, [
+      elementUpdateSchema.parse({
+        id: "arrow1",
+        endBinding: { elementId: "n3" },
+      }),
+    ]);
+    expect(updated.updatedCount).toBe(1);
+    const arrow = updated.elements.find((e) => e.id === "arrow1") as any;
+    expect(arrow.endBinding?.elementId).toBe("n3");
+    // Verify the end point moved towards n3 in the y direction
+    const endPointGlobalY = arrow.y + arrow.points[arrow.points.length - 1][1];
+    expect(endPointGlobalY).toBeGreaterThanOrEqual(180);
   });
 });

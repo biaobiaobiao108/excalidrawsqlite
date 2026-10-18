@@ -360,6 +360,7 @@ import { restoreAppState, restoreElements } from "../data/restore";
 import { getCenter, getDistance } from "../gesture";
 import { History } from "../history";
 import { ImageCache } from "../imageCache";
+import { elementWithCanvasCache } from "@excalidraw/element";
 import { defaultLang, getLanguage, languages, setLanguage, t } from "../i18n";
 import { getEditorRenderScale } from "../renderScale";
 
@@ -680,6 +681,7 @@ class App extends React.Component<AppProps, AppState> {
       fileCount: Object.keys(this.files).length,
       editorRenderScale,
       canvasPixels,
+      elementCanvasCache: elementWithCanvasCache.getMemoryStats(this.imageCache),
       history: this.history.getMemoryStats(),
       imageCache: this.imageCache.getMemoryStats(),
     };
@@ -3998,6 +4000,7 @@ class App extends React.Component<AppProps, AppState> {
     this.store.clear();
     this.files = {};
     this.imageCache.clear();
+    elementWithCanvasCache.clear(this.imageCache);
     this.pendingImageFileIds.clear();
     this.resizeObserver?.disconnect();
     this.unmounted = true;

@@ -6,7 +6,7 @@ import { getInspectTextGeometry } from "../../server/mcp-inspect-labels";
 
 const fixture = (points: number[][], rotation = 0) => {
   const native = createDrawingBatch([
-    drawingElementSchema.parse({ type: "arrow", id: "edge", points, rotation }),
+    drawingElementSchema.parse({ type: "arrow", id: "edge", x: 0, y: 0, points, rotation }),
     drawingElementSchema.parse({ type: "text", id: "label", x: -900, y: -900, text: "箭头说明", fontSize: 20 }),
   ]).elements;
   const arrow = native[0] as ExcalidrawArrowElement;

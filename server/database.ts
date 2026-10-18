@@ -33,7 +33,7 @@ export const initializeDatabase = (db: Database) => {
   db.run(`
     CREATE TABLE IF NOT EXISTS folders (
       id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
+      name TEXT NOT NULL UNIQUE,
       icon TEXT NOT NULL DEFAULT 'folder',
       color TEXT NOT NULL DEFAULT '#315f4c',
       created_at INTEGER NOT NULL,
@@ -122,6 +122,15 @@ export const initializeDatabase = (db: Database) => {
   );
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_scenes_active_folder_updated_id ON scenes(folder_id, updated_at DESC, id DESC) WHERE deleted_at IS NULL",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_active_created_id ON scenes(created_at DESC, id DESC) WHERE deleted_at IS NULL",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_active_folder_created_id ON scenes(folder_id, created_at DESC, id DESC) WHERE deleted_at IS NULL",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scenes_active_opened_id ON scenes(last_opened_at DESC, id DESC) WHERE deleted_at IS NULL",
   );
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_scenes_thumbnail_file_id ON scenes(thumbnail_file_id)",

@@ -15,6 +15,17 @@ describe("MCP region diagrams", () => {
     for (const direction of ["horizontal", "vertical"] as const) {
       const result = buildDiagram({ name: "架构", layout: "architecture", nodes, regions, edges, direction });
       expect("regions" in result && result.regions.length).toBe(4);
+      if (!("bounds" in result)) throw new Error("高级布局必须返回边界");
+      for (const connector of result.elements.filter((element) => element.type === "arrow")) {
+        expect(connector.points![0]).toEqual([0, 0]);
+        for (const point of connector.points!) {
+          const x = connector.x! + point[0], y = connector.y! + point[1];
+          expect(x).toBeGreaterThanOrEqual(result.bounds.x);
+          expect(x).toBeLessThanOrEqual(result.bounds.x + result.bounds.width);
+          expect(y).toBeGreaterThanOrEqual(result.bounds.y);
+          expect(y).toBeLessThanOrEqual(result.bounds.y + result.bounds.height);
+        }
+      }
       const created = createDrawingBatch(result.elements);
       const diagnostics = inspectLayout(created.elements, { checks: ["text_overlap", "text_overflow", "arrow_connection"] });
       expect(diagnostics.issues).toEqual([]);

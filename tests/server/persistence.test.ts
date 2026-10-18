@@ -21,6 +21,7 @@ import {
 } from "../../server/files";
 import { BodyMemoryBudget } from "../../server/types";
 import { cleanupExpiredTrashScenes } from "../../server/scenes";
+import { STALE_FILE_ARTIFACT_MS } from "../../server/config";
 
 const runtimes: LocalServerRuntime[] = [];
 const testDirectories: string[] = [];
@@ -96,6 +97,10 @@ describe("cloud persistence server", () => {
     const created = await jsonRequest(handler, "/api/folders", { name: " 项目 " });
     expect(created.status).toBe(201);
     const folder = await responseJson<{ id: string; updated_at: number }>(created);
+    expect(() => runtime.db.run(
+      "INSERT INTO folders (id, name, icon, color, created_at, updated_at) SELECT 'duplicate_folder', name, icon, color, created_at, updated_at FROM folders WHERE id = ?",
+      [folder.id],
+    )).toThrow("UNIQUE constraint failed: folders.name");
     const duplicate = await jsonRequest(handler, "/api/folders", { name: "项目" });
     expect(duplicate.status).toBe(409);
     expect(await responseJson(duplicate)).toMatchObject({ code: "FOLDER_NAME_EXISTS" });
@@ -113,6 +118,26 @@ describe("cloud persistence server", () => {
     expect(runtime.db.query("SELECT updated_at, revision FROM scenes WHERE id = ?").get(board.id)).toEqual(stored);
     const conflict = await jsonRequest(handler, `/api/scenes/${board.id}`, { favorite: true, baseRevision: 999 }, { method: "PATCH" });
     expect(conflict.status).toBe(409);
+  });
+
+  it("requires null for root-folder writes and retains the empty root-folder query", async () => {
+    const { handler, runtime } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
+    const folder = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/folders", { name: "目录" }));
+    const board = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/scenes", { name: "目录内画板", folder_id: folder.id }));
+    const before = runtime.db.query("SELECT * FROM scenes WHERE id = ?").get(board.id);
+    for (const method of ["POST", "PATCH", "PUT"]) {
+      const pathname = method === "POST" ? "/api/scenes" : `/api/scenes/${board.id}`;
+      const rejected = await jsonRequest(handler, pathname, { folder_id: "" }, { method });
+      expect(rejected.status).toBe(400);
+      expect(await responseJson(rejected)).toMatchObject({ code: "INVALID_ID" });
+      expect(runtime.db.query("SELECT * FROM scenes WHERE id = ?").get(board.id)).toEqual(before);
+    }
+    const root = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/scenes", { name: "根目录", folder_id: null }));
+    const listing = await responseJson<{ items: Array<{ id: string }> }>(await request(handler, "/api/scenes?folder_id="));
+    expect(listing.items.map((item) => item.id)).toEqual([root.id]);
+    const moved = await jsonRequest(handler, `/api/scenes/${board.id}`, { folder_id: null }, { method: "PATCH" });
+    expect(moved.status).toBe(200);
+    expect(await responseJson(moved)).toMatchObject({ folder_id: null });
   });
 
   it("authorizes workspace statistics and returns an empty workspace", async () => {
@@ -374,6 +399,20 @@ describe("cloud persistence server", () => {
 
   it("requires explicit production authentication configuration", () => {
     expect(() => createServerConfig({ NODE_ENV: "production" })).toThrow();
+    expect(() =>
+      createServerConfig({ NODE_ENV: "production", AUTH_PASSWORD: "short" }),
+    ).toThrow("at least 8 characters");
+    expect(() =>
+      createServerConfig({
+        AUTH_PASSWORD: "a".repeat(257),
+      }),
+    ).toThrow("cannot exceed 256");
+    expect(
+      createServerConfig({
+        NODE_ENV: "production",
+        AUTH_PASSWORD: "secure-password-123",
+      }).authPassword,
+    ).toBe("secure-password-123");
     expect(
       createServerConfig({ NODE_ENV: "production", ALLOW_ANONYMOUS: "true" })
         .allowAnonymous,
@@ -935,16 +974,18 @@ describe("cloud persistence server", () => {
       headers: { Cookie: cookie },
     });
     expect(opened.status).toBe(200);
+    expect(
+      (await responseJson<{ lastOpenedAt: number }>(opened)).lastOpenedAt,
+    ).toBeGreaterThan(0);
+    // Opening only records last_opened_at, which is not part of the document
+    // the browser caches, so the validator must still match and avoid a full
+    // scene download on every visit.
     const afterOpen = await request(handler, "/api/scenes/scene_page_a", {
       headers: { Cookie: cookie, "If-None-Match": sceneEtag! },
     });
-    expect(afterOpen.status).toBe(200);
-    expect(
-      (await responseJson<{ last_opened_at: number }>(afterOpen))
-        .last_opened_at,
-    ).toBeGreaterThan(0);
+    expect(afterOpen.status).toBe(304);
 
-    const openedEtag = afterOpen.headers.get("etag");
+    const openedEtag = sceneEtag;
     const thumbnail = await request(
       handler,
       "/api/scenes/scene_page_a/thumbnail",
@@ -2456,19 +2497,33 @@ describe("cloud persistence server", () => {
 
   it("cleans abandoned final backup files while preserving active downloads", async () => {
     const { runtime, directory } = createTestRuntime();
+    const recentBackup = path.join(directory, "excalidraw-backup-copied.db");
     const staleBackup = path.join(directory, "excalidraw-backup-expired.db");
     const activeBackup = path.join(
       directory,
       "excalidraw-full-backup-active.tar",
     );
+    const staleStagingDir = path.join(
+      directory,
+      "excalidraw-backup-stage-interrupted",
+    );
+    await fs.writeFile(recentBackup, "copied");
     await fs.writeFile(staleBackup, "stale");
     await fs.writeFile(activeBackup, "active");
+    await fs.mkdir(staleStagingDir, { recursive: true });
+    await fs.writeFile(path.join(staleStagingDir, "attachment"), "linked");
+    const old = (Date.now() - STALE_FILE_ARTIFACT_MS - 60_000) / 1000;
+    await fs.utimes(staleBackup, old, old);
     runtime.activeBackupArtifacts.add(path.resolve(activeBackup));
 
     await cleanupStaleFileArtifacts(runtime);
 
+    // A finished backup copied into data/ by an operator is indistinguishable
+    // from an abandoned artifact, so age is the only safe criterion.
+    expect(existsSync(recentBackup)).toBe(true);
     expect(existsSync(staleBackup)).toBe(false);
     expect(existsSync(activeBackup)).toBe(true);
+    expect(existsSync(staleStagingDir)).toBe(false);
   });
 
   it("reports an unhealthy local attachment directory", async () => {

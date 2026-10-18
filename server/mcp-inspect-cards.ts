@@ -73,3 +73,47 @@ export const createInspectCardResolver = (
   };
   return { resolve, stats };
 };
+
+/** Optional geometric heuristic, separate from native group ownership. No inference by full containment. */
+export const createInspectGeometryResolver = (
+  elements: readonly ExcalidrawElement[],
+  options: { maxReferences?: number; maxPairs?: number } = {},
+) => {
+  const bound = (value: number | undefined, maximum: number) => Number.isFinite(value) ? Math.max(0, Math.min(maximum, Math.floor(value!))) : maximum;
+  const maxReferences = bound(options.maxReferences, 200_000), maxPairs = bound(options.maxPairs, 100_000);
+  const stats = { references: 0, pairs: 0, skippedAmbiguousContainer: 0, complete: true, limitations: [] as string[] };
+  const incomplete = (message: string) => { stats.complete = false; if (!stats.limitations.includes(message)) stats.limitations.push(message); };
+  const candidates: ExcalidrawElement[] = [];
+  let indexTruncated = elements.length > MAX_SCENE_ELEMENTS;
+  if (indexTruncated) incomplete("几何容器索引超过 50000 个图元，已截断");
+  for (const element of elements.slice(0, MAX_SCENE_ELEMENTS)) {
+    if (!element || !visibleBackground(element)) continue;
+    if (stats.references >= maxReferences) { incomplete("几何容器索引达到引用容量上限"); indexTruncated = true; break; }
+    stats.references++;
+    if (!geometryValid(element) || typeof element.id !== "string") { incomplete("部分实心矩形几何无效，无法安全推断容器"); indexTruncated = true; continue; }
+    candidates.push(element);
+  }
+  const resolve = (text: ExcalidrawTextElement): CardResult => {
+    if (!text || text.isDeleted || text.type !== "text" || !geometryValid(text) || !Array.isArray(text.groupIds)) return result("invalid");
+    if (text.containerId || text.groupIds.length) return result("no_container");
+    if (indexTruncated) return result("limit");
+    // Use the displayed top-left corner; a rotated text's stored x/y are unrotated coordinates.
+    const tc = Math.cos(text.angle), ts = Math.sin(text.angle);
+    const startX = text.x + text.width / 2 - text.width / 2 * tc + text.height / 2 * ts;
+    const startY = text.y + text.height / 2 - text.width / 2 * ts - text.height / 2 * tc;
+    let owner: ExcalidrawElement | undefined;
+    for (const candidate of candidates) {
+      if (stats.pairs >= maxPairs) { incomplete("几何容器候选比较达到容量上限"); return result("limit"); }
+      stats.pairs++;
+      const dx = startX - candidate.x - candidate.width / 2, dy = startY - candidate.y - candidate.height / 2;
+      const cosine = Math.cos(candidate.angle), sine = Math.sin(candidate.angle);
+      const localX = dx * cosine + dy * sine, localY = -dx * sine + dy * cosine;
+      if (Math.abs(localX) > candidate.width / 2 + 1e-7 || Math.abs(localY) > candidate.height / 2 + 1e-7) continue;
+      // More than one eligible rectangle, including shadow layers, leaves intent ambiguous.
+      if (owner) { stats.skippedAmbiguousContainer++; return result("ambiguous"); }
+      owner = candidate;
+    }
+    return owner ? { container: owner, padding: 0, heuristic: true } : result("no_container");
+  };
+  return { resolve, stats };
+};

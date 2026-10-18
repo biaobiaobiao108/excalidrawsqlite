@@ -755,7 +755,12 @@ export class CloudSaveQueue {
     });
     this.pending.set(snapshot.sceneId, queuedSnapshot);
     void this.persistSnapshot(queuedSnapshot);
-    if (!(this.isSaving && this.activeSceneId === snapshot.sceneId)) {
+    if (
+      !(this.isSaving && this.activeSceneId === snapshot.sceneId) &&
+      !this.blocked.has(snapshot.sceneId)
+    ) {
+      // A blocked scene will not flush, so advertising "pending" would tell the
+      // user the edit is on its way when it is actually sitting still.
       this.setStatus(snapshot.sceneId, "pending");
     }
     this.schedule(snapshot.sceneId);
@@ -781,6 +786,20 @@ export class CloudSaveQueue {
       this.blocked.delete(sceneId);
       this.setStatus(sceneId, "pending");
       this.schedule(sceneId, 0);
+    }
+  }
+
+  /**
+   * The user dismissed the sign-in prompt without authenticating. Keep the
+   * snapshot queued, but release the block: otherwise nothing will ever flush
+   * this scene again and every later edit fails silently.
+   */
+  releaseAuthBlock(sceneId: string) {
+    if (this.blocked.get(sceneId) === "auth") {
+      this.blocked.delete(sceneId);
+      if (this.pending.has(sceneId)) {
+        this.setStatus(sceneId, "error");
+      }
     }
   }
 
@@ -831,6 +850,9 @@ export class CloudSaveQueue {
       }
       if (this.activeFlushPromise) {
         await this.activeFlushPromise;
+        // Another waiter may have started the next save while this call was
+        // suspended. Recheck ownership before selecting or publishing a flush.
+        continue;
       }
 
       const targetSceneId = sceneId

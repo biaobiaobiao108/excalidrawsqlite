@@ -34,7 +34,7 @@ test("MCP initialization works for Python, curl and ordinary client user agents;
       expect(initialize.status).toBe(200);
       const initializeBody = await initialize.text();
       expect(initializeBody).toContain("protocolVersion");
-      expect(initializeBody).toContain("当前回收站保留 7 天");
+      expect(initializeBody).toContain("回收站保留 7 天");
       const session = initialize.headers.get("mcp-session-id");
       const notification = await context.mcp.fetch(new Request("http://test.local/mcp/report-test", {
         method: "POST", headers: { ...headers, ...(session ? { "mcp-session-id": session } : {}) },

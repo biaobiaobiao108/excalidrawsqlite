@@ -188,7 +188,7 @@ describe("Excalidraw MCP endpoint", () => {
           { type: "rectangle", id: "a", groupIds: ["inner", "outer"], x: 0, y: 0, width: 100, height: 100, text: "节点", labelId: "caption" },
           { type: "text", id: "title", groupId: "inner", x: 0, y: 150, text: "独立标题" },
           { type: "ellipse", id: "b", x: 300, y: 0, width: 100, height: 100 },
-          { type: "arrow", id: "edge", points: [[110, 50], [290, 50]] },
+          { type: "arrow", id: "edge", x: 110, y: 50, points: [[0, 0], [180, 0]] },
         ] };
       const drawing = await invoke<{ boardId: string; autoBinding: { bindings: unknown[] } }>("create_board", drawingArgs);
       expect(drawing.autoBinding.bindings).toHaveLength(2);
@@ -210,13 +210,13 @@ describe("Excalidraw MCP endpoint", () => {
       expect(runtime.db.query("SELECT COUNT(*) AS count FROM folders WHERE name = ?").get("幂等文件夹")).toEqual({ count: 0 });
       const conflict = await client.callTool({ name: "create_board", arguments: { ...drawingArgs, name: "改参数" } });
       expect(conflict.structuredContent).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_KEY_CONFLICT" } });
-      await invoke("add_elements", { boardId: drawing.boardId, elements: [{ type: "arrow", id: "legacy", points: [[110, 50], [290, 50]] }] });
+      await invoke("add_elements", { boardId: drawing.boardId, elements: [{ type: "arrow", id: "legacy", x: 110, y: 50, points: [[0, 0], [180, 0]] }] });
       const added = await invoke<{ autoBinding: { bindings: Array<{ elementId: string; endpoint: string; targetId: string }> } }>("add_elements", {
-        boardId: drawing.boardId, autoBind: true, elements: [{ type: "arrow", id: "new-edge", points: [[110, 50], [290, 50]], startBinding: { elementId: "a" } }],
+        boardId: drawing.boardId, autoBind: true, elements: [{ type: "arrow", id: "new-edge", x: 110, y: 50, points: [[0, 0], [180, 0]], startBinding: { elementId: "a" } }],
       });
       expect(added.autoBinding.bindings).toEqual([{ elementId: "new-edge", endpoint: "endBinding", targetId: "b" }]);
       const updated = await invoke<{ autoBinding: { bindings: Array<{ elementId: string }> } }>("update_board", {
-        boardId: drawing.boardId, autoBind: true, elements: [{ type: "arrow", id: "updated-edge", points: [[110, 50], [290, 50]] }],
+        boardId: drawing.boardId, autoBind: true, elements: [{ type: "arrow", id: "updated-edge", x: 110, y: 50, points: [[0, 0], [180, 0]] }],
       });
       expect(updated.autoBinding.bindings).toHaveLength(2);
       const attached = await invoke<Board>("get_board", { boardId: drawing.boardId, view: "full" });
@@ -263,14 +263,14 @@ describe("Excalidraw MCP endpoint", () => {
           { type: "text", id: "second", x: 0, y: 0, text: "重叠的第二段文字" },
           { type: "rectangle", id: "tiny", x: 500, y: 0, width: 80, height: 20,
             text: "绑定文字太长\n第二行\n第三行\n第四行", labelId: "overflow-label" },
-          { type: "arrow", id: "decoration", points: [[100, 500], [200, 500]] },
+          { type: "arrow", id: "decoration", x: 100, y: 500, points: [[0, 0], [100, 0]] },
         ],
       });
       const before = await invoke<Record<string, unknown>>("get_board", { boardId: created.boardId, view: "full" });
       const full = await invoke<Inspection>("inspect_layout", { boardId: created.boardId });
       expect(full.boardId).toBe(created.boardId);
       expect(full.revision).toBe(created.revision);
-      expect(full.complete).toBe(true);
+      expect(full.complete).toBe(false);
       expect(full.summary.errors + full.summary.warnings).toBe(full.issues.length);
       expect(full.issues).toContainEqual(expect.objectContaining({ type: "text_overlap", elementIds: expect.arrayContaining(["first", "second"]) }));
       expect(full.issues.some((issue) => issue.type === "text_overflow" && issue.elementIds.includes("overflow-label"))).toBe(true);
@@ -436,7 +436,8 @@ describe("Excalidraw MCP endpoint", () => {
         "create_folder", "update_folder", "delete_folder", "manage_board", "delete_board", "restore_board", "batch_manage_boards",
       ]));
       expect(tools.tools.map((tool) => tool.name).some((name) => /clear_trash|purge|permanent/.test(name))).toBe(false);
-      expect(client.getInstructions()).toContain("一次传入名称和全部 elements");
+      expect(client.getInstructions()).toContain("一次提交全部内容");
+      expect(client.getInstructions()!.length).toBeLessThanOrEqual(1600);
 
       const created = toolResult<{ boardId: string; name: string; revision: number }>(
         await client.callTool({
@@ -475,10 +476,9 @@ describe("Excalidraw MCP endpoint", () => {
               },
               {
                 type: "arrow",
-                startX: 280,
-                startY: 165,
-                endX: 410,
-                endY: 165,
+                x: 280,
+                y: 165,
+                points: [[0, 0], [130, 0]],
               },
               {
                 type: "text",
@@ -630,7 +630,7 @@ describe("Excalidraw MCP endpoint", () => {
         const conflict = await client.callTool({ name, arguments: { boardId: complete.boardId, expectedRevision: 1,
           ...(name === "remove_elements" ? { elementIds: [complete.requestedElementIds[1]] }
             : { elements: [{ type: "text", x: 0, y: 0, text: "不会写入" }] }) } });
-        expect(conflict.isError).not.toBe(true);
+        expect(conflict.isError).toBe(true);
         expect(conflict.structuredContent).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
       }
       const emptyUpdate = await client.callTool({ name: "update_board", arguments: { boardId: complete.boardId } });
@@ -669,7 +669,7 @@ describe("Excalidraw MCP endpoint", () => {
           elements: [
             { id: "source", type: "rectangle", x: 0, y: 0, width: 180, height: 80, text: "开始" },
             { id: "target", type: "rectangle", x: 300, y: 100, width: 180, height: 80, text: "终点" },
-            { id: "connector", type: "arrow", points: [[180, 40], [250, 40], [250, 140], [300, 140]],
+            { id: "connector", type: "arrow", x: 180, y: 40, points: [[0, 0], [70, 0], [70, 100], [120, 100]],
               startBinding: { elementId: "source" }, endBinding: { elementId: "target" } },
           ],
         },
@@ -783,7 +783,7 @@ describe("Excalidraw MCP endpoint", () => {
       const readable = toolResult<{ elements: Array<Record<string, unknown>>; pointCoordinateSystem: string }>(await client.callTool({
         name: "get_board", arguments: { boardId: clone.boardId, elementIds: ["connector"] },
       }));
-      expect(readable.pointCoordinateSystem).toBe("absolute");
+      expect(readable.pointCoordinateSystem).toBe("relative");
       expect(readable.elements[0].points).toEqual(edge.points);
       const labelBoard = toolResult<{ boardId: string; revision: number; generatedElementIds: string[] }>(await client.callTool({
         name: "create_board", arguments: { responseMode: "ids", name: "标签边界", elements: [{ id: "rr", type: "rectangle", x: 0, y: 0, width: 100, height: 80, text: "短标签" }] },

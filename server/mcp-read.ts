@@ -25,7 +25,7 @@ export const compactDrawingElements = (current: readonly ExcalidrawElement[]) =>
       ...(label ? { text: label.originalText, labelId: label.id }
         : element.type === "text" ? { text: element.originalText,
             ...(element.containerId ? { containerId: element.containerId } : {}) } : {}),
-      ...("points" in element ? { points: element.points.map(([x, y]) => [element.x + x, element.y + y]) } : {}),
+      ...("points" in element ? { points: element.points } : {}),
       ...(element.type === "arrow" ? {
         ...(element.startBinding ? { startBinding: { elementId: element.startBinding.elementId } } : {}),
         ...(element.endBinding ? { endBinding: { elementId: element.endBinding.elementId } } : {}),

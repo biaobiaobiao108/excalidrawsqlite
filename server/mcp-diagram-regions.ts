@@ -166,7 +166,9 @@ export const buildRegionDiagram = (args: Diagram, cards: Spec[], heights: number
     const fromRegion = byId.get(args.nodes.find((node) => node.id === edge.from)!.regionId!)!;
     const sameRegion = args.nodes.find((node) => node.id === edge.to)!.regionId === fromRegion.id;
     const id = allocate(`diagram_edge_${index}`);
-    elements.push(drawingElementSchema.parse({ type: "arrow", id, points, strokeColor: style.strokeColor, roughness: 0,
+    elements.push(drawingElementSchema.parse({ type: "arrow", id, x: start[0], y: start[1],
+      points: points.map((point) => [point[0] - start[0], point[1] - start[1]]),
+      strokeColor: style.strokeColor, roughness: 0,
       groupIds: sameRegion ? groupIds(fromRegion) : [],
       startBinding: { elementId: edge.from, fixedPoint: vertical ? [0.5, 1] : [1, 0.5] },
       endBinding: { elementId: edge.to, fixedPoint: vertical ? [0.5, 0] : [0, 0.5] },
@@ -180,7 +182,8 @@ export const buildRegionDiagram = (args: Diagram, cards: Spec[], heights: number
     receipt.elementIds.push(...receipt.nodeIds.map((id) => labels.get(id)!));
   }
   const pointBounds = [...regionBoxes.values()].flatMap((box) => [[box.x, box.y], [box.x + box.width, box.y + box.height]]);
-  for (const element of elements) if (element.type === "arrow") pointBounds.push(...element.points!);
+  for (const element of elements) if (element.type === "arrow")
+    pointBounds.push(...element.points!.map((point) => [element.x! + point[0], element.y! + point[1]]));
   const left = Math.min(...pointBounds.map((point) => point[0])), top = Math.min(...pointBounds.map((point) => point[1]));
   const right = Math.max(...pointBounds.map((point) => point[0])), bottom = Math.max(...pointBounds.map((point) => point[1]));
   if (![left, top, right, bottom].every((value) => Number.isFinite(value) && Math.abs(value) <= 1_000_000))
