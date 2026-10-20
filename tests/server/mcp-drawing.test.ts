@@ -41,6 +41,38 @@ const flow = () =>
     }),
   ]).elements;
 describe("MCP drawing contracts", () => {
+  it("resizes line and arrow paths with their bounds and preserves untouched axes", () => {
+    for (const type of ["line", "arrow"] as const) {
+      const current = createDrawingBatch([drawingElementSchema.parse({ type, id: "path",
+        x: 20, y: 30, points: [[0, 0], [-100, 25], [100, 50]] })]).elements;
+      const resized = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "path", width: 400, height: 100 })]);
+      expect(resized.updatedCount).toBe(1);
+      expect(resized.elements[0]).toMatchObject({ x: 20, y: 30, width: 400, height: 100,
+        points: [[0, 0], [-200, 50], [200, 100]] });
+      const singleAxis = updateDrawingElements(current, [elementUpdateSchema.parse({ id: "path", width: 100 })]);
+      expect(singleAxis.elements[0]).toMatchObject({ width: 100, height: 50,
+        points: [[0, 0], [-50, 25], [50, 50]] });
+      expect(updateDrawingElements(resized.elements, inputDrawingElements(resized.elements).elements.map((spec) => elementUpdateSchema.parse(spec))).updatedCount).toBe(0);
+      expect(current[0]).toMatchObject({ width: 200, height: 50, points: [[0, 0], [-100, 25], [100, 50]] });
+    }
+  });
+
+  it("resizes horizontal paths on their nonzero axis and rejects ambiguous or unsafe dimensions", () => {
+    const current = createDrawingBatch([drawingElementSchema.parse({ type: "line", id: "path",
+      x: 0, y: 0, points: [[0, 0], [100, 0]] })]).elements;
+    expect(updateDrawingElements(current, [elementUpdateSchema.parse({ id: "path", width: 200 })]).elements[0])
+      .toMatchObject({ width: 200, height: 0, points: [[0, 0], [200, 0]] });
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "path", height: 100 })])).toThrow("零尺寸轴");
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "path", width: 200,
+      x: 0, y: 0, points: [[0, 0], [100, 0]] })])).toThrow("不能与 points");
+    expect(() => updateDrawingElements(current, [elementUpdateSchema.parse({ id: "path", width: 200, x: 999_900 })])).toThrow("所有全局点坐标");
+    expect(() => updateDrawingElements(flow(), [elementUpdateSchema.parse({ id: "edge", width: 300 })])).toThrow("带绑定");
+    const arrow = createDrawingBatch([drawingElementSchema.parse({ type: "arrow", id: "edge",
+      x: 0, y: 0, points: [[0, 0], [100, 100]] })]).elements;
+    expect(() => updateDrawingElements(arrow.map((element) => ({ ...element, elbowed: true })),
+      [elementUpdateSchema.parse({ id: "edge", width: 200 })])).toThrow("肘线");
+  });
+
   it("normalizes relative line points and roundtrips canonical native origins without changes", () => {
     for (const type of ["line", "arrow"] as const) {
       const local = drawingElementSchema.parse({ type, id: "edge", x: 100, y: -50, points: [[10, 20], [-40, 30], [80, 90]] });
