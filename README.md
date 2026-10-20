@@ -208,7 +208,7 @@ AUTH_PASSWORD=your-password bun run dev
 | `TRASH_RETENTION_DAYS` | `30` (30 天) | 否 | 回收站画板保留天数。设为 `0` 禁用自动清理；超期后自动物理删除并回收 SQLite 空间与关联孤立附件。 |
 | `MAX_FILE_BYTES` | `4194304` (4MB) | 否 | 单个图片/附件上传大小限制（字节）。 |
 | `MAX_SCENE_BODY_BYTES` | `16777216` (16MB) | 否 | 单个画板 JSON 数据最大请求体大小。 |
-| `MAX_IN_FLIGHT_BODY_BYTES` | `67108864` (64MB) | 否 | 所有并发请求体的聚合内存预算；若配置低于单请求上限，会自动提升到安全下限。 |
+| `MAX_IN_FLIGHT_BODY_BYTES` | `67108864` (64MB) | 否 | 所有并发请求体的聚合内存预算；若配置低于单请求上限，会自动提升到安全下限。启用 MCP 时，下限至少为两倍单画板请求上限，为工具内部 API 调用保留预算。 |
 | `MAX_BACKUP_BYTES` | `134217728` (128MB) | 否 | 单次数据库快照或完整备份的原始内容大小上限。 |
 
 构建版本标识统一通过 `BUILD_SHA` 注入（Docker 同名 build arg），不接受旧构建环境变量别名。默认静态产物目录仅为 `excalidraw-app/build`，自定义目录需显式指定 `STATIC_DIR`；不会再回退到旧的 `dist/build` 目录。服务端仅读取当前 SQLite schema，损坏或缺失的修订号、图元数量、场景 JSON 明确报错，不推测版本或返回空场景。

@@ -55,6 +55,58 @@ const toolResult = <T>(result: {
 };
 
 describe("Excalidraw MCP endpoint", () => {
+  it("accounts MCP request bodies against the shared in-flight budget", async () => {
+    const directory = path.join(os.tmpdir(), `excalidraw-mcp-body-budget-${crypto.randomUUID()}`);
+    const runtime = createRuntime({
+      dbPath: path.join(directory, "database.db"),
+      filesDir: path.join(directory, "files"),
+      config: createServerConfig({
+        NODE_ENV: "test",
+        ALLOW_ANONYMOUS: "true",
+        MCP_TOKEN: "body-budget-test",
+        MAX_SCENE_BODY_BYTES: "4096",
+        MAX_FILE_BYTES: "1024",
+        MAX_IN_FLIGHT_BODY_BYTES: "4096",
+      }),
+    });
+    resources.push({ runtime, directory });
+    const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
+    const client = new Client(
+      { name: "body-budget-test", version: "1.0.0" },
+      { versionNegotiation: { mode: "auto" } },
+    );
+    const transport = new StreamableHTTPClientTransport(
+      new URL("http://test.local/mcp/body-budget-test"),
+      { fetch: (input, init) => handler.fetch(new Request(input, init)) },
+    );
+
+    try {
+      await client.connect(transport);
+      expect(runtime.config.maxInFlightBodyBytes).toBe(8192);
+      const createdBoards = await Promise.all([
+        client.callTool({
+          name: "create_board",
+          arguments: { name: "并发预算一", elements: [] },
+        }),
+        client.callTool({
+          name: "create_board",
+          arguments: { name: "并发预算二", elements: [] },
+        }),
+      ]);
+      for (const created of createdBoards) {
+        expect(created.isError).not.toBe(true);
+        expect(created.structuredContent).toMatchObject({ ok: true });
+      }
+      expect(runtime.bodyMemoryBudget.getStats()).toMatchObject({
+        currentBytes: 0,
+        peakBytes: runtime.config.maxInFlightBodyBytes,
+      });
+    } finally {
+      await client.close();
+      await handler.close();
+    }
+  });
+
   it("detects escaped grid text through its native group and keeps shape collisions advisory", async () => {
     const directory = path.join(os.tmpdir(), `excalidraw-mcp-group-overflow-${crypto.randomUUID()}`);
     const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),

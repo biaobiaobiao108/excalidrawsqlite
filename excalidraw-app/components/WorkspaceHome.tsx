@@ -2223,7 +2223,7 @@ export const WorkspaceHome = ({
         onConfirm: async () => {
           setPendingAction(`delete:${scene.id}`);
           try {
-            await deleteCloudScene(scene.id, true);
+            await deleteCloudScene(scene.id, true, scene.revision);
             setTrashScenes((current) =>
               current.filter((item) => item.id !== scene.id),
             );

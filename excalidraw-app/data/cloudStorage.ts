@@ -748,8 +748,14 @@ export async function restoreCloudScene(id: string): Promise<boolean> {
 export async function deleteCloudScene(
   id: string,
   permanent = false,
+  revision?: number,
 ): Promise<boolean> {
-  const query = permanent ? "?permanent=true" : "";
+  if (permanent && revision === undefined) {
+    throw new Error("彻底删除画板需要修订号");
+  }
+  const query = permanent
+    ? `?permanent=true&revision=${revision}`
+    : "";
   const result = await fetchJson<{ success: boolean }>(
     `/api/scenes/${encodeURIComponent(id)}${query}`,
     {

@@ -74,7 +74,13 @@ export const getCloudPersistenceSignature = (
     appState,
     files: fileIds.map((fileId: FileId) => {
       const file = files[fileId];
-      return [fileId, file?.mimeType, file?.created, file?.dataURL?.length];
+      return [
+        fileId,
+        file?.mimeType,
+        file?.created,
+        file?.version,
+        file?.dataURL?.length,
+      ];
     }),
   });
 

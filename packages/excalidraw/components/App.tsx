@@ -5394,6 +5394,7 @@ class App extends React.Component<AppProps, AppState> {
     files: BinaryFiles | BinaryFileData[],
     replace = false,
   ) => {
+    const previousFiles = this.files;
     const nextFiles = replace ? {} : { ...this.files };
     const addedFiles: BinaryFiles = {};
 
@@ -5402,6 +5403,19 @@ class App extends React.Component<AppProps, AppState> {
     for (const fileData of _files) {
       if (nextFiles[fileData.id]) {
         continue;
+      }
+
+      const previousFile = previousFiles[fileData.id];
+      if (
+        replace &&
+        previousFile &&
+        previousFile.dataURL !== fileData.dataURL
+      ) {
+        // Preserve a monotonic file version when an imported scene replaces
+        // the payload for an existing file ID. Persistence signatures and
+        // file storage use this version to detect changed binary contents.
+        fileData.version =
+          Math.max(previousFile.version ?? 1, fileData.version ?? 1) + 1;
       }
 
       addedFiles[fileData.id] = fileData;

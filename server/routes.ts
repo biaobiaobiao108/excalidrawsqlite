@@ -1795,6 +1795,18 @@ export const createRequestHandler = (
 
       if (pathname.startsWith("/api/scenes/") && req.method === "DELETE") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
+        const isPermanent = url.searchParams.get("permanent") === "true";
+        const revisionParam = url.searchParams.get("revision");
+        const expectedRevision = revisionParam === null
+          ? undefined
+          : requireRevision(Number(revisionParam));
+        if (isPermanent && expectedRevision === undefined) {
+          throw new HttpError(
+            400,
+            "INVALID_REVISION",
+            "彻底删除画板必须提供有效的 revision",
+          );
+        }
         const existing = stmts.getSceneStateById.get(id) as {
           id: string;
           deleted_at: number | null;
@@ -1807,18 +1819,45 @@ export const createRequestHandler = (
             deleted: false,
           });
         }
-        const isPermanent = url.searchParams.get("permanent") === "true";
+        if (
+          expectedRevision !== undefined &&
+          storedSceneRevision(existing.revision) !== expectedRevision
+        ) {
+          throw new HttpError(
+            409,
+            "SCENE_SELECTION_STALE",
+            "选中的画板已发生变化，请刷新列表后重新选择",
+          );
+        }
         if (isPermanent) {
-          let changes = 0;
           const transaction = runtime.db.transaction(() => {
+            const current = stmts.getSceneStateById.get(id) as {
+              revision: number;
+            } | null;
+            if (
+              !current ||
+              storedSceneRevision(current.revision) !== expectedRevision
+            ) {
+              throw new HttpError(
+                409,
+                "SCENE_SELECTION_STALE",
+                "选中的画板已发生变化，请刷新列表后重新选择",
+              );
+            }
             runtime.db.run("DELETE FROM scene_files WHERE scene_id = ?", [id]);
-            const deleted = runtime.db.run("DELETE FROM scenes WHERE id = ?", [id]);
-            changes = deleted.changes;
+            const deleted = runtime.db.run(
+              "DELETE FROM scenes WHERE id = ? AND revision = ?",
+              [id, expectedRevision],
+            );
+            if (deleted.changes !== 1) {
+              throw new HttpError(
+                409,
+                "SCENE_SELECTION_STALE",
+                "选中的画板已发生变化，请刷新列表后重新选择",
+              );
+            }
           });
           transaction.immediate();
-          if (changes !== 1) {
-            throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
-          }
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: id,

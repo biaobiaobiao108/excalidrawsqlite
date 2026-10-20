@@ -182,6 +182,84 @@ const getPathToken = (req: Request) => {
   }
 };
 
+const createRequestBodyLimiter = (maxConcurrent: number) => {
+  let active = 0;
+  const waiters: Array<{
+    resolve: () => void;
+    reject: (error: unknown) => void;
+    remove: () => void;
+    settled: boolean;
+  }> = [];
+
+  const releaseSlot = () => {
+    active = Math.max(0, active - 1);
+    while (waiters.length) {
+      const waiter = waiters.shift()!;
+      if (waiter.settled) {
+        continue;
+      }
+      waiter.settled = true;
+      waiter.remove();
+      active += 1;
+      waiter.resolve();
+      return;
+    }
+  };
+
+  return {
+    acquire: (signal?: AbortSignal) =>
+      new Promise<() => void>((resolve, reject) => {
+        if (signal?.aborted) {
+          reject(new DOMException("The request was aborted", "AbortError"));
+          return;
+        }
+        if (active < maxConcurrent) {
+          active += 1;
+          let released = false;
+          resolve(() => {
+            if (!released) {
+              released = true;
+              releaseSlot();
+            }
+          });
+          return;
+        }
+
+        const waiter = {
+          resolve: () => {
+            let released = false;
+            resolve(() => {
+              if (!released) {
+                released = true;
+                releaseSlot();
+              }
+            });
+          },
+          reject: (error: unknown) => {
+            if (waiter.settled) {
+              return;
+            }
+            waiter.settled = true;
+            waiter.remove();
+            reject(error);
+          },
+          remove: () => {
+            signal?.removeEventListener("abort", abort);
+            const index = waiters.indexOf(waiter);
+            if (index >= 0) {
+              waiters.splice(index, 1);
+            }
+          },
+          settled: false,
+        };
+        const abort = () =>
+          waiter.reject(new DOMException("The request was aborted", "AbortError"));
+        signal?.addEventListener("abort", abort, { once: true });
+        waiters.push(waiter);
+      }),
+  };
+};
+
 const createInternalApi = (apiHandler: ApiHandler, sessionToken: string) =>
   async <T>(path: string, method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown) => measureMcpApi(method, async () => {
     const req = new Request(`http://excalidraw-mcp.internal${path}`, {
@@ -216,6 +294,15 @@ export const createMcpRequestHandler = (
   apiHandler: ApiHandler,
 ): McpRequestHandler => {
   const expectedToken = runtime.config.mcpToken;
+  const maxConcurrentBodyRequests = Math.max(
+    1,
+    Math.floor(
+      runtime.config.maxInFlightBodyBytes / runtime.config.maxSceneBodyBytes,
+    ) - 1,
+  );
+  const requestBodyLimiter = createRequestBodyLimiter(
+    maxConcurrentBodyRequests,
+  );
   const internalSessionToken = expectedToken ? randomBase64Url(32) : null;
   if (internalSessionToken) {
     // MCP calls pass through the exact same route validation and persistence
@@ -817,19 +904,36 @@ export const createMcpRequestHandler = (
         );
       }
 
-      const mcpResponse = await mcp.fetch(req, {
-        authInfo: {
-          token: expectedToken,
-          clientId: "excalidrawsqlite-mcp-client",
-          scopes: ["boards:read", "boards:write"],
-          expiresAt: Number.MAX_SAFE_INTEGER,
-        },
-      });
-      return response(runtime, req, mcpResponse.body, {
-        status: mcpResponse.status,
-        statusText: mcpResponse.statusText,
-        headers: mcpResponse.headers,
-      });
+      const releaseBodyRequestSlot = req.body
+        ? await requestBodyLimiter.acquire(req.signal)
+        : null;
+      let reservedBytes = 0;
+      try {
+        if (req.body) {
+          reservedBytes = await runtime.bodyMemoryBudget.acquire(
+            runtime.config.maxSceneBodyBytes,
+            req.signal,
+          );
+        }
+        const mcpResponse = await mcp.fetch(req, {
+          authInfo: {
+            token: expectedToken,
+            clientId: "excalidrawsqlite-mcp-client",
+            scopes: ["boards:read", "boards:write"],
+            expiresAt: Number.MAX_SAFE_INTEGER,
+          },
+        });
+        return response(runtime, req, mcpResponse.body, {
+          status: mcpResponse.status,
+          statusText: mcpResponse.statusText,
+          headers: mcpResponse.headers,
+        });
+      } finally {
+        if (reservedBytes > 0) {
+          runtime.bodyMemoryBudget.release(reservedBytes);
+        }
+        releaseBodyRequestSlot?.();
+      }
     },
     close: async () => {
       if (internalSessionToken) {

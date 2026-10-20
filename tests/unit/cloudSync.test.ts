@@ -42,6 +42,44 @@ const createPersistence = () => {
 };
 
 describe("cloud save queue", () => {
+  it("detects changed file payloads through their version without serializing data URLs", () => {
+    const image = {
+      id: "image",
+      type: "image",
+      fileId: "file",
+      version: 1,
+      versionNonce: 11,
+      isDeleted: false,
+    };
+    const original = {
+      name: "scene",
+      elements: [image],
+      appState: { viewBackgroundColor: "#ffffff", gridSize: 20 },
+      files: {
+        file: {
+          id: "file",
+          mimeType: "image/png",
+          created: 1,
+          version: 1,
+          dataURL: "data:image/png;base64,AAAA",
+        },
+      } as any,
+    };
+    const replacedFile = {
+      ...original.files.file,
+      version: 2,
+      dataURL: "data:image/png;base64,BBBB",
+    };
+
+    expect(replacedFile.dataURL.length).toBe(original.files.file.dataURL.length);
+    expect(
+      getCloudSceneLoadSignatures(original, {
+        ...original,
+        files: { file: replacedFile } as any,
+      }).hasChanges,
+    ).toBe(true);
+  });
+
   it("serializes concurrent flushes without starving network completions", () => {
     // A regression can spin in microtasks and prevent even the test runner's
     // timeout from firing. Keep the real queue in a bounded child process.
