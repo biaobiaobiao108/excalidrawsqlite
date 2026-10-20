@@ -1,7 +1,9 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 import {
+  downloadCloudBackup,
+  downloadCloudFullBackup,
   fetchCloudScenePage,
   fetchWithTimeout,
   saveFilesToCloud,
@@ -104,6 +106,75 @@ describe("cloud file upload", () => {
 });
 
 describe("cloud API timeouts", () => {
+  for (const download of [downloadCloudBackup, downloadCloudFullBackup]) {
+    for (const expires of [false, true]) {
+      it(`${download.name} ${expires ? "aborts at its bounded backup deadline" : "finishes after the default API deadline"}`, async () => {
+        const originalFetch = globalThis.fetch;
+        let elapsed = 0;
+        let nextTimerId = 0;
+        const timers = new Map<number, { deadline: number; run: () => void }>();
+        const timeoutSpy = spyOn(globalThis, "setTimeout").mockImplementation(
+          ((run: () => void, delay: number) => {
+            const id = ++nextTimerId;
+            timers.set(id, { deadline: elapsed + delay, run });
+            return id;
+          }) as typeof setTimeout,
+        );
+        const clearTimeoutSpy = spyOn(globalThis, "clearTimeout").mockImplementation(
+          (id) => { timers.delete(Number(id)); },
+        );
+        const advance = (duration: number) => {
+          elapsed += duration;
+          for (const [id, timer] of timers) {
+            if (timer.deadline <= elapsed) {
+              timers.delete(id);
+              timer.run();
+            }
+          }
+        };
+        let signal!: AbortSignal;
+        let body!: ReadableStreamDefaultController<Uint8Array>;
+        globalThis.fetch = (async (_input, init) => {
+          signal = init!.signal!;
+          return new Response(new ReadableStream<Uint8Array>({
+            start(controller) {
+              body = controller;
+              signal.addEventListener("abort", () => {
+                controller.error(new DOMException("Aborted", "AbortError"));
+              });
+            },
+          }));
+        }) as typeof fetch;
+        try {
+          const pending = download();
+          void pending.catch(() => {});
+          advance(10_001);
+          expect(signal.aborted).toBe(false);
+          if (expires) {
+            advance(30 * 60_000 - 10_002);
+            expect(signal.aborted).toBe(false);
+            advance(1);
+            expect(signal.aborted).toBe(true);
+          } else {
+            body.enqueue(new TextEncoder().encode("backup"));
+            body.close();
+          }
+          if (expires) {
+            await expect(pending).rejects.toMatchObject({ status: 0, code: "NETWORK_TIMEOUT" });
+          } else {
+            const backup = await pending;
+            expect(await backup.text()).toBe("backup");
+          }
+          expect(timers.size).toBe(0);
+        } finally {
+          globalThis.fetch = originalFetch;
+          timeoutSpy.mockRestore();
+          clearTimeoutSpy.mockRestore();
+        }
+      });
+    }
+  }
+
   it("keeps the timeout active until the response body finishes", async () => {
     const originalFetch = globalThis.fetch;
     const signals: AbortSignal[] = [];

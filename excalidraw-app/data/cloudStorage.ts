@@ -7,6 +7,9 @@ const CLOUD_API_TIMEOUT_MS = 10_000;
 // image). The default 10s is tuned for small JSON calls and would abort a slow
 // but healthy transfer.
 const CLOUD_TRANSFER_TIMEOUT_MS = 60_000;
+// Full backups include disk snapshots and every attachment. Allow slow exports
+// a bounded 30-minute window, including response body transfer.
+const CLOUD_BACKUP_TIMEOUT_MS = 30 * 60_000;
 const CLOUD_READ_RETRIES = 2;
 
 const uploadedCloudFileHashes = new WeakMap<object, string>();
@@ -922,6 +925,7 @@ export async function downloadCloudBackup(): Promise<Blob> {
     "/api/backup/snapshot",
     { headers: { Accept: "application/x-sqlite3" } },
     "下载云端数据库备份失败",
+    CLOUD_BACKUP_TIMEOUT_MS,
   );
   await assertResponse(res, "下载云端数据库备份失败");
   return res.blob();
@@ -932,6 +936,7 @@ export async function downloadCloudFullBackup(): Promise<Blob> {
     "/api/backup/full",
     { headers: { Accept: "application/x-tar" } },
     "下载云端完整备份失败",
+    CLOUD_BACKUP_TIMEOUT_MS,
   );
   await assertResponse(res, "下载云端完整备份失败");
   return res.blob();
