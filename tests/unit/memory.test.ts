@@ -252,6 +252,40 @@ describe("memory budgets", () => {
     expect(budget.getStats().availableBytes).toBe(4);
   });
 
+  it("grants an affordable queued reader when the blocking reader aborts", async () => {
+    const budget = new BodyMemoryBudget(20);
+    const active = await budget.acquire(16);
+    const finishing = await budget.acquire(4);
+    const controller = new AbortController();
+    const blocking = budget.acquire(16, controller.signal);
+    const waiting = budget.acquire(4);
+
+    budget.release(finishing);
+    expect(budget.getStats()).toMatchObject({
+      availableBytes: 4,
+      currentBytes: 16,
+      queuedRequests: 2,
+    });
+
+    controller.abort();
+    await expect(blocking).rejects.toMatchObject({ name: "AbortError" });
+    expect(budget.getStats()).toMatchObject({
+      availableBytes: 0,
+      currentBytes: 20,
+      queuedRequests: 0,
+    });
+    const granted = await waiting;
+    expect(granted).toBe(4);
+
+    budget.release(active);
+    budget.release(granted);
+    expect(budget.getStats()).toMatchObject({
+      availableBytes: 20,
+      currentBytes: 0,
+      queuedRequests: 0,
+    });
+  });
+
   it("uses the documented history defaults", () => {
     const history = new History({} as Store);
     expect(history.getMemoryStats()).toMatchObject({

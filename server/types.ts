@@ -46,6 +46,7 @@ export class BodyMemoryBudget {
           waiter.settled = true;
           waiter.remove();
           reject(error);
+          this.drainWaiters();
         },
         remove: () => {
           const index = this.waiters.indexOf(waiter);
@@ -75,6 +76,10 @@ export class BodyMemoryBudget {
   release(bytes: number) {
     this.availableBytes = Math.min(this.maxBytes, this.availableBytes + bytes);
     this.currentBytes = Math.max(0, this.currentBytes - bytes);
+    this.drainWaiters();
+  }
+
+  private drainWaiters() {
     while (this.waiters.length) {
       const waiter = this.waiters[0];
       if (this.availableBytes < waiter.bytes) {
