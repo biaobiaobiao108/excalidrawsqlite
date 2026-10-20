@@ -5,7 +5,7 @@ import { FileStatusStore } from "./fileStatusStore";
 
 /** Read hydrated files only after loading finishes, while retaining scene ownership. */
 export const waitForCloudFiles = async (
-  fileIds: readonly FileId[],
+  requestedFileIds: readonly FileId[] | (() => readonly FileId[]),
   getFiles: () => BinaryFiles,
   isCurrentScene: () => boolean,
 ): Promise<BinaryFiles> => {
@@ -14,6 +14,11 @@ export const waitForCloudFiles = async (
     if (!isCurrentScene()) {
       throw new Error("画板已切换，请在当前画板重新保存");
     }
+    // Explicit saves may wait while the user adds or removes images. Refresh
+    // the required files on every poll instead of retaining the initial scene.
+    const fileIds = typeof requestedFileIds === "function"
+      ? requestedFileIds()
+      : requestedFileIds;
     const statuses = FileStatusStore.getSnapshot().value;
     if (fileIds.some((fileId) => statuses.get(fileId) === "loading")) {
       if (Date.now() >= deadline) {

@@ -75,7 +75,7 @@ import type { CloudSceneData } from "./data/cloudStorage";
 
 import { updateStaleImageStatuses } from "./data/FileManager";
 import { FileStatusStore } from "./data/fileStatusStore";
-import { waitForCloudFiles } from "./data/waitForCloudFiles";
+import { prepareCloudSaveSnapshot } from "./data/prepareCloudSaveSnapshot";
 import { importFromLocalStorage } from "./data/localStorage";
 
 import {
@@ -763,26 +763,16 @@ const ExcalidrawWrapper = (props: {
     }
     const loadId = cloudSceneLoadIdRef.current;
     try {
-      const persistedElements = snapshot.elements.filter(
-        (element: any) => element?.isDeleted !== true,
-      );
-      const persistedSnapshot = {
-        ...snapshot,
-        elements: persistedElements,
-      };
-      const fileIds = getCloudFileIds(persistedElements);
-      persistedSnapshot.files = await waitForCloudFiles(
-        fileIds,
-        () => excalidrawAPI.getFiles(),
+      const persistedSnapshot = await prepareCloudSaveSnapshot(
+        createCurrentCloudSnapshot,
         () => currentSceneIdRef.current === snapshot.sceneId &&
           cloudSceneLoadIdRef.current === loadId,
       );
       const signature = getCloudPersistenceSignature(
         persistedSnapshot.name,
-        persistedElements,
+        persistedSnapshot.elements,
         persistedSnapshot.appState,
         persistedSnapshot.files,
-        fileIds,
       );
       // Explicit save/navigation also flushes recovered or queued edits, but
       // opening and leaving an unchanged board must not increment its revision.
@@ -794,8 +784,22 @@ const ExcalidrawWrapper = (props: {
         status === "saved" ||
         (status === "idle" && !cloudSaveQueue.hasPending(persistedSnapshot.sceneId))
       ) {
-        cloudPersistenceSignatureRef.current = signature;
-        cloudPersistenceDirtyRef.current = false;
+        const currentSnapshot = createCurrentCloudSnapshot();
+        // A later edit may have been queued while flush awaited the network.
+        // Do not replace its baseline or clear its dirty flag with this save.
+        if (
+          currentSnapshot?.sceneId === snapshot.sceneId &&
+          cloudSceneLoadIdRef.current === loadId &&
+          getCloudPersistenceSignature(
+            currentSnapshot.name,
+            currentSnapshot.elements.filter((element) => !element.isDeleted),
+            currentSnapshot.appState,
+            currentSnapshot.files,
+          ) === signature
+        ) {
+          cloudPersistenceSignatureRef.current = signature;
+          cloudPersistenceDirtyRef.current = false;
+        }
         // Saving the body schedules its preview with the committed revision.
         // Flush that debounce afterwards so navigation retains the latest preview.
         await saveThumbnailDebounced.flush();
