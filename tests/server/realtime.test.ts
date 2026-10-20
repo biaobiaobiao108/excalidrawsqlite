@@ -58,9 +58,12 @@ describe("native websocket realtime", () => {
       body: JSON.stringify({ id: "scene_removed", name: "断线画板" }),
     });
     expect(created.status).toBe(201);
+    const scene = runtime.db
+      .query("SELECT revision FROM scenes WHERE id = ?")
+      .get("scene_removed") as { revision: number };
     const removed = await request(
       handler,
-      "/api/scenes/scene_removed?permanent=true",
+      `/api/scenes/scene_removed?permanent=true&revision=${scene.revision}`,
       { method: "DELETE" },
     );
     expect(removed.status).toBe(200);

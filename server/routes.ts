@@ -1568,6 +1568,18 @@ export const createRequestHandler = (
 
       if (pathname.startsWith("/api/scenes/") && req.method === "DELETE") {
         const id = getPathId(pathname, "/api/scenes/", "scene");
+        const isPermanent = url.searchParams.get("permanent") === "true";
+        const revisionParam = url.searchParams.get("revision");
+        const expectedRevision = revisionParam === null
+          ? undefined
+          : requireRevision(Number(revisionParam));
+        if (isPermanent && expectedRevision === undefined) {
+          throw new HttpError(
+            400,
+            "INVALID_REVISION",
+            "彻底删除画板必须提供有效的 revision",
+          );
+        }
         const existing = await stmts.getSceneStateById.get(id) as {
           id: string;
           deleted_at: number | null;
@@ -1580,14 +1592,34 @@ export const createRequestHandler = (
             deleted: false,
           });
         }
-        const isPermanent = url.searchParams.get("permanent") === "true";
+        if (
+          expectedRevision !== undefined &&
+          storedSceneRevision(existing.revision) !== expectedRevision
+        ) {
+          throw new HttpError(
+            409,
+            "SCENE_SELECTION_STALE",
+            "选中的画板已发生变化，请刷新列表后重新选择",
+          );
+        }
         if (isPermanent) {
           const [, deleted] = await runtime.db.batch([
-            { sql: "DELETE FROM scene_files WHERE scene_id = ?", values: [id] },
-            { sql: "DELETE FROM scenes WHERE id = ?", values: [id] },
+            {
+              sql: `DELETE FROM scene_files WHERE scene_id = ?
+                    AND EXISTS (SELECT 1 FROM scenes WHERE id = ? AND revision = ?)`,
+              values: [id, id, expectedRevision!],
+            },
+            {
+              sql: "DELETE FROM scenes WHERE id = ? AND revision = ?",
+              values: [id, expectedRevision!],
+            },
           ]);
           if (deleted.changes !== 1) {
-            throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
+            throw new HttpError(
+              409,
+              "SCENE_SELECTION_STALE",
+              "选中的画板已发生变化，请刷新列表后重新选择",
+            );
           }
           publishSceneChanged(runtime, {
             type: "scene_changed",

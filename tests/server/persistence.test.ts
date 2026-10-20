@@ -1223,10 +1223,11 @@ describe("cloud persistence server", () => {
       { headers: { Cookie: cookie } },
     );
     expect(createScene.status).toBe(201);
+    const createdScene = await responseJson<{ revision: number }>(createScene);
 
     const deleted = await request(
       handler,
-      "/api/scenes/scene_delete?permanent=true",
+      `/api/scenes/scene_delete?permanent=true&revision=${createdScene.revision}`,
       {
         method: "DELETE",
         headers: { Cookie: cookie },
@@ -1246,6 +1247,56 @@ describe("cloud persistence server", () => {
         count: number;
       },
     ).toEqual({ count: 0 });
+  });
+
+  it("rejects stale revisions for single-scene permanent deletion", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const created = await jsonRequest(
+      handler,
+      "/api/scenes",
+      { id: "scene_stale_delete", name: "待删除画板", elements: [], appState: {} },
+      { headers: { Cookie: cookie } },
+    );
+    expect(created.status).toBe(201);
+    const original = await responseJson<{ revision: number }>(created);
+
+    const updated = await jsonRequest(
+      handler,
+      "/api/scenes/scene_stale_delete",
+      {
+        baseRevision: original.revision,
+        name: "更新后的画板",
+        elements: [],
+        appState: {},
+      },
+      { method: "PUT", headers: { Cookie: cookie } },
+    );
+    expect(updated.status).toBe(200);
+    const current = await responseJson<{ revision: number }>(updated);
+    expect(current.revision).toBeGreaterThan(original.revision);
+
+    const staleDelete = await request(
+      handler,
+      `/api/scenes/scene_stale_delete?permanent=true&revision=${original.revision}`,
+      { method: "DELETE", headers: { Cookie: cookie } },
+    );
+    expect(staleDelete.status).toBe(409);
+    expect(await responseJson(staleDelete)).toMatchObject({
+      code: "SCENE_SELECTION_STALE",
+    });
+    expect(
+      runtime.db
+        .query("SELECT id FROM scenes WHERE id = ?")
+        .get("scene_stale_delete"),
+    ).toBeTruthy();
+
+    const missingRevision = await request(
+      handler,
+      "/api/scenes/scene_stale_delete?permanent=true",
+      { method: "DELETE", headers: { Cookie: cookie } },
+    );
+    expect(missingRevision.status).toBe(400);
   });
 
   it("revalidates an overwritten file ID and returns its new content", async () => {
@@ -1463,7 +1514,7 @@ describe("cloud persistence server", () => {
       },
     );
     const activeItems = (
-      await responseJson<{ items: Array<{ id: string }> }>(activeAfterRestore)
+      await responseJson<{ items: Array<{ id: string; revision: number }> }>(activeAfterRestore)
     ).items;
     expect(activeItems.length).toBe(1);
     expect(activeItems[0].id).toBe("scene_trash_test");
@@ -1471,7 +1522,7 @@ describe("cloud persistence server", () => {
     // 6. Permanent delete
     const permanentDelete = await request(
       handler,
-      "/api/scenes/scene_trash_test?permanent=true",
+      `/api/scenes/scene_trash_test?permanent=true&revision=${activeItems[0].revision}`,
       {
         method: "DELETE",
         headers: { Cookie: cookie },

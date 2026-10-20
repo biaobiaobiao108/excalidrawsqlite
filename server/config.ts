@@ -63,6 +63,15 @@ export const createServerConfig = (
   const nodeEnv = env.NODE_ENV || "development";
   const authPassword = env.AUTH_PASSWORD || "";
   const allowAnonymous = parseBooleanEnv(env.ALLOW_ANONYMOUS);
+  const mcpToken = env.MCP_TOKEN?.trim() || "";
+  const maxFileBytes = parsePositiveIntegerEnv(
+    env.MAX_FILE_BYTES,
+    DEFAULT_MAX_FILE_BYTES,
+  );
+  const maxSceneBodyBytes = parsePositiveIntegerEnv(
+    env.MAX_SCENE_BODY_BYTES,
+    DEFAULT_MAX_SCENE_BODY_BYTES,
+  );
 
   if (authPassword.length > MAX_AUTH_PASSWORD_LENGTH) {
     throw new Error(
@@ -88,7 +97,7 @@ export const createServerConfig = (
 
   return {
     authPassword,
-    mcpToken: env.MCP_TOKEN?.trim() || "",
+    mcpToken,
     mcpTrace: parseBooleanEnv(env.MCP_TRACE),
     allowAnonymous,
     nodeEnv,
@@ -98,28 +107,19 @@ export const createServerConfig = (
       env.AUTH_ATTEMPTS_PER_WINDOW,
       AUTH_ATTEMPTS_PER_WINDOW,
     ),
-    maxFileBytes: parsePositiveIntegerEnv(
-      env.MAX_FILE_BYTES,
-      DEFAULT_MAX_FILE_BYTES,
+    maxFileBytes,
+    maxSceneBodyBytes,
+    maxBackupBytes: parsePositiveIntegerEnv(
+      env.MAX_BACKUP_BYTES,
+      DEFAULT_MAX_BACKUP_BYTES,
     ),
-    maxSceneBodyBytes: parsePositiveIntegerEnv(
-      env.MAX_SCENE_BODY_BYTES,
-      DEFAULT_MAX_SCENE_BODY_BYTES,
-    ),
-    maxBackupBytes: parsePositiveIntegerEnv(env.MAX_BACKUP_BYTES, DEFAULT_MAX_BACKUP_BYTES),
     maxInFlightBodyBytes: Math.max(
       parsePositiveIntegerEnv(
         env.MAX_IN_FLIGHT_BODY_BYTES,
         DEFAULT_MAX_IN_FLIGHT_BODY_BYTES,
       ),
-      parsePositiveIntegerEnv(
-        env.MAX_SCENE_BODY_BYTES,
-        DEFAULT_MAX_SCENE_BODY_BYTES,
-      ),
-      parsePositiveIntegerEnv(
-        env.MAX_FILE_BYTES,
-        DEFAULT_MAX_FILE_BYTES,
-      ),
+      mcpToken ? maxSceneBodyBytes * 2 : maxSceneBodyBytes,
+      maxFileBytes,
     ),
     sessionTtlMs: parsePositiveIntegerEnv(
       env.AUTH_SESSION_TTL_MS,
