@@ -57,8 +57,10 @@
     <link rel="apple-touch-icon" sizes="180x180" href="../public/site-apple-touch-icon-v2.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="../public/site-icon-v2-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="../public/site-icon-v2-16x16.png" />
-    <!-- An opaque maskable icon lets Safari fill its system icon shape. -->
-    <link rel="manifest" href="../public/site-manifest-v3.webmanifest" />
+    <!-- Keep apple-touch-icon opaque and full-bleed for Safari Favorites.
+         The manifest separates rounded any icons from the opaque 1024px
+         maskable icon Safari uses for Add to Dock without white padding. -->
+    <link rel="manifest" href="../public/site-manifest-v4.webmanifest" />
 
     <!-- Excalidraw version -->
     <meta name="version" content="{version}" />

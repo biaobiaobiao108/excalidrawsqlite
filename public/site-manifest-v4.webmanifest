@@ -1,0 +1,26 @@
+{
+  "name": "狐涂画板",
+  "short_name": "狐涂画板",
+  "start_url": "/",
+  "display": "browser",
+  "icons": [
+    {
+      "src": "/site-icon-rounded-v3-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/site-icon-rounded-v3-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/site-icon-maskable-v3-1024x1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
