@@ -98,9 +98,6 @@ export const createServerConfig = (
   return {
     authPassword,
     mcpToken,
-    mcpAllowLegacyPathToken: parseBooleanEnv(
-      env.MCP_ALLOW_LEGACY_PATH_TOKEN,
-    ),
     mcpTrace: parseBooleanEnv(env.MCP_TRACE),
     allowAnonymous,
     nodeEnv,

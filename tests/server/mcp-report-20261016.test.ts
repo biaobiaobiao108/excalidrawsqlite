@@ -11,7 +11,7 @@ import { createServerConfig } from "../../server/config";
 const withMcp = async (run: (client: Client) => Promise<void>) => {
   const directory = path.join(os.tmpdir(), `excalidraw-mcp-report-${crypto.randomUUID()}`);
   const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
-    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_ALLOW_LEGACY_PATH_TOKEN: "true", MCP_TOKEN: "report-test" }) });
+    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "report-test" }) });
   const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
   const client = new Client({ name: "report-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
   const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/report-test"), {

@@ -182,26 +182,6 @@ const getPathToken = (req: Request) => {
   }
 };
 
-const getProvidedTokens = (req: Request, allowLegacyPathToken: boolean) => {
-  const tokens: string[] = [];
-  const pathToken = allowLegacyPathToken ? getPathToken(req) : "";
-  if (pathToken) {
-    tokens.push(pathToken);
-  }
-
-  const authorization = req.headers.get("authorization");
-  const bearerMatch = authorization?.trim().match(/^Bearer\s+(.+)$/i);
-  if (bearerMatch?.[1]) {
-    tokens.push(bearerMatch[1].trim());
-  }
-
-  const headerToken = req.headers.get("x-mcp-token");
-  if (headerToken) {
-    tokens.push(headerToken);
-  }
-  return tokens;
-};
-
 const createRequestBodyLimiter = (maxConcurrent: number) => {
   let active = 0;
   const waiters: Array<{
@@ -893,22 +873,6 @@ export const createMcpRequestHandler = (
         );
       }
 
-      const pathname = new URL(req.url).pathname;
-      if (
-        pathname !== MCP_PATH &&
-        !(
-          runtime.config.mcpAllowLegacyPathToken &&
-          pathname.startsWith(`${MCP_PATH}/`)
-        )
-      ) {
-        return jsonResponse(
-          runtime,
-          req,
-          { error: "MCP 路径无效", code: "NOT_FOUND" },
-          404,
-        );
-      }
-
       if (req.method === "OPTIONS") {
         const headers = new Headers({
           "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
@@ -924,25 +888,14 @@ export const createMcpRequestHandler = (
         return response(runtime, req, null, { status: 204, headers });
       }
 
+      const providedToken = getPathToken(req);
+      const providedHash = new Uint8Array(
+        new Bun.CryptoHasher("sha256").update(providedToken).digest(),
+      );
       const expectedHash = new Uint8Array(
         new Bun.CryptoHasher("sha256").update(expectedToken).digest(),
       );
-      const providedTokens = getProvidedTokens(
-        req,
-        runtime.config.mcpAllowLegacyPathToken,
-      );
-      const isAuthorized =
-        providedTokens.length > 0 &&
-        providedTokens.every((providedToken) => {
-          const tokenHash = new Uint8Array(
-            new Bun.CryptoHasher("sha256").update(providedToken).digest(),
-          );
-          return (
-            timingSafeEqual(tokenHash, expectedHash) &&
-            providedToken === expectedToken
-          );
-        });
-      if (!isAuthorized) {
+      if (!timingSafeEqual(providedHash, expectedHash) || providedToken !== expectedToken) {
         return jsonResponse(
           runtime,
           req,

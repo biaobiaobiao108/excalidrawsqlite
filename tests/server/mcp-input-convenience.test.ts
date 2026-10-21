@@ -11,7 +11,7 @@ import { createServerConfig } from "../../server/config";
 it("supports local linear origins and default tag replacement through the public SDK", async () => {
   const directory = path.join(os.tmpdir(), `excalidraw-mcp-convenience-${crypto.randomUUID()}`);
   const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
-    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_ALLOW_LEGACY_PATH_TOKEN: "true", MCP_TOKEN: "convenience-test" }) });
+    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "convenience-test" }) });
   const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
   const client = new Client({ name: "convenience-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
   const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/convenience-test"), {

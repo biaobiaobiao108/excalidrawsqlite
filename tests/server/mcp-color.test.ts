@@ -11,7 +11,7 @@ import { createRuntime } from "../../server/runtime";
 it("returns concise color errors through the public MCP client and rejects before writing", async () => {
   const directory = path.join(os.tmpdir(), `excalidraw-mcp-color-${crypto.randomUUID()}`);
   const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
-    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_ALLOW_LEGACY_PATH_TOKEN: "true", MCP_TOKEN: "color-test" }) });
+    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "color-test" }) });
   const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
   const client = new Client({ name: "color-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
   const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/color-test"), {

@@ -10,7 +10,7 @@ import { createServerConfig } from "../../server/config";
 
 it("MCP supports folders, favorites, tags, safe trash and independent bounded batch management", async () => {
   const directory = path.join(os.tmpdir(), `excalidraw-mcp-management-${crypto.randomUUID()}`);
-  const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"), config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_ALLOW_LEGACY_PATH_TOKEN: "true", MCP_TOKEN: "management-test" }) });
+  const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"), config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "management-test" }) });
   const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
   const client = new Client({ name: "management-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
   const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/management-test"), { fetch: async (input, init) => handler.fetch(new Request(input, init)) });

@@ -12,7 +12,7 @@ import { createRuntime } from "../../server/runtime";
 const fixture = (trashRetentionDays = "7") => {
   const directory = path.join(os.tmpdir(), `excalidraw-mcp-report-${crypto.randomUUID()}`);
   const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
-    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_ALLOW_LEGACY_PATH_TOKEN: "true", MCP_TOKEN: "report-test", TRASH_RETENTION_DAYS: trashRetentionDays }) });
+    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "report-test", TRASH_RETENTION_DAYS: trashRetentionDays }) });
   const api = createRequestHandler(runtime);
   const mcp = createMcpRequestHandler(runtime, api);
   return { api, mcp, async close() {

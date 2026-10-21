@@ -11,7 +11,7 @@ import { createServerConfig } from "../../server/config";
 it("keeps normal receipts small, exposes IDs on demand and persists semantic diagrams once", async () => {
   const directory = path.join(os.tmpdir(), `mcp-efficiency-${crypto.randomUUID()}`);
   const runtime = createRuntime({ dbPath: path.join(directory, "db"), filesDir: path.join(directory, "files"),
-    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_ALLOW_LEGACY_PATH_TOKEN: "true", MCP_TOKEN: "efficiency" }) });
+    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "efficiency" }) });
   const api = createRequestHandler(runtime);
   const writes: string[] = [];
   const handler = createMcpRequestHandler(runtime, async (req) => {
