@@ -11,7 +11,7 @@ import { createRuntime } from "../../server/runtime";
 test("drawing iterations return final positions, warn about overlaps and combine additions with updates", async () => {
   const directory = path.join(os.tmpdir(), `excalidraw-mcp-experience-${crypto.randomUUID()}`);
   const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
-    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "experience-test" }) });
+    config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_ALLOW_LEGACY_PATH_TOKEN: "true", MCP_TOKEN: "experience-test" }) });
   const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
   const client = new Client({ name: "experience-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
   const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp/experience-test"), {

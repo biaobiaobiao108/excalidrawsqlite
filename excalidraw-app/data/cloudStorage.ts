@@ -40,6 +40,79 @@ const getCloudFileConcurrency = (estimatedBytes = 0) => {
   return deviceConcurrency;
 };
 
+type CloudFileDownloadWaiter = {
+  resolve: (release: () => void) => void;
+  reject: (error: unknown) => void;
+  signal?: AbortSignal;
+  onAbort?: () => void;
+};
+
+const cloudFileDownloadWaiters: CloudFileDownloadWaiter[] = [];
+let activeCloudFileDownloads = 0;
+
+const createAbortError = () =>
+  new DOMException("The operation was aborted", "AbortError");
+
+const drainCloudFileDownloadWaiters = () => {
+  while (
+    activeCloudFileDownloads < getCloudFileConcurrency() &&
+    cloudFileDownloadWaiters.length
+  ) {
+    const waiter = cloudFileDownloadWaiters.shift()!;
+    waiter.signal?.removeEventListener("abort", waiter.onAbort!);
+    if (waiter.signal?.aborted) {
+      waiter.reject(createAbortError());
+      continue;
+    }
+    activeCloudFileDownloads++;
+    let released = false;
+    waiter.resolve(() => {
+      if (released) {
+        return;
+      }
+      released = true;
+      activeCloudFileDownloads--;
+      drainCloudFileDownloadWaiters();
+    });
+  }
+};
+
+const acquireCloudFileDownloadSlot = (signal?: AbortSignal) =>
+  new Promise<() => void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createAbortError());
+      return;
+    }
+    const waiter: CloudFileDownloadWaiter = { resolve, reject, signal };
+    waiter.onAbort = () => {
+      const index = cloudFileDownloadWaiters.indexOf(waiter);
+      if (index >= 0) {
+        cloudFileDownloadWaiters.splice(index, 1);
+      }
+      signal?.removeEventListener("abort", waiter.onAbort!);
+      reject(createAbortError());
+      drainCloudFileDownloadWaiters();
+    };
+    signal?.addEventListener("abort", waiter.onAbort, { once: true });
+    cloudFileDownloadWaiters.push(waiter);
+    drainCloudFileDownloadWaiters();
+  });
+
+const withCloudFileDownloadSlot = async <T>(
+  signal: AbortSignal,
+  operation: () => Promise<T>,
+) => {
+  const release = await acquireCloudFileDownloadSlot(signal);
+  try {
+    if (signal.aborted) {
+      throw createAbortError();
+    }
+    return await operation();
+  } finally {
+    release();
+  }
+};
+
 export interface CloudSceneSummary {
   id: string;
   name: string;
@@ -123,6 +196,13 @@ export const fetchWithTimeout = async (
   timeoutMs = CLOUD_API_TIMEOUT_MS,
 ) => {
   const controller = new AbortController();
+  const callerSignal = init.signal;
+  const abortFromCaller = () => controller.abort();
+  if (callerSignal?.aborted) {
+    controller.abort();
+  } else {
+    callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
   let timedOut = false;
   let responseBody: ReadableStream<Uint8Array> | null = null;
   let timeout: ReturnType<typeof setTimeout>;
@@ -131,11 +211,15 @@ export const fetchWithTimeout = async (
     rejectTimeout = reject;
   });
   void timeoutPromise.catch(() => {});
-  const clearTimeoutIfNeeded = () => clearTimeout(timeout);
+  const clearTimeoutIfNeeded = () => {
+    clearTimeout(timeout);
+    callerSignal?.removeEventListener("abort", abortFromCaller);
+  };
   timeout = setTimeout(() => {
     timedOut = true;
     controller.abort();
     void responseBody?.cancel().catch(() => {});
+    clearTimeoutIfNeeded();
     rejectTimeout(
       new CloudApiError(`${fallback}（请求超时）`, 0, "NETWORK_TIMEOUT"),
     );
@@ -173,6 +257,9 @@ export const fetchWithTimeout = async (
                 timeoutPromise,
               ]);
             } catch (error: any) {
+              if (callerSignal?.aborted) {
+                throw createAbortError();
+              }
               if (
                 error instanceof CloudApiError &&
                 error.code === "NETWORK_TIMEOUT"
@@ -197,6 +284,9 @@ export const fetchWithTimeout = async (
     });
   } catch (error: any) {
     clearTimeoutIfNeeded();
+    if (callerSignal?.aborted) {
+      throw createAbortError();
+    }
     if (error instanceof CloudApiError && error.code === "NETWORK_TIMEOUT") {
       throw error;
     }
@@ -310,19 +400,45 @@ const rememberCloudFileEtag = (id: string, etag: string) => {
   }
 };
 
-const blobToDataURL = (blob: Blob) =>
+const blobToDataURL = (blob: Blob, signal?: AbortSignal) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
+    const cleanup = () => signal?.removeEventListener("abort", abortReader);
+    const abortReader = () => {
+      if (reader.readyState === FileReader.LOADING) {
+        reader.abort();
+      } else {
+        cleanup();
+        reject(createAbortError());
+      }
+    };
+    if (signal?.aborted) {
+      reject(createAbortError());
+      return;
+    }
+    signal?.addEventListener("abort", abortReader, { once: true });
     reader.onload = () => {
+      cleanup();
       if (typeof reader.result === "string") {
         resolve(reader.result);
       } else {
         reject(new CloudApiError("图片数据格式无效", 0, "INVALID_FILE_DATA"));
       }
     };
-    reader.onerror = () =>
+    reader.onerror = () => {
+      cleanup();
       reject(new CloudApiError("图片数据读取失败", 0, "INVALID_FILE_DATA"));
-    reader.readAsDataURL(blob);
+    };
+    reader.onabort = () => {
+      cleanup();
+      reject(createAbortError());
+    };
+    try {
+      reader.readAsDataURL(blob);
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
   });
 
 const runWithConcurrency = async <T>(
@@ -880,44 +996,84 @@ export async function saveFilesToCloud(
   }, getCloudFileConcurrency(estimatedBytes));
 }
 
-export async function fetchCloudFiles(fileIds: readonly FileId[]): Promise<{
+export async function fetchCloudFiles(
+  fileIds: readonly FileId[],
+  options: { signal?: AbortSignal } = {},
+): Promise<{
   loadedFiles: BinaryFileData[];
   erroredFiles: Map<FileId, true>;
 }> {
   const uniqueIds = [...new Set(fileIds)];
   const loadedFiles: BinaryFileData[] = [];
   const erroredFiles = new Map<FileId, true>();
-  await runWithConcurrency(uniqueIds, async (id) => {
-    try {
-      const res = await fetchWithTimeout(
-        `/api/files/${encodeURIComponent(id)}`,
-        { headers: { Accept: "application/octet-stream" } },
-        "加载云端图片失败",
-        CLOUD_TRANSFER_TIMEOUT_MS,
-      );
-      await assertResponse(res, "加载云端图片失败");
-      const contentType =
-        res.headers.get("content-type")?.split(";")[0].trim() ||
-        "application/octet-stream";
-      const dataURL = await blobToDataURL(await res.blob());
-      const etag = res.headers.get("etag");
-      if (etag) {
-        rememberCloudFileEtag(id, etag);
-      }
-      loadedFiles.push({
-        id,
-        mimeType: contentType as BinaryFileData["mimeType"],
-        dataURL: dataURL as BinaryFileData["dataURL"],
-        created: Number(res.headers.get("X-File-Created-At")) || Date.now(),
-      });
-    } catch (error) {
-      if (error instanceof CloudApiError && error.status === 401) {
-        throw error;
-      }
-      erroredFiles.set(id, true);
-    }
-  }, getCloudFileConcurrency());
-  return { loadedFiles, erroredFiles };
+  const controller = new AbortController();
+  const callerSignal = options.signal;
+  let unauthorizedError: CloudApiError | null = null;
+  const abortFromCaller = () => controller.abort();
+  if (callerSignal?.aborted) {
+    controller.abort();
+  } else {
+    callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
+  try {
+    await runWithConcurrency(
+      uniqueIds,
+      async (id) => {
+        try {
+          await withCloudFileDownloadSlot(controller.signal, async () => {
+            const res = await fetchWithTimeout(
+              `/api/files/${encodeURIComponent(id)}`,
+              {
+                headers: { Accept: "application/octet-stream" },
+                signal: controller.signal,
+              },
+              "加载云端图片失败",
+              CLOUD_TRANSFER_TIMEOUT_MS,
+            );
+            await assertResponse(res, "加载云端图片失败");
+            const contentType =
+              res.headers.get("content-type")?.split(";")[0].trim() ||
+              "application/octet-stream";
+            const dataURL = await blobToDataURL(
+              await res.blob(),
+              controller.signal,
+            );
+            const etag = res.headers.get("etag");
+            if (etag) {
+              rememberCloudFileEtag(id, etag);
+            }
+            loadedFiles.push({
+              id,
+              mimeType: contentType as BinaryFileData["mimeType"],
+              dataURL: dataURL as BinaryFileData["dataURL"],
+              created:
+                Number(res.headers.get("X-File-Created-At")) || Date.now(),
+            });
+          });
+        } catch (error) {
+          if (
+            !callerSignal?.aborted &&
+            error instanceof CloudApiError &&
+            error.status === 401
+          ) {
+            unauthorizedError = error;
+            controller.abort();
+            throw error;
+          }
+          if (controller.signal.aborted) {
+            throw createAbortError();
+          }
+          erroredFiles.set(id, true);
+        }
+      },
+      getCloudFileConcurrency(),
+    );
+    return { loadedFiles, erroredFiles };
+  } catch (error) {
+    throw unauthorizedError || error;
+  } finally {
+    callerSignal?.removeEventListener("abort", abortFromCaller);
+  }
 }
 
 export async function downloadCloudBackup(): Promise<Blob> {

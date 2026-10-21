@@ -264,6 +264,100 @@ const isCloudSaveSnapshot = (value: unknown): value is CloudSaveSnapshot =>
       typeof value.files === "object",
   );
 
+const SESSION_RECOVERY_KEY_PREFIX = "excalidraw_cloud_save_recovery_v1:";
+const MAX_SESSION_RECOVERY_SNAPSHOT_CHARS = 2 * 1024 * 1024;
+
+const getSessionRecoveryKey = (sceneId: string) =>
+  `${SESSION_RECOVERY_KEY_PREFIX}${encodeURIComponent(sceneId)}`;
+
+const writeSessionSnapshotRecovery = (snapshot: CloudSaveSnapshot) => {
+  try {
+    const storage = window.sessionStorage;
+    const key = getSessionRecoveryKey(snapshot.sceneId);
+    const existing = storage.getItem(key);
+    if (existing) {
+      try {
+        const parsed: unknown = JSON.parse(existing);
+        if (
+          isCloudSaveSnapshot(parsed) &&
+          snapshot.persistenceId &&
+          parsed.persistenceId === snapshot.persistenceId
+        ) {
+          return true;
+        }
+      } catch {
+        // Replace malformed recovery data with the latest known snapshot.
+      }
+    }
+    const serialized = JSON.stringify(snapshot);
+    if (serialized.length > MAX_SESSION_RECOVERY_SNAPSHOT_CHARS) {
+      // Do not let an older, smaller recovery snapshot replace newer content
+      // after reload when this snapshot cannot fit the bounded fallback.
+      storage.removeItem(key);
+      return false;
+    }
+    storage.setItem(key, serialized);
+    return true;
+  } catch {
+    // sessionStorage may be disabled or full; the in-memory queue still owns it.
+    return false;
+  }
+};
+
+const removeSessionSnapshotRecovery = (
+  sceneId: string,
+  expectedSnapshot?: CloudSaveSnapshot,
+) => {
+  try {
+    const storage = window.sessionStorage;
+    const key = getSessionRecoveryKey(sceneId);
+    if (expectedSnapshot) {
+      const serialized = storage.getItem(key);
+      if (!serialized) {
+        return;
+      }
+      const parsed: unknown = JSON.parse(serialized);
+      if (
+        !isCloudSaveSnapshot(parsed) ||
+        !matchesPersistedCloudSnapshot(parsed, expectedSnapshot)
+      ) {
+        return;
+      }
+    }
+    storage.removeItem(key);
+  } catch {
+    // The IndexedDB copy remains the durable source when available.
+  }
+};
+
+const loadSessionSnapshotRecoveries = () => {
+  const snapshots: CloudSaveSnapshot[] = [];
+  try {
+    const storage = window.sessionStorage;
+    for (let index = 0; index < storage.length; index++) {
+      const key = storage.key(index);
+      if (!key?.startsWith(SESSION_RECOVERY_KEY_PREFIX)) {
+        continue;
+      }
+      try {
+        const serialized = storage.getItem(key);
+        if (!serialized) {
+          continue;
+        }
+        const parsed: unknown = JSON.parse(serialized);
+        if (isCloudSaveSnapshot(parsed)) {
+          snapshots.push(parsed);
+        }
+      } catch {
+        // A malformed entry must not hide other valid recovery snapshots.
+      }
+    }
+  } catch {
+    // Ignore inaccessible or malformed session recovery entries.
+  }
+  return snapshots;
+};
+
 const cloneCloudSaveSnapshot = (
   snapshot: CloudSaveSnapshot,
 ): CloudSaveSnapshot => ({
@@ -562,6 +656,7 @@ export class CloudSaveQueue {
   private activeSnapshot: CloudSaveSnapshot | null = null;
   private activeFlushPromise: Promise<void> | null = null;
   private readonly dependencies: CloudSaveDependencies;
+  private readonly hasDurableSnapshotPersistence: boolean;
   private readonly readyPromise: Promise<void>;
 
   constructor(
@@ -575,6 +670,8 @@ export class CloudSaveQueue {
       persistence: getDefaultCloudSavePersistence(),
       ...dependencies,
     };
+    this.hasDurableSnapshotPersistence =
+      dependencies.persistence !== undefined || typeof indexedDB !== "undefined";
     this.readyPromise = this.restorePersistedSnapshots();
   }
 
@@ -622,11 +719,11 @@ export class CloudSaveQueue {
   }
 
   getMemoryStats() {
-    const snapshots = [
+    const snapshots = new Set([
       ...this.pending.values(),
       ...this.conflicts.values(),
       ...(this.activeSnapshot ? [this.activeSnapshot] : []),
-    ];
+    ]);
     let filesBytes = 0;
     let elementCount = 0;
     for (const snapshot of snapshots) {
@@ -636,7 +733,7 @@ export class CloudSaveQueue {
       }
     }
     return {
-      snapshotCount: snapshots.length,
+      snapshotCount: snapshots.size,
       elementCount,
       filesBytes,
       saving: this.isSaving,
@@ -686,6 +783,7 @@ export class CloudSaveQueue {
     this.blocked.delete(sceneId);
     this.revisions.delete(sceneId);
     this.disposed.add(sceneId);
+    removeSessionSnapshotRecovery(sceneId);
     void this.removePersistedSnapshot(sceneId);
     this.setStatus(sceneId, "idle");
   }
@@ -809,6 +907,14 @@ export class CloudSaveQueue {
   }
 
   dispose() {
+    if (
+      this.activeSceneId &&
+      this.activeSnapshot &&
+      !this.pending.has(this.activeSceneId)
+    ) {
+      this.pending.set(this.activeSceneId, this.activeSnapshot);
+    }
+    this.protectPendingSnapshotsForUnload();
     this.isDisposed = true;
     for (const timer of this.timers.values()) {
       clearTimeout(timer);
@@ -817,6 +923,35 @@ export class CloudSaveQueue {
     // Pending snapshots are already persisted in IndexedDB. Do not start a
     // fire-and-forget network flush from React cleanup; the next editor
     // instance restores and retries them after authentication is available.
+  }
+
+  /**
+   * Keep an unload-time recovery copy when IndexedDB has not confirmed the
+   * current snapshot. This is synchronous and bounded so beforeunload/pagehide
+   * can protect snapshots that would otherwise exist only in this tab's heap.
+   */
+  protectPendingSnapshotsForUnload(force = false) {
+    const snapshots = new Map<string, CloudSaveSnapshot>();
+    if (this.activeSceneId && this.activeSnapshot) {
+      snapshots.set(this.activeSceneId, this.activeSnapshot);
+    }
+    for (const [sceneId, snapshot] of this.conflicts) {
+      snapshots.set(sceneId, snapshot);
+    }
+    for (const [sceneId, snapshot] of this.pending) {
+      snapshots.set(sceneId, snapshot);
+    }
+    for (const [sceneId, snapshot] of snapshots) {
+      const writer = this.persistenceWriters.get(sceneId);
+      if (
+        force ||
+        !this.hasDurableSnapshotPersistence ||
+        writer?.running ||
+        this.persistenceErrors.has(sceneId)
+      ) {
+        writeSessionSnapshotRecovery(snapshot);
+      }
+    }
   }
 
   private schedule(sceneId: string, delay = AUTO_SAVE_DELAY_MS) {
@@ -975,20 +1110,30 @@ export class CloudSaveQueue {
   }
 
   private async restorePersistedSnapshots() {
+    const snapshotsByScene = new Map<string, CloudSaveSnapshot>();
     try {
-      const snapshots = await this.dependencies.persistence.load();
-      for (const snapshot of snapshots) {
-        if (!isCloudSaveSnapshot(snapshot) || this.pending.has(snapshot.sceneId)) {
-          continue;
+      for (const snapshot of await this.dependencies.persistence.load()) {
+        if (isCloudSaveSnapshot(snapshot)) {
+          snapshotsByScene.set(snapshot.sceneId, snapshot);
         }
-        const restored = cloneCloudSaveSnapshot(snapshot);
-        this.pending.set(restored.sceneId, restored);
-        this.setStatus(restored.sceneId, "pending");
       }
     } catch (error) {
       const normalized =
         error instanceof Error ? error : new Error("恢复本地云端保存失败");
       this.callbacks.onError(normalized);
+    }
+    // sessionStorage is a bounded recovery layer for snapshots whose IndexedDB
+    // write failed or was still in flight when the user reloaded this tab.
+    for (const snapshot of loadSessionSnapshotRecoveries()) {
+      snapshotsByScene.set(snapshot.sceneId, snapshot);
+    }
+    for (const snapshot of snapshotsByScene.values()) {
+      if (this.pending.has(snapshot.sceneId)) {
+        continue;
+      }
+      const restored = cloneCloudSaveSnapshot(snapshot);
+      this.pending.set(restored.sceneId, restored);
+      this.setStatus(restored.sceneId, "pending");
     }
   }
 
@@ -1032,18 +1177,26 @@ export class CloudSaveQueue {
   ) {
     this.revisions.set(sceneId, revision);
     const nextSnapshot = this.pending.get(sceneId);
+    const followUpSnapshot =
+      nextSnapshot?.persistenceId === snapshot.persistenceId
+        ? null
+        : nextSnapshot;
     if (
-      nextSnapshot &&
-      nextSnapshot.baseRevision === snapshot.baseRevision
+      followUpSnapshot &&
+      followUpSnapshot.baseRevision === snapshot.baseRevision
     ) {
-      const updatedSnapshot = { ...nextSnapshot, baseRevision: revision };
+      const updatedSnapshot = { ...followUpSnapshot, baseRevision: revision };
       this.pending.set(sceneId, updatedSnapshot);
       await this.persistSnapshot(updatedSnapshot);
-    } else if (!nextSnapshot) {
+    } else if (!followUpSnapshot) {
+      if (nextSnapshot) {
+        this.pending.delete(sceneId);
+      }
+      removeSessionSnapshotRecovery(sceneId);
       await this.removePersistedSnapshot(sceneId, snapshot);
     }
     broadcastCloudSync({ type: "scene_saved", sceneId, revision });
-    this.setStatus(sceneId, nextSnapshot ? "pending" : "saved");
+    this.setStatus(sceneId, followUpSnapshot ? "pending" : "saved");
     if (!this.isDisposed && !this.disposed.has(sceneId)) {
       try {
         this.callbacks.onSnapshotSaved?.(snapshot, revision);
@@ -1073,6 +1226,7 @@ export class CloudSaveQueue {
     sceneId: string,
     expectedSnapshot?: CloudSaveSnapshot,
   ) {
+    removeSessionSnapshotRecovery(sceneId, expectedSnapshot);
     const generation = this.bumpGeneration(sceneId);
     return this.queuePersistenceWrite(sceneId, {
       generation,
@@ -1127,8 +1281,20 @@ export class CloudSaveQueue {
       try {
         if (operation.snapshot) {
           await this.dependencies.persistence.save(operation.snapshot);
+          const latestSnapshot = this.pending.get(sceneId);
+          if (
+            this.hasDurableSnapshotPersistence &&
+            (!latestSnapshot ||
+              latestSnapshot.persistenceId === operation.snapshot.persistenceId)
+          ) {
+            removeSessionSnapshotRecovery(sceneId);
+          }
         } else {
           await this.dependencies.persistence.remove(
+            sceneId,
+            operation.expectedSnapshot,
+          );
+          removeSessionSnapshotRecovery(
             sceneId,
             operation.expectedSnapshot,
           );
@@ -1140,6 +1306,9 @@ export class CloudSaveQueue {
             ? error
             : new Error("更新本地云端保存快照失败");
         this.persistenceErrors.set(sceneId, normalized);
+        if (operation.snapshot) {
+          writeSessionSnapshotRecovery(operation.snapshot);
+        }
         this.callbacks.onError(normalized);
       }
     }

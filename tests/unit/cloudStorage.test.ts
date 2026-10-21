@@ -1,11 +1,13 @@
 import { describe, expect, it, spyOn } from "bun:test";
 
+import type { FileId } from "@excalidraw/element/types";
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 import {
   downloadCloudBackup,
   downloadCloudFullBackup,
   fetchCloudScenePage,
   fetchWithTimeout,
+  fetchCloudFiles,
   saveFilesToCloud,
   saveCloudSceneThumbnail,
 } from "../../excalidraw-app/data/cloudStorage";
@@ -103,6 +105,85 @@ describe("cloud file upload", () => {
       globalThis.fetch = originalFetch;
     }
   });
+});
+
+it("limits image downloads across overlapping scene loads", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousFileReader = Object.getOwnPropertyDescriptor(globalThis, "FileReader");
+  let activeRequests = 0;
+  let peakRequests = 0;
+  let releaseRequests!: () => void;
+  let signalStarted!: () => void;
+  const requestsStarted = new Promise<void>((resolve) => {
+    signalStarted = resolve;
+  });
+  const requestsCanFinish = new Promise<void>((resolve) => {
+    releaseRequests = resolve;
+  });
+
+  class TestFileReader {
+    static readonly LOADING = 1;
+    readyState = 0;
+    result: string | ArrayBuffer | null = null;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    onabort: (() => void) | null = null;
+
+    readAsDataURL(blob: Blob) {
+      this.readyState = TestFileReader.LOADING;
+      void blob.arrayBuffer().then((buffer) => {
+        this.result = `data:${blob.type};base64,${Buffer.from(buffer).toString("base64")}`;
+        this.readyState = 2;
+        this.onload?.();
+      }).catch(() => this.onerror?.());
+    }
+
+    abort() {
+      this.readyState = 2;
+      this.onabort?.();
+    }
+  }
+
+  Object.defineProperty(globalThis, "FileReader", {
+    configurable: true,
+    value: TestFileReader,
+  });
+  globalThis.fetch = (async () => {
+    activeRequests += 1;
+    peakRequests = Math.max(peakRequests, activeRequests);
+    if (activeRequests >= 2) {
+      signalStarted();
+    }
+    await requestsCanFinish;
+    activeRequests -= 1;
+    return new Response(new Blob(["image"], { type: "image/png" }), {
+      headers: { "X-File-Created-At": "1" },
+    });
+  }) as unknown as typeof fetch;
+
+  try {
+    const firstLoad = fetchCloudFiles(
+      ["scene-a-file-1", "scene-a-file-2"] as FileId[],
+    );
+    const secondLoad = fetchCloudFiles(
+      ["scene-b-file-1", "scene-b-file-2"] as FileId[],
+    );
+    await requestsStarted;
+    await Bun.sleep(5);
+    releaseRequests();
+    const results = await Promise.all([firstLoad, secondLoad]);
+
+    expect(peakRequests).toBe(2);
+    expect(results.map(({ loadedFiles }) => loadedFiles.length)).toEqual([2, 2]);
+  } finally {
+    releaseRequests();
+    globalThis.fetch = originalFetch;
+    if (previousFileReader) {
+      Object.defineProperty(globalThis, "FileReader", previousFileReader);
+    } else {
+      Reflect.deleteProperty(globalThis, "FileReader");
+    }
+  }
 });
 
 describe("cloud API timeouts", () => {

@@ -63,6 +63,7 @@ describe("Excalidraw MCP endpoint", () => {
       config: createServerConfig({
         NODE_ENV: "test",
         ALLOW_ANONYMOUS: "true",
+        MCP_ALLOW_LEGACY_PATH_TOKEN: "true",
         MCP_TOKEN: "body-budget-test",
         MAX_SCENE_BODY_BYTES: "4096",
         MAX_FILE_BYTES: "1024",
@@ -110,7 +111,7 @@ describe("Excalidraw MCP endpoint", () => {
   it("detects escaped grid text through its native group and keeps shape collisions advisory", async () => {
     const directory = path.join(os.tmpdir(), `excalidraw-mcp-group-overflow-${crypto.randomUUID()}`);
     const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
-      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "group-overflow-test" }) });
+      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_ALLOW_LEGACY_PATH_TOKEN: "true", MCP_TOKEN: "group-overflow-test" }) });
     resources.push({ runtime, directory });
     const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
     const client = new Client({ name: "group-overflow-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
@@ -188,7 +189,7 @@ describe("Excalidraw MCP endpoint", () => {
   it("creates measured grouped layouts and retries creation without duplicating boards or folders", async () => {
     const directory = path.join(os.tmpdir(), `excalidraw-mcp-layout-${crypto.randomUUID()}`);
     const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
-      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "layout-test" }) });
+      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_ALLOW_LEGACY_PATH_TOKEN: "true", MCP_TOKEN: "layout-test" }) });
     resources.push({ runtime, directory });
     const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
     const client = new Client({ name: "layout-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
@@ -290,7 +291,7 @@ describe("Excalidraw MCP endpoint", () => {
   it("inspects selected layout checks through the SDK without changing the board", async () => {
     const directory = path.join(os.tmpdir(), `excalidraw-mcp-inspect-${crypto.randomUUID()}`);
     const runtime = createRuntime({ dbPath: path.join(directory, "database.db"), filesDir: path.join(directory, "files"),
-      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "inspect-test" }) });
+      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_ALLOW_LEGACY_PATH_TOKEN: "true", MCP_TOKEN: "inspect-test" }) });
     resources.push({ runtime, directory });
     const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
     const client = new Client({ name: "inspect-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
@@ -365,7 +366,7 @@ describe("Excalidraw MCP endpoint", () => {
         dbPath: path.join(directory, "database.db"),
         filesDir: path.join(directory, "files"),
         config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true",
-          MCP_TOKEN: "proxy-test-token", TRUST_PROXY: String(trustProxy) }),
+          MCP_ALLOW_LEGACY_PATH_TOKEN: "true", MCP_TOKEN: "proxy-test-token", TRUST_PROXY: String(trustProxy) }),
       });
       resources.push({ runtime, directory });
       const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
@@ -412,7 +413,7 @@ describe("Excalidraw MCP endpoint", () => {
     }
   });
 
-  it("requires its URL path token and supports drawing through normal scene routes", async () => {
+  it("accepts header tokens while retaining deprecated path-token compatibility", async () => {
     const directory = path.join(
       os.tmpdir(),
       `excalidraw-mcp-${crypto.randomUUID()}`,
@@ -423,6 +424,7 @@ describe("Excalidraw MCP endpoint", () => {
       config: createServerConfig({
         NODE_ENV: "test",
         ALLOW_ANONYMOUS: "true",
+        MCP_ALLOW_LEGACY_PATH_TOKEN: "true",
         MCP_TOKEN: "mcp-test-secret/+?%",
       }),
     });
@@ -446,7 +448,7 @@ describe("Excalidraw MCP endpoint", () => {
       ]) {
         const rejected = await mcpHandler.fetch(new Request(`http://test.local${pathname}`, {
           method,
-          headers: { Authorization: "Bearer mcp-test-secret/+?%" },
+          headers: { Authorization: "Bearer wrong-token" },
         }));
         expect(rejected.status).toBe(401);
       }
@@ -461,10 +463,18 @@ describe("Excalidraw MCP endpoint", () => {
     };
 
     const transport = new StreamableHTTPClientTransport(
-      new URL(`http://test.local/mcp/${encodeURIComponent(runtime.config.mcpToken!)}`),
+      new URL("http://test.local/mcp"),
       {
         fetch: async (input, init) => {
-          return mcpHandler.fetch(new Request(input, init));
+          const incoming = new Request(input, init);
+          const headers = new Headers(incoming.headers);
+          headers.set("X-MCP-Token", runtime.config.mcpToken!);
+          return mcpHandler.fetch(new Request(incoming.url, {
+            method: incoming.method,
+            headers,
+            signal: incoming.signal,
+            ...(incoming.body ? { body: incoming.body, duplex: "half" } : {}),
+          }));
         },
       },
     );
@@ -760,6 +770,21 @@ describe("Excalidraw MCP endpoint", () => {
         name: "list_boards", arguments: { view: "all", favorite: true, tag: "工作流" },
       }));
       expect(canonicalFavorites.items).toEqual(favorites.items);
+
+      const legacyClient = new Client(
+        { name: "mcp-legacy-path-test", version: "1.0.0" },
+        { versionNegotiation: { mode: "auto" } },
+      );
+      const legacyTransport = new StreamableHTTPClientTransport(
+        new URL(`http://test.local/mcp/${encodeURIComponent(runtime.config.mcpToken!)}`),
+        { fetch: async (input, init) => mcpHandler.fetch(new Request(input, init)) },
+      );
+      try {
+        await legacyClient.connect(legacyTransport);
+        expect((await legacyClient.listTools()).tools.length).toBeGreaterThan(0);
+      } finally {
+        await legacyClient.close();
+      }
       expect(canonicalFavorites.items[0].boardId).toBe(connected.boardId);
       expect(canonicalFavorites.items[0]).not.toHaveProperty("size");
       const favoriteViewSchema = tools.tools.find((tool) => tool.name === "list_boards")!.inputSchema;
@@ -911,5 +936,42 @@ describe("Excalidraw MCP endpoint", () => {
     }
 
     expect(runtime.sessions.size).toBe(0);
+  });
+
+  it("accepts a Bearer token on the canonical MCP endpoint", async () => {
+    const directory = path.join(os.tmpdir(), `excalidraw-mcp-bearer-${crypto.randomUUID()}`);
+    const runtime = createRuntime({
+      dbPath: path.join(directory, "database.db"),
+      filesDir: path.join(directory, "files"),
+      config: createServerConfig({ NODE_ENV: "test", ALLOW_ANONYMOUS: "true", MCP_TOKEN: "bearer-test-token" }),
+    });
+    resources.push({ runtime, directory });
+    const handler = createMcpRequestHandler(runtime, createRequestHandler(runtime));
+    expect(runtime.config.mcpAllowLegacyPathToken).toBe(false);
+    const rejectedPathToken = await handler.fetch(
+      new Request("http://test.local/mcp/bearer-test-token"),
+    );
+    expect(rejectedPathToken.status).toBe(404);
+    const client = new Client({ name: "bearer-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+    const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp"), {
+      fetch: async (input, init) => {
+        const incoming = new Request(input, init);
+        const headers = new Headers(incoming.headers);
+        headers.set("Authorization", "Bearer bearer-test-token");
+        return handler.fetch(new Request(incoming.url, {
+          method: incoming.method,
+          headers,
+          signal: incoming.signal,
+          ...(incoming.body ? { body: incoming.body, duplex: "half" } : {}),
+        }));
+      },
+    });
+    try {
+      await client.connect(transport);
+      expect((await client.listTools()).tools.length).toBeGreaterThan(0);
+    } finally {
+      await client.close();
+      await handler.close();
+    }
   });
 });

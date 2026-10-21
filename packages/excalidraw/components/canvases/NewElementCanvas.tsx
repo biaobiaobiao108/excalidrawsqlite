@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 import type { NonDeletedSceneElementsMap } from "@excalidraw/element/types";
 
 import { isRenderThrottlingEnabled } from "../../reactUtils";
 import { renderNewElementScene } from "../../renderer/renderNewElementScene";
+import { setCanvasDimensionsWithFallback } from "../../renderScale";
 
 import type {
   RenderableElementsMap,
@@ -18,12 +19,34 @@ interface NewElementCanvasProps {
   elementsMap: RenderableElementsMap;
   allElementsMap: NonDeletedSceneElementsMap;
   scale: number;
+  onScaleFallback: (scale: number) => void;
   rc: RoughCanvas;
   renderConfig: StaticCanvasRenderConfig;
 }
 
 const NewElementCanvas = (props: NewElementCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasScaleRef = useRef(props.scale);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    canvasScaleRef.current = setCanvasDimensionsWithFallback(
+      canvas,
+      props.appState.width,
+      props.appState.height,
+      props.scale,
+      props.onScaleFallback,
+    );
+  }, [
+    props.appState.height,
+    props.appState.width,
+    props.onScaleFallback,
+    props.scale,
+  ]);
+
   useEffect(() => {
     if (!canvasRef.current) {
       return;
@@ -31,7 +54,7 @@ const NewElementCanvas = (props: NewElementCanvasProps) => {
     renderNewElementScene(
       {
         canvas: canvasRef.current,
-        scale: props.scale,
+        scale: canvasScaleRef.current,
         newElement: props.newElement,
         elementsMap: props.elementsMap,
         allElementsMap: props.allElementsMap,

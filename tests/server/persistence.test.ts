@@ -17,6 +17,8 @@ import { createDatabaseSnapshot } from "../../server/backup";
 import { readJson, releaseJsonBodyMemoryBudget } from "../../server/http";
 import {
   cleanupUntrackedFiles,
+  stageRequestBodyToFile,
+  upsertStagedFile,
   withStorageMutationLock,
 } from "../../server/files";
 import { BodyMemoryBudget } from "../../server/types";
@@ -2525,6 +2527,43 @@ describe("cloud persistence server", () => {
     expect(existsSync(staleStagingDir)).toBe(false);
   });
 
+  it("preserves a stale-looking temp file while a streamed upload is active", async () => {
+    const { runtime } = createTestRuntime();
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(value) {
+        controller = value;
+        value.enqueue(new Uint8Array([1, 2, 3]));
+      },
+    });
+    const request = new Request("http://localhost/api/files/active_upload", {
+      method: "PUT",
+      headers: { "Content-Type": "image/png" },
+      body,
+      duplex: "half",
+    } as RequestInit);
+    const staging = stageRequestBodyToFile(runtime, "active_upload", request);
+    let tempPath: string | undefined;
+    for (let attempt = 0; attempt < 100 && !tempPath; attempt += 1) {
+      tempPath = (await fs.readdir(runtime.filesDir))
+        .map((name) => path.join(runtime.filesDir, name))
+        .find((filePath) => filePath.endsWith(".tmp"));
+      if (!tempPath) await Bun.sleep(1);
+    }
+    expect(tempPath).toBeTruthy();
+    const staleTime = new Date(Date.now() - STALE_FILE_ARTIFACT_MS - 60_000);
+    await fs.utimes(tempPath!, staleTime, staleTime);
+
+    await cleanupStaleFileArtifacts(runtime);
+    expect(existsSync(tempPath!)).toBe(true);
+
+    controller.close();
+    const prepared = await staging;
+    await upsertStagedFile(runtime, "active_upload", "image/png", prepared);
+    expect(existsSync(tempPath!)).toBe(false);
+    expect(existsSync(path.join(runtime.filesDir, "active_upload"))).toBe(true);
+  });
+
   it("reports an unhealthy storage directory", async () => {
     const { handler, runtime, directory } = createTestRuntime({
       ALLOW_ANONYMOUS: "true",
@@ -2651,6 +2690,27 @@ describe("cloud persistence server", () => {
     expect(await responseJson<{ code: string }>(response)).toMatchObject({
       code: "BACKUP_TOO_LARGE",
     });
+    const artifacts = (await fs.readdir(directory)).filter((name) =>
+      name.startsWith("excalidraw-backup-"),
+    );
+    expect(artifacts).toHaveLength(0);
+  });
+
+  it("preflights database snapshot size from stored text before creating artifacts", async () => {
+    const { runtime, directory } = createTestRuntime();
+    runtime.config.maxBackupBytes = 8 * 1024;
+    const elements = "x".repeat(16 * 1024);
+    runtime.db.run(
+      `INSERT INTO scenes
+       (id, name, elements, app_state, created_at, updated_at, revision,
+        tags_json, is_favorite, element_count, content_bytes, content_sha256)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ["large_backup_scene", "large", elements, "{}", 1, 1, 1, "[]", 0, 0, elements.length, ""],
+    );
+
+    await expect(
+      createDatabaseSnapshot(runtime, `preflight-${crypto.randomUUID()}`),
+    ).rejects.toMatchObject({ code: "BACKUP_TOO_LARGE" });
     const artifacts = (await fs.readdir(directory)).filter((name) =>
       name.startsWith("excalidraw-backup-"),
     );

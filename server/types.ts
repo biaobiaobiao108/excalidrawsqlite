@@ -107,6 +107,7 @@ export class BodyMemoryBudget {
 export type ServerConfig = {
   authPassword: string;
   mcpToken: string;
+  mcpAllowLegacyPathToken: boolean;
   mcpTrace: boolean;
   allowAnonymous: boolean;
   nodeEnv: string;
@@ -151,6 +152,7 @@ export type ServerRuntime = {
   dbPath: string;
   filesDir: string;
   activeBackupArtifacts: Set<string>;
+  activeFileArtifacts: Set<string>;
   staticDir?: string;
   config: ServerConfig;
   sessions: Map<string, number>;

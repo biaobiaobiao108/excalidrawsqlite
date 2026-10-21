@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useRef } from "react";
 
 import { isShallowEqual } from "@excalidraw/common";
 
@@ -9,6 +9,7 @@ import type {
 
 import { isRenderThrottlingEnabled } from "../../reactUtils";
 import { renderStaticScene } from "../../renderer/staticScene";
+import { setCanvasDimensionsWithFallback } from "../../renderScale";
 
 import type {
   RenderableElementsMap,
@@ -26,6 +27,7 @@ type StaticCanvasProps = {
   canvasNonce: string;
   selectionNonce: number | undefined;
   scale: number;
+  onScaleFallback: (scale: number) => void;
   appState: StaticCanvasAppState;
   renderConfig: StaticCanvasRenderConfig;
 };
@@ -33,17 +35,25 @@ type StaticCanvasProps = {
 const StaticCanvas = (props: StaticCanvasProps) => {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const isComponentMounted = useRef(false);
+  const canvasScaleRef = useRef(props.scale);
 
-  useEffect(() => {
-    try {
-      props.canvas.style.width = `${props.appState.width}px`;
-      props.canvas.style.height = `${props.appState.height}px`;
-      props.canvas.width = props.appState.width * props.scale;
-      props.canvas.height = props.appState.height * props.scale;
-    } catch (error) {
-      console.warn("Failed to set static canvas dimensions", error);
-    }
-  }, [props.appState.height, props.appState.width, props.canvas, props.scale]);
+  useLayoutEffect(() => {
+    props.canvas.style.width = `${props.appState.width}px`;
+    props.canvas.style.height = `${props.appState.height}px`;
+    canvasScaleRef.current = setCanvasDimensionsWithFallback(
+      props.canvas,
+      props.appState.width,
+      props.appState.height,
+      props.scale,
+      props.onScaleFallback,
+    );
+  }, [
+    props.appState.height,
+    props.appState.width,
+    props.canvas,
+    props.onScaleFallback,
+    props.scale,
+  ]);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -65,7 +75,7 @@ const StaticCanvas = (props: StaticCanvasProps) => {
         {
           canvas,
           rc: props.rc,
-          scale: props.scale,
+          scale: canvasScaleRef.current,
           elementsMap: props.elementsMap,
           allElementsMap: props.allElementsMap,
           visibleElements: props.visibleElements,
@@ -120,6 +130,7 @@ const areEqual = (
   if (
     prevProps.canvasNonce !== nextProps.canvasNonce ||
     prevProps.scale !== nextProps.scale ||
+    prevProps.onScaleFallback !== nextProps.onScaleFallback ||
     // we need to memoize on elementsMap because they may have renewed
     // even if canvasNonce didn't change (e.g. we filter elements out based
     // on appState)

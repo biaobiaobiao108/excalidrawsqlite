@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 
 import {
   AUTH_RATE_WINDOW_MS,
@@ -7,7 +6,6 @@ import {
   WRITE_REQUESTS_PER_WINDOW,
 } from "./config";
 import { randomHex, sha256Hex } from "./crypto";
-import { handleDevReloadRequest } from "./dev-reload";
 import { HttpError } from "./errors";
 import { findCreateReplay, isMcpCreateSession, parseCreateRequest, recordCreateRequest } from "./create-idempotency";
 import {
@@ -55,12 +53,9 @@ import {
   sanitizeSceneElements,
 } from "./scenes";
 import {
-  buildStaticPath,
-  getStaticCacheControl,
-  getStaticETag,
-  getStaticDir,
-  staticIfNoneMatchMatches,
-} from "./static";
+  handleEarlySystemRequest,
+  handleStaticRequest,
+} from "./system-routes";
 import {
   hasOwn,
   requireJsonObject,
@@ -242,25 +237,50 @@ const streamBackupArchive = (archive: {
   });
 };
 
-const staticFileResponse = async (
-  runtime: ServerRuntime,
-  req: Request,
-  file: ReturnType<typeof Bun.file>,
-  pathname: string,
-  contentType?: string,
-  cacheKey?: string,
-) => {
-  const etag = await getStaticETag(file, cacheKey);
-  const cacheControl = getStaticCacheControl(pathname);
-  const headers = {
-    "Cache-Control": cacheControl,
-    ETag: etag,
-    ...(contentType ? { "Content-Type": contentType } : {}),
-  };
-  if (staticIfNoneMatchMatches(req.headers.get("if-none-match"), etag)) {
-    return response(runtime, req, null, { status: 304, headers });
+const openStableFileResponseStream = async (filePath: string) => {
+  const reader = Bun.file(filePath).stream().getReader();
+  let firstChunk: Awaited<ReturnType<typeof reader.read>>;
+  try {
+    // Opening the stream and reading its first chunk pins the current file
+    // before the storage mutation lock is released. Atomic replacement can
+    // then proceed without changing the bytes served by this response.
+    firstChunk = await reader.read();
+  } catch (error) {
+    reader.releaseLock();
+    throw error;
   }
-  return response(runtime, req, file, { headers });
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (firstChunk.done) {
+        reader.releaseLock();
+        controller.close();
+        return;
+      }
+      controller.enqueue(firstChunk.value);
+    },
+    async pull(controller) {
+      try {
+        const result = await reader.read();
+        if (result.done) {
+          reader.releaseLock();
+          controller.close();
+          return;
+        }
+        controller.enqueue(result.value);
+      } catch (error) {
+        reader.releaseLock();
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
 };
 
 const encodeSceneCursor = (row: {
@@ -621,30 +641,14 @@ export const createRequestHandler = (
     }
 
     try {
-      if (pathname === "/__dev_reload") {
-        if (runtime.config.nodeEnv !== "development") {
-          throw new HttpError(404, "NOT_FOUND", "接口不存在");
-        }
-        if (req.method !== "GET") {
-          return response(runtime, req, null, {
-            status: 405,
-            headers: { Allow: "GET" },
-          });
-        }
-        return handleDevReloadRequest(req);
-      }
-
-      if (pathname === "/api/health" && req.method === "GET") {
-        try {
-          stmts.healthCheck.get();
-          fs.accessSync(path.dirname(runtime.dbPath), fs.constants.W_OK);
-          fs.accessSync(runtime.filesDir, fs.constants.W_OK);
-          // Keep health checks O(1). Full attachment consistency scans run in
-          // the maintenance loop and are intentionally not exposed publicly.
-          return jsonResponse(runtime, req, { status: "ok" });
-        } catch {
-          throw new HttpError(503, "STORAGE_UNAVAILABLE", "持久化存储不可用");
-        }
+      const systemResponse = handleEarlySystemRequest(
+        runtime,
+        req,
+        pathname,
+        stmts.healthCheck,
+      );
+      if (systemResponse) {
+        return systemResponse;
       }
 
       if (pathname === "/api/backup/full" && req.method === "GET") {
@@ -1926,61 +1930,64 @@ export const createRequestHandler = (
 
       if (pathname.startsWith("/api/files/") && req.method === "GET") {
         const id = getPathId(pathname, "/api/files/", "file");
-        const row = stmts.getFileById.get(id) as any;
-        if (!row?.storage_path) {
-          throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
-        }
-        const filePath = getFilePath(runtime, id);
-        if (!(await fileExists(filePath))) {
-          throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
-        }
+        return await withStorageMutationLock(runtime, async () => {
+          const row = stmts.getFileById.get(id) as any;
+          if (!row?.storage_path) {
+            throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
+          }
+          const filePath = getFilePath(runtime, id);
+          if (!(await fileExists(filePath))) {
+            throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
+          }
 
-        const etag = row.sha256 ? `"${row.sha256}"` : undefined;
-        const ifNoneMatch = req.headers.get("if-none-match");
-        // File IDs can be overwritten by PUT, so clients must revalidate even
-        // when the response carries a content hash ETag.
-        const cacheControl = "private, no-cache";
+          const etag = row.sha256 ? `"${row.sha256}"` : undefined;
+          const ifNoneMatch = req.headers.get("if-none-match");
+          // File IDs can be overwritten by PUT, so clients must revalidate even
+          // when the response carries a content hash ETag.
+          const cacheControl = "private, no-cache";
 
-        if (etag && ifNoneMatch) {
-          const clientEtags = ifNoneMatch
-            .split(",")
-            .map((item) => item.trim());
-          if (clientEtags.includes(etag) || clientEtags.includes("*")) {
-            return response(runtime, req, null, {
-              status: 304,
+          if (etag && ifNoneMatch) {
+            const clientEtags = ifNoneMatch
+              .split(",")
+              .map((item) => item.trim());
+            if (clientEtags.includes(etag) || clientEtags.includes("*")) {
+              return response(runtime, req, null, {
+                status: 304,
+                headers: {
+                  ETag: etag,
+                  "Cache-Control": cacheControl,
+                },
+              });
+            }
+          }
+
+          const body = await openStableFileResponseStream(filePath);
+          if (String(row.mime_type).toLowerCase() === "image/svg+xml") {
+            return response(runtime, req, body, {
               headers: {
-                ETag: etag,
-                "Cache-Control": cacheControl,
+                "Content-Type": "application/octet-stream",
+                "Content-Disposition": `attachment; filename="${id}"`,
+                "Content-Length": String(row.byte_size),
+                "X-File-Created-At": String(row.created_at),
+                "Cache-Control": "private, no-store",
+                ...(etag ? { ETag: etag } : {}),
               },
             });
           }
-        }
 
-        if (String(row.mime_type).toLowerCase() === "image/svg+xml") {
-          return response(runtime, req, Bun.file(filePath), {
-            headers: {
-              "Content-Type": "application/octet-stream",
-              "Content-Disposition": `attachment; filename="${id}"`,
-              "Content-Length": String(row.byte_size),
-              "X-File-Created-At": String(row.created_at),
-              "Cache-Control": "private, no-store",
-              ...(etag ? { ETag: etag } : {}),
-            },
+          const responseHeaders: Record<string, string> = {
+            "Content-Type": row.mime_type,
+            "Content-Length": String(row.byte_size),
+            "X-File-Created-At": String(row.created_at),
+            "Cache-Control": cacheControl,
+          };
+          if (etag) {
+            responseHeaders.ETag = etag;
+          }
+
+          return response(runtime, req, body, {
+            headers: responseHeaders,
           });
-        }
-
-        const responseHeaders: Record<string, string> = {
-          "Content-Type": row.mime_type,
-          "Content-Length": String(row.byte_size),
-          "X-File-Created-At": String(row.created_at),
-          "Cache-Control": cacheControl,
-        };
-        if (etag) {
-          responseHeaders.ETag = etag;
-        }
-
-        return response(runtime, req, Bun.file(filePath), {
-          headers: responseHeaders,
         });
       }
 
@@ -1988,48 +1995,7 @@ export const createRequestHandler = (
         throw new HttpError(404, "NOT_FOUND", "接口不存在");
       }
 
-      const staticDir = getStaticDir(runtime);
-      const staticPath = buildStaticPath(staticDir, pathname);
-      if (!staticPath) {
-        throw new HttpError(400, "INVALID_PATH", "无效的资源路径");
-      }
-      const staticFile = Bun.file(staticPath);
-      if (await staticFile.exists()) {
-        return staticFileResponse(
-          runtime,
-          req,
-          staticFile,
-          pathname,
-          undefined,
-          staticPath,
-        );
-      }
-      const acceptsHtml = (req.headers.get("accept") || "")
-        .toLowerCase()
-        .includes("text/html");
-      if (acceptsHtml) {
-        const indexPath = path.join(staticDir, "index.html");
-        const indexFile = Bun.file(indexPath);
-        if (await indexFile.exists()) {
-          return staticFileResponse(
-            runtime,
-            req,
-            indexFile,
-            "/index.html",
-            "text/html; charset=utf-8",
-            indexPath,
-          );
-        }
-      }
-      if (pathname !== "/") {
-        throw new HttpError(404, "STATIC_NOT_FOUND", "资源不存在");
-      }
-      return response(
-        runtime,
-        req,
-        "Excalidraw Bun Server is running. Please build the frontend first (bun run build).",
-        { headers: { "Content-Type": "text/plain; charset=utf-8" } },
-      );
+      return await handleStaticRequest(runtime, req, pathname);
     } catch (error) {
       return errorResponse(runtime, req, error);
     } finally {

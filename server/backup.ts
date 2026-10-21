@@ -282,10 +282,63 @@ const removeBackupArtifact = async (
   }
 };
 
+const assertDatabaseSnapshotCanFit = (
+  runtime: ServerRuntime,
+  maxBytes: number,
+) => {
+  const pageSize = Number(
+    (runtime.db.query("PRAGMA page_size").get() as { page_size: number })
+      .page_size,
+  );
+  if (maxBytes < pageSize) {
+    throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+  }
+
+  // Text payload bytes are a strict lower bound on a SQLite snapshot: these
+  // values must be stored in the database in addition to its pages, headers,
+  // integer columns and indexes. Rejecting from this bound avoids writing a
+  // huge VACUUM INTO artifact while still allowing VACUUM to reclaim free pages.
+  const minimumContentBytes = Number(
+    (
+      runtime.db
+        .query(
+          `SELECT COALESCE(SUM(bytes), 0) AS bytes FROM (
+             SELECT length(CAST(id AS BLOB)) + length(CAST(name AS BLOB)) +
+                    length(CAST(elements AS BLOB)) + length(CAST(app_state AS BLOB)) +
+                    length(CAST(tags_json AS BLOB)) + length(CAST(content_sha256 AS BLOB)) AS bytes
+             FROM scenes
+             UNION ALL
+             SELECT length(CAST(id AS BLOB)) + length(CAST(name AS BLOB)) +
+                    length(CAST(icon AS BLOB)) + length(CAST(color AS BLOB)) AS bytes
+             FROM folders
+             UNION ALL
+             SELECT length(CAST(id AS BLOB)) + COALESCE(length(CAST(storage_path AS BLOB)), 0) +
+                    length(CAST(mime_type AS BLOB)) + length(CAST(sha256 AS BLOB)) AS bytes
+             FROM files
+             UNION ALL
+             SELECT length(CAST(scene_id AS BLOB)) + length(CAST(file_id AS BLOB)) AS bytes
+             FROM scene_files
+             UNION ALL
+             SELECT length(CAST(token AS BLOB)) AS bytes FROM sessions
+             UNION ALL
+             SELECT length(CAST(key_sha256 AS BLOB)) + length(CAST(payload_sha256 AS BLOB)) +
+                    length(CAST(scene_id AS BLOB)) AS bytes
+             FROM scene_create_requests
+           )`,
+        )
+        .get() as { bytes: number }
+    ).bytes,
+  );
+  if (minimumContentBytes > maxBytes) {
+    throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+  }
+};
+
 export const createDatabaseSnapshot = async (
   runtime: ServerRuntime,
   timestamp: string,
 ) => {
+  assertDatabaseSnapshotCanFit(runtime, runtime.config.maxBackupBytes);
   const tempBackupFile = path.join(
     path.dirname(runtime.dbPath),
     `excalidraw-backup-${timestamp}-${randomHex(4)}.db`,

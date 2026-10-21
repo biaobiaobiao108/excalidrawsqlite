@@ -27,6 +27,12 @@
 
 ---
 
+### 部署与升级边界
+
+当前生产拓扑按**单个服务实例**设计：SQLite 数据库和附件写入同一数据卷，实时通知由服务进程内广播。不要通过启动多个应用副本来共享同一数据目录；多实例部署需要额外的共享存储、跨进程通知和限流协调能力。
+
+服务只初始化当前 SQLite schema，不执行旧版本数据库迁移。涉及数据库结构变化的升级前，请导出并确认一份完整备份，再升级服务。
+
 ## ✨ 核心特性详解
 
 ### 1. 🚀 全栈 Bun 原生驱动
@@ -197,7 +203,8 @@ AUTH_PASSWORD=your-password bun run dev
 | 环境变量 | 默认值 | 必填项 | 说明 |
 | :-- | :-- | :-: | :-- |
 | `AUTH_PASSWORD` | _无_ | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。 |
-| `MCP_TOKEN` | _无_ | 否 | 设置后启用 `/mcp/<URL 编码后的 MCP_TOKEN>` MCP 服务，无需认证请求头。未设置时 MCP 端点关闭。 |
+| `MCP_TOKEN` | _无_ | 否 | 设置后启用 MCP 服务，通过 `Authorization: Bearer <令牌>` 或 `X-MCP-Token` 请求头认证。未设置时 MCP 端点关闭。 |
+| `MCP_ALLOW_LEGACY_PATH_TOKEN` | `false` | 否 | 临时兼容旧客户端的 `/mcp/<令牌>` 路径认证；路径可能被反向代理访问日志记录，迁移到请求头后请保持关闭。 |
 | `MCP_TRACE` | `false` | 否 | 临时启用 MCP 业务处理分段计时；记录内部 API 读写、图元转换、回执构建耗时与读写次数，不记录令牌、参数或画板正文。 |
 | `ALLOW_ANONYMOUS` | `false` | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。 |
 | `TRUST_PROXY` | `false` | 否 | 仅在应用端口被可信反向代理隔离保护时设为 `true`，用于识别 HTTPS 并下发 Secure Cookie。代理需覆盖 `X-Forwarded-For` 为实际客户端 IP，且应用端口不得允许不可信客户端直连；直连部署应保持 `false`，以防伪造转发头绕过登录限流。 |
@@ -208,16 +215,16 @@ AUTH_PASSWORD=your-password bun run dev
 | `TRASH_RETENTION_DAYS` | `30` (30 天) | 否 | 回收站画板保留天数。设为 `0` 禁用自动清理；超期后自动物理删除并回收 SQLite 空间与关联孤立附件。 |
 | `MAX_FILE_BYTES` | `4194304` (4MB) | 否 | 单个图片/附件上传大小限制（字节）。 |
 | `MAX_SCENE_BODY_BYTES` | `16777216` (16MB) | 否 | 单个画板 JSON 数据最大请求体大小。 |
-| `MAX_IN_FLIGHT_BODY_BYTES` | `67108864` (64MB) | 否 | 所有并发请求体的聚合内存预算；若配置低于单请求上限，会自动提升到安全下限。启用 MCP 时，下限至少为两倍单画板请求上限，为工具内部 API 调用保留预算。 |
+| `MAX_IN_FLIGHT_BODY_BYTES` | `67108864` (64MB) | 否 | 所有并发请求体的聚合字节预算；不包含 JSON 解析后对象及运行时额外分配。若配置低于单请求上限，会自动提升到安全下限。启用 MCP 时，下限至少为两倍单画板请求上限，为工具内部 API 调用保留预算。 |
 | `MAX_BACKUP_BYTES` | `134217728` (128MB) | 否 | 单次数据库快照或完整备份的原始内容大小上限。 |
 
-构建版本标识统一通过 `BUILD_SHA` 注入（Docker 同名 build arg），不接受旧构建环境变量别名。默认静态产物目录仅为 `excalidraw-app/build`，自定义目录需显式指定 `STATIC_DIR`；不会再回退到旧的 `dist/build` 目录。服务端仅读取当前 SQLite schema，损坏或缺失的修订号、图元数量、场景 JSON 明确报错，不推测版本或返回空场景。
+构建版本标识统一通过 `BUILD_SHA` 注入（Docker 同名 build arg），不接受旧构建环境变量别名。默认静态产物目录仅为 `excalidraw-app/build`，自定义目录需显式指定 `STATIC_DIR`；不会再回退到旧的 `dist/build` 目录。损坏或缺失的修订号、图元数量、场景 JSON 会明确报错，不推测版本或返回空场景。
 
 ---
 
 ## 🤖 MCP：让 Agent 读取和绘制画板
 
-MCP 使用标准 Streamable HTTP 传输，端点为 `http://你的服务地址:8080/mcp/<URL 编码后的令牌>`。设置高强度随机令牌后重启服务：
+MCP 使用标准 Streamable HTTP 传输，端点为 `http://你的服务地址:8080/mcp`。设置高强度随机令牌后重启服务：
 
 ```bash
 MCP_TOKEN=replace-with-a-long-random-secret bun run dev
@@ -237,20 +244,23 @@ bun run dev
   "mcpServers": {
     "excalidrawsqlite": {
       "type": "http",
-      "url": "http://127.0.0.1:8080/mcp/replace-with-a-long-random-secret"
+      "url": "http://127.0.0.1:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer replace-with-a-long-random-secret"
+      }
     }
   }
 }
 ```
 
-只接受路径令牌，旧的 `Authorization: Bearer` 和 `?token=...` 均不生效。令牌使用 `encodeURIComponent` 编码后放在 `/mcp/` 后面；无需额外配置请求头。远程连接使用 HTTPS，并在反向代理访问日志中对 MCP 令牌路径脱敏。
+服务接受 `Authorization: Bearer <令牌>` 和 `X-MCP-Token: <令牌>` 请求头。旧配置中的 `/mcp/<URL 编码后的令牌>` 路径认证默认关闭；迁移期间可显式设置 `MCP_ALLOW_LEGACY_PATH_TOKEN=true`，完成迁移后请关闭该选项。代理访问日志可能记录 URL。`?token=...` 不受支持。远程连接使用 HTTPS，并避免记录认证请求头。
 
-容器经 HTTPS 反代部署时，在 Compose 同目录的 `.env` 设置 `MCP_TOKEN` 和 `TRUST_PROXY=true`，然后执行 `docker compose up -d --build`。默认 Compose 已将这两个变量传给容器，并只把应用端口绑定到 `127.0.0.1`。MCP 客户端填写公网地址 `https://boards.example.com/mcp/<URL 编码后的令牌>`；无需登录网页，也无需 `Authorization` 请求头。建议用独立域名的根路径部署，当前应用不支持通过 `X-Forwarded-Prefix` 挂载到任意子路径。
+容器经 HTTPS 反代部署时，在 Compose 同目录的 `.env` 设置 `MCP_TOKEN` 和 `TRUST_PROXY=true`，然后执行 `docker compose up -d --build`。默认 Compose 会传递这两个变量和关闭状态的旧路径兼容选项，并只把应用端口绑定到 `127.0.0.1`。MCP 客户端填写公网地址 `https://boards.example.com/mcp`，并在 `Authorization` 请求头中传入令牌；无需登录网页。建议用独立域名的根路径部署，当前应用不支持通过 `X-Forwarded-Prefix` 挂载到任意子路径。
 
-下面的 Nginx 配置放在已有的 HTTPS `server` 块内，专门代理 MCP；网页仍沿用原有的 `location /` 配置。`proxy_pass` 不添加 URI，保留完整令牌路径；转发实际域名、协议及客户端 IP。启用 `TRUST_PROXY` 后，MCP 回执中的画板链接会使用这个公网 HTTPS 地址。
+下面的 Nginx 配置放在已有的 HTTPS `server` 块内，专门代理 MCP；网页仍沿用原有的 `location /` 配置。`proxy_pass` 不添加 URI，转发完整 MCP 请求路径、实际域名、协议及客户端 IP，也兼容仍使用旧路径令牌的客户端。启用 `TRUST_PROXY` 后，MCP 回执中的画板链接会使用这个公网 HTTPS 地址。
 
 ```nginx
-location ^~ /mcp/ {
+location ~ ^/mcp(/|$) {
     proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
     proxy_set_header Host $http_host;
@@ -266,7 +276,7 @@ location ^~ /mcp/ {
 }
 ```
 
-MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/POST/DELETE/OPTIONS`，保留 `Accept`、`Content-Type`、`Mcp-*`、`Last-Event-Id` 请求头；不要套用网页登录跳转或验证码。关闭响应缓冲让 SSE 及时送达，设置适当读超时避免代理提前断开连接（[Nginx 代理模块文档](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffering)）。示例关闭该路径的访问日志以避免记录令牌；如需日志，使用脱敏格式。若反代也运行在容器中，应在私有容器网络中转发到应用服务名及端口，而非代理容器自身的 `127.0.0.1`。
+MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/POST/DELETE/OPTIONS`，保留 `Accept`、`Authorization`、`X-MCP-Token`、`Content-Type`、`Mcp-*`、`Last-Event-Id` 请求头；不要套用网页登录跳转或验证码。关闭响应缓冲让 SSE 及时送达，设置适当读超时避免代理提前断开连接（[Nginx 代理模块文档](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffering)）。示例关闭该路径的访问日志；如需日志，确保认证请求头已脱敏。若反代也运行在容器中，应在私有容器网络中转发到应用服务名及端口，而非代理容器自身的 `127.0.0.1`。
 
 网关、WAF 或 OpenResty 的 User-Agent 过滤规则也需放行整个 `/mcp/` 路径，包括 Python SDK 的默认 UA；保留真实 User-Agent，不要靠伪装 curl 解决。若 `initialize` 等带 JSON-RPC `id` 的请求收到 `202` 空响应，应使用同一请求比较不同 UA 的公网响应与直连 Bun 响应，并检查各层拦截日志；不能把它当作初始化成功。协议通知（例如 `notifications/initialized`）没有 `id`，正常接受时可以返回 `202` 空响应。需要拒绝时返回明确的 `4xx`，不要用空 `202` 隐藏拦截。本仓库没有线上网关配置，应用更新不会自动解除网关规则。
 

@@ -14,6 +14,7 @@ import { ImageCache } from "../../packages/excalidraw/imageCache";
 import {
   getEditorCanvasPixelBudget,
   getEditorRenderScale,
+  setCanvasDimensionsWithFallback,
 } from "../../packages/excalidraw/renderScale";
 import { BodyMemoryBudget } from "../../server/types";
 
@@ -213,6 +214,67 @@ describe("memory budgets", () => {
     expect(normalScale).toBe(2);
     expect(highDpiScale).toBeLessThan(2);
     expect(lowMemoryScale).toBeLessThan(highDpiScale);
+  });
+
+  it("does not let a minimum render scale exceed the canvas pixel budget", () => {
+    const width = 200_000;
+    const height = 100_000;
+    const canvasCount = 3;
+    const scale = getEditorRenderScale({
+      width,
+      height,
+      devicePixelRatio: 2,
+      canvasCount,
+      deviceMemory: 8,
+    });
+
+    expect(scale).toBeLessThan(0.5);
+    expect(width * height * scale * scale * canvasCount).toBeLessThanOrEqual(
+      getEditorCanvasPixelBudget(8),
+    );
+  });
+
+  it("retries canvas backing-store allocation at lower scales", () => {
+    let width = 0;
+    let height = 0;
+    const canvas = Object.defineProperties(
+      {},
+      {
+        width: {
+          get: () => width,
+          set: (value: number) => {
+            if (value * height > 4_096) {
+              throw new Error("canvas allocation rejected");
+            }
+            width = value;
+          },
+        },
+        height: {
+          get: () => height,
+          set: (value: number) => {
+            if (width * value > 4_096) {
+              throw new Error("canvas allocation rejected");
+            }
+            height = value;
+          },
+        },
+      },
+    ) as HTMLCanvasElement;
+    let fallbackScale = 2;
+
+    const scale = setCanvasDimensionsWithFallback(
+      canvas,
+      200,
+      200,
+      2,
+      (nextScale) => {
+        fallbackScale = nextScale;
+      },
+    );
+
+    expect(scale).toBeLessThan(2);
+    expect(fallbackScale).toBe(scale);
+    expect(canvas.width * canvas.height).toBeLessThanOrEqual(4_096);
   });
 
   it("blocks body readers until aggregate memory is released", async () => {

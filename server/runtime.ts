@@ -33,6 +33,7 @@ export const createRuntime = (options: {
       dbPath,
       filesDir,
       activeBackupArtifacts: new Set(),
+      activeFileArtifacts: new Set(),
       staticDir: options.staticDir
         ? path.resolve(options.staticDir)
         : undefined,
