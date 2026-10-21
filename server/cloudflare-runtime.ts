@@ -66,6 +66,7 @@ export const createCloudflareRuntime = (
     config,
     clientAddress: request.headers.get("CF-Connecting-IP") || undefined,
     activeBackupArtifacts: new Set(),
+    activeFileArtifacts: new Set(),
     bodyMemoryBudget: bodyMemoryBudgetForIsolate(config.maxInFlightBodyBytes),
   };
   runtime.realtime = {

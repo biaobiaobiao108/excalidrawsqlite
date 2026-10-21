@@ -650,15 +650,57 @@ class App extends React.Component<AppProps, AppState> {
     const navigator = this.ownerWindow.navigator as Navigator & {
       deviceMemory?: number;
     };
-    return getEditorRenderScale({
+    const canvasCount = this.state.newElement ? 3 : 2;
+    const devicePixelRatio = this.ownerWindow.devicePixelRatio;
+    const requestedScale = getEditorRenderScale({
       width: this.state.width,
       height: this.state.height,
-      devicePixelRatio: this.ownerWindow.devicePixelRatio,
-      canvasCount: this.state.newElement ? 3 : 2,
+      devicePixelRatio,
+      canvasCount,
       deviceMemory: navigator.deviceMemory,
       userAgent: navigator.userAgent,
     });
+    const fallback = this.renderScaleAllocationFallback;
+    if (
+      fallback &&
+      (fallback.width !== this.state.width ||
+        fallback.height !== this.state.height ||
+        fallback.canvasCount !== canvasCount ||
+        fallback.devicePixelRatio !== devicePixelRatio)
+    ) {
+      this.renderScaleAllocationFallback = null;
+      return requestedScale;
+    }
+    return fallback ? Math.min(requestedScale, fallback.scale) : requestedScale;
   }
+
+  private renderScaleAllocationFallback: {
+    width: number;
+    height: number;
+    canvasCount: number;
+    devicePixelRatio: number;
+    scale: number;
+  } | null = null;
+
+  public handleCanvasAllocationFailure = (scale: number) => {
+    const canvasCount = this.state.newElement ? 3 : 2;
+    const devicePixelRatio = this.ownerWindow.devicePixelRatio;
+    if (scale >= this.editorRenderScale) {
+      return;
+    }
+    const current = this.renderScaleAllocationFallback;
+    if (current && current.scale <= scale) {
+      return;
+    }
+    this.renderScaleAllocationFallback = {
+      width: this.state.width,
+      height: this.state.height,
+      canvasCount,
+      devicePixelRatio,
+      scale,
+    };
+    this.forceUpdate();
+  };
 
   public getEditorRenderScale = () => this.editorRenderScale;
 
@@ -2678,6 +2720,7 @@ class App extends React.Component<AppProps, AppState> {
                               this.state.selectionElement?.versionNonce
                             }
                             scale={this.editorRenderScale}
+                            onScaleFallback={this.handleCanvasAllocationFailure}
                             appState={this.state}
                             renderConfig={{
                               imageCache: this.imageCache,
@@ -2700,6 +2743,7 @@ class App extends React.Component<AppProps, AppState> {
                               appState={this.state}
                               newElement={newElementCanvasElement}
                               scale={this.editorRenderScale}
+                              onScaleFallback={this.handleCanvasAllocationFailure}
                               rc={this.rc}
                               elementsMap={renderableElementsMap}
                               allElementsMap={allElementsMap}
@@ -2731,6 +2775,7 @@ class App extends React.Component<AppProps, AppState> {
                               this.state.selectionElement?.versionNonce
                             }
                             scale={this.editorRenderScale}
+                            onScaleFallback={this.handleCanvasAllocationFailure}
                             appState={this.state}
                             renderScrollbars={
                               this.props.renderScrollbars === true

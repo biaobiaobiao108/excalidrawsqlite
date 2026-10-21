@@ -605,10 +605,12 @@ export const stageRequestBodyToFile = async (
   const filePath = getFilePath(runtime, id);
   await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${randomHex(8)}.tmp`;
+  const activeTempPath = path.resolve(tempPath);
   const reservedBytes = await runtime.bodyMemoryBudget.acquire(
     runtime.config.maxFileBytes,
     req.signal,
   );
+  runtime.activeFileArtifacts.add(activeTempPath);
   let writer: ReturnType<ReturnType<typeof Bun.file>["writer"]> | undefined;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
@@ -646,6 +648,7 @@ export const stageRequestBodyToFile = async (
       // Closing a failed sink must not prevent temporary-file cleanup.
     }
     await fs.promises.rm(tempPath, { force: true });
+    runtime.activeFileArtifacts.delete(activeTempPath);
     throw error;
   } finally {
     try {
@@ -683,7 +686,11 @@ export const upsertStagedFile = async (
   } finally {
     if (prepared.tempPath) {
       const fs = await getFileSystem();
-      await fs.promises.rm(prepared.tempPath, { force: true });
+      try {
+        await fs.promises.rm(prepared.tempPath, { force: true });
+      } finally {
+        runtime.activeFileArtifacts.delete(path.resolve(prepared.tempPath));
+      }
     }
   }
 };
@@ -1127,7 +1134,11 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
         continue;
       }
       const filePath = path.join(directory, entry.name);
-      if (runtime.activeBackupArtifacts.has(path.resolve(filePath))) {
+      const resolvedPath = path.resolve(filePath);
+      if (
+        runtime.activeBackupArtifacts.has(resolvedPath) ||
+        runtime.activeFileArtifacts.has(resolvedPath)
+      ) {
         continue;
       }
       const stat = await fs.promises.stat(filePath).catch(() => null);

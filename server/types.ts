@@ -4,13 +4,23 @@ export class BodyMemoryBudget {
   private availableBytes: number;
   private currentBytes = 0;
   private peakBytes = 0;
-  private readonly waiters: Array<{ bytes: number; resolve: () => void; reject: (error: unknown) => void; remove: () => void; settled: boolean }> = [];
+  private readonly waiters: Array<{
+    bytes: number;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+    remove: () => void;
+    settled: boolean;
+  }> = [];
 
-  constructor(private readonly maxBytes: number) { this.availableBytes = maxBytes; }
+  constructor(private readonly maxBytes: number) {
+    this.availableBytes = maxBytes;
+  }
 
   async acquire(requestedBytes: number, signal?: AbortSignal) {
     const bytes = Math.min(Math.max(1, requestedBytes), this.maxBytes);
-    if (signal?.aborted) throw new DOMException("The request was aborted", "AbortError");
+    if (signal?.aborted) {
+      throw new DOMException("The request was aborted", "AbortError");
+    }
     if (this.availableBytes >= bytes) {
       this.availableBytes -= bytes;
       this.currentBytes += bytes;
@@ -19,13 +29,44 @@ export class BodyMemoryBudget {
     }
     await new Promise<void>((resolve, reject) => {
       const waiter = {
-        bytes, settled: false, remove: () => {},
-        resolve: () => { if (waiter.settled) return; waiter.settled = true; waiter.remove(); resolve(); },
-        reject: (error: unknown) => { if (waiter.settled) return; waiter.settled = true; waiter.remove(); reject(error); },
+        bytes,
+        resolve: () => {
+          if (waiter.settled) {
+            return;
+          }
+          waiter.settled = true;
+          waiter.remove();
+          resolve();
+        },
+        reject: (error: unknown) => {
+          if (waiter.settled) {
+            return;
+          }
+          waiter.settled = true;
+          waiter.remove();
+          reject(error);
+          this.drainWaiters();
+        },
+        remove: () => {
+          const index = this.waiters.indexOf(waiter);
+          if (index >= 0) {
+            this.waiters.splice(index, 1);
+          }
+        },
+        settled: false,
       };
-      const removeWaiter = () => { const index = this.waiters.indexOf(waiter); if (index >= 0) this.waiters.splice(index, 1); };
-      waiter.remove = () => { signal?.removeEventListener("abort", abort); removeWaiter(); };
-      const abort = () => waiter.reject(new DOMException("The request was aborted", "AbortError"));
+      const removeWaiter = () => {
+        const index = this.waiters.indexOf(waiter);
+        if (index >= 0) {
+          this.waiters.splice(index, 1);
+        }
+      };
+      const abort = () =>
+        waiter.reject(new DOMException("The request was aborted", "AbortError"));
+      waiter.remove = () => {
+        signal?.removeEventListener("abort", abort);
+        removeWaiter();
+      };
       signal?.addEventListener("abort", abort, { once: true });
       this.waiters.push(waiter);
     });
@@ -35,17 +76,31 @@ export class BodyMemoryBudget {
   release(bytes: number) {
     this.availableBytes = Math.min(this.maxBytes, this.availableBytes + bytes);
     this.currentBytes = Math.max(0, this.currentBytes - bytes);
-    while (this.waiters.length && this.availableBytes >= this.waiters[0].bytes) {
-      const waiter = this.waiters.shift()!;
+    this.drainWaiters();
+  }
+
+  private drainWaiters() {
+    while (this.waiters.length) {
+      const waiter = this.waiters[0];
+      if (this.availableBytes < waiter.bytes) {
+        break;
+      }
       this.availableBytes -= waiter.bytes;
       this.currentBytes += waiter.bytes;
       this.peakBytes = Math.max(this.peakBytes, this.currentBytes);
+      this.waiters.shift();
       waiter.resolve();
     }
   }
 
   getStats() {
-    return { maxBytes: this.maxBytes, availableBytes: this.availableBytes, currentBytes: this.currentBytes, peakBytes: this.peakBytes, queuedRequests: this.waiters.length };
+    return {
+      maxBytes: this.maxBytes,
+      availableBytes: this.availableBytes,
+      currentBytes: this.currentBytes,
+      peakBytes: this.peakBytes,
+      queuedRequests: this.waiters.length,
+    };
   }
 }
 
@@ -105,6 +160,7 @@ export type ServerRuntime = {
   dbPath?: string;
   filesDir?: string;
   activeBackupArtifacts: Set<string>;
+  activeFileArtifacts: Set<string>;
   staticAssets?: StaticAssetsBinding;
   staticDir?: string;
   realtime?: RealtimePublisher;

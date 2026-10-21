@@ -1,5 +1,5 @@
 import * as z from "zod/v4";
-import { FONT_FAMILY, getFontString } from "@excalidraw/common";
+import { FONT_FAMILY, getFontString, getSizeFromPoints, rescalePoints } from "@excalidraw/common";
 import { pointFrom } from "@excalidraw/math";
 import type { LocalPoint } from "@excalidraw/math";
 import {
@@ -790,6 +790,25 @@ export const updateDrawingElements = (
         `形状标签最多 2000 字符，图元 ${patch.id} 收到 ${patch.text.length} 字符`,
       );
     const linear = element.type === "arrow" || element.type === "line";
+    if (linear && (patch.width !== undefined || patch.height !== undefined)) {
+      if (patch.points !== undefined)
+        throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "线性图元的 width/height 不能与 points 同时提供，请只指定一种尺寸修改方式");
+      if (isArrowElement(element) && (element.elbowed ||
+        (patch.startBinding === undefined ? element.startBinding : patch.startBinding) ||
+        (patch.endBinding === undefined ? element.endBinding : patch.endBinding)) ||
+        element.boundElements?.some((bound) => bound.type === "text"))
+        throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "带绑定、标签或肘线的线性图元不能通过 width/height 缩放，请修改 points 或所属节点");
+      const size = getSizeFromPoints(element.points);
+      if (patch.width !== undefined && size.width === 0 || patch.height !== undefined && size.height === 0)
+        throw new HttpError(400, "INVALID_ELEMENT_UPDATE", "零尺寸轴无法按比例缩放，请通过 points 指定线性图元的新路径");
+      let scaled = element.points;
+      if (patch.width !== undefined) scaled = rescalePoints(0, patch.width, scaled, false);
+      if (patch.height !== undefined) scaled = rescalePoints(1, patch.height, scaled, false);
+      // Feed resizing through the same origin normalization and coordinate
+      // validation as explicit points, keeping stored bounds and paths coherent.
+      patch = { ...patch, x: patch.x ?? element.x, y: patch.y ?? element.y,
+        points: scaled.map(([x, y]) => [x, y]) };
+    }
     if (linear && patch.points === undefined && (patch.x !== undefined || patch.y !== undefined) &&
       element.points.some(([x, y]) => !coordinate.safeParse((patch.x ?? element.x) + x).success ||
         !coordinate.safeParse((patch.y ?? element.y) + y).success))

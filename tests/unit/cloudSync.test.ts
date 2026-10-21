@@ -706,6 +706,105 @@ describe("cloud save queue", () => {
     expect(snapshots.size).toBe(0);
   });
 
+  it("recovers an IndexedDB write failure from the session snapshot", async () => {
+    const values = new Map<string, string>();
+    const storage = {
+      get length() {
+        return values.size;
+      },
+      key: (index: number) => [...values.keys()][index] || null,
+      getItem: (key: string) => values.get(key) || null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+      clear: () => values.clear(),
+    } as Storage;
+    values.set("excalidraw_cloud_save_recovery_v1:scene", "{malformed");
+    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { sessionStorage: storage },
+    });
+
+    try {
+      const { persistence } = createPersistence();
+      const failingPersistence: CloudSavePersistence = {
+        ...persistence,
+        save: async () => {
+          throw new Error("IndexedDB quota exceeded");
+        },
+      };
+      const original = snapshot("restore after local storage failure");
+      const queue = new CloudSaveQueue(callbacks, {
+        persistence: failingPersistence,
+        saveFilesToCloud: async () => {},
+        saveCloudScene: async () => {
+          throw new CloudApiError("authentication required", 401, "AUTH_REQUIRED");
+        },
+      });
+      await queue.ready();
+      queue.enqueue(original);
+      expect(await queue.flush("scene")).toBe("auth");
+      expect(queue.getPendingSnapshot("scene")?.name).toBe(original.name);
+      expect(values.size).toBe(1);
+
+      const recoveredQueue = new CloudSaveQueue(callbacks, {
+        persistence: {
+          load: async () => [],
+          save: async () => {},
+          remove: async () => {},
+        },
+        saveFilesToCloud: async () => {},
+        saveCloudScene: async (id) => ({
+          success: true,
+          id,
+          updated_at: Date.now(),
+          revision: 2,
+        }),
+      });
+      await recoveredQueue.ready();
+      expect(recoveredQueue.getPendingSnapshot("scene")?.name).toBe(original.name);
+      expect(await recoveredQueue.flush("scene")).toBe("saved");
+      expect(values.size).toBe(0);
+    } finally {
+      if (previousWindow) {
+        Object.defineProperty(globalThis, "window", previousWindow);
+      } else {
+        Reflect.deleteProperty(globalThis, "window");
+      }
+    }
+  });
+
+  it("retains the active snapshot in memory when the editor is disposed", async () => {
+    let releaseSave!: () => void;
+    let signalSaveStarted!: () => void;
+    const saveStarted = new Promise<void>((resolve) => {
+      signalSaveStarted = resolve;
+    });
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence: createPersistence().persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async (id) => {
+        signalSaveStarted();
+        await new Promise<void>((resolve) => {
+          releaseSave = resolve;
+        });
+        return { success: true, id, updated_at: Date.now(), revision: 2 };
+      },
+    });
+
+    queue.enqueue(snapshot("retain during unmount"));
+    const flush = queue.flush("scene");
+    await saveStarted;
+    queue.dispose();
+
+    expect(queue.hasPending("scene")).toBe(true);
+    releaseSave();
+    await flush;
+    expect(queue.getPendingSnapshot("scene")?.name).toBe(
+      "retain during unmount",
+    );
+  });
+
   it("recognizes a save that committed before the persisted snapshot was cleared", async () => {
     const { persistence, snapshots } = createPersistence();
     let failFirstRemove = true;

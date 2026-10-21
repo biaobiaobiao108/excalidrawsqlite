@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useRef } from "react";
 
 import {
   isShallowEqual,
@@ -23,6 +23,7 @@ import { t } from "../../i18n";
 import { renderInteractiveScene } from "../../renderer/interactiveScene";
 
 import { AnimationController } from "../../renderer/animation";
+import { setCanvasDimensionsWithFallback } from "../../renderScale";
 
 import type {
   AppClassProperties,
@@ -41,6 +42,7 @@ type InteractiveCanvasProps = {
   canvasNonce: string;
   selectionNonce: number | undefined;
   scale: number;
+  onScaleFallback: (scale: number) => void;
   appState: InteractiveCanvasAppState;
   renderScrollbars: boolean;
   editorInterface: EditorInterface;
@@ -87,6 +89,26 @@ export const INTERACTIVE_SCENE_ANIMATION_KEY = "animateInteractiveScene";
 const InteractiveCanvas = (props: InteractiveCanvasProps) => {
   const isComponentMounted = useRef(false);
   const rendererParams = useRef(null as InteractiveSceneRenderConfig | null);
+  const canvasScaleRef = useRef(props.scale);
+
+  useLayoutEffect(() => {
+    if (!props.canvas) {
+      return;
+    }
+    canvasScaleRef.current = setCanvasDimensionsWithFallback(
+      props.canvas,
+      props.appState.width,
+      props.appState.height,
+      props.scale,
+      props.onScaleFallback,
+    );
+  }, [
+    props.appState.height,
+    props.appState.width,
+    props.canvas,
+    props.onScaleFallback,
+    props.scale,
+  ]);
 
   useEffect(() => {
     if (!isComponentMounted.current) {
@@ -150,7 +172,7 @@ const InteractiveCanvas = (props: InteractiveCanvasProps) => {
       visibleElements: props.visibleElements,
       selectedElements: props.selectedElements,
       allElementsMap: props.allElementsMap,
-      scale: props.scale,
+      scale: canvasScaleRef.current,
       appState: props.appState,
       renderConfig: {
         remotePointerViewportCoords,
@@ -297,6 +319,7 @@ const areEqual = (
     prevProps.selectionNonce !== nextProps.selectionNonce ||
     prevProps.canvasNonce !== nextProps.canvasNonce ||
     prevProps.scale !== nextProps.scale ||
+    prevProps.onScaleFallback !== nextProps.onScaleFallback ||
     // we need to memoize on elementsMap because they may have renewed
     // even if canvasNonce didn't change (e.g. we filter elements out based
     // on appState)

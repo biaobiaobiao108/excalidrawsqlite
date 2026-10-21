@@ -75,7 +75,7 @@ import type { CloudSceneData } from "./data/cloudStorage";
 
 import { updateStaleImageStatuses } from "./data/FileManager";
 import { FileStatusStore } from "./data/fileStatusStore";
-import { waitForCloudFiles } from "./data/waitForCloudFiles";
+import { prepareCloudSaveSnapshot } from "./data/prepareCloudSaveSnapshot";
 import { importFromLocalStorage } from "./data/localStorage";
 
 import {
@@ -307,6 +307,7 @@ const ExcalidrawWrapper = (props: {
   } | null>(null);
   const cloudBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const cloudSceneLoadIdRef = useRef(0);
+  const cloudFileLoadControllerRef = useRef<AbortController | null>(null);
   const cloudSceneViewportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -399,6 +400,8 @@ const ExcalidrawWrapper = (props: {
 
   useEffect(
     () => () => {
+      cloudFileLoadControllerRef.current?.abort();
+      cloudFileLoadControllerRef.current = null;
       if (savedStatusTimerRef.current) {
         clearTimeout(savedStatusTimerRef.current);
         savedStatusTimerRef.current = null;
@@ -434,6 +437,8 @@ const ExcalidrawWrapper = (props: {
       if (!excalidrawAPI) {
         return;
       }
+      cloudFileLoadControllerRef.current?.abort();
+      cloudFileLoadControllerRef.current = null;
       const sceneFileIds = getCloudFileIds(elements);
       const fileIds = sceneFileIds.filter(
         (fileId) => !excalidrawAPI.getFiles()[fileId]?.dataURL,
@@ -443,8 +448,12 @@ const ExcalidrawWrapper = (props: {
         return;
       }
       const loadToken = FileStatusStore.beginLoading(fileIds);
+      const loadController = new AbortController();
+      cloudFileLoadControllerRef.current = loadController;
       try {
-        const { loadedFiles, erroredFiles } = await fetchCloudFiles(fileIds);
+        const { loadedFiles, erroredFiles } = await fetchCloudFiles(fileIds, {
+          signal: loadController.signal,
+        });
         if (
           (sceneId &&
             currentSceneIdRef.current &&
@@ -476,17 +485,25 @@ const ExcalidrawWrapper = (props: {
             currentSceneIdRef.current !== sceneId) ||
             loadId !== cloudSceneLoadIdRef.current,
         );
-        if (!isStale && error?.status === 401) {
+        if (
+          !isStale &&
+          !loadController.signal.aborted &&
+          error?.status === 401
+        ) {
           setIsAuthOpen(true);
           setAuthSceneId(sceneId || currentSceneIdRef.current);
         }
-        if (isStale) {
+        if (isStale || loadController.signal.aborted) {
           FileStatusStore.cancelLoading(loadToken);
         } else {
           FileStatusStore.finishLoading(
             loadToken,
             fileIds.map((id) => [id, "error"] as [FileId, "error"]),
           );
+        }
+      } finally {
+        if (cloudFileLoadControllerRef.current === loadController) {
+          cloudFileLoadControllerRef.current = null;
         }
       }
     },
@@ -549,6 +566,8 @@ const ExcalidrawWrapper = (props: {
       recoveredSnapshot?: CloudSaveSnapshot | null,
     ) => {
       const loadId = ++cloudSceneLoadIdRef.current;
+      cloudFileLoadControllerRef.current?.abort();
+      cloudFileLoadControllerRef.current = null;
       const canApplyRefresh =
         excalidrawAPI &&
         currentSceneIdRef.current === sceneId &&
@@ -764,26 +783,16 @@ const ExcalidrawWrapper = (props: {
     }
     const loadId = cloudSceneLoadIdRef.current;
     try {
-      const persistedElements = snapshot.elements.filter(
-        (element: any) => element?.isDeleted !== true,
-      );
-      const persistedSnapshot = {
-        ...snapshot,
-        elements: persistedElements,
-      };
-      const fileIds = getCloudFileIds(persistedElements);
-      persistedSnapshot.files = await waitForCloudFiles(
-        fileIds,
-        () => api.getFiles(),
+      const persistedSnapshot = await prepareCloudSaveSnapshot(
+        createCurrentCloudSnapshot,
         () => currentSceneIdRef.current === snapshot.sceneId &&
           cloudSceneLoadIdRef.current === loadId,
       );
       const signature = getCloudPersistenceSignature(
         persistedSnapshot.name,
-        persistedElements,
+        persistedSnapshot.elements,
         persistedSnapshot.appState,
         persistedSnapshot.files,
-        fileIds,
       );
       // Explicit save/navigation also flushes recovered or queued edits, but
       // opening and leaving an unchanged board must not increment its revision.
@@ -795,8 +804,22 @@ const ExcalidrawWrapper = (props: {
         status === "saved" ||
         (status === "idle" && !cloudSaveQueue.hasPending(persistedSnapshot.sceneId))
       ) {
-        cloudPersistenceSignatureRef.current = signature;
-        cloudPersistenceDirtyRef.current = false;
+        const currentSnapshot = createCurrentCloudSnapshot();
+        // A later edit may have been queued while flush awaited the network.
+        // Do not replace its baseline or clear its dirty flag with this save.
+        if (
+          currentSnapshot?.sceneId === snapshot.sceneId &&
+          cloudSceneLoadIdRef.current === loadId &&
+          getCloudPersistenceSignature(
+            currentSnapshot.name,
+            currentSnapshot.elements.filter((element) => !element.isDeleted),
+            currentSnapshot.appState,
+            currentSnapshot.files,
+          ) === signature
+        ) {
+          cloudPersistenceSignatureRef.current = signature;
+          cloudPersistenceDirtyRef.current = false;
+        }
         // Saving the body schedules its preview with the committed revision.
         // Flush that debounce afterwards so navigation retains the latest preview.
         await saveThumbnailDebounced.flush();
@@ -1214,6 +1237,7 @@ const ExcalidrawWrapper = (props: {
     };
 
     const onUnload = () => {
+      cloudSaveQueue.protectPendingSnapshotsForUnload(true);
       flushCloudSave();
     };
 
@@ -1250,6 +1274,7 @@ const ExcalidrawWrapper = (props: {
   useEffect(() => {
     const unloadHandler = (event: BeforeUnloadEvent) => {
       LocalData.flushSave();
+      cloudSaveQueue.protectPendingSnapshotsForUnload(true);
       const sceneId = currentSceneIdRef.current;
       if (sceneId) {
         void cloudSaveQueue.flush(sceneId);
@@ -1426,7 +1451,7 @@ const ExcalidrawWrapper = (props: {
         const persistError = cloudSaveQueue.getPersistenceError(sceneId);
         const shouldLeave = window.confirm(
           persistError
-            ? "云端保存失败，且浏览器未能暂存恢复快照。离开可能丢失更改，仍要返回主页吗？"
+            ? "云端保存失败，且本地数据库写入也失败。已尝试保留会话恢复副本；离开仍可能丢失更改，仍要返回主页吗？"
             : "云端保存未完成。最新更改已暂存在本机，联网后会继续重试；仍要返回主页吗？",
         );
         if (!shouldLeave) {

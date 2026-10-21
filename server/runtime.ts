@@ -27,6 +27,7 @@ export const createRuntime = (options: { dbPath: string; filesDir: string; stati
       dbPath,
       filesDir,
       activeBackupArtifacts: new Set(),
+      activeFileArtifacts: new Set(),
       staticDir: options.staticDir ? path.resolve(options.staticDir) : undefined,
       config,
       bodyMemoryBudget: new BodyMemoryBudget(config.maxInFlightBodyBytes),

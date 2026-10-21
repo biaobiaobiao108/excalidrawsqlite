@@ -20,7 +20,9 @@ import {
 import {
   assertReferencedFilesExist,
   extractFileIds,
+  fileExists,
   getFileObject,
+  getFilePath,
   getStoredFileMetadata,
   getSceneFileReferenceMutationStatements,
   stageRequestBodyToFile,
@@ -72,6 +74,51 @@ const MAX_D1_SCENE_ROW_BYTES = 1_950_000;
 const D1_SCENE_METADATA_RESERVE_BYTES = 128;
 const sceneCursorEncoder = new TextEncoder();
 const sceneCursorDecoder = new TextDecoder();
+
+const openStableFileResponseStream = async (filePath: string) => {
+  const reader = Bun.file(filePath).stream().getReader();
+  let firstChunk: Awaited<ReturnType<typeof reader.read>>;
+  try {
+    // Read once before releasing the storage lock so an atomic replacement
+    // cannot change which file this response streams.
+    firstChunk = await reader.read();
+  } catch (error) {
+    reader.releaseLock();
+    throw error;
+  }
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (firstChunk.done) {
+        reader.releaseLock();
+        controller.close();
+        return;
+      }
+      controller.enqueue(firstChunk.value);
+    },
+    async pull(controller) {
+      try {
+        const result = await reader.read();
+        if (result.done) {
+          reader.releaseLock();
+          controller.close();
+          return;
+        }
+        controller.enqueue(result.value);
+      } catch (error) {
+        reader.releaseLock();
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
+};
 
 // Filter combinations have a finite set of SQL shapes; values stay bound parameters.
 const sceneCountQueries = new WeakMap<
@@ -1689,61 +1736,84 @@ export const createRequestHandler = (
 
       if (pathname.startsWith("/api/files/") && req.method === "GET") {
         const id = getPathId(pathname, "/api/files/", "file");
-        const row = await getStoredFileMetadata(runtime, id);
-        if (!row?.storage_path) {
-          throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
-        }
-        const fileObject = await getFileObject(runtime, id);
-        if (!fileObject) {
-          throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
-        }
-
-        const etag = row.sha256 ? `"${row.sha256}"` : undefined;
-        const ifNoneMatch = req.headers.get("if-none-match");
-        // File IDs can be overwritten by PUT, so clients must revalidate even
-        // when the response carries a content hash ETag.
-        const cacheControl = "private, no-cache";
-
-        if (etag && ifNoneMatch) {
-          const clientEtags = ifNoneMatch
-            .split(",")
-            .map((item) => item.trim());
-          if (clientEtags.includes(etag) || clientEtags.includes("*")) {
+        type FileMetadata = NonNullable<
+          Awaited<ReturnType<typeof getStoredFileMetadata>>
+        >;
+        const notModifiedResponse = (row: FileMetadata) => {
+          const etag = row.sha256 ? `"${row.sha256}"` : undefined;
+          const ifNoneMatch = req.headers.get("if-none-match");
+          if (
+            etag &&
+            ifNoneMatch?.split(",").some((item) => {
+              const candidate = item.trim();
+              return candidate === etag || candidate === "*";
+            })
+          ) {
             return response(runtime, req, null, {
               status: 304,
+              headers: { ETag: etag, "Cache-Control": "private, no-cache" },
+            });
+          }
+          return null;
+        };
+        const fileBodyResponse = (
+          row: FileMetadata,
+          body: ReadableStream<Uint8Array>,
+        ) => {
+          const etag = row.sha256 ? `"${row.sha256}"` : undefined;
+          if (String(row.mime_type).toLowerCase() === "image/svg+xml") {
+            return response(runtime, req, body, {
               headers: {
-                ETag: etag,
-                "Cache-Control": cacheControl,
+                "Content-Type": "application/octet-stream",
+                "Content-Disposition": `attachment; filename="${id}"`,
+                "Content-Length": String(row.byte_size),
+                "X-File-Created-At": String(row.created_at),
+                "Cache-Control": "private, no-store",
+                ...(etag ? { ETag: etag } : {}),
               },
             });
           }
-        }
 
-        if (String(row.mime_type).toLowerCase() === "image/svg+xml") {
-          return response(runtime, req, fileObject.body, {
-            headers: {
-              "Content-Type": "application/octet-stream",
-              "Content-Disposition": `attachment; filename="${id}"`,
-              "Content-Length": String(row.byte_size),
-              "X-File-Created-At": String(row.created_at),
-              "Cache-Control": "private, no-store",
-              ...(etag ? { ETag: etag } : {}),
-            },
-          });
-        }
-
-        const responseHeaders: Record<string, string> = {
-          "Content-Type": row.mime_type,
-          "Content-Length": String(row.byte_size),
-          "X-File-Created-At": String(row.created_at),
-          "Cache-Control": cacheControl,
+          const headers: Record<string, string> = {
+            "Content-Type": row.mime_type,
+            "Content-Length": String(row.byte_size),
+            "X-File-Created-At": String(row.created_at),
+            "Cache-Control": "private, no-cache",
+          };
+          if (etag) {
+            headers.ETag = etag;
+          }
+          return response(runtime, req, body, { headers });
         };
-        if (etag) {
-          responseHeaders.ETag = etag;
+
+        if (runtime.files) {
+          const row = await getStoredFileMetadata(runtime, id);
+          if (!row?.storage_path) {
+            throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
+          }
+          const fileObject = await getFileObject(runtime, id);
+          if (!fileObject) {
+            throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
+          }
+          const notModified = notModifiedResponse(row);
+          return notModified || fileBodyResponse(row, fileObject.body);
         }
 
-        return response(runtime, req, fileObject.body, {
-          headers: responseHeaders,
+        return await withStorageMutationLock(runtime, async () => {
+          const row = await getStoredFileMetadata(runtime, id);
+          if (!row?.storage_path) {
+            throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
+          }
+          const notModified = notModifiedResponse(row);
+          if (notModified) {
+            return notModified;
+          }
+          const filePath = getFilePath(runtime, id);
+          if (!(await fileExists(filePath))) {
+            throw new HttpError(404, "FILE_NOT_FOUND", "文件不存在");
+          }
+          const body = await openStableFileResponseStream(filePath);
+          return fileBodyResponse(row, body);
         });
       }
 

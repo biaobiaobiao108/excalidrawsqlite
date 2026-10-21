@@ -42,6 +42,36 @@ afterEach(async () => {
 });
 
 describe("route failure and realtime regressions", () => {
+  it("keeps attachment bytes and ETag stable while the file is replaced", async () => {
+    const { request } = setup();
+    const original = new Uint8Array(512 * 1024);
+    const replacement = new Uint8Array(original.length);
+    for (let index = 0; index < original.length; index += 1) {
+      original[index] = index % 251;
+      replacement[index] = 255 - original[index];
+    }
+
+    const upload = (bytes: Uint8Array) => request("/api/files/racing-file", {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: bytes.buffer as ArrayBuffer,
+    });
+    expect((await upload(original)).status).toBe(201);
+
+    const oldDownload = await request("/api/files/racing-file");
+    const oldEtag = oldDownload.headers.get("etag");
+    expect(oldEtag).toBeTruthy();
+    expect((await upload(replacement)).status).toBe(201);
+
+    const downloadedBytes = new Uint8Array(await oldDownload.arrayBuffer());
+    expect(downloadedBytes).toEqual(original);
+    expect(downloadedBytes.byteLength).toBe(original.byteLength);
+    expect(oldDownload.headers.get("etag")).toBe(oldEtag);
+
+    const newDownload = await request("/api/files/racing-file");
+    expect(new Uint8Array(await newDownload.arrayBuffer())).toEqual(replacement);
+  });
+
   it("rejects a deleted target folder when scene creation or saving waits for storage", async () => {
     for (const method of ["POST", "PUT"] as const) {
       const { runtime, json, request } = setup();

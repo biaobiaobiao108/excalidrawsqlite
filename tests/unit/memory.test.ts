@@ -14,6 +14,7 @@ import { ImageCache } from "../../packages/excalidraw/imageCache";
 import {
   getEditorCanvasPixelBudget,
   getEditorRenderScale,
+  setCanvasDimensionsWithFallback,
 } from "../../packages/excalidraw/renderScale";
 import { BodyMemoryBudget } from "../../server/types";
 
@@ -215,6 +216,67 @@ describe("memory budgets", () => {
     expect(lowMemoryScale).toBeLessThan(highDpiScale);
   });
 
+  it("does not let a minimum render scale exceed the canvas pixel budget", () => {
+    const width = 200_000;
+    const height = 100_000;
+    const canvasCount = 3;
+    const scale = getEditorRenderScale({
+      width,
+      height,
+      devicePixelRatio: 2,
+      canvasCount,
+      deviceMemory: 8,
+    });
+
+    expect(scale).toBeLessThan(0.5);
+    expect(width * height * scale * scale * canvasCount).toBeLessThanOrEqual(
+      getEditorCanvasPixelBudget(8),
+    );
+  });
+
+  it("retries canvas backing-store allocation at lower scales", () => {
+    let width = 0;
+    let height = 0;
+    const canvas = Object.defineProperties(
+      {},
+      {
+        width: {
+          get: () => width,
+          set: (value: number) => {
+            if (value * height > 4_096) {
+              throw new Error("canvas allocation rejected");
+            }
+            width = value;
+          },
+        },
+        height: {
+          get: () => height,
+          set: (value: number) => {
+            if (width * value > 4_096) {
+              throw new Error("canvas allocation rejected");
+            }
+            height = value;
+          },
+        },
+      },
+    ) as HTMLCanvasElement;
+    let fallbackScale = 2;
+
+    const scale = setCanvasDimensionsWithFallback(
+      canvas,
+      200,
+      200,
+      2,
+      (nextScale) => {
+        fallbackScale = nextScale;
+      },
+    );
+
+    expect(scale).toBeLessThan(2);
+    expect(fallbackScale).toBe(scale);
+    expect(canvas.width * canvas.height).toBeLessThanOrEqual(4_096);
+  });
+
   it("blocks body readers until aggregate memory is released", async () => {
     const budget = new BodyMemoryBudget(10);
     const reserved = await budget.acquire(8);
@@ -250,6 +312,40 @@ describe("memory budgets", () => {
 
     budget.release(reserved);
     expect(budget.getStats().availableBytes).toBe(4);
+  });
+
+  it("grants an affordable queued reader when the blocking reader aborts", async () => {
+    const budget = new BodyMemoryBudget(20);
+    const active = await budget.acquire(16);
+    const finishing = await budget.acquire(4);
+    const controller = new AbortController();
+    const blocking = budget.acquire(16, controller.signal);
+    const waiting = budget.acquire(4);
+
+    budget.release(finishing);
+    expect(budget.getStats()).toMatchObject({
+      availableBytes: 4,
+      currentBytes: 16,
+      queuedRequests: 2,
+    });
+
+    controller.abort();
+    await expect(blocking).rejects.toMatchObject({ name: "AbortError" });
+    expect(budget.getStats()).toMatchObject({
+      availableBytes: 0,
+      currentBytes: 20,
+      queuedRequests: 0,
+    });
+    const granted = await waiting;
+    expect(granted).toBe(4);
+
+    budget.release(active);
+    budget.release(granted);
+    expect(budget.getStats()).toMatchObject({
+      availableBytes: 20,
+      currentBytes: 0,
+      queuedRequests: 0,
+    });
   });
 
   it("uses the documented history defaults", () => {
