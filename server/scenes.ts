@@ -2,6 +2,7 @@ import { HttpError } from "./errors";
 import {
   hasOwn,
   parseStoredTags,
+  parseStoredTagsStrict,
   validateFavorite,
   validateFolderId,
   validateName,
@@ -127,7 +128,9 @@ export const parseSceneMetadata = (
     : existing?.name || "未命名白板";
   const tags = hasOwn(body, "tags")
     ? validateTags(body.tags)
-    : parseStoredTags(existing?.tags_json);
+    : existing
+      ? parseStoredTagsStrict(existing.tags_json)
+      : [];
   const favorite = hasOwn(body, "favorite")
     ? validateFavorite(body.favorite)
     : Boolean(existing?.is_favorite);

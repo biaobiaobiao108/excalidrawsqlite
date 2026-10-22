@@ -234,6 +234,7 @@ const upsertPreparedFile = async (
   createdAt?: number,
   updatedAt?: number,
   assertCanWrite?: () => void,
+  onReplacement?: () => void,
 ) => {
   return withStorageMutationLock(runtime, async () => {
     assertCanWrite?.();
@@ -290,26 +291,29 @@ const upsertPreparedFile = async (
       : await writeFileAtomically(filePath, prepared.data!);
     try {
       assertCanWrite?.();
-      runtime.db.run(
-        `INSERT INTO files
-           (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           storage_path = excluded.storage_path,
-           mime_type = excluded.mime_type,
-           byte_size = excluded.byte_size,
-           sha256 = excluded.sha256,
-           updated_at = excluded.updated_at`,
-        [
-          id,
-          id,
-          mimeType,
-          prepared.byteLength,
-          prepared.sha256,
-          previous?.created_at || createdAt || now,
-          now,
-        ],
-      );
+      runtime.db.transaction(() => {
+        runtime.db.run(
+          `INSERT INTO files
+             (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             storage_path = excluded.storage_path,
+             mime_type = excluded.mime_type,
+             byte_size = excluded.byte_size,
+             sha256 = excluded.sha256,
+             updated_at = excluded.updated_at`,
+          [
+            id,
+            id,
+            mimeType,
+            prepared.byteLength,
+            prepared.sha256,
+            previous?.created_at || createdAt || now,
+            now,
+          ],
+        );
+        onReplacement?.();
+      }).immediate();
     } catch (error) {
       try {
         await atomicWrite.restore();
@@ -419,6 +423,7 @@ export const upsertStagedFile = async (
   createdAt?: number,
   updatedAt?: number,
   assertCanWrite?: () => void,
+  onReplacement?: () => void,
 ) => {
   try {
     return await upsertPreparedFile(
@@ -429,6 +434,7 @@ export const upsertStagedFile = async (
       createdAt,
       updatedAt,
       assertCanWrite,
+      onReplacement,
     );
   } finally {
     if (prepared.tempPath) {

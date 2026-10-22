@@ -71,6 +71,133 @@ describe("route failure and realtime regressions", () => {
     expect(new Uint8Array(await newDownload.arrayBuffer())).toEqual(replacement);
   });
 
+  it("updates referenced scenes when an attachment ID is replaced", async () => {
+    const { runtime, json, request } = setup();
+    const upload = (bytes: Uint8Array) => {
+      const body = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(body).set(bytes);
+      return request("/api/files/shared_asset", {
+        method: "PUT",
+        headers: { "Content-Type": "image/png" },
+        body,
+      });
+    };
+    const originalBytes = new Uint8Array([1, 2, 3]);
+    const replacementBytes = new Uint8Array([9, 8, 7, 6]);
+    expect((await upload(originalBytes)).status).toBe(201);
+
+    const image = { id: "shared_asset_element", type: "image", fileId: "shared_asset" };
+    for (const id of ["asset_scene_a", "asset_scene_b"]) {
+      expect((await json("/api/scenes", { id, elements: [image] })).status).toBe(201);
+    }
+    expect((await request("/api/scenes/asset_scene_a/thumbnail", {
+      method: "PUT",
+      headers: { "Content-Type": "image/png" },
+      body: new Uint8Array([5, 5, 5]),
+    })).status).toBe(200);
+
+    const events: SceneRealtimeEvent[] = [];
+    runtime.realtime = {
+      publishSceneChanged: (event) => { events.push(event); },
+      publishWorkspaceChanged: () => {},
+    };
+    const oldScene = await request("/api/scenes/asset_scene_a");
+    const oldSceneEtag = oldScene.headers.get("etag");
+    const newFileResponse = await upload(replacementBytes);
+    expect(newFileResponse.status).toBe(201);
+    expect(newFileResponse.headers.get("etag")).not.toBeNull();
+    expect(events).toHaveLength(2);
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sceneId: "asset_scene_a", revision: 2, changeKind: "content" }),
+      expect.objectContaining({ sceneId: "asset_scene_b", revision: 2, changeKind: "content" }),
+    ]));
+
+    const updatedSceneResponse = await request("/api/scenes/asset_scene_a");
+    expect(updatedSceneResponse.headers.get("etag")).not.toBe(oldSceneEtag);
+    expect(await updatedSceneResponse.json()).toMatchObject({ revision: 2, thumbnail_file_id: null });
+    expect((await request("/api/scenes/asset_scene_b")).status).toBe(200);
+    expect((await json("/api/scenes/asset_scene_a", {
+      name: "陈旧写入",
+      baseRevision: 1,
+    }, "PATCH")).status).toBe(409);
+    expect(new Uint8Array(await (await request("/api/files/shared_asset")).arrayBuffer())).toEqual(replacementBytes);
+
+    events.length = 0;
+    expect((await upload(replacementBytes)).status).toBe(201);
+    expect(events).toHaveLength(0);
+    expect(await (await request("/api/scenes/asset_scene_a")).json()).toMatchObject({ revision: 2 });
+  });
+
+  it("rolls back attachment replacement when an affected scene cannot be updated", async () => {
+    const { runtime, json, request } = setup();
+    const upload = (bytes: Uint8Array) => {
+      const body = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(body).set(bytes);
+      return request("/api/files/rollback_asset", {
+        method: "PUT",
+        headers: { "Content-Type": "image/png" },
+        body,
+      });
+    };
+    const originalBytes = new Uint8Array([1, 2, 3]);
+    const replacementBytes = new Uint8Array([4, 5, 6, 7]);
+    expect((await upload(originalBytes)).status).toBe(201);
+    expect((await json("/api/scenes", {
+      id: "asset_rollback",
+      elements: [{ id: "rollback_image", type: "image", fileId: "rollback_asset" }],
+    })).status).toBe(201);
+    const thumbnailResponse = await request("/api/scenes/asset_rollback/thumbnail", {
+      method: "PUT",
+      headers: { "Content-Type": "image/png" },
+      body: new Uint8Array([8, 8, 8]),
+    });
+    expect(thumbnailResponse.status).toBe(200);
+    const { thumbnail_file_id: thumbnailId } = await thumbnailResponse.json() as {
+      thumbnail_file_id: string;
+    };
+    const fileRow = runtime.db.query("SELECT * FROM files WHERE id = ?").get("rollback_asset");
+    const sceneRow = runtime.db.query("SELECT * FROM scenes WHERE id = ?").get("asset_rollback");
+    runtime.db.run(`CREATE TRIGGER fail_referenced_scene_update
+      BEFORE UPDATE OF revision ON scenes
+      WHEN OLD.id = 'asset_rollback'
+      BEGIN SELECT RAISE(ABORT, 'test scene update failure'); END`);
+
+    const response = await upload(replacementBytes);
+    expect(response.status).toBe(500);
+    expect(runtime.db.query("SELECT * FROM files WHERE id = ?").get("rollback_asset")).toEqual(fileRow);
+    expect(runtime.db.query("SELECT * FROM scenes WHERE id = ?").get("asset_rollback")).toEqual(sceneRow);
+    expect(new Uint8Array(await (await request("/api/files/rollback_asset")).arrayBuffer())).toEqual(originalBytes);
+    expect((await readdir(runtime.filesDir)).sort()).toEqual(
+      ["rollback_asset", thumbnailId].sort(),
+    );
+    expect(runtime.bodyMemoryBudget.getStats().currentBytes).toBe(0);
+  });
+
+  it("rejects partial scene saves when stored tags are corrupt but allows explicit repair", async () => {
+    const { runtime, json } = setup();
+    expect((await json("/api/scenes", { id: "corrupt_tags", tags: ["原标签"] })).status).toBe(201);
+    const stored = () => runtime.db.query("SELECT * FROM scenes WHERE id = ?").get("corrupt_tags");
+
+    for (const malformed of ["", "null", "{}", "[1]"]) {
+      runtime.db.run("UPDATE scenes SET tags_json = ? WHERE id = ?", [malformed, "corrupt_tags"]);
+      const before = stored();
+      for (const [method, body] of [
+        ["PATCH", { name: "不能丢标签" }],
+        ["PUT", { name: "不能丢标签" }],
+      ] as const) {
+        const response = await json("/api/scenes/corrupt_tags", body, method);
+        expect(response.status).toBe(500);
+        expect(await response.json()).toMatchObject({ code: "CORRUPT_SCENE" });
+        expect(stored()).toEqual(before);
+      }
+
+      const repaired = await json("/api/scenes/corrupt_tags", { tags: ["已修复"] }, "PATCH");
+      expect(repaired.status).toBe(200);
+      expect(await repaired.json()).toMatchObject({ tags: ["已修复"] });
+      expect(stored()).toMatchObject({ tags_json: '["已修复"]' });
+    }
+  });
+
   it("rejects a deleted target folder when scene creation or saving waits for storage", async () => {
     for (const method of ["POST", "PUT"] as const) {
       const { runtime, json, request } = setup();

@@ -72,9 +72,14 @@ import {
   validateTags,
   validateFavorite,
   validateFolderId,
+  parseStoredTagsStrict,
 } from "./validation";
 
-import type { RequestAddressResolver, ServerRuntime } from "./types";
+import type {
+  RequestAddressResolver,
+  SceneRealtimeEvent,
+  ServerRuntime,
+} from "./types";
 import { getWorkspaceStats } from "./workspace";
 
 const DEFAULT_SCENE_PAGE_SIZE = 50;
@@ -467,6 +472,70 @@ const publishSceneChanged = (
 
 const publishWorkspaceChanged = (runtime: ServerRuntime, updatedAt?: number) =>
   runtime.realtime?.publishWorkspaceChanged(updatedAt);
+
+const updateScenesAfterFileReplacement = (
+  runtime: ServerRuntime,
+  fileId: string,
+): SceneRealtimeEvent[] => {
+  const now = Date.now();
+  const affectedScenes = runtime.db
+    .query(
+      `SELECT scenes.id, scenes.revision,
+              EXISTS (
+                SELECT 1 FROM scene_files
+                WHERE scene_files.scene_id = scenes.id AND scene_files.file_id = ?
+              ) AS references_file,
+              scenes.thumbnail_file_id = ? AS is_thumbnail
+       FROM scenes
+       WHERE EXISTS (
+               SELECT 1 FROM scene_files
+               WHERE scene_files.scene_id = scenes.id AND scene_files.file_id = ?
+             )
+          OR scenes.thumbnail_file_id = ?`,
+    )
+    .all(fileId, fileId, fileId, fileId) as Array<{
+    id: string;
+    revision: number;
+    references_file: number;
+    is_thumbnail: number;
+  }>;
+  const events: SceneRealtimeEvent[] = [];
+
+  for (const scene of affectedScenes) {
+    const revision = storedSceneRevision(scene.revision);
+    if (scene.references_file) {
+      const nextRevision = revision + 1;
+      const result = runtime.db.run(
+        `UPDATE scenes
+         SET revision = ?, updated_at = ?, thumbnail_file_id = NULL
+         WHERE id = ? AND revision = ?`,
+        [nextRevision, now, scene.id, revision],
+      );
+      if (result.changes !== 1) {
+        throw new HttpError(409, "REVISION_CONFLICT", "画板版本冲突或状态已变更");
+      }
+      events.push({
+        type: "scene_changed",
+        sceneId: scene.id,
+        revision: nextRevision,
+        updatedAt: now,
+        changeKind: "content",
+      });
+      continue;
+    }
+
+    if (scene.is_thumbnail) {
+      events.push({
+        type: "scene_changed",
+        sceneId: scene.id,
+        revision,
+        updatedAt: now,
+        changeKind: "thumbnail",
+      });
+    }
+  }
+  return events;
+};
 
 const getFolderSummary = (runtime: ServerRuntime, id: string) =>
   runtime.db
@@ -1626,8 +1695,26 @@ export const createRequestHandler = (
           body,
           existing,
         );
-        const currentTags = JSON.parse(existing.tags_json) as string[];
-        if (name === existing.name && favorite === Boolean(existing.is_favorite) && folderId === existing.folder_id && tags.length === currentTags.length && tags.every((tag) => currentTags.includes(tag))) {
+        let currentTags: string[] | null;
+        try {
+          currentTags = parseStoredTagsStrict(existing.tags_json);
+        } catch (error) {
+          if (!hasOwn(body, "tags")) {
+            throw error;
+          }
+          // An explicit tags replacement can repair invalid persisted data.
+          currentTags = null;
+        }
+        const tagsUnchanged =
+          currentTags !== null &&
+          tags.length === currentTags.length &&
+          tags.every((tag) => currentTags.includes(tag));
+        if (
+          name === existing.name &&
+          favorite === Boolean(existing.is_favorite) &&
+          folderId === existing.folder_id &&
+          tagsUnchanged
+        ) {
           return jsonResponse(runtime, req, { ...getSceneSummary(stmts.getSceneSummaryById.get(id)), noop: true });
         }
         const now = Date.now();
@@ -1922,7 +2009,20 @@ export const createRequestHandler = (
         }
         const mimeType = validateMimeType(contentType);
         const prepared = await stageRequestBodyToFile(runtime, id, req);
-        const file = await upsertStagedFile(runtime, id, mimeType, prepared);
+        const sceneEvents: SceneRealtimeEvent[] = [];
+        const file = await upsertStagedFile(
+          runtime,
+          id,
+          mimeType,
+          prepared,
+          undefined,
+          undefined,
+          undefined,
+          () => sceneEvents.push(...updateScenesAfterFileReplacement(runtime, id)),
+        );
+        for (const event of sceneEvents) {
+          publishSceneChanged(runtime, event);
+        }
         return jsonResponse(runtime, req, { success: true, file }, 201, {
           ETag: `"${file.sha256}"`,
         });
