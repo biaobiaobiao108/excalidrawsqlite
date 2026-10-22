@@ -2,6 +2,7 @@ import { HttpError } from "./errors";
 import {
   hasOwn,
   parseStoredTags,
+  parseStoredTagsStrict,
   validateFavorite,
   validateFolderId,
   validateName,
@@ -11,7 +12,11 @@ import {
 import type { ServerRuntime } from "./types";
 
 const storedInteger = (value: unknown, minimum: number): number => {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum) {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < minimum
+  ) {
     throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
   }
   return value;
@@ -38,7 +43,9 @@ export const parseStoredElements = (value: unknown): unknown[] => {
   return elements;
 };
 
-export const parseStoredAppState = (value: unknown): Record<string, unknown> => {
+export const parseStoredAppState = (
+  value: unknown,
+): Record<string, unknown> => {
   const appState = parseSceneJson(value);
   if (!appState || typeof appState !== "object" || Array.isArray(appState)) {
     throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
@@ -109,10 +116,7 @@ const assertFolderExists = async (
   runtime: ServerRuntime,
   folderId: string | null,
 ) => {
-  if (
-    folderId &&
-    !(await getFolderQuery(runtime).getFolderId.get(folderId))
-  ) {
+  if (folderId && !(await getFolderQuery(runtime).getFolderId.get(folderId))) {
     throw new HttpError(400, "FOLDER_NOT_FOUND", "文件夹不存在");
   }
 };
@@ -121,13 +125,20 @@ export const parseSceneMetadata = async (
   runtime: ServerRuntime,
   body: Record<string, unknown>,
   existing?: any,
-): Promise<{ name: string; tags: string[]; favorite: boolean; folderId: string | null }> => {
+): Promise<{
+  name: string;
+  tags: string[];
+  favorite: boolean;
+  folderId: string | null;
+}> => {
   const name = hasOwn(body, "name")
     ? validateName(body.name)
     : existing?.name || "未命名白板";
   const tags = hasOwn(body, "tags")
     ? validateTags(body.tags)
-    : parseStoredTags(existing?.tags_json);
+    : existing
+      ? parseStoredTagsStrict(existing.tags_json)
+      : [];
   const favorite = hasOwn(body, "favorite")
     ? validateFavorite(body.favorite)
     : Boolean(existing?.is_favorite);

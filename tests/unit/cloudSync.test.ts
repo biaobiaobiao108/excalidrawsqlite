@@ -35,7 +35,10 @@ const createPersistence = () => {
     },
     remove: async (sceneId, expectedSnapshot, persistenceKey) => {
       const key = expectedSnapshot?.persistenceKey || persistenceKey || sceneId;
-      if (!expectedSnapshot || matchesPersistedCloudSnapshot(snapshots.get(key), expectedSnapshot)) {
+      if (
+        !expectedSnapshot ||
+        matchesPersistedCloudSnapshot(snapshots.get(key), expectedSnapshot)
+      ) {
         snapshots.delete(key);
       }
     },
@@ -43,8 +46,10 @@ const createPersistence = () => {
   return { persistence, snapshots };
 };
 
-const snapshotForScene = (snapshots: Map<string, CloudSaveSnapshot>, sceneId: string) =>
-  [...snapshots.values()].find((value) => value.sceneId === sceneId);
+const snapshotForScene = (
+  snapshots: Map<string, CloudSaveSnapshot>,
+  sceneId: string,
+) => [...snapshots.values()].find((value) => value.sceneId === sceneId);
 
 describe("cloud save queue", () => {
   it("detects changed file payloads through their version without serializing data URLs", () => {
@@ -76,7 +81,9 @@ describe("cloud save queue", () => {
       dataURL: "data:image/png;base64,BBBB",
     };
 
-    expect(replacedFile.dataURL.length).toBe(original.files.file.dataURL.length);
+    expect(replacedFile.dataURL.length).toBe(
+      original.files.file.dataURL.length,
+    );
     expect(
       getCloudSceneLoadSignatures(original, {
         ...original,
@@ -88,8 +95,15 @@ describe("cloud save queue", () => {
   it("serializes concurrent flushes without starving network completions", () => {
     // A regression can spin in microtasks and prevent even the test runner's
     // timeout from firing. Keep the real queue in a bounded child process.
-    const queueModule = new URL("../../excalidraw-app/data/cloudSync.ts", import.meta.url).href;
-    const result = Bun.spawnSync([process.execPath, "--eval", `
+    const queueModule = new URL(
+      "../../excalidraw-app/data/cloudSync.ts",
+      import.meta.url,
+    ).href;
+    const result = Bun.spawnSync(
+      [
+        process.execPath,
+        "--eval",
+        `
       import { CloudSaveQueue } from ${JSON.stringify(queueModule)};
       globalThis.BroadcastChannel = undefined;
       let releaseFirst;
@@ -131,7 +145,10 @@ describe("cloud save queue", () => {
       console.log(JSON.stringify({ saved, maxActiveWrites,
         pending: ["A", "B", "C"].some(id => queue.hasPending(id)) }));
       queue.dispose();
-    `], { timeout: 5000, stdout: "pipe", stderr: "pipe" });
+    `,
+      ],
+      { timeout: 5000, stdout: "pipe", stderr: "pipe" },
+    );
 
     expect(result.exitCode).toBe(0);
     expect(new TextDecoder().decode(result.stderr)).toBe("");
@@ -146,24 +163,33 @@ describe("cloud save queue", () => {
     const { persistence } = createPersistence();
     let started!: () => void;
     let release!: () => void;
-    const firstStarted = new Promise<void>((resolve) => { started = resolve; });
-    const firstReleased = new Promise<void>((resolve) => { release = resolve; });
+    const firstStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const firstReleased = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const previews: Array<[string, number]> = [];
     let writes = 0;
-    const queue = new CloudSaveQueue({
-      ...callbacks,
-      onSnapshotSaved: (saved, revision) => { previews.push([saved.name, revision]); },
-    }, {
-      persistence,
-      saveFilesToCloud: async () => {},
-      saveCloudScene: async (id) => {
-        if (++writes === 1) {
-          started();
-          await firstReleased;
-        }
-        return { success: true, id, updated_at: 1, revision: writes + 1 };
+    const queue = new CloudSaveQueue(
+      {
+        ...callbacks,
+        onSnapshotSaved: (saved, revision) => {
+          previews.push([saved.name, revision]);
+        },
       },
-    });
+      {
+        persistence,
+        saveFilesToCloud: async () => {},
+        saveCloudScene: async (id) => {
+          if (++writes === 1) {
+            started();
+            await firstReleased;
+          }
+          return { success: true, id, updated_at: 1, revision: writes + 1 };
+        },
+      },
+    );
     try {
       await queue.ready();
       queue.enqueue(snapshot("first"));
@@ -173,7 +199,10 @@ describe("cloud save queue", () => {
       expect(previews).toEqual([]);
       release();
       expect(await saving).toBe("saved");
-      expect(previews).toEqual([["first", 2], ["latest", 3]]);
+      expect(previews).toEqual([
+        ["first", 2],
+        ["latest", 3],
+      ]);
     } finally {
       release();
       queue.dispose();
@@ -183,13 +212,21 @@ describe("cloud save queue", () => {
   it("does not generate previews for rejected content writes", async () => {
     const { persistence } = createPersistence();
     let previews = 0;
-    const queue = new CloudSaveQueue({
-      ...callbacks, onSnapshotSaved: () => { previews++; },
-    }, {
-      persistence,
-      saveFilesToCloud: async () => {},
-      saveCloudScene: async () => { throw new CloudApiError("auth", 401, "AUTH_REQUIRED"); },
-    });
+    const queue = new CloudSaveQueue(
+      {
+        ...callbacks,
+        onSnapshotSaved: () => {
+          previews++;
+        },
+      },
+      {
+        persistence,
+        saveFilesToCloud: async () => {},
+        saveCloudScene: async () => {
+          throw new CloudApiError("auth", 401, "AUTH_REQUIRED");
+        },
+      },
+    );
     try {
       await queue.ready();
       queue.enqueue(snapshot("unsaved"));
@@ -204,7 +241,9 @@ describe("cloud save queue", () => {
     const originalFetch = globalThis.fetch;
     const { persistence } = createPersistence();
     const file = {
-      id: "queue-gc-recovery", mimeType: "image/png", created: 1,
+      id: "queue-gc-recovery",
+      mimeType: "image/png",
+      created: 1,
       dataURL: "data:image/png;base64,aGVsbG8=",
     };
     let attachmentExists = false;
@@ -223,15 +262,25 @@ describe("cloud save queue", () => {
       },
     });
     try {
-      const digest = Array.from(new Uint8Array(await crypto.subtle.digest(
-        "SHA-256", new TextEncoder().encode("hello"),
-      ))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      const digest = Array.from(
+        new Uint8Array(
+          await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode("hello"),
+          ),
+        ),
+      )
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
       globalThis.fetch = (async (input, init) => {
         expect(input).toBe(`/api/files/${file.id}`);
         expect(init?.method).toBe("PUT");
         uploads++;
         attachmentExists = true;
-        return new Response(null, { status: 204, headers: { etag: `"${digest}"` } });
+        return new Response(null, {
+          status: 204,
+          headers: { etag: `"${digest}"` },
+        });
       }) as typeof fetch;
       await queue.ready();
       const saved = {
@@ -264,7 +313,9 @@ describe("cloud save queue", () => {
     let writes = 0;
     const queue = new CloudSaveQueue(callbacks, {
       persistence,
-      saveFilesToCloud: async (_, options) => { uploads.push(options?.forceUpload); },
+      saveFilesToCloud: async (_, options) => {
+        uploads.push(options?.forceUpload);
+      },
       saveCloudScene: async () => {
         if (++writes === 1) queue.enqueue(snapshot("newer"));
         throw new CloudApiError("attachment missing", 422, "MISSING_FILE");
@@ -288,25 +339,35 @@ describe("cloud save queue", () => {
       let writes = 0;
       let auth = 0;
       let conflicts = 0;
-      const queue = new CloudSaveQueue({
-        ...callbacks,
-        onAuthRequired: () => { auth++; },
-        onConflict: () => { conflicts++; },
-      }, {
-        persistence,
-        saveFilesToCloud: async () => {},
-        saveCloudScene: async () => {
-          if (++writes === 1) throw new CloudApiError("missing", 422, "MISSING_FILE");
-          throw new CloudApiError("blocked", status, "BLOCKED");
+      const queue = new CloudSaveQueue(
+        {
+          ...callbacks,
+          onAuthRequired: () => {
+            auth++;
+          },
+          onConflict: () => {
+            conflicts++;
+          },
         },
-        fetchCloudScene: async () => {
-          throw new Error("remote unavailable");
+        {
+          persistence,
+          saveFilesToCloud: async () => {},
+          saveCloudScene: async () => {
+            if (++writes === 1)
+              throw new CloudApiError("missing", 422, "MISSING_FILE");
+            throw new CloudApiError("blocked", status, "BLOCKED");
+          },
+          fetchCloudScene: async () => {
+            throw new Error("remote unavailable");
+          },
         },
-      });
+      );
       try {
         await queue.ready();
         queue.enqueue(snapshot("recover"));
-        expect(await queue.flush("scene")).toBe(status === 401 ? "auth" : "conflict");
+        expect(await queue.flush("scene")).toBe(
+          status === 401 ? "auth" : "conflict",
+        );
         expect(writes).toBe(2);
         expect(auth).toBe(status === 401 ? 1 : 0);
         expect(conflicts).toBe(status === 409 ? 1 : 0);
@@ -378,7 +439,11 @@ describe("cloud save queue", () => {
     const recovered = queue.getPendingSnapshot("scene")!;
     expect(recovered.name).toBe("offline content");
     queue.setRevision("scene", recovered.baseRevision!);
-    queue.enqueue({ ...recovered, name: `${recovered.name} + next edit`, baseRevision: undefined });
+    queue.enqueue({
+      ...recovered,
+      name: `${recovered.name} + next edit`,
+      baseRevision: undefined,
+    });
     await queue.flush("scene");
     expect(names).toEqual(["offline content + next edit"]);
     expect(revisions).toEqual([1]);
@@ -390,10 +455,16 @@ describe("cloud save queue", () => {
     const old = { id: "old", version: 1 };
     const offline = { id: "offline", version: 1 };
     let remote: any = {
-      id: "scene", name: "board", elements: [old],
-      appState: { viewBackgroundColor: "#ffffff", gridSize: 20 }, revision: 1,
+      id: "scene",
+      name: "board",
+      elements: [old],
+      appState: { viewBackgroundColor: "#ffffff", gridSize: 20 },
+      revision: 1,
     };
-    snapshots.set("scene", { ...snapshot("board"), elements: [old, offline] as any });
+    snapshots.set("scene", {
+      ...snapshot("board"),
+      elements: [old, offline] as any,
+    });
     const queue = new CloudSaveQueue(callbacks, {
       persistence,
       saveFilesToCloud: async () => {},
@@ -410,9 +481,19 @@ describe("cloud save queue", () => {
     await queue.flush("scene");
     expect(canvas.map((element) => element.id)).toEqual(["old", "offline"]);
     canvas = [...canvas, { id: "new", version: 1 }];
-    queue.enqueue({ sceneId: "scene", name: loaded.name, elements: canvas as any, appState: recovered.appState, files: {} });
+    queue.enqueue({
+      sceneId: "scene",
+      name: loaded.name,
+      elements: canvas as any,
+      appState: recovered.appState,
+      files: {},
+    });
     await queue.flush("scene");
-    expect(remote.elements.map((element: any) => element.id)).toEqual(["old", "offline", "new"]);
+    expect(remote.elements.map((element: any) => element.id)).toEqual([
+      "old",
+      "offline",
+      "new",
+    ]);
     queue.dispose();
   });
 
@@ -421,18 +502,30 @@ describe("cloud save queue", () => {
       const { persistence, snapshots } = createPersistence();
       let started!: () => void;
       let release!: () => void;
-      const saving = new Promise<void>((resolve) => { started = resolve; });
-      const held = new Promise<void>((resolve) => { release = resolve; });
-      const statuses: string[] = [];
-      const older = new CloudSaveQueue({ ...callbacks, onStatusChange: (_, status) => { statuses.push(status); } }, {
-        persistence,
-        saveFilesToCloud: async () => {},
-        saveCloudScene: async (id) => {
-          started();
-          await held;
-          return { success: true, id, updated_at: 1, revision: 2 };
-        },
+      const saving = new Promise<void>((resolve) => {
+        started = resolve;
       });
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const statuses: string[] = [];
+      const older = new CloudSaveQueue(
+        {
+          ...callbacks,
+          onStatusChange: (_, status) => {
+            statuses.push(status);
+          },
+        },
+        {
+          persistence,
+          saveFilesToCloud: async () => {},
+          saveCloudScene: async (id) => {
+            started();
+            await held;
+            return { success: true, id, updated_at: 1, revision: 2 };
+          },
+        },
+      );
       await older.ready();
       older.enqueue(snapshot("older"));
       const flushing = older.flush("scene");
@@ -445,7 +538,9 @@ describe("cloud save queue", () => {
       const statusCount = statuses.length;
       release();
       await flushing;
-      expect(snapshotForScene(snapshots, "scene")?.name).toBe("newer offline edit");
+      expect(snapshotForScene(snapshots, "scene")?.name).toBe(
+        "newer offline edit",
+      );
       expect(newer.hasPending("scene")).toBe(true);
       if (disposeOlder) expect(statuses.length).toBe(statusCount);
       older.dispose();
@@ -486,42 +581,61 @@ describe("cloud save queue", () => {
       ...remoteScene,
       elements: [{ ...remoteImage, version: 2, versionNonce: 22 }],
     };
-    const signatures = getCloudSceneLoadSignatures(
-      remoteScene,
-      editedScene,
-    );
+    const signatures = getCloudSceneLoadSignatures(remoteScene, editedScene);
 
     expect(signatures.hasChanges).toBe(true);
-    expect(signatures.baselineSignature).not.toBe(
-      signatures.currentSignature,
-    );
+    expect(signatures.baselineSignature).not.toBe(signatures.currentSignature);
   });
 
   it("adopts restore normalization without saving but preserves load-time user edits", () => {
     const remoteScene = {
       name: "MCP board",
-      elements: [{
-        id: "text", type: "text", text: "label", width: 80,
-        version: 1, versionNonce: 11, isDeleted: false,
-      }],
+      elements: [
+        {
+          id: "text",
+          type: "text",
+          text: "label",
+          width: 80,
+          version: 1,
+          versionNonce: 11,
+          isDeleted: false,
+        },
+      ],
       appState: { viewBackgroundColor: "#ffffff", gridSize: 20 },
       files: {},
     };
     const hydratedScene = {
       ...remoteScene,
-      elements: [{ ...remoteScene.elements[0], width: 85, version: 2, versionNonce: 22 }],
+      elements: [
+        { ...remoteScene.elements[0], width: 85, version: 2, versionNonce: 22 },
+      ],
     };
-    const hydration = getCloudSceneLoadSignatures(remoteScene, hydratedScene, false);
+    const hydration = getCloudSceneLoadSignatures(
+      remoteScene,
+      hydratedScene,
+      false,
+    );
     expect(hydration.hasChanges).toBe(false);
     expect(hydration.baselineSignature).toBe(hydration.currentSignature);
 
     const editedScene = {
       ...hydratedScene,
-      elements: [{ ...hydratedScene.elements[0], text: "user edit", version: 3, versionNonce: 33 }],
+      elements: [
+        {
+          ...hydratedScene.elements[0],
+          text: "user edit",
+          version: 3,
+          versionNonce: 33,
+        },
+      ],
     };
-    expect(getCloudSceneLoadSignatures(remoteScene, editedScene, true).hasChanges).toBe(true);
+    expect(
+      getCloudSceneLoadSignatures(remoteScene, editedScene, true).hasChanges,
+    ).toBe(true);
     // A subsequent local edit must also differ from the adopted baseline.
-    expect(getCloudSceneLoadSignatures(hydratedScene, editedScene).hasChanges).toBe(true);
+    expect(
+      getCloudSceneLoadSignatures(hydratedScene, editedScene).hasChanges,
+    ).toBe(true);
   });
 
   it("keeps the latest edit when an in-flight save requires authentication", async () => {
@@ -592,6 +706,73 @@ describe("cloud save queue", () => {
     expect(queue.hasPending("scene")).toBe(true);
     expect(await queue.flush("scene")).toBe("auth");
     queue.cancel("scene");
+  });
+
+  it("keeps a deleted scene's queued snapshot available for recovery", async () => {
+    const { persistence, snapshots } = createPersistence();
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async () => {
+        throw new Error("the deleted scene must not be written");
+      },
+    });
+    try {
+      await queue.ready();
+      queue.enqueue(snapshot("unsynced edit"));
+      expect(queue.preserveForRecovery("scene")).toBe(true);
+      expect(queue.getPendingSnapshot("scene")?.name).toBe("unsynced edit");
+      expect(queue.getUnavailableScenes()).toEqual([
+        { sceneId: "scene", name: "unsynced edit" },
+      ]);
+      expect(await queue.flush("scene")).toBe("error");
+      await Bun.sleep(0);
+      expect(snapshotForScene(snapshots, "scene")?.name).toBe("unsynced edit");
+      queue.cancel("scene");
+      await Bun.sleep(0);
+      expect(snapshotForScene(snapshots, "scene")).toBeUndefined();
+      expect(queue.getUnavailableScenes()).toEqual([]);
+    } finally {
+      queue.dispose();
+    }
+  });
+
+  it("surfaces a scene deleted during save without removing its recovery snapshot", async () => {
+    const { persistence, snapshots } = createPersistence();
+    const unavailable: CloudSaveSnapshot[] = [];
+    const queue = new CloudSaveQueue(
+      {
+        ...callbacks,
+        onSceneUnavailable: (_sceneId, value) => unavailable.push(value),
+      },
+      {
+        persistence,
+        saveFilesToCloud: async () => {},
+        saveCloudScene: async () => {
+          throw new CloudApiError("scene not found", 404, "SCENE_NOT_FOUND");
+        },
+      },
+    );
+    try {
+      await queue.ready();
+      queue.enqueue(snapshot("edit before deletion"));
+      expect(await queue.flush("scene")).toBe("error");
+      expect(unavailable.map((item) => item.name)).toEqual([
+        "edit before deletion",
+      ]);
+      expect(queue.getPendingSnapshot("scene")?.name).toBe(
+        "edit before deletion",
+      );
+      expect(queue.getUnavailableScenes()).toEqual([
+        { sceneId: "scene", name: "edit before deletion" },
+      ]);
+      await Bun.sleep(0);
+      expect(snapshotForScene(snapshots, "scene")?.name).toBe(
+        "edit before deletion",
+      );
+    } finally {
+      queue.dispose();
+    }
   });
 
   it("keeps the latest edit after an in-flight save exhausts retries", async () => {
@@ -719,7 +900,10 @@ describe("cloud save queue", () => {
       clear: () => values.clear(),
     } as Storage;
     values.set("excalidraw_cloud_save_recovery_v1:scene", "{malformed");
-    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    const previousWindow = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "window",
+    );
     Object.defineProperty(globalThis, "window", {
       configurable: true,
       value: { sessionStorage: storage },
@@ -738,7 +922,11 @@ describe("cloud save queue", () => {
         persistence: failingPersistence,
         saveFilesToCloud: async () => {},
         saveCloudScene: async () => {
-          throw new CloudApiError("authentication required", 401, "AUTH_REQUIRED");
+          throw new CloudApiError(
+            "authentication required",
+            401,
+            "AUTH_REQUIRED",
+          );
         },
       });
       await queue.ready();
@@ -762,7 +950,9 @@ describe("cloud save queue", () => {
         }),
       });
       await recoveredQueue.ready();
-      expect(recoveredQueue.getPendingSnapshot("scene")?.name).toBe(original.name);
+      expect(recoveredQueue.getPendingSnapshot("scene")?.name).toBe(
+        original.name,
+      );
       expect(await recoveredQueue.flush("scene")).toBe("saved");
       expect(values.size).toBe(0);
     } finally {

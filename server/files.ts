@@ -9,6 +9,7 @@ import {
   UNTRACKED_FILE_CLEANUP_BATCH_SIZE,
 } from "./config";
 import { randomHex } from "./crypto";
+import type { D1Statement } from "./db";
 import { HttpError } from "./errors";
 import { isRecord, validateId } from "./validation";
 
@@ -35,7 +36,8 @@ type StorageMutationQueue = {
 const storageMutationLocks = new WeakMap<ServerRuntime, StorageMutationQueue>();
 
 const requireFilesDir = (runtime: ServerRuntime) => {
-  if (!runtime.filesDir) throw new Error("Filesystem attachment storage is unavailable");
+  if (!runtime.filesDir)
+    throw new Error("Filesystem attachment storage is unavailable");
   return runtime.filesDir;
 };
 
@@ -236,6 +238,13 @@ type PreparedFile = {
   objectKey?: string;
 };
 
+type FileReplacementEffects = {
+  statements: D1Statement[];
+  onCommit?: () => void | Promise<void>;
+};
+type FileReplacementHandler = () =>
+  FileReplacementEffects | Promise<FileReplacementEffects>;
+
 export type StoredFileMetadata = {
   id: string;
   storage_path: string | null;
@@ -269,7 +278,8 @@ export const getFileObject = async (runtime: ServerRuntime, id: string) => {
             httpEtag: metadata.sha256,
             httpMetadata: {
               ...object.httpMetadata,
-              contentType: object.httpMetadata?.contentType || metadata.mime_type,
+              contentType:
+                object.httpMetadata?.contentType || metadata.mime_type,
             },
             metadata,
           }
@@ -307,8 +317,8 @@ const sha256Constants = new Uint32Array([
 // uploads streamed to R2 without retaining a second full copy in Worker memory.
 class StreamingSha256 {
   private state = new Uint32Array([
-    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c,
+    0x1f83d9ab, 0x5be0cd19,
   ]);
   private pending = new Uint8Array(64);
   private pendingBytes = 0;
@@ -351,30 +361,47 @@ class StreamingSha256 {
     for (let offset = 0; offset < tailLength; offset += 64) {
       this.compress(tail.subarray(offset, offset + 64));
     }
-    return Array.from(this.state, (word) => word.toString(16).padStart(8, "0")).join("");
+    return Array.from(this.state, (word) =>
+      word.toString(16).padStart(8, "0"),
+    ).join("");
   }
 
   private compress(block: Uint8Array) {
     const words = new Uint32Array(64);
     const view = new DataView(block.buffer, block.byteOffset, block.byteLength);
-    for (let index = 0; index < 16; index += 1) words[index] = view.getUint32(index * 4, false);
+    for (let index = 0; index < 16; index += 1)
+      words[index] = view.getUint32(index * 4, false);
     for (let index = 16; index < 64; index += 1) {
       const x = words[index - 15];
       const y = words[index - 2];
       const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
-      const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+      const s1 =
+        ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
       words[index] = (words[index - 16] + s0 + words[index - 7] + s1) >>> 0;
     }
     let [a, b, c, d, e, f, g, h] = this.state;
     for (let index = 0; index < 64; index += 1) {
-      const s1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const s1 =
+        ((e >>> 6) | (e << 26)) ^
+        ((e >>> 11) | (e << 21)) ^
+        ((e >>> 25) | (e << 7));
       const choice = (e & f) ^ (~e & g);
-      const first = (h + s1 + choice + sha256Constants[index] + words[index]) >>> 0;
-      const s0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const first =
+        (h + s1 + choice + sha256Constants[index] + words[index]) >>> 0;
+      const s0 =
+        ((a >>> 2) | (a << 30)) ^
+        ((a >>> 13) | (a << 19)) ^
+        ((a >>> 22) | (a << 10));
       const majority = (a & b) ^ (a & c) ^ (b & c);
       const second = (s0 + majority) >>> 0;
-      h = g; g = f; f = e; e = (d + first) >>> 0;
-      d = c; c = b; b = a; a = (first + second) >>> 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + first) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (first + second) >>> 0;
     }
     this.state[0] = (this.state[0] + a) >>> 0;
     this.state[1] = (this.state[1] + b) >>> 0;
@@ -395,6 +422,7 @@ const upsertPreparedFile = async (
   createdAt?: number,
   updatedAt?: number,
   assertCanWrite?: () => void | Promise<unknown>,
+  onReplacement?: FileReplacementHandler,
 ) => {
   return withStorageMutationLock(runtime, async () => {
     await assertCanWrite?.();
@@ -411,13 +439,13 @@ const upsertPreparedFile = async (
         "SELECT created_at, updated_at, byte_size, sha256, mime_type, storage_path FROM files WHERE id = ?",
       )
       .get<{
-      created_at: number;
-      updated_at: number;
-      byte_size: number;
-      sha256: string;
-      mime_type: string;
-      storage_path: string | null;
-    }>(id);
+        created_at: number;
+        updated_at: number;
+        byte_size: number;
+        sha256: string;
+        mime_type: string;
+        storage_path: string | null;
+      }>(id);
 
     if (
       previous &&
@@ -425,10 +453,13 @@ const upsertPreparedFile = async (
       previous.sha256 === prepared.sha256 &&
       previous.mime_type.toLowerCase() === mimeType.toLowerCase() &&
       (runtime.files
-        ? Boolean(previous.storage_path && await runtime.files.head(previous.storage_path))
+        ? Boolean(
+            previous.storage_path &&
+            (await runtime.files.head(previous.storage_path)),
+          )
         : await fileExists(getFilePath(runtime, id)))
     ) {
-        await assertCanWrite?.();
+      await assertCanWrite?.();
       // An identical upload still renews the orphan grace period; explicit
       // thumbnail versions retain their monotonic ordering instead.
       const nextUpdatedAt = Math.max(previous.updated_at, now);
@@ -455,33 +486,40 @@ const upsertPreparedFile = async (
       if (!prepared.objectKey) throw new Error("R2 附件对象未准备完成");
       try {
         await assertCanWrite?.();
-        await runtime.db.run(
-          `INSERT INTO files
-             (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET
-             storage_path = excluded.storage_path,
-             mime_type = excluded.mime_type,
-             byte_size = excluded.byte_size,
-             sha256 = excluded.sha256,
-             updated_at = excluded.updated_at`,
-          [
-            id,
-            prepared.objectKey,
-            mimeType,
-            prepared.byteLength,
-            prepared.sha256,
-            previous?.created_at || createdAt || now,
-            now,
-          ],
-        );
+        const replacement = await onReplacement?.();
+        await runtime.db.batch([
+          {
+            sql: `INSERT INTO files
+                    (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET
+                    storage_path = excluded.storage_path,
+                    mime_type = excluded.mime_type,
+                    byte_size = excluded.byte_size,
+                    sha256 = excluded.sha256,
+                    updated_at = excluded.updated_at`,
+            values: [
+              id,
+              prepared.objectKey,
+              mimeType,
+              prepared.byteLength,
+              prepared.sha256,
+              previous?.created_at || createdAt || now,
+              now,
+            ],
+          },
+          ...(replacement?.statements || []),
+        ]);
+        await replacement?.onCommit?.();
       } catch (error) {
-        await runtime.files.delete(prepared.objectKey).catch((rollbackError) => {
-          console.info("[Files] Failed to remove uncommitted R2 object", {
-            key: prepared.objectKey,
-            error: rollbackError,
+        await runtime.files
+          .delete(prepared.objectKey)
+          .catch((rollbackError) => {
+            console.info("[Files] Failed to remove uncommitted R2 object", {
+              key: prepared.objectKey,
+              error: rollbackError,
+            });
           });
-        });
         throw error;
       }
       return {
@@ -498,28 +536,33 @@ const upsertPreparedFile = async (
     const atomicWrite = prepared.tempPath
       ? await finalizeAtomicFileWrite(filePath, prepared.tempPath)
       : await writeFileAtomically(filePath, prepared.data!);
+    let replacement: FileReplacementEffects | undefined;
     try {
       await assertCanWrite?.();
-      await runtime.db.run(
-        `INSERT INTO files
-           (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           storage_path = excluded.storage_path,
-           mime_type = excluded.mime_type,
-           byte_size = excluded.byte_size,
-           sha256 = excluded.sha256,
-           updated_at = excluded.updated_at`,
-        [
-          id,
-          id,
-          mimeType,
-          prepared.byteLength,
-          prepared.sha256,
-          previous?.created_at || createdAt || now,
-          now,
-        ],
-      );
+      replacement = await onReplacement?.();
+      await runtime.db.batch([
+        {
+          sql: `INSERT INTO files
+                  (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  storage_path = excluded.storage_path,
+                  mime_type = excluded.mime_type,
+                  byte_size = excluded.byte_size,
+                  sha256 = excluded.sha256,
+                  updated_at = excluded.updated_at`,
+          values: [
+            id,
+            id,
+            mimeType,
+            prepared.byteLength,
+            prepared.sha256,
+            previous?.created_at || createdAt || now,
+            now,
+          ],
+        },
+        ...(replacement?.statements || []),
+      ]);
     } catch (error) {
       try {
         await atomicWrite.restore();
@@ -532,6 +575,8 @@ const upsertPreparedFile = async (
       }
       throw error;
     }
+
+    await replacement?.onCommit?.();
 
     await atomicWrite.cleanup().catch((error) => {
       console.info("[Files] Failed to remove temporary backup", {
@@ -557,7 +602,10 @@ export const stageRequestBodyToFile = async (
   req: Request,
 ): Promise<PreparedFile> => {
   const contentLength = Number(req.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > runtime.config.maxFileBytes) {
+  if (
+    Number.isFinite(contentLength) &&
+    contentLength > runtime.config.maxFileBytes
+  ) {
     throw getFileTooLargeError(runtime.config.maxFileBytes);
   }
   if (!req.body) {
@@ -588,7 +636,8 @@ export const stageRequestBodyToFile = async (
       }
       await putPromise;
       if (tooLarge) throw getFileTooLargeError(runtime.config.maxFileBytes);
-      if (!byteLength) throw new HttpError(400, "EMPTY_FILE", "文件内容不能为空");
+      if (!byteLength)
+        throw new HttpError(400, "EMPTY_FILE", "文件内容不能为空");
       return { objectKey, byteLength, sha256: hash.digestHex() };
     } catch (error) {
       await hashReader.cancel(error).catch(() => {});
@@ -667,6 +716,7 @@ export const upsertStagedFile = async (
   createdAt?: number,
   updatedAt?: number,
   assertCanWrite?: () => void | Promise<unknown>,
+  onReplacement?: FileReplacementHandler,
 ) => {
   try {
     return await upsertPreparedFile(
@@ -677,6 +727,7 @@ export const upsertStagedFile = async (
       createdAt,
       updatedAt,
       assertCanWrite,
+      onReplacement,
     );
   } catch (error) {
     if (runtime.files && prepared.objectKey) {
@@ -724,9 +775,7 @@ export const assertReferencedFilesExist = async (
     }
     const placeholders = chunk.map(() => "?").join(", ");
     const rows = await runtime.db
-      .query(
-        `SELECT id, storage_path FROM files WHERE id IN (${placeholders})`,
-      )
+      .query(`SELECT id, storage_path FROM files WHERE id IN (${placeholders})`)
       .all<{ id: string; storage_path: string | null }>(...chunk);
     for (const row of rows) {
       rowsById.set(row.id, row);
@@ -735,9 +784,11 @@ export const assertReferencedFilesExist = async (
 
   for (const fileId of fileIds) {
     const row = rowsById.get(fileId);
-    const exists = row?.storage_path && (runtime.files
-      ? Boolean(await runtime.files.head(row.storage_path))
-      : await fileExists(getFilePath(runtime, fileId)));
+    const exists =
+      row?.storage_path &&
+      (runtime.files
+        ? Boolean(await runtime.files.head(row.storage_path))
+        : await fileExists(getFilePath(runtime, fileId)));
     if (!exists) {
       throw new HttpError(422, "MISSING_FILE", "画板引用的图片尚未上传完成");
     }
@@ -777,7 +828,9 @@ export const syncSceneFileReferences = async (
   sceneId: string,
   fileIds: string[],
 ): Promise<void> => {
-  await runtime.db.batch(await getSceneFileReferenceMutationStatements(runtime, sceneId, fileIds));
+  await runtime.db.batch(
+    await getSceneFileReferenceMutationStatements(runtime, sceneId, fileIds),
+  );
 };
 
 export const getSceneFileReferenceMutationStatements = async (
@@ -794,35 +847,58 @@ export const getSceneFileReferenceMutationStatements = async (
     ),
   );
   const nextFileIds = new Set(fileIds);
-  const batch: Array<{ sql: string; values: readonly (string | number | null | Uint8Array)[] }> = [];
+  const batch: Array<{
+    sql: string;
+    values: readonly (string | number | null | Uint8Array)[];
+  }> = [];
   for (const fileId of existingFileIds) {
     if (!nextFileIds.has(fileId)) {
       batch.push({
-        sql: guardRevision === undefined
-          ? "DELETE FROM scene_files WHERE scene_id = ? AND file_id = ?"
-          : `DELETE FROM scene_files WHERE scene_id = ? AND file_id = ? AND EXISTS (
+        sql:
+          guardRevision === undefined
+            ? "DELETE FROM scene_files WHERE scene_id = ? AND file_id = ?"
+            : `DELETE FROM scene_files WHERE scene_id = ? AND file_id = ? AND EXISTS (
               SELECT 1 FROM scenes WHERE id = ? AND revision = ? AND deleted_at IS NULL
               ${guardContentSha256 === undefined ? "" : "AND content_sha256 = ?"}
             )`,
-        values: guardRevision === undefined
-          ? [sceneId, fileId]
-          : [sceneId, fileId, sceneId, guardRevision, ...(guardContentSha256 === undefined ? [] : [guardContentSha256])],
+        values:
+          guardRevision === undefined
+            ? [sceneId, fileId]
+            : [
+                sceneId,
+                fileId,
+                sceneId,
+                guardRevision,
+                ...(guardContentSha256 === undefined
+                  ? []
+                  : [guardContentSha256]),
+              ],
       });
     }
   }
   for (const fileId of nextFileIds) {
     if (!existingFileIds.has(fileId)) {
       batch.push({
-        sql: guardRevision === undefined
-          ? "INSERT OR IGNORE INTO scene_files (scene_id, file_id) VALUES (?, ?)"
-          : `INSERT OR IGNORE INTO scene_files (scene_id, file_id)
+        sql:
+          guardRevision === undefined
+            ? "INSERT OR IGNORE INTO scene_files (scene_id, file_id) VALUES (?, ?)"
+            : `INSERT OR IGNORE INTO scene_files (scene_id, file_id)
              SELECT ?, ? WHERE EXISTS (
                SELECT 1 FROM scenes WHERE id = ? AND revision = ? AND deleted_at IS NULL
                ${guardContentSha256 === undefined ? "" : "AND content_sha256 = ?"}
              )`,
-        values: guardRevision === undefined
-          ? [sceneId, fileId]
-          : [sceneId, fileId, sceneId, guardRevision, ...(guardContentSha256 === undefined ? [] : [guardContentSha256])],
+        values:
+          guardRevision === undefined
+            ? [sceneId, fileId]
+            : [
+                sceneId,
+                fileId,
+                sceneId,
+                guardRevision,
+                ...(guardContentSha256 === undefined
+                  ? []
+                  : [guardContentSha256]),
+              ],
       });
     }
   }
@@ -842,10 +918,10 @@ export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
          LIMIT ?`,
       )
       .all<{
-      id: string;
-      storage_path: string | null;
-      updated_at: number;
-    }>(cutoff, ORPHAN_FILE_CLEANUP_BATCH_SIZE);
+        id: string;
+        storage_path: string | null;
+        updated_at: number;
+      }>(cutoff, ORPHAN_FILE_CLEANUP_BATCH_SIZE);
 
     for (const row of rows) {
       if (runtime.files) {
@@ -911,7 +987,11 @@ export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
       const staleObjects: string[] = [];
       let cursor: string | undefined;
       do {
-        const page = await runtime.files.list({ prefix: "files/", limit: 100, cursor });
+        const page = await runtime.files.list({
+          prefix: "files/",
+          limit: 100,
+          cursor,
+        });
         for (const object of page.objects) {
           if (
             staleObjects.length < ORPHAN_FILE_CLEANUP_BATCH_SIZE &&
@@ -935,9 +1015,9 @@ export const cleanupUntrackedFiles = async (runtime: ServerRuntime) => {
   await withStorageMutationLock(runtime, async () => {
     const filesDir = requireFilesDir(runtime);
     const knownFileIds = new Set(
-      (await runtime.db.query("SELECT id FROM files").all<{ id: string }>()).map(
-        (row) => row.id,
-      ),
+      (
+        await runtime.db.query("SELECT id FROM files").all<{ id: string }>()
+      ).map((row) => row.id),
     );
     const cutoff = Date.now() - ORPHAN_FILE_GRACE_MS;
     let cleaned = 0;
@@ -1010,9 +1090,11 @@ const recoverInterruptedFileReplacements = async (runtime: ServerRuntime) => {
     backups.map(async (backup) => ({
       ...backup,
       mtimeMs:
-        (await fs.promises
-          .stat(path.join(filesDir, backup.name))
-          .catch(() => null))?.mtimeMs || 0,
+        (
+          await fs.promises
+            .stat(path.join(filesDir, backup.name))
+            .catch(() => null)
+        )?.mtimeMs || 0,
     })),
   );
   backupsWithTime.sort((left, right) => right.mtimeMs - left.mtimeMs);
@@ -1144,9 +1226,8 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
       const stat = await fs.promises.stat(filePath).catch(() => null);
       if (stat && (!staleOnly || stat.mtimeMs < cutoff)) {
         if (/\.bak$/i.test(entry.name)) {
-          const backupMatch = /^([A-Za-z0-9_-]{1,128})\.[a-f0-9]{16}\.bak$/i.exec(
-            entry.name,
-          );
+          const backupMatch =
+            /^([A-Za-z0-9_-]{1,128})\.[a-f0-9]{16}\.bak$/i.exec(entry.name);
           if (
             backupMatch &&
             !(await fileExists(getFilePath(runtime, backupMatch[1])))
@@ -1206,7 +1287,8 @@ export const inspectStorageConsistency = async (runtime: ServerRuntime) => {
     for (const row of rows) {
       if (row.storage_path) {
         knownObjectKeys.add(row.storage_path);
-        if (!(await runtime.files.head(row.storage_path))) missingFiles.push(row.id);
+        if (!(await runtime.files.head(row.storage_path)))
+          missingFiles.push(row.id);
       } else {
         missingFiles.push(row.id);
       }
@@ -1214,7 +1296,11 @@ export const inspectStorageConsistency = async (runtime: ServerRuntime) => {
     const untrackedFiles: string[] = [];
     let cursor: string | undefined;
     do {
-      const page = await runtime.files.list({ prefix: "files/", limit: 100, cursor });
+      const page = await runtime.files.list({
+        prefix: "files/",
+        limit: 100,
+        cursor,
+      });
       for (const object of page.objects) {
         if (!knownObjectKeys.has(object.key)) untrackedFiles.push(object.key);
       }
@@ -1227,7 +1313,11 @@ export const inspectStorageConsistency = async (runtime: ServerRuntime) => {
          WHERE files.id IS NULL`,
       )
       .get<{ count: number }>();
-    return { missingFiles, untrackedFiles, orphanedReferences: orphanRow?.count ?? 0 };
+    return {
+      missingFiles,
+      untrackedFiles,
+      orphanedReferences: orphanRow?.count ?? 0,
+    };
   }
   const fs = await getFileSystem();
   const diskEntries = await fs.promises.readdir(requireFilesDir(runtime), {
@@ -1258,12 +1348,12 @@ export const inspectStorageConsistency = async (runtime: ServerRuntime) => {
     }
   }
   const orphanRow = await runtime.db
-      .query(
-        `SELECT COUNT(*) AS count FROM scene_files
+    .query(
+      `SELECT COUNT(*) AS count FROM scene_files
          LEFT JOIN files ON files.id = scene_files.file_id
          WHERE files.id IS NULL`,
-      )
-      .get<{ count: number }>();
+    )
+    .get<{ count: number }>();
   const orphanedReferences = orphanRow?.count ?? 0;
   return { missingFiles, untrackedFiles, orphanedReferences };
 };

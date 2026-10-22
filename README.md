@@ -8,21 +8,21 @@
 
 ## ⚖️ 与原版 Excalidraw 的核心区别与优化
 
-| 对比维度 | 官方 / 社区原版 Excalidraw | 本项目（狐涂画板，Bun + Cloudflare） |
-| :-- | :-- | :-- |
-| **运行时与架构** | Node.js + Yarn，微服务或多容器配置 | **Bun 工具链 + Cloudflare Workers**，用 D1 保存画板数据，R2 保存附件 |
-| **数据持久化** | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端 | **Cloudflare D1** 保存画板、文件索引与会话数据，支持摘要列、索引与 keyset 分页 |
-| **多画板管理** | 单画板模式，需手动导出/导入 `.excalidraw` 文件 | **内置画板工作台**：列表/网格浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达 |
-| **图元统计** | 无图元数量感知 | **内置图元数量统计**：保存时维护去 JSON 扫描的 `element_count` / `content_bytes` 摘要列并在卡片展示 |
-| **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存 | **Cloudflare R2 独立存储 + SHA-256 ETag / 304 + 分批垃圾回收** |
-| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据存储在部署者配置的 Cloudflare D1/R2 资源，霞鹜文楷与思源黑体使用版本化 CDN |
-| **中文字体支持** | 默认依赖外部在线 Google Fonts 或英文字体 | **通过 jsDelivr 加载「霞鹜文楷」与「思源黑体」CJK 字体**（Unicode 子集化拆分按需加载） |
-| **身份认证安全** | 无或 Token 明文保存在浏览器本地存储 | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据 |
-| **浏览器与构建** | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置 | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
-| **多端同步** | 依赖手动刷新或高频轮询 | **Durable Objects WebSocket 广播 + 自动重连 + revision 条件拉取** |
-| **前端现代体验** | 传统弹窗布局与全局媒体查询 | **原生 `<dialog>` 无障碍模型（`aria-modal`） + CSS `@container` 容器查询与 `:has()` 现代选择器** |
-| **代码工程质量** | 多套分散的编译器依赖 | **TypeScript 6.0+ 全 Monorepo 统一驱动** |
-| **全栈开发体验** | 需分别启动前端开发服务与后端 API，跨端口代理 | **`bun run dev` 一体化本地开发**，由 Wrangler 提供 Worker、D1、R2 和 Durable Objects |
+| 对比维度           | 官方 / 社区原版 Excalidraw                                  | 本项目（狐涂画板，Bun + Cloudflare）                                                                               |
+| :----------------- | :---------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------- |
+| **运行时与架构**   | Node.js + Yarn，微服务或多容器配置                          | **Bun 工具链 + Cloudflare Workers**，用 D1 保存画板数据，R2 保存附件                                               |
+| **数据持久化**     | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端   | **Cloudflare D1** 保存画板、文件索引与会话数据，支持摘要列、索引与 keyset 分页                                     |
+| **多画板管理**     | 单画板模式，需手动导出/导入 `.excalidraw` 文件              | **内置画板工作台**：列表/网格浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达                               |
+| **图元统计**       | 无图元数量感知                                              | **内置图元数量统计**：保存时维护去 JSON 扫描的 `element_count` / `content_bytes` 摘要列并在卡片展示                |
+| **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存                        | **Cloudflare R2 独立存储 + SHA-256 ETag / 304 + 分批垃圾回收**                                                     |
+| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据存储在部署者配置的 Cloudflare D1/R2 资源，霞鹜文楷与思源黑体使用版本化 CDN           |
+| **中文字体支持**   | 默认依赖外部在线 Google Fonts 或英文字体                    | **通过 jsDelivr 加载「霞鹜文楷」与「思源黑体」CJK 字体**（Unicode 子集化拆分按需加载）                             |
+| **身份认证安全**   | 无或 Token 明文保存在浏览器本地存储                         | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据                                                |
+| **浏览器与构建**   | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置            | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
+| **多端同步**       | 依赖手动刷新或高频轮询                                      | **Durable Objects WebSocket 广播 + 自动重连 + revision 条件拉取**                                                  |
+| **前端现代体验**   | 传统弹窗布局与全局媒体查询                                  | **原生 `<dialog>` 无障碍模型（`aria-modal`） + CSS `@container` 容器查询与 `:has()` 现代选择器**                   |
+| **代码工程质量**   | 多套分散的编译器依赖                                        | **TypeScript 6.0+ 全 Monorepo 统一驱动**                                                                           |
+| **全栈开发体验**   | 需分别启动前端开发服务与后端 API，跨端口代理                | **`bun run dev` 一体化本地开发**，由 Wrangler 提供 Worker、D1、R2 和 Durable Objects                               |
 
 ---
 
@@ -80,7 +80,7 @@
 
 ### 部署前准备
 
-- 安装 Bun 1.4.3+，并准备已启用 Workers、D1 和 R2 的 Cloudflare 账号。
+- 安装 Bun 1.4.4+，并准备已启用 Workers、D1 和 R2 的 Cloudflare 账号。
 - 安装依赖并登录 Wrangler：
 
 ```bash
@@ -91,10 +91,10 @@ bunx wrangler login
 - `wrangler.jsonc` 只声明代码使用的绑定名 `DB` 和 `ASSETS_BUCKET`，不写入 D1 的数据库名/ID 或 R2 bucket 名。Cloudflare Workers Builds 首次部署时会在账号内自动创建并绑定资源；具体资源名称和标识只保存在 Cloudflare 账号，不回写 GitHub 仓库。[Wrangler 自动创建资源](https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning)
 - 配置进入画板的登录密码和 MCP 访问令牌。两个变量用途不同：
 
-| 变量 | 用途 | 必需性 |
-| --- | --- | --- |
+| 变量            | 用途                                  | 必需性                         |
+| --------------- | ------------------------------------- | ------------------------------ |
 | `AUTH_PASSWORD` | 网页登录密码；设置后画板 API 需要登录 | 生产必需，除非明确启用匿名访问 |
-| `MCP_TOKEN` | MCP URL 的访问令牌，不是网页登录密码 | 只在启用 MCP 时设置 |
+| `MCP_TOKEN`     | MCP URL 的访问令牌，不是网页登录密码  | 只在启用 MCP 时设置            |
 
 本地 Wrangler 开发使用仓库根目录的 `.dev.vars`。复制示例文件并替换为自己的值；不启用 MCP 时可以删去 `MCP_TOKEN` 行：
 
@@ -120,7 +120,7 @@ MCP_TOKEN="replace-with-a-local-mcp-token"
 - 构建命令：`bun install --frozen-lockfile && bun run build:frontend`
 - 部署命令：`bunx wrangler deploy`
 - 根目录：仓库根目录（包含 `wrangler.jsonc`）
-- Build Variables：`BUN_VERSION=1.4.3`（Cloudflare Builds 当前默认 Bun 版本低于项目要求）
+- Build Variables：`BUN_VERSION=1.4.4`（Cloudflare Builds 当前默认 Bun 版本低于项目要求）
 
 首次部署后，Cloudflare 会创建 D1 和 R2 资源并在 Worker 设置中显示绑定。打开 **D1 → 对应数据库 → Console**，执行 [`migrations-d1/0001_baseline.sql`](migrations-d1/0001_baseline.sql) 的 SQL，完成首次 schema 初始化。后续 migration 也在本地验证后，通过对应 D1 Console 执行；GitHub Actions 只做质量检查，不发布。请只从 Cloudflare Dashboard 的 Git Builds 部署，避免本地 `wrangler deploy` 把自动生成的账号资源 ID 写回工作区。
 
@@ -146,6 +146,7 @@ bun run build
 画板、应用状态和元数据存储在 D1，附件存储在 R2。Cloudflare D1 Time Travel 可用于 D1 数据恢复，但不会恢复、删除或回滚 R2 对象；本项目不提供应用内完整备份或 R2 备份。需要恢复附件时，部署方必须使用自己配置的 R2 备份方案，并保证 D1 与 R2 的恢复点一致。
 
 ---
+
 ## 🤖 MCP：让 Agent 读取和绘制画板
 
 MCP 使用标准 Streamable HTTP 传输，生产端点为 `https://<your-worker-domain>/mcp/<URL 编码后的令牌>`；本地 Wrangler 地址默认为 `http://127.0.0.1:8787`。设置高强度随机令牌：
@@ -171,26 +172,26 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 网关、WAF 或 OpenResty 的 User-Agent 过滤规则也需放行整个 `/mcp/` 路径，包括 Python SDK 的默认 UA；保留真实 User-Agent，不要靠伪装 curl 解决。若 `initialize` 等带 JSON-RPC `id` 的请求收到 `202` 空响应，应使用同一请求比较不同 UA 的公网响应与本地 Wrangler 响应，并检查各层拦截日志；不能把它当作初始化成功。协议通知（例如 `notifications/initialized`）没有 `id`，正常接受时可以返回 `202` 空响应。需要拒绝时返回明确的 `4xx`，不要用空 `202` 隐藏拦截。本仓库没有线上网关配置，应用更新不会自动解除网关规则。
 工具按“尽量一次完成”安排：
 
-| 工具 | 用途 |
-| --- | --- |
-| `list_boards` | 名称搜索及文件夹、收藏、精确标签筛选；`view=all/recent/trash`，收藏统一使用 `favorite=true/false`（省略不限），支持排序和 `nextCursor` 分页；不存在的文件夹 ID 明确报错。 |
-| `get_board` | 默认 `compact` 只读文字、几何与连接，标签折入本体；`elements` 含样式，`summary` 元数据，`full` 内部字段，`input` 可写字段。按 `elementIds`、文字 `query`、`type` 定位，支持 `limit/offset/maxChars`，返回 `nextOffset/truncated`。 |
-| `inspect_layout` | 只读检查文字重叠、容器文字溢出、可能的元素碰撞与已绑定箭头异常；返回问题图元 ID、严重程度、建议和检测完整性，便于修改后复查。 |
-| `get_boards_batch` | 一次读取最多 20 块画板，共享字符预算，逐条返回错误或分页信息；与单读一样 `maxChars` 最少 1000，连必要元数据也放不下则明确报错；不是跨画板一致快照。 |
-| `create_board` | 一次创建并绘制，可同时设置背景、收藏、标签和 `folderId/folderName`；允许同名，省略图元创建空板。 |
-| `create_diagram` | 自动绘制流程图、时间线、分层架构箱体或多泳道关系图；支持区域、原生分组与真实绑定连线，可同时设置文件夹、标签和收藏。 |
-| `create_layout` | 创建卡片网格，指定列数、卡片宽度、间距与内边距；按内容估算行高，每张卡片使用原生分组。 |
-| `measure_text` | 创建前估算文字宽高、换行和行数，与 MCP 绘制使用同一估算器，返回 `estimated=true`。 |
-| `update_board` | 一次合并删除、新增、`updates` 原地修改和画板元数据，原子保存一个修订；顺序为删除→新增→原地修改。 |
-| `update_element` | 传 `update.id` 与待修改字段，保留图元 ID、连接和其余字段，改颜色无需回传完整 JSON。 |
-| `add_elements` / `remove_elements` | 单纯追加或按 ID 移除图元；普通绘图无需先创建空板再调用追加。 |
-| `copy_elements` | 按 ID 同板或跨板复制，自动生成新 ID、平移并重连内部箭头；返回旧 ID 到新 ID 的 `idMap`。 |
-| `list_folders` / `list_tags` | 分页读取文件夹、标签及画板计数。 |
-| `ensure_folder` / `create_folder` | 按精确名称幂等获取或创建，或明确创建新文件夹；同名歧义要求使用 ID。 |
-| `update_folder` / `delete_folder` | 修改名称、图标、颜色；删除仅把画板移至根目录，`dryRun=true` 预览，执行需 `confirm=true`，可校验 `expectedBoardCount`。 |
-| `manage_board` | 一次合并改名、收藏、移动与标签操作；单传 `tags` 默认替换，`tagMode=add/remove` 显式追加/移除，相同元数据返回 `noop`。 |
-| `delete_board` / `restore_board` | 仅软删除或还原，没有永久删除参数；回收站受 `TRASH_RETENTION_DAYS` 保留期限约束。 |
-| `batch_manage_boards` | 最多 100 项 `manage/delete/restore`，每项必传 `expectedRevision`；独立执行，返回逐项结果、`noop` 和 `partial`。 |
+| 工具                               | 用途                                                                                                                                                                                                                               |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_boards`                      | 名称搜索及文件夹、收藏、精确标签筛选；`view=all/recent/trash`，收藏统一使用 `favorite=true/false`（省略不限），支持排序和 `nextCursor` 分页；不存在的文件夹 ID 明确报错。                                                          |
+| `get_board`                        | 默认 `compact` 只读文字、几何与连接，标签折入本体；`elements` 含样式，`summary` 元数据，`full` 内部字段，`input` 可写字段。按 `elementIds`、文字 `query`、`type` 定位，支持 `limit/offset/maxChars`，返回 `nextOffset/truncated`。 |
+| `inspect_layout`                   | 只读检查文字重叠、容器文字溢出、可能的元素碰撞与已绑定箭头异常；返回问题图元 ID、严重程度、建议和检测完整性，便于修改后复查。                                                                                                      |
+| `get_boards_batch`                 | 一次读取最多 20 块画板，共享字符预算，逐条返回错误或分页信息；与单读一样 `maxChars` 最少 1000，连必要元数据也放不下则明确报错；不是跨画板一致快照。                                                                                |
+| `create_board`                     | 一次创建并绘制，可同时设置背景、收藏、标签和 `folderId/folderName`；允许同名，省略图元创建空板。                                                                                                                                   |
+| `create_diagram`                   | 自动绘制流程图、时间线、分层架构箱体或多泳道关系图；支持区域、原生分组与真实绑定连线，可同时设置文件夹、标签和收藏。                                                                                                               |
+| `create_layout`                    | 创建卡片网格，指定列数、卡片宽度、间距与内边距；按内容估算行高，每张卡片使用原生分组。                                                                                                                                             |
+| `measure_text`                     | 创建前估算文字宽高、换行和行数，与 MCP 绘制使用同一估算器，返回 `estimated=true`。                                                                                                                                                 |
+| `update_board`                     | 一次合并删除、新增、`updates` 原地修改和画板元数据，原子保存一个修订；顺序为删除→新增→原地修改。                                                                                                                                   |
+| `update_element`                   | 传 `update.id` 与待修改字段，保留图元 ID、连接和其余字段，改颜色无需回传完整 JSON。                                                                                                                                                |
+| `add_elements` / `remove_elements` | 单纯追加或按 ID 移除图元；普通绘图无需先创建空板再调用追加。                                                                                                                                                                       |
+| `copy_elements`                    | 按 ID 同板或跨板复制，自动生成新 ID、平移并重连内部箭头；返回旧 ID 到新 ID 的 `idMap`。                                                                                                                                            |
+| `list_folders` / `list_tags`       | 分页读取文件夹、标签及画板计数。                                                                                                                                                                                                   |
+| `ensure_folder` / `create_folder`  | 按精确名称幂等获取或创建，或明确创建新文件夹；同名歧义要求使用 ID。                                                                                                                                                                |
+| `update_folder` / `delete_folder`  | 修改名称、图标、颜色；删除仅把画板移至根目录，`dryRun=true` 预览，执行需 `confirm=true`，可校验 `expectedBoardCount`。                                                                                                             |
+| `manage_board`                     | 一次合并改名、收藏、移动与标签操作；单传 `tags` 默认替换，`tagMode=add/remove` 显式追加/移除，相同元数据返回 `noop`。                                                                                                              |
+| `delete_board` / `restore_board`   | 仅软删除或还原，没有永久删除参数；回收站受 `TRASH_RETENTION_DAYS` 保留期限约束。                                                                                                                                                   |
+| `batch_manage_boards`              | 最多 100 项 `manage/delete/restore`，每项必传 `expectedRevision`；独立执行，返回逐项结果、`noop` 和 `partial`。                                                                                                                    |
 
 每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字；需要 ID 时传 `responseMode=ids`，按本体与自动文字分别返回。可指定稳定 `id`，新建箭头只传 `startBinding/endBinding.elementId` 即自动连接同批或已有节点，无需计算端点；自连接或同中心节点须显式传坐标。移动/缩放节点时保留连接；显式路径统一为 `x/y` 原点加相对 `points`，支持多段折线。删除形状同时删除绑定文字并清理引用。
 
@@ -228,11 +229,29 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
     { "id": "data", "title": "数据模块", "parentId": "platform" }
   ],
   "nodes": [
-    { "id": "gateway", "title": "API 网关", "body": "统一鉴权与限流", "regionId": "access" },
-    { "id": "worker", "title": "任务服务", "body": "处理业务任务", "regionId": "compute" },
-    { "id": "cache", "title": "缓存服务", "body": "共享结果缓存", "regionId": "data" }
+    {
+      "id": "gateway",
+      "title": "API 网关",
+      "body": "统一鉴权与限流",
+      "regionId": "access"
+    },
+    {
+      "id": "worker",
+      "title": "任务服务",
+      "body": "处理业务任务",
+      "regionId": "compute"
+    },
+    {
+      "id": "cache",
+      "title": "缓存服务",
+      "body": "共享结果缓存",
+      "regionId": "data"
+    }
   ],
-  "edges": [{ "from": "gateway", "to": "worker" }, { "from": "worker", "to": "cache" }]
+  "edges": [
+    { "from": "gateway", "to": "worker" },
+    { "from": "worker", "to": "cache" }
+  ]
 }
 ```
 
@@ -242,14 +261,27 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 {
   "name": "订单跨系统流程",
   "layout": "swimlane",
-  "regions": [{ "id": "web", "title": "客户端" }, { "id": "service", "title": "业务服务" }, { "id": "storage", "title": "数据存储" }],
+  "regions": [
+    { "id": "web", "title": "客户端" },
+    { "id": "service", "title": "业务服务" },
+    { "id": "storage", "title": "数据存储" }
+  ],
   "nodes": [
     { "id": "submit", "title": "提交订单", "regionId": "web" },
-    { "id": "validate", "title": "校验库存", "body": "库存不足时返回客户端", "regionId": "service" },
+    {
+      "id": "validate",
+      "title": "校验库存",
+      "body": "库存不足时返回客户端",
+      "regionId": "service"
+    },
     { "id": "persist", "title": "保存订单", "regionId": "storage" },
     { "id": "notify", "title": "显示结果", "regionId": "web" }
   ],
-  "edges": [{ "from": "submit", "to": "validate" }, { "from": "validate", "to": "persist" }, { "from": "persist", "to": "notify" }]
+  "edges": [
+    { "from": "submit", "to": "validate" },
+    { "from": "validate", "to": "persist" },
+    { "from": "persist", "to": "notify" }
+  ]
 }
 ```
 
@@ -258,7 +290,25 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 复杂卡片排版可使用 `create_layout`，当前支持 `mode="grid"`。例如：
 
 ```json
-{"name":"知识卡片","columns":2,"cardWidth":320,"gap":24,"padding":20,"cards":[{"id":"first","title":"概念","body":"固定宽度换行，按内容估算高度。"},{"id":"second","title":"实践","body":"背景、标题和正文共享原生分组。"}]}
+{
+  "name": "知识卡片",
+  "columns": 2,
+  "cardWidth": 320,
+  "gap": 24,
+  "padding": 20,
+  "cards": [
+    {
+      "id": "first",
+      "title": "概念",
+      "body": "固定宽度换行，按内容估算高度。"
+    },
+    {
+      "id": "second",
+      "title": "实践",
+      "body": "背景、标题和正文共享原生分组。"
+    }
+  ]
+}
 ```
 
 每行高度以该行最高卡片计算，返回 `cards` 中每张卡片的 `groupId/elementIds` 与几何位置。独立绘制也可在图元描述中传 `groupId`，或用 `groupIds` 指定最多 8 层原生嵌套分组；相同分组在编辑器中可整体拖动。更新 `groupId:null` 或 `groupIds:[]` 解除分组，二者不能同时传。绑定文字继承所属形状的分组。`copy_elements` 为副本生成新分组，返回 `groupIdMap`，避免副本与原件联动；按 ID 的 MCP 修改与复制不会自动扩展到整个分组，需要整体移动时传卡片的全部 `elementIds`。
@@ -274,7 +324,15 @@ Cloudflare 部署时，先按部署章节在 Worker 设置中保存 `MCP_TOKEN` 
 创建复杂画板后，可以先检查几何布局，再按问题图元 ID 修改并复查：
 
 ```json
-{"boardId":"画板ID","checks":["text_overlap","text_overflow","element_collision","arrow_connection"]}
+{
+  "boardId": "画板ID",
+  "checks": [
+    "text_overlap",
+    "text_overflow",
+    "element_collision",
+    "arrow_connection"
+  ]
+}
 ```
 
 调用 `inspect_layout` 时省略 `checks` 会检查全部四项。返回 `boardId/revision`、`summary.errors/warnings` 和 `issues`，每条问题包含 `type/severity/elementIds/message`，并可包含 `suggestion`。将涉及的 ID 用于 `update_board.updates`，保存时使用检查结果的 `revision` 作为 `expectedRevision`，再调用检查确认。检查本身不改变图元或修订号，text 摘要显示错误、警告、完成情况及容器跳过数量，不重复业务 JSON。
@@ -364,10 +422,29 @@ bun scripts/benchmark-mcp.ts
   "favorite": true,
   "tags": ["流程"],
   "elements": [
-    { "id": "start", "type": "rectangle", "x": 0, "y": 0, "width": 180, "height": 80, "text": "开始" },
-    { "id": "decision", "type": "diamond", "x": 300, "y": 100, "width": 160, "height": 80, "text": "是否完成" },
-    { "type": "arrow",
-      "startBinding": { "elementId": "start" }, "endBinding": { "elementId": "decision" } }
+    {
+      "id": "start",
+      "type": "rectangle",
+      "x": 0,
+      "y": 0,
+      "width": 180,
+      "height": 80,
+      "text": "开始"
+    },
+    {
+      "id": "decision",
+      "type": "diamond",
+      "x": 300,
+      "y": 100,
+      "width": 160,
+      "height": 80,
+      "text": "是否完成"
+    },
+    {
+      "type": "arrow",
+      "startBinding": { "elementId": "start" },
+      "endBinding": { "elementId": "decision" }
+    }
   ]
 }
 ```
@@ -375,7 +452,10 @@ bun scripts/benchmark-mcp.ts
 只修改节点颜色时调用 `update_element`，无需删除重建：
 
 ```json
-{ "boardId": "返回的画板 ID", "update": { "id": "start", "strokeColor": "#315f4c", "opacity": 80.5 } }
+{
+  "boardId": "返回的画板 ID",
+  "update": { "id": "start", "strokeColor": "#315f4c", "opacity": 80.5 }
+}
 ```
 
 MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提交到仓库或暴露在浏览器端代码中。
@@ -445,29 +525,29 @@ Worker 入口负责注入 D1、R2、Durable Objects、静态资源与 `waitUntil
 
 ## 📡 后端 API 接口概览
 
-| 请求方式 | 路由 Endpoint | 描述 |
-| :-- | :-- | :-- |
-| `GET` | `/api/auth/status` | 查询当前密码保护状态及当前客户端登录态 |
-| `POST` | `/api/auth/verify` | 提交密码进行验证，成功后下发 HttpOnly 会话 Cookie |
-| `POST` | `/api/auth/logout` | 注销登录并销毁服务端会话 |
-| `GET` | `/api/scenes` | 获取有效画板 keyset 分页；`limit` 默认为 50、最大 100，支持 `cursor/q/folder_id/favorite/sort` 筛选与排序 |
-| `POST` | `/api/scenes` | 创建新画板 |
-| `GET` | `/api/scenes/:id` | 获取指定画板的图元数据与应用状态 |
-| `GET` | `/api/realtime` | Durable Object WebSocket；按 `scene_id` 订阅轻量场景/工作区变更事件 |
-| `PATCH` | `/api/scenes/:id` | 修改画板元数据（名称、文件夹、标签、收藏状态） |
-| `PUT` | `/api/scenes/:id` | 保存画板快照，携带 `baseRevision` 乐观锁校验 |
-| `PUT` | `/api/scenes/:id/thumbnail` | 保存画板缩略图预览 |
-| `DELETE` | `/api/scenes/:id` | 软删除画板至回收站 |
-| `GET` | `/api/scenes/trash` | 获取回收站画板 keyset 分页；支持同样的分页参数 |
-| `POST` | `/api/scenes/:id/restore` | 从回收站还原指定画板 |
-| `DELETE` | `/api/scenes/trash` | 彻底清空回收站 |
-| `GET` | `/api/folders` | 获取文件夹列表及各文件夹画板计数 |
-| `POST` | `/api/folders` | 新建文件夹 |
-| `PATCH` | `/api/folders/:id` | 重命名文件夹 |
-| `DELETE` | `/api/folders/:id` | 删除文件夹 |
-| `PUT` | `/api/files/:id` | 流式上传图片附件到 R2，D1 原子更新对象指针并计算 SHA-256 哈希 |
-| `GET` | `/api/files/:id` | 读取图片附件内容（支持 `ETag` 与 `If-None-Match` 协商缓存，秒级 `304 Not Modified`） |
-| `GET` | `/api/health` | D1 连通性健康检查 |
+| 请求方式 | 路由 Endpoint               | 描述                                                                                                      |
+| :------- | :-------------------------- | :-------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/auth/status`          | 查询当前密码保护状态及当前客户端登录态                                                                    |
+| `POST`   | `/api/auth/verify`          | 提交密码进行验证，成功后下发 HttpOnly 会话 Cookie                                                         |
+| `POST`   | `/api/auth/logout`          | 注销登录并销毁服务端会话                                                                                  |
+| `GET`    | `/api/scenes`               | 获取有效画板 keyset 分页；`limit` 默认为 50、最大 100，支持 `cursor/q/folder_id/favorite/sort` 筛选与排序 |
+| `POST`   | `/api/scenes`               | 创建新画板                                                                                                |
+| `GET`    | `/api/scenes/:id`           | 获取指定画板的图元数据与应用状态                                                                          |
+| `GET`    | `/api/realtime`             | Durable Object WebSocket；按 `scene_id` 订阅轻量场景/工作区变更事件                                       |
+| `PATCH`  | `/api/scenes/:id`           | 修改画板元数据（名称、文件夹、标签、收藏状态）                                                            |
+| `PUT`    | `/api/scenes/:id`           | 保存画板快照，携带 `baseRevision` 乐观锁校验                                                              |
+| `PUT`    | `/api/scenes/:id/thumbnail` | 保存画板缩略图预览                                                                                        |
+| `DELETE` | `/api/scenes/:id`           | 软删除画板至回收站                                                                                        |
+| `GET`    | `/api/scenes/trash`         | 获取回收站画板 keyset 分页；支持同样的分页参数                                                            |
+| `POST`   | `/api/scenes/:id/restore`   | 从回收站还原指定画板                                                                                      |
+| `DELETE` | `/api/scenes/trash`         | 彻底清空回收站                                                                                            |
+| `GET`    | `/api/folders`              | 获取文件夹列表及各文件夹画板计数                                                                          |
+| `POST`   | `/api/folders`              | 新建文件夹                                                                                                |
+| `PATCH`  | `/api/folders/:id`          | 重命名文件夹                                                                                              |
+| `DELETE` | `/api/folders/:id`          | 删除文件夹                                                                                                |
+| `PUT`    | `/api/files/:id`            | 流式上传图片附件到 R2，D1 原子更新对象指针并计算 SHA-256 哈希                                             |
+| `GET`    | `/api/files/:id`            | 读取图片附件内容（支持 `ETag` 与 `If-None-Match` 协商缓存，秒级 `304 Not Modified`）                      |
+| `GET`    | `/api/health`               | D1 连通性健康检查                                                                                         |
 
 ---
 

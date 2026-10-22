@@ -81,11 +81,7 @@ export const validateFolderIcon = (value: unknown) => {
 
 export const validateFolderColor = (value: unknown) => {
   if (!isValidColor(value)) {
-    throw new HttpError(
-      400,
-      "INVALID_FOLDER_COLOR",
-      COLOR_DESCRIPTION,
-    );
+    throw new HttpError(400, "INVALID_FOLDER_COLOR", COLOR_DESCRIPTION);
   }
   return value.trim().toLowerCase();
 };
@@ -141,6 +137,14 @@ export const parseStoredTags = (value: unknown) => {
   }
 };
 
+export const parseStoredTagsStrict = (value: unknown) => {
+  try {
+    return validateTags(JSON.parse(String(value)));
+  } catch {
+    throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
+  }
+};
+
 export const validateElements = (value: unknown) => {
   if (!Array.isArray(value)) {
     throw new HttpError(400, "INVALID_ELEMENTS", "图元数据必须是数组");
@@ -155,11 +159,7 @@ export const validateAppState = (value: unknown) => {
   return value;
 };
 
-export const getPathId = (
-  pathname: string,
-  prefix: string,
-  kind: IdKind,
-) => {
+export const getPathId = (pathname: string, prefix: string, kind: IdKind) => {
   const rawId = pathname.slice(prefix.length);
   if (!rawId || rawId.includes("/")) {
     throw new HttpError(400, "INVALID_ID", "无效的资源 ID");
