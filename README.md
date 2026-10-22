@@ -8,22 +8,22 @@
 
 ## ⚖️ 与原版 Excalidraw 的核心区别与优化
 
-| 对比维度 | 官方 / 社区原版 Excalidraw | 本项目（狐涂画板，Bun + SQLite） |
-| :-- | :-- | :-- |
-| **运行时与架构** | Node.js + Yarn，微服务或多容器配置 | **100% 全栈 Bun (1.4.4+) 驱动**，单进程一体化极速托管，纯 TypeScript ESM 脚本工具链 |
-| **数据持久化** | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端 | **原生 SQLite WAL 高性能持久化**，Prepared Statements、摘要列、部分索引与 keyset 分页，单卷挂载 `./data:/app/data` |
-| **多画板管理** | 单画板模式，需手动导出/导入 `.excalidraw` 文件 | **内置画板工作台**：列表/网格浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达 |
-| **图元统计** | 无图元数量感知 | **内置图元数量统计**：保存时维护去 JSON 扫描的 `element_count` / `content_bytes` 摘要列并在卡片展示 |
-| **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存 | **本地文件系统独立归档 + SHA-256 ETag / 304 + 隔离式分批垃圾回收** |
-| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据仍只访问本机/局域网服务，霞鹜文楷与思源黑体使用版本化 CDN |
-| **中文字体支持** | 默认依赖外部在线 Google Fonts 或英文字体 | **通过 jsDelivr 加载「霞鹜文楷」与「思源黑体」CJK 字体**（Unicode 子集化拆分按需加载） |
-| **身份认证安全** | 无或 Token 明文保存在浏览器本地存储 | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据 |
-| **浏览器与构建** | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置 | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
-| **多端同步** | 依赖手动刷新或高频轮询 | **Bun 原生 WebSocket topic 广播 + 自动重连 + revision 条件拉取** |
-| **前端现代体验** | 传统弹窗布局与全局媒体查询 | **原生 `<dialog>` 无障碍模型（`aria-modal`） + CSS `@container` 容器查询与 `:has()` 现代选择器** |
-| **代码工程质量** | 多套分散的编译器依赖 | **TypeScript 6.0+ 全 Monorepo 统一驱动** |
-| **全栈开发体验** | 需分别启动前端开发服务与后端 API，跨端口代理 | **`bun run dev` 一体化热重载**，单命令启动前后端，原生 SSE 毫秒级自动热刷新 |
-| **资源消耗** | 内存占用 500MB+，冷启动较慢 | **毫秒级冷启动，内存占用低至约 50~80MB** |
+| 对比维度           | 官方 / 社区原版 Excalidraw                                  | 本项目（狐涂画板，Bun + SQLite）                                                                                   |
+| :----------------- | :---------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------- |
+| **运行时与架构**   | Node.js + Yarn，微服务或多容器配置                          | **100% 全栈 Bun (1.4.4+) 驱动**，单进程一体化极速托管，纯 TypeScript ESM 脚本工具链                                |
+| **数据持久化**     | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端   | **原生 SQLite WAL 高性能持久化**，Prepared Statements、摘要列、部分索引与 keyset 分页，单卷挂载 `./data:/app/data` |
+| **多画板管理**     | 单画板模式，需手动导出/导入 `.excalidraw` 文件              | **内置画板工作台**：列表/网格浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达                               |
+| **图元统计**       | 无图元数量感知                                              | **内置图元数量统计**：保存时维护去 JSON 扫描的 `element_count` / `content_bytes` 摘要列并在卡片展示                |
+| **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存                        | **本地文件系统独立归档 + SHA-256 ETag / 304 + 隔离式分批垃圾回收**                                                 |
+| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据仍只访问本机/局域网服务，霞鹜文楷与思源黑体使用版本化 CDN                            |
+| **中文字体支持**   | 默认依赖外部在线 Google Fonts 或英文字体                    | **通过 jsDelivr 加载「霞鹜文楷」与「思源黑体」CJK 字体**（Unicode 子集化拆分按需加载）                             |
+| **身份认证安全**   | 无或 Token 明文保存在浏览器本地存储                         | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据                                                |
+| **浏览器与构建**   | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置            | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
+| **多端同步**       | 依赖手动刷新或高频轮询                                      | **Bun 原生 WebSocket topic 广播 + 自动重连 + revision 条件拉取**                                                   |
+| **前端现代体验**   | 传统弹窗布局与全局媒体查询                                  | **原生 `<dialog>` 无障碍模型（`aria-modal`） + CSS `@container` 容器查询与 `:has()` 现代选择器**                   |
+| **代码工程质量**   | 多套分散的编译器依赖                                        | **TypeScript 6.0+ 全 Monorepo 统一驱动**                                                                           |
+| **全栈开发体验**   | 需分别启动前端开发服务与后端 API，跨端口代理                | **`bun run dev` 一体化热重载**，单命令启动前后端，原生 SSE 毫秒级自动热刷新                                        |
+| **资源消耗**       | 内存占用 500MB+，冷启动较慢                                 | **毫秒级冷启动，内存占用低至约 50~80MB**                                                                           |
 
 ---
 
@@ -200,22 +200,22 @@ AUTH_PASSWORD=your-password bun run dev
 
 ## ⚙️ 环境变量速查表
 
-| 环境变量 | 默认值 | 必填项 | 说明 |
-| :-- | :-- | :-: | :-- |
-| `AUTH_PASSWORD` | _无_ | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。 |
-| `MCP_TOKEN` | _无_ | 否 | 设置后启用 `/mcp/<URL 编码后的 MCP_TOKEN>` MCP 服务，无需认证请求头。未设置时 MCP 端点关闭。 |
-| `MCP_TRACE` | `false` | 否 | 临时启用 MCP 业务处理分段计时；记录内部 API 读写、图元转换、回执构建耗时与读写次数，不记录令牌、参数或画板正文。 |
-| `ALLOW_ANONYMOUS` | `false` | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。 |
-| `TRUST_PROXY` | `false` | 否 | 仅在应用端口被可信反向代理隔离保护时设为 `true`，用于识别 HTTPS 并下发 Secure Cookie。代理需覆盖 `X-Forwarded-For` 为实际客户端 IP，且应用端口不得允许不可信客户端直连；直连部署应保持 `false`，以防伪造转发头绕过登录限流。 |
-| `PORT` | `8080` | 否 | 服务端监听端口。 |
-| `HOST` | `0.0.0.0` | 否 | 服务监听地址。默认绑定所有网络接口；需要限制为本机访问时可显式设置 `HOST=127.0.0.1`。 |
-| `DATA_DIR` | `./data` | 否 | SQLite 数据库文件与图片附件存储目录。 |
-| `AUTH_SESSION_TTL_MS` | `604800000` (7 天) | 否 | 登录会话在服务端与浏览器 Cookie 中的有效期（毫秒）。 |
-| `TRASH_RETENTION_DAYS` | `30` (30 天) | 否 | 回收站画板保留天数。设为 `0` 禁用自动清理；超期后自动物理删除并回收 SQLite 空间与关联孤立附件。 |
-| `MAX_FILE_BYTES` | `4194304` (4MB) | 否 | 单个图片/附件上传大小限制（字节）。 |
-| `MAX_SCENE_BODY_BYTES` | `16777216` (16MB) | 否 | 单个画板 JSON 数据最大请求体大小。 |
-| `MAX_IN_FLIGHT_BODY_BYTES` | `67108864` (64MB) | 否 | 所有并发请求体的聚合字节预算；不包含 JSON 解析后对象及运行时额外分配。若配置低于单请求上限，会自动提升到安全下限。启用 MCP 时，下限至少为两倍单画板请求上限，为工具内部 API 调用保留预算。 |
-| `MAX_BACKUP_BYTES` | `134217728` (128MB) | 否 | 单次数据库快照或完整备份的原始内容大小上限。 |
+| 环境变量                   | 默认值              |   必填项   | 说明                                                                                                                                                                                                                         |
+| :------------------------- | :------------------ | :--------: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AUTH_PASSWORD`            | _无_                | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。                                                                                                                                                                    |
+| `MCP_TOKEN`                | _无_                |     否     | 设置后启用 `/mcp/<URL 编码后的 MCP_TOKEN>` MCP 服务，无需认证请求头。未设置时 MCP 端点关闭。                                                                                                                                 |
+| `MCP_TRACE`                | `false`             |     否     | 临时启用 MCP 业务处理分段计时；记录内部 API 读写、图元转换、回执构建耗时与读写次数，不记录令牌、参数或画板正文。                                                                                                             |
+| `ALLOW_ANONYMOUS`          | `false`             | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。                                                                                                                                                   |
+| `TRUST_PROXY`              | `false`             |     否     | 仅在应用端口被可信反向代理隔离保护时设为 `true`，用于识别 HTTPS 并下发 Secure Cookie。代理需覆盖 `X-Forwarded-For` 为实际客户端 IP，且应用端口不得允许不可信客户端直连；直连部署应保持 `false`，以防伪造转发头绕过登录限流。 |
+| `PORT`                     | `8080`              |     否     | 服务端监听端口。                                                                                                                                                                                                             |
+| `HOST`                     | `0.0.0.0`           |     否     | 服务监听地址。默认绑定所有网络接口；需要限制为本机访问时可显式设置 `HOST=127.0.0.1`。                                                                                                                                        |
+| `DATA_DIR`                 | `./data`            |     否     | SQLite 数据库文件与图片附件存储目录。                                                                                                                                                                                        |
+| `AUTH_SESSION_TTL_MS`      | `604800000` (7 天)  |     否     | 登录会话在服务端与浏览器 Cookie 中的有效期（毫秒）。                                                                                                                                                                         |
+| `TRASH_RETENTION_DAYS`     | `30` (30 天)        |     否     | 回收站画板保留天数。设为 `0` 禁用自动清理；超期后自动物理删除并回收 SQLite 空间与关联孤立附件。                                                                                                                              |
+| `MAX_FILE_BYTES`           | `4194304` (4MB)     |     否     | 单个图片/附件上传大小限制（字节）。                                                                                                                                                                                          |
+| `MAX_SCENE_BODY_BYTES`     | `16777216` (16MB)   |     否     | 单个画板 JSON 数据最大请求体大小。                                                                                                                                                                                           |
+| `MAX_IN_FLIGHT_BODY_BYTES` | `67108864` (64MB)   |     否     | 所有并发请求体的聚合字节预算；不包含 JSON 解析后对象及运行时额外分配。若配置低于单请求上限，会自动提升到安全下限。启用 MCP 时，下限至少为两倍单画板请求上限，为工具内部 API 调用保留预算。                                   |
+| `MAX_BACKUP_BYTES`         | `134217728` (128MB) |     否     | 单次数据库快照或完整备份的原始内容大小上限。                                                                                                                                                                                 |
 
 构建版本标识统一通过 `BUILD_SHA` 注入（Docker 同名 build arg），不接受旧构建环境变量别名。默认静态产物目录仅为 `excalidraw-app/build`，自定义目录需显式指定 `STATIC_DIR`；不会再回退到旧的 `dist/build` 目录。损坏或缺失的修订号、图元数量、场景 JSON 会明确报错，不推测版本或返回空场景。
 
@@ -278,26 +278,26 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 工具按“尽量一次完成”安排：
 
-| 工具 | 用途 |
-| --- | --- |
-| `list_boards` | 名称搜索及文件夹、收藏、精确标签筛选；`view=all/recent/trash`，收藏统一使用 `favorite=true/false`（省略不限），支持排序和 `nextCursor` 分页；不存在的文件夹 ID 明确报错。 |
-| `get_board` | 默认 `compact` 只读文字、几何与连接，标签折入本体；`elements` 含样式，`summary` 元数据，`full` 内部字段，`input` 可写字段。按 `elementIds`、文字 `query`、`type` 定位，支持 `limit/offset/maxChars`，返回 `nextOffset/truncated`。 |
-| `inspect_layout` | 只读检查文字重叠、容器文字溢出、可能的元素碰撞与已绑定箭头异常；返回问题图元 ID、严重程度、建议和检测完整性，便于修改后复查。 |
-| `get_boards_batch` | 一次读取最多 20 块画板，共享字符预算，逐条返回错误或分页信息；与单读一样 `maxChars` 最少 1000，连必要元数据也放不下则明确报错；不是跨画板一致快照。 |
-| `create_board` | 一次创建并绘制，可同时设置背景、收藏、标签和 `folderId/folderName`；允许同名，省略图元创建空板。 |
-| `create_diagram` | 自动绘制流程图、时间线、分层架构箱体或多泳道关系图；支持区域、原生分组与真实绑定连线，可同时设置文件夹、标签和收藏。 |
-| `create_layout` | 创建卡片网格，指定列数、卡片宽度、间距与内边距；按内容估算行高，每张卡片使用原生分组。 |
-| `measure_text` | 创建前估算文字宽高、换行和行数，与 MCP 绘制使用同一估算器，返回 `estimated=true`。 |
-| `update_board` | 一次合并删除、新增、`updates` 原地修改和画板元数据，原子保存一个修订；顺序为删除→新增→原地修改。 |
-| `update_element` | 传 `update.id` 与待修改字段，保留图元 ID、连接和其余字段，改颜色无需回传完整 JSON。 |
-| `add_elements` / `remove_elements` | 单纯追加或按 ID 移除图元；普通绘图无需先创建空板再调用追加。 |
-| `copy_elements` | 按 ID 同板或跨板复制，自动生成新 ID、平移并重连内部箭头；返回旧 ID 到新 ID 的 `idMap`。 |
-| `list_folders` / `list_tags` | 分页读取文件夹、标签及画板计数。 |
-| `ensure_folder` / `create_folder` | 按精确名称幂等获取或创建，或明确创建新文件夹；同名歧义要求使用 ID。 |
-| `update_folder` / `delete_folder` | 修改名称、图标、颜色；删除仅把画板移至根目录，`dryRun=true` 预览，执行需 `confirm=true`，可校验 `expectedBoardCount`。 |
-| `manage_board` | 一次合并改名、收藏、移动与标签操作；单传 `tags` 默认替换，`tagMode=add/remove` 显式追加/移除，相同元数据返回 `noop`。 |
-| `delete_board` / `restore_board` | 仅软删除或还原，没有永久删除参数；回收站受 `TRASH_RETENTION_DAYS` 保留期限约束。 |
-| `batch_manage_boards` | 最多 100 项 `manage/delete/restore`，每项必传 `expectedRevision`；独立执行，返回逐项结果、`noop` 和 `partial`。 |
+| 工具                               | 用途                                                                                                                                                                                                                               |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_boards`                      | 名称搜索及文件夹、收藏、精确标签筛选；`view=all/recent/trash`，收藏统一使用 `favorite=true/false`（省略不限），支持排序和 `nextCursor` 分页；不存在的文件夹 ID 明确报错。                                                          |
+| `get_board`                        | 默认 `compact` 只读文字、几何与连接，标签折入本体；`elements` 含样式，`summary` 元数据，`full` 内部字段，`input` 可写字段。按 `elementIds`、文字 `query`、`type` 定位，支持 `limit/offset/maxChars`，返回 `nextOffset/truncated`。 |
+| `inspect_layout`                   | 只读检查文字重叠、容器文字溢出、可能的元素碰撞与已绑定箭头异常；返回问题图元 ID、严重程度、建议和检测完整性，便于修改后复查。                                                                                                      |
+| `get_boards_batch`                 | 一次读取最多 20 块画板，共享字符预算，逐条返回错误或分页信息；与单读一样 `maxChars` 最少 1000，连必要元数据也放不下则明确报错；不是跨画板一致快照。                                                                                |
+| `create_board`                     | 一次创建并绘制，可同时设置背景、收藏、标签和 `folderId/folderName`；允许同名，省略图元创建空板。                                                                                                                                   |
+| `create_diagram`                   | 自动绘制流程图、时间线、分层架构箱体或多泳道关系图；支持区域、原生分组与真实绑定连线，可同时设置文件夹、标签和收藏。                                                                                                               |
+| `create_layout`                    | 创建卡片网格，指定列数、卡片宽度、间距与内边距；按内容估算行高，每张卡片使用原生分组。                                                                                                                                             |
+| `measure_text`                     | 创建前估算文字宽高、换行和行数，与 MCP 绘制使用同一估算器，返回 `estimated=true`。                                                                                                                                                 |
+| `update_board`                     | 一次合并删除、新增、`updates` 原地修改和画板元数据，原子保存一个修订；顺序为删除→新增→原地修改。                                                                                                                                   |
+| `update_element`                   | 传 `update.id` 与待修改字段，保留图元 ID、连接和其余字段，改颜色无需回传完整 JSON。                                                                                                                                                |
+| `add_elements` / `remove_elements` | 单纯追加或按 ID 移除图元；普通绘图无需先创建空板再调用追加。                                                                                                                                                                       |
+| `copy_elements`                    | 按 ID 同板或跨板复制，自动生成新 ID、平移并重连内部箭头；返回旧 ID 到新 ID 的 `idMap`。                                                                                                                                            |
+| `list_folders` / `list_tags`       | 分页读取文件夹、标签及画板计数。                                                                                                                                                                                                   |
+| `ensure_folder` / `create_folder`  | 按精确名称幂等获取或创建，或明确创建新文件夹；同名歧义要求使用 ID。                                                                                                                                                                |
+| `update_folder` / `delete_folder`  | 修改名称、图标、颜色；删除仅把画板移至根目录，`dryRun=true` 预览，执行需 `confirm=true`，可校验 `expectedBoardCount`。                                                                                                             |
+| `manage_board`                     | 一次合并改名、收藏、移动与标签操作；单传 `tags` 默认替换，`tagMode=add/remove` 显式追加/移除，相同元数据返回 `noop`。                                                                                                              |
+| `delete_board` / `restore_board`   | 仅软删除或还原，没有永久删除参数；回收站受 `TRASH_RETENTION_DAYS` 保留期限约束。                                                                                                                                                   |
+| `batch_manage_boards`              | 最多 100 项 `manage/delete/restore`，每项必传 `expectedRevision`；独立执行，返回逐项结果、`noop` 和 `partial`。                                                                                                                    |
 
 每次最多传入 1,000 个图元描述，接受矩形、椭圆、菱形、文字、直线和箭头。形状的 `text` 自动生成绑定文字，回执的 `addedCount` 包含这些文字；需要 ID 时传 `responseMode=ids`，按本体与自动文字分别返回。可指定稳定 `id`，新建箭头只传 `startBinding/endBinding.elementId` 即自动连接同批或已有节点，无需计算端点；自连接或同中心节点须显式传坐标。移动/缩放节点时保留连接；显式路径统一为 `x/y` 原点加相对 `points`，支持多段折线。删除形状同时删除绑定文字并清理引用。
 
@@ -335,11 +335,29 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
     { "id": "data", "title": "数据模块", "parentId": "platform" }
   ],
   "nodes": [
-    { "id": "gateway", "title": "API 网关", "body": "统一鉴权与限流", "regionId": "access" },
-    { "id": "worker", "title": "任务服务", "body": "处理业务任务", "regionId": "compute" },
-    { "id": "cache", "title": "缓存服务", "body": "共享结果缓存", "regionId": "data" }
+    {
+      "id": "gateway",
+      "title": "API 网关",
+      "body": "统一鉴权与限流",
+      "regionId": "access"
+    },
+    {
+      "id": "worker",
+      "title": "任务服务",
+      "body": "处理业务任务",
+      "regionId": "compute"
+    },
+    {
+      "id": "cache",
+      "title": "缓存服务",
+      "body": "共享结果缓存",
+      "regionId": "data"
+    }
   ],
-  "edges": [{ "from": "gateway", "to": "worker" }, { "from": "worker", "to": "cache" }]
+  "edges": [
+    { "from": "gateway", "to": "worker" },
+    { "from": "worker", "to": "cache" }
+  ]
 }
 ```
 
@@ -349,14 +367,27 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 {
   "name": "订单跨系统流程",
   "layout": "swimlane",
-  "regions": [{ "id": "web", "title": "客户端" }, { "id": "service", "title": "业务服务" }, { "id": "storage", "title": "数据存储" }],
+  "regions": [
+    { "id": "web", "title": "客户端" },
+    { "id": "service", "title": "业务服务" },
+    { "id": "storage", "title": "数据存储" }
+  ],
   "nodes": [
     { "id": "submit", "title": "提交订单", "regionId": "web" },
-    { "id": "validate", "title": "校验库存", "body": "库存不足时返回客户端", "regionId": "service" },
+    {
+      "id": "validate",
+      "title": "校验库存",
+      "body": "库存不足时返回客户端",
+      "regionId": "service"
+    },
     { "id": "persist", "title": "保存订单", "regionId": "storage" },
     { "id": "notify", "title": "显示结果", "regionId": "web" }
   ],
-  "edges": [{ "from": "submit", "to": "validate" }, { "from": "validate", "to": "persist" }, { "from": "persist", "to": "notify" }]
+  "edges": [
+    { "from": "submit", "to": "validate" },
+    { "from": "validate", "to": "persist" },
+    { "from": "persist", "to": "notify" }
+  ]
 }
 ```
 
@@ -365,7 +396,25 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 复杂卡片排版可使用 `create_layout`，当前支持 `mode="grid"`。例如：
 
 ```json
-{"name":"知识卡片","columns":2,"cardWidth":320,"gap":24,"padding":20,"cards":[{"id":"first","title":"概念","body":"固定宽度换行，按内容估算高度。"},{"id":"second","title":"实践","body":"背景、标题和正文共享原生分组。"}]}
+{
+  "name": "知识卡片",
+  "columns": 2,
+  "cardWidth": 320,
+  "gap": 24,
+  "padding": 20,
+  "cards": [
+    {
+      "id": "first",
+      "title": "概念",
+      "body": "固定宽度换行，按内容估算高度。"
+    },
+    {
+      "id": "second",
+      "title": "实践",
+      "body": "背景、标题和正文共享原生分组。"
+    }
+  ]
+}
 ```
 
 每行高度以该行最高卡片计算，返回 `cards` 中每张卡片的 `groupId/elementIds` 与几何位置。独立绘制也可在图元描述中传 `groupId`，或用 `groupIds` 指定最多 8 层原生嵌套分组；相同分组在编辑器中可整体拖动。更新 `groupId:null` 或 `groupIds:[]` 解除分组，二者不能同时传。绑定文字继承所属形状的分组。`copy_elements` 为副本生成新分组，返回 `groupIdMap`，避免副本与原件联动；按 ID 的 MCP 修改与复制不会自动扩展到整个分组，需要整体移动时传卡片的全部 `elementIds`。
@@ -381,7 +430,15 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 创建复杂画板后，可以先检查几何布局，再按问题图元 ID 修改并复查：
 
 ```json
-{"boardId":"画板ID","checks":["text_overlap","text_overflow","element_collision","arrow_connection"]}
+{
+  "boardId": "画板ID",
+  "checks": [
+    "text_overlap",
+    "text_overflow",
+    "element_collision",
+    "arrow_connection"
+  ]
+}
 ```
 
 调用 `inspect_layout` 时省略 `checks` 会检查全部四项。返回 `boardId/revision`、`summary.errors/warnings` 和 `issues`，每条问题包含 `type/severity/elementIds/message`，并可包含 `suggestion`。将涉及的 ID 用于 `update_board.updates`，保存时使用检查结果的 `revision` 作为 `expectedRevision`，再调用检查确认。检查本身不改变图元或修订号，text 摘要显示错误、警告、完成情况及容器跳过数量，不重复业务 JSON。
@@ -471,10 +528,29 @@ bun scripts/benchmark-mcp.ts
   "favorite": true,
   "tags": ["流程"],
   "elements": [
-    { "id": "start", "type": "rectangle", "x": 0, "y": 0, "width": 180, "height": 80, "text": "开始" },
-    { "id": "decision", "type": "diamond", "x": 300, "y": 100, "width": 160, "height": 80, "text": "是否完成" },
-    { "type": "arrow",
-      "startBinding": { "elementId": "start" }, "endBinding": { "elementId": "decision" } }
+    {
+      "id": "start",
+      "type": "rectangle",
+      "x": 0,
+      "y": 0,
+      "width": 180,
+      "height": 80,
+      "text": "开始"
+    },
+    {
+      "id": "decision",
+      "type": "diamond",
+      "x": 300,
+      "y": 100,
+      "width": 160,
+      "height": 80,
+      "text": "是否完成"
+    },
+    {
+      "type": "arrow",
+      "startBinding": { "elementId": "start" },
+      "endBinding": { "elementId": "decision" }
+    }
   ]
 }
 ```
@@ -482,7 +558,10 @@ bun scripts/benchmark-mcp.ts
 只修改节点颜色时调用 `update_element`，无需删除重建：
 
 ```json
-{ "boardId": "返回的画板 ID", "update": { "id": "start", "strokeColor": "#315f4c", "opacity": 80.5 } }
+{
+  "boardId": "返回的画板 ID",
+  "update": { "id": "start", "strokeColor": "#315f4c", "opacity": 80.5 }
+}
 ```
 
 MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提交到仓库或暴露在浏览器端代码中。
@@ -549,30 +628,30 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
 
 ## 📡 后端 API 接口概览
 
-| 请求方式 | 路由 Endpoint | 描述 |
-| :-- | :-- | :-- |
-| `GET` | `/api/auth/status` | 查询当前密码保护状态及当前客户端登录态 |
-| `POST` | `/api/auth/verify` | 提交密码进行验证，成功后下发 HttpOnly 会话 Cookie |
-| `POST` | `/api/auth/logout` | 注销登录并销毁服务端会话 |
-| `GET` | `/api/scenes` | 获取有效画板 keyset 分页；`limit` 默认为 50、最大 100，支持 `cursor/q/folder_id/favorite/sort` 筛选与排序 |
-| `POST` | `/api/scenes` | 创建新画板 |
-| `GET` | `/api/scenes/:id` | 获取指定画板的图元数据与应用状态 |
-| `GET` | `/api/realtime` | 同源 Bun 原生 WebSocket；按 `scene_id` 订阅轻量场景/工作区变更事件 |
-| `PATCH` | `/api/scenes/:id` | 修改画板元数据（名称、文件夹、标签、收藏状态） |
-| `PUT` | `/api/scenes/:id` | 保存画板快照，携带 `baseRevision` 乐观锁校验 |
-| `PUT` | `/api/scenes/:id/thumbnail` | 保存画板缩略图预览 |
-| `DELETE` | `/api/scenes/:id` | 软删除画板至回收站 |
-| `GET` | `/api/scenes/trash` | 获取回收站画板 keyset 分页；支持同样的分页参数 |
-| `POST` | `/api/scenes/:id/restore` | 从回收站还原指定画板 |
-| `DELETE` | `/api/scenes/trash` | 彻底清空回收站 |
-| `GET` | `/api/folders` | 获取文件夹列表及各文件夹画板计数 |
-| `POST` | `/api/folders` | 新建文件夹 |
-| `PATCH` | `/api/folders/:id` | 重命名文件夹 |
-| `DELETE` | `/api/folders/:id` | 删除文件夹 |
-| `PUT` | `/api/files/:id` | 上传图片附件到本地文件系统 (`data/files/`)，自动计算 SHA-256 哈希 |
-| `GET` | `/api/files/:id` | 读取图片附件内容（支持 `ETag` 与 `If-None-Match` 协商缓存，秒级 `304 Not Modified`） |
-| `GET` | `/api/backup/full` | 导出包含 SQLite 数据库与全部图片附件的完整 `.tar` 备份 |
-| `GET` | `/api/health` | 容器健康检查（数据库响应性与目录可写性） |
+| 请求方式 | 路由 Endpoint               | 描述                                                                                                      |
+| :------- | :-------------------------- | :-------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/auth/status`          | 查询当前密码保护状态及当前客户端登录态                                                                    |
+| `POST`   | `/api/auth/verify`          | 提交密码进行验证，成功后下发 HttpOnly 会话 Cookie                                                         |
+| `POST`   | `/api/auth/logout`          | 注销登录并销毁服务端会话                                                                                  |
+| `GET`    | `/api/scenes`               | 获取有效画板 keyset 分页；`limit` 默认为 50、最大 100，支持 `cursor/q/folder_id/favorite/sort` 筛选与排序 |
+| `POST`   | `/api/scenes`               | 创建新画板                                                                                                |
+| `GET`    | `/api/scenes/:id`           | 获取指定画板的图元数据与应用状态                                                                          |
+| `GET`    | `/api/realtime`             | 同源 Bun 原生 WebSocket；按 `scene_id` 订阅轻量场景/工作区变更事件                                        |
+| `PATCH`  | `/api/scenes/:id`           | 修改画板元数据（名称、文件夹、标签、收藏状态）                                                            |
+| `PUT`    | `/api/scenes/:id`           | 保存画板快照，携带 `baseRevision` 乐观锁校验                                                              |
+| `PUT`    | `/api/scenes/:id/thumbnail` | 保存画板缩略图预览                                                                                        |
+| `DELETE` | `/api/scenes/:id`           | 软删除画板至回收站                                                                                        |
+| `GET`    | `/api/scenes/trash`         | 获取回收站画板 keyset 分页；支持同样的分页参数                                                            |
+| `POST`   | `/api/scenes/:id/restore`   | 从回收站还原指定画板                                                                                      |
+| `DELETE` | `/api/scenes/trash`         | 彻底清空回收站                                                                                            |
+| `GET`    | `/api/folders`              | 获取文件夹列表及各文件夹画板计数                                                                          |
+| `POST`   | `/api/folders`              | 新建文件夹                                                                                                |
+| `PATCH`  | `/api/folders/:id`          | 重命名文件夹                                                                                              |
+| `DELETE` | `/api/folders/:id`          | 删除文件夹                                                                                                |
+| `PUT`    | `/api/files/:id`            | 上传图片附件到本地文件系统 (`data/files/`)，自动计算 SHA-256 哈希                                         |
+| `GET`    | `/api/files/:id`            | 读取图片附件内容（支持 `ETag` 与 `If-None-Match` 协商缓存，秒级 `304 Not Modified`）                      |
+| `GET`    | `/api/backup/full`          | 导出包含 SQLite 数据库与全部图片附件的完整 `.tar` 备份                                                    |
+| `GET`    | `/api/health`               | 容器健康检查（数据库响应性与目录可写性）                                                                  |
 
 ---
 

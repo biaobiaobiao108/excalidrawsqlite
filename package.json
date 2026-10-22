@@ -38,6 +38,8 @@
     "build": "bun run build:frontend && bun run build:server",
     "build:frontend": "bun --cwd ./excalidraw-app build",
     "build:server": "bun scripts/build-server.ts",
+    "format": "bun fmt --changed",
+    "format:check": "bun fmt --check --changed",
     "test": "bun test --check --max-concurrency=1",
     "test:unit": "bun test --check --max-concurrency=1 ./tests/unit",
     "test:server": "bun test --check --max-concurrency=1 ./tests/server",

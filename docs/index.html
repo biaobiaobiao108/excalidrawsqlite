@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -24,8 +24,17 @@
     />
     <meta property="og:type" content="website" />
 
-    <link rel="icon" type="image/png" sizes="32x32" href="assets/site-icon-v2-32x32.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="assets/site-apple-touch-icon-v2.png" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="assets/site-icon-v2-32x32.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="assets/site-apple-touch-icon-v2.png"
+    />
 
     <!-- Landing-page typography: Assistant, Caveat and Noto Sans SC via Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -61,10 +70,12 @@
         --code-bg: #1e1e24;
         --code-color: #e4e4e7;
 
-        --shadow-island: 0px 0px 1px 0px rgba(0, 0, 0, 0.17),
+        --shadow-island:
+          0px 0px 1px 0px rgba(0, 0, 0, 0.17),
           0px 0px 3px 0px rgba(0, 0, 0, 0.08),
           0px 7px 14px 0px rgba(0, 0, 0, 0.05);
-        --shadow-island-hover: 0px 0px 2px 0px rgba(0, 0, 0, 0.2),
+        --shadow-island-hover:
+          0px 0px 2px 0px rgba(0, 0, 0, 0.2),
           0px 4px 8px 0px rgba(0, 0, 0, 0.1),
           0px 12px 24px 0px rgba(0, 0, 0, 0.08);
         --shadow-modal: 0px 20px 40px rgba(0, 0, 0, 0.12);
@@ -74,8 +85,9 @@
         --radius-lg: 14px;
         --radius-pill: 9999px;
 
-        --font-ui: "Assistant", "Noto Sans SC", -apple-system,
-          BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        --font-ui:
+          "Assistant", "Noto Sans SC", -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, sans-serif;
         --font-sketch: "Caveat", "Virgil", cursive, "Noto Sans SC", sans-serif;
       }
 
@@ -103,9 +115,11 @@
         --code-bg: #18181b;
         --code-color: #f4f4f5;
 
-        --shadow-island: 0px 0px 1px 0px rgba(0, 0, 0, 0.6),
+        --shadow-island:
+          0px 0px 1px 0px rgba(0, 0, 0, 0.6),
           0px 4px 12px 0px rgba(0, 0, 0, 0.35);
-        --shadow-island-hover: 0px 0px 2px 0px rgba(0, 0, 0, 0.8),
+        --shadow-island-hover:
+          0px 0px 2px 0px rgba(0, 0, 0, 0.8),
           0px 8px 24px 0px rgba(0, 0, 0, 0.45);
         --shadow-modal: 0px 20px 40px rgba(0, 0, 0, 0.6);
       }
@@ -114,7 +128,8 @@
         box-sizing: border-box;
         margin: 0;
         padding: 0;
-        transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+        transition:
+          background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
           border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
           color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
       }
@@ -263,7 +278,9 @@
         font-size: 0.92rem;
         font-weight: 600;
         color: var(--text-color-secondary);
-        transition: color 0.15s ease, transform 0.15s ease;
+        transition:
+          color 0.15s ease,
+          transform 0.15s ease;
         position: relative;
       }
       .nav-link:hover {
@@ -382,7 +399,8 @@
         box-shadow: var(--shadow-island-hover);
         padding: 24px 20px 20px;
         position: relative;
-        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+        transition:
+          transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
           box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
@@ -453,7 +471,8 @@
       .reveal-on-scroll {
         opacity: 0;
         transform: translateY(24px);
-        transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+        transition:
+          opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
           transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
         will-change: opacity, transform;
       }
@@ -732,8 +751,8 @@
         border-radius: var(--radius-md);
         padding: 16px 20px;
         position: relative;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-          monospace;
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         font-size: 0.9rem;
         overflow-x: auto;
         margin: 12px 0 16px;
@@ -876,7 +895,13 @@
     <div class="header-wrapper">
       <header class="header-island">
         <a href="#" class="brand">
-          <img class="brand-logo-image" src="assets/brand-icon.jpg" alt="" width="28" height="28" />
+          <img
+            class="brand-logo-image"
+            src="assets/brand-icon.jpg"
+            alt=""
+            width="28"
+            height="28"
+          />
           <span
             >狐涂画板
             <span class="badge-sync"
@@ -1581,7 +1606,8 @@
             <div class="feature-icon-box">🧼</div>
             <h3>纯净私有化与零遥测</h3>
             <p>
-              自托管应用本身不加载第三方跟踪脚本、Google Fonts 或 Sentry，也不跳转
+              自托管应用本身不加载第三方跟踪脚本、Google Fonts 或
+              Sentry，也不跳转
               官方云端。默认路径仅访问本机或局域网服务，守护数据主权。本介绍页是
               独立静态页面，其展示字体通过 Google Fonts 加载。
             </p>
@@ -1651,7 +1677,8 @@
                 <td>Redis / Postgres / 仅浏览器本地存储</td>
                 <td>
                   <span class="badge-true"
-                    >✓ 原生 SQLite WAL (Prepared Statements 预编译) + 本地附件 ETag 协商缓存</span
+                    >✓ 原生 SQLite WAL (Prepared Statements 预编译) + 本地附件
+                    ETag 协商缓存</span
                   >
                 </td>
               </tr>
@@ -1669,7 +1696,8 @@
                 <td>包含外部打点遥测、Sentry 上报与 Google Fonts</td>
                 <td>
                   <span class="badge-true"
-                    >✓ 应用本身无 Google Fonts、零外链打点、本地霞鹜文楷字体包</span
+                    >✓ 应用本身无 Google
+                    Fonts、零外链打点、本地霞鹜文楷字体包</span
                   >
                 </td>
               </tr>
@@ -1719,11 +1747,7 @@
           <div class="tab-content-pane active" id="pane-docker">
             <p><strong>推荐使用 GHCR 预构建镜像一键启动：</strong></p>
             <div class="code-block">
-              <button
-                class="copy-code-btn"
-              >
-                复制配置与启动命令
-              </button>
+              <button class="copy-code-btn">复制配置与启动命令</button>
               <pre><code>mkdir -p ./data
 
 cat &lt;&lt; 'EOF' &gt; docker-compose.yml
@@ -1744,7 +1768,12 @@ EOF
 docker compose up -d</code></pre>
             </div>
             <p>
-              服务启动后访问：<code>http://localhost:8080</code>。示例只绑定本机地址；若改为局域网直连，请保持 <code>TRUST_PROXY=false</code>。使用 HTTPS 反向代理时，仅当应用端口只能由可信代理访问，且代理覆盖 <code>X-Forwarded-For</code> 为真实客户端 IP 后，才设置 <code>TRUST_PROXY=true</code>；否则客户端可伪造转发地址绕过登录限流。
+              服务启动后访问：<code>http://localhost:8080</code>。示例只绑定本机地址；若改为局域网直连，请保持
+              <code>TRUST_PROXY=false</code>。使用 HTTPS
+              反向代理时，仅当应用端口只能由可信代理访问，且代理覆盖
+              <code>X-Forwarded-For</code> 为真实客户端 IP 后，才设置
+              <code>TRUST_PROXY=true</code
+              >；否则客户端可伪造转发地址绕过登录限流。
             </p>
           </div>
 
@@ -1883,13 +1912,21 @@ bun run dev</code></pre>
                     <td><code>ALLOW_ANONYMOUS</code></td>
                     <td><code>false</code></td>
                     <td>
-                      设为 <code>true</code> 时允许免密匿名访问。生产环境未设置密码时必须显式开启。
+                      设为
+                      <code>true</code>
+                      时允许免密匿名访问。生产环境未设置密码时必须显式开启。
                     </td>
                   </tr>
                   <tr>
                     <td><code>TRUST_PROXY</code></td>
                     <td><code>false</code></td>
-                    <td>默认直连保持 <code>false</code>。只有应用端口被可信代理隔离保护时才设为 <code>true</code>；代理须覆盖 <code>X-Forwarded-For</code> 为真实客户端 IP，否则可能伪造转发地址绕过登录限流。</td>
+                    <td>
+                      默认直连保持
+                      <code>false</code>。只有应用端口被可信代理隔离保护时才设为
+                      <code>true</code>；代理须覆盖
+                      <code>X-Forwarded-For</code> 为真实客户端
+                      IP，否则可能伪造转发地址绕过登录限流。
+                    </td>
                   </tr>
                   <tr>
                     <td><code>PORT</code></td>
@@ -1899,7 +1936,10 @@ bun run dev</code></pre>
                   <tr>
                     <td><code>HOST</code></td>
                     <td><code>0.0.0.0</code></td>
-                    <td>默认绑定所有网络接口；需要限制为本机访问时可显式设置 <code>HOST=127.0.0.1</code>。</td>
+                    <td>
+                      默认绑定所有网络接口；需要限制为本机访问时可显式设置
+                      <code>HOST=127.0.0.1</code>。
+                    </td>
                   </tr>
                   <tr>
                     <td><code>DATA_DIR</code></td>
