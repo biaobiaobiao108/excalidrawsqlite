@@ -518,7 +518,7 @@ export const createMcpRequestHandler = (
             const layout = buildDrawingLayout(args);
             return { layout, drawing: createDrawingBatch(layout.elements) };
           });
-          const folder = await resolveFolder(args, api);
+          const folder = await resolveFolder(args, runtime, api);
           const board = await api<{ id: string; name: string; revision: number; idempotentReplay?: boolean }>("/api/scenes", "POST", {
             name: args.name, elements: drawing.elements, appState: { viewBackgroundColor: "#ffffff" },
             ...(folder === undefined ? {} : { folder_id: folder }), tags: args.tags, favorite: args.favorite,
@@ -556,7 +556,7 @@ export const createMcpRequestHandler = (
             const replay = creationReplay(idempotencyKey, intent);
             if (replay) return replayReceipt(replay);
             const { elements: drawing, created, autoBinding } = measureMcpPhase("transformMs", () => bindCreated(createDrawingBatch(elements), autoBind));
-            const resolvedFolder = await resolveFolder({ folderId, folderName }, api);
+            const resolvedFolder = await resolveFolder({ folderId, folderName }, runtime, api);
             const board = await api<{ id: string; name: string; revision: number; idempotentReplay?: boolean }>(
               "/api/scenes",
               "POST",
@@ -583,7 +583,7 @@ export const createMcpRequestHandler = (
             const diagram = buildDiagram(args);
             return { diagram, drawing: createDrawingBatch(diagram.elements) };
           });
-          const folder = await resolveFolder(args, api);
+          const folder = await resolveFolder(args, runtime, api);
           const board = await api<{ id: string; name: string; revision: number; idempotentReplay?: boolean }>("/api/scenes", "POST", {
             name: args.name, elements: drawing.elements, appState: { viewBackgroundColor: "#ffffff" },
             ...(folder === undefined ? {} : { folder_id: folder }), tags: args.tags, favorite: args.favorite,
@@ -765,7 +765,7 @@ export const createMcpRequestHandler = (
                 cascadeRemovedCount: remaining.cascadeRemovedCount, notFoundIds: remaining.notFoundIds,
                 updatedCount: 0, noop: true, url: boardUrl(boardId) });
             }
-            const resolvedFolder = await resolveFolder({ folderId, folderName }, api);
+            const resolvedFolder = await resolveFolder({ folderId, folderName }, runtime, api);
             const changedIds = [...created.map((element) => element.id), ...(updates || []).map((update) => update.id)];
             const overlaps = changedIds.length ? inspectDrawingOverlaps(current.elements, updated.elements, changedIds) : {};
             const saved = await api<{ revision: number }>(`/api/scenes/${encodeURIComponent(boardId)}`, "PUT", {

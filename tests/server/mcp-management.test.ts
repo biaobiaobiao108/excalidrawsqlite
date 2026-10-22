@@ -60,6 +60,19 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     expect(folder.createdAt).toBeGreaterThan(0);
     const folderList = await call("list_folders", {});
     expect(folderList.folders[0]).toMatchObject({ id: folder.id, boardCount: 0 });
+    const pagedFolderNames = ["mcp-folder-page-a", "mcp-folder-page-b", "mcp-folder-page-c"];
+    for (const name of pagedFolderNames) await call("create_folder", { name });
+    const firstFolderPage = await call("list_folders", { query: "mcp-folder-page-", limit: 2 });
+    expect(firstFolderPage.folders.map((item: { name: string }) => item.name)).toEqual(pagedFolderNames.slice(0, 2));
+    expect(firstFolderPage.nextCursor).toBe(firstFolderPage.folders[1].id);
+    const secondFolderPage = await call("list_folders", {
+      query: "mcp-folder-page-",
+      limit: 2,
+      cursor: firstFolderPage.nextCursor,
+    });
+    expect(secondFolderPage.folders.map((item: { name: string }) => item.name)).toEqual(pagedFolderNames.slice(2));
+    expect(secondFolderPage.nextCursor).toBeNull();
+    expect(await call("list_folders", { cursor: "missing-folder-cursor" })).toMatchObject({ ok: false, error: { code: "INVALID_CURSOR" } });
     expect(await call("ensure_folder", { name: "项目", color: "#abcdef", icon: "star" })).toMatchObject({ id: folder.id, created: false, color: "#123456", icon: "book" });
     expect(await call("update_folder", { folderId: folder.id, color: "#654321" })).toMatchObject({ ok: true, name: "项目", color: "#654321" });
     for (const color of ["#f00", "#f008", "#ff000080", "red", "transparent"]) {

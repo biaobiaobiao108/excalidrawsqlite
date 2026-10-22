@@ -25,15 +25,31 @@ const iconSchema = z.enum(["folder", "book", "palette", "lightbulb", "layers", "
 const tagsSchema = z.array(z.string().trim().min(1).max(32)).max(12);
 const expectedRevisionSchema = z.number().int().positive().optional().describe("读取时修订号；省略则基于最新版本管理，冲突需重新读取判断");
 
-async function findFolder(input: { folderId?: string | null; folderName?: string }, api: ManagementApi) {
+const folderByIdCache = new WeakMap<ServerRuntime, ReturnType<ServerRuntime["db"]["query"]>>();
+const folderByNameCache = new WeakMap<ServerRuntime, ReturnType<ServerRuntime["db"]["query"]>>();
+const folderCursorCache = new WeakMap<ServerRuntime, ReturnType<ServerRuntime["db"]["query"]>>();
+const folderPageCache = new WeakMap<ServerRuntime, ReturnType<ServerRuntime["db"]["query"]>>();
+
+function findFolder(input: { folderId?: string | null; folderName?: string }, runtime: ServerRuntime) {
   if (input.folderId === undefined && input.folderName === undefined) throw new HttpError(400, "INVALID_FOLDER_SELECTOR", "请提供 folderId 或 folderName");
   if (input.folderId !== undefined && input.folderName !== undefined) throw new HttpError(400, "INVALID_FOLDER", "folderId 与 folderName 不能同时传入");
-  const folders = await api<Folder[]>("/api/folders", "GET");
-  return folders.find((folder) => input.folderId !== undefined ? folder.id === input.folderId : folder.name === input.folderName);
+  const value = input.folderId !== undefined ? input.folderId : input.folderName;
+  if (value === undefined) throw new HttpError(400, "INVALID_FOLDER_SELECTOR", "请提供 folderId 或 folderName");
+  const cache = input.folderId !== undefined ? folderByIdCache : folderByNameCache;
+  let statement = cache.get(runtime);
+  if (!statement) {
+    const selector = input.folderId !== undefined ? "folders.id = ?" : "folders.name = ?";
+    statement = runtime.db.query(`SELECT folders.id, folders.name, folders.icon, folders.color,
+      folders.created_at, folders.updated_at,
+      (SELECT COUNT(*) FROM scenes WHERE scenes.folder_id = folders.id AND scenes.deleted_at IS NULL) AS scene_count
+      FROM folders WHERE ${selector}`);
+    cache.set(runtime, statement);
+  }
+  return (statement.get(value) as Folder | undefined) || undefined;
 }
 
-async function ensureNamedFolder(args: { name: string; icon?: string; color?: string }, api: ManagementApi) {
-  const existing = await findFolder({ folderName: args.name }, api);
+async function ensureNamedFolder(args: { name: string; icon?: string; color?: string }, runtime: ServerRuntime, api: ManagementApi) {
+  const existing = findFolder({ folderName: args.name }, runtime);
   if (existing) return { folder: existing, created: false };
   try {
     return { folder: await api<Folder>("/api/folders", "POST", args), created: true };
@@ -41,19 +57,19 @@ async function ensureNamedFolder(args: { name: string; icon?: string; color?: st
     // The route checks names synchronously inside the write transaction. If another
     // request won after our lookup, resolve that folder instead of creating a duplicate.
     if (!(error instanceof HttpError) || error.code !== "FOLDER_NAME_EXISTS") throw error;
-    const folder = await findFolder({ folderName: args.name }, api);
+    const folder = findFolder({ folderName: args.name }, runtime);
     if (!folder) throw error;
     return { folder, created: false };
   }
 }
 
 /** Creating or moving a board can ensure its named folder in the same tool call. */
-export async function resolveFolder(input: { folderId?: string | null; folderName?: string }, api: ManagementApi): Promise<string | null | undefined> {
+export async function resolveFolder(input: { folderId?: string | null; folderName?: string }, runtime: ServerRuntime, api: ManagementApi): Promise<string | null | undefined> {
   if (input.folderId === undefined && input.folderName === undefined) return undefined;
   if (input.folderId === null && input.folderName === undefined) return null;
-  const folder = await findFolder(input, api);
+  const folder = findFolder(input, runtime);
   if (folder) return folder.id;
-  if (input.folderName !== undefined) return (await ensureNamedFolder({ name: input.folderName }, api)).folder.id;
+  if (input.folderName !== undefined) return (await ensureNamedFolder({ name: input.folderName }, runtime, api)).folder.id;
   throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
 }
 
@@ -100,7 +116,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
     if (current.deleted_at !== null) throw new HttpError(404, "SCENE_NOT_FOUND", "画板已删除，请先 restore_board");
     if (input.tags === undefined && input.tagMode !== undefined) throw new HttpError(400, "INVALID_TAGS", "指定 tagMode 时必须同时提供 tags");
     if (![input.name, input.favorite, input.folderId, input.folderName, input.tags].some((value) => value !== undefined)) throw new HttpError(400, "INVALID_METADATA", "至少提供一项改名、收藏、移动或标签操作");
-    const folderId = await resolveFolder(input, api);
+    const folderId = await resolveFolder(input, runtime, api);
     const tagMode = input.tagMode ?? "replace";
     const tags = input.tags === undefined ? current.tags : validateTags(tagMode === "replace" ? input.tags : tagMode === "add" ? [...new Set([...current.tags, ...input.tags])] : current.tags.filter((tag) => !input.tags!.includes(tag)));
     const metadata = { name: input.name ?? current.name, favorite: input.favorite ?? current.favorite, folder_id: folderId === undefined ? current.folder_id : folderId, tags };
@@ -117,11 +133,40 @@ export function registerManagementTools(server: McpServer, context: Context) {
     return { ...board, boardId, noop, deleted, url: boardUrl(boardId) };
   };
   server.registerTool("list_folders", { description: "分页列出文件夹及画板数量，支持名称搜索；已有名称时可直接传给 create_board/manage_board 无需先查询。", inputSchema: compactMcpSchema(z.strictObject({ query: z.string().max(80).optional(), cursor: z.string().min(1).max(128).optional(), limit: z.number().int().min(1).max(100).default(50) })), annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async ({ query, cursor, limit }) => {
-    const folders = (await api<Folder[]>("/api/folders", "GET")).filter((folder) => !query || folder.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
-    const offset = cursor ? folders.findIndex((folder) => folder.id === cursor) + 1 : 0;
-    if (cursor && offset === 0) throw new HttpError(400, "INVALID_CURSOR", "文件夹分页游标无效，请重新从第一页读取");
-    const page = folders.slice(offset, offset + limit);
-    return result({ folders: page, nextCursor: offset + limit < folders.length ? page.at(-1)!.id : null });
+    let pageStatement = folderPageCache.get(runtime);
+    if (!pageStatement) {
+      pageStatement = runtime.db.query(`SELECT folders.id, folders.name, folders.icon, folders.color,
+        folders.created_at, folders.updated_at,
+        (SELECT COUNT(*) FROM scenes WHERE scenes.folder_id = folders.id AND scenes.deleted_at IS NULL) AS scene_count
+        FROM folders
+        WHERE (? IS NULL OR instr(lower(folders.name), lower(?)) > 0)
+          AND (? IS NULL OR folders.name COLLATE NOCASE > ? COLLATE NOCASE
+            OR (folders.name COLLATE NOCASE = ? COLLATE NOCASE AND folders.id > ?))
+        ORDER BY folders.name COLLATE NOCASE, folders.id
+        LIMIT ?`);
+      folderPageCache.set(runtime, pageStatement);
+    }
+    let cursorName: string | null = null;
+    if (cursor) {
+      let cursorStatement = folderCursorCache.get(runtime);
+      if (!cursorStatement) {
+        cursorStatement = runtime.db.query("SELECT name FROM folders WHERE id = ?");
+        folderCursorCache.set(runtime, cursorStatement);
+      }
+      cursorName = (cursorStatement.get(cursor) as { name?: string } | undefined)?.name ?? null;
+      if (cursorName === null) throw new HttpError(400, "INVALID_CURSOR", "文件夹分页游标无效，请重新从第一页读取");
+    }
+    const rows = pageStatement.all(
+      query || null,
+      query || null,
+      cursorName,
+      cursorName,
+      cursorName,
+      cursor || "",
+      limit + 1,
+    ) as Folder[];
+    const folders = rows.slice(0, limit);
+    return result({ folders, nextCursor: rows.length > limit ? folders.at(-1)!.id : null });
   }, "list_folders"));
   let tagQuery = tagQueryCache.get(runtime);
   if (!tagQuery) {
@@ -137,18 +182,18 @@ export function registerManagementTools(server: McpServer, context: Context) {
   const folderCreateSchema = z.strictObject({ name: z.string().trim().min(1).max(80), icon: iconSchema.optional(), color: colorSchema.optional() });
   server.registerTool("create_folder", { description: "创建文件夹并返回 ID；名称去除首尾空白、区分大小写，已存在时报 FOLDER_NAME_EXISTS。需要复用时使用 ensure_folder。", inputSchema: compactMcpSchema(folderCreateSchema), annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: false } }, safeTool(async (args) => result(await api<Folder>("/api/folders", "POST", args)), "create_folder"));
   server.registerTool("ensure_folder", { description: "按去除首尾空白后的精确名称查找或创建文件夹（区分大小写），返回 created；已有文件夹保持颜色和图标。", inputSchema: compactMcpSchema(folderCreateSchema), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
-    const { folder, created } = await ensureNamedFolder(args, api);
+    const { folder, created } = await ensureNamedFolder(args, runtime, api);
     return result({ ...folder, created });
   }, "ensure_folder"));
   server.registerTool("update_folder", { description: "改名、颜色和图标可在一次调用中合并；folderId/folderName 二选一用于精确定位。", inputSchema: compactMcpSchema(z.strictObject({ ...folderFields, name: z.string().trim().min(1).max(80).optional(), icon: iconSchema.optional(), color: colorSchema.optional() })), annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
-    const existing = await findFolder(args, api);
+    const existing = findFolder(args, runtime);
     if (!existing) throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
     const metadata = { name: args.name ?? existing.name, icon: args.icon ?? existing.icon, color: args.color?.toLowerCase() ?? existing.color };
     const noop = metadata.name === existing.name && metadata.icon === existing.icon && metadata.color === existing.color;
     return result({ ...(noop ? existing : await api<Folder>(`/api/folders/${encodeURIComponent(existing.id)}`, "PATCH", metadata)), noop });
   }, "update_folder"));
   server.registerTool("delete_folder", { description: "删除文件夹并将其中画板移到根目录，保留全部画板；dryRun=true 预览，执行必须 confirm=true，可传 expectedBoardCount 防止数量变化误操作。", inputSchema: compactMcpSchema(z.strictObject({ ...folderFields, dryRun: z.boolean().default(false), confirm: z.boolean().optional(), expectedBoardCount: z.number().int().nonnegative().optional() })), annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false } }, safeTool(async (args) => {
-    const folder = await findFolder(args, api);
+    const folder = findFolder(args, runtime);
     if (!folder) throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
     const boardCount = folderBoardCount(runtime, folder.id);
     if (args.dryRun) return result({ folder, wouldMoveBoards: boardCount, dryRun: true });
