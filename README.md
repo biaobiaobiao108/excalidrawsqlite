@@ -10,7 +10,7 @@
 
 | 对比维度 | 官方 / 社区原版 Excalidraw | 本项目（狐涂画板，Bun + SQLite） |
 | :-- | :-- | :-- |
-| **运行时与架构** | Node.js + Yarn，微服务或多容器配置 | **100% 全栈 Bun (1.4.3+) 驱动**，单进程一体化极速托管，纯 TypeScript ESM 脚本工具链 |
+| **运行时与架构** | Node.js + Yarn，微服务或多容器配置 | **100% 全栈 Bun (1.4.4+) 驱动**，单进程一体化极速托管，纯 TypeScript ESM 脚本工具链 |
 | **数据持久化** | 仅保存在浏览器 localStorage（易丢失）或需付费订阅官方云端 | **原生 SQLite WAL 高性能持久化**，Prepared Statements、摘要列、部分索引与 keyset 分页，单卷挂载 `./data:/app/data` |
 | **多画板管理** | 单画板模式，需手动导出/导入 `.excalidraw` 文件 | **内置画板工作台**：列表/网格浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达 |
 | **图元统计** | 无图元数量感知 | **内置图元数量统计**：保存时维护去 JSON 扫描的 `element_count` / `content_bytes` 摘要列并在卡片展示 |
@@ -160,7 +160,7 @@ podman run -d \
 
 #### 前置要求
 
-- 安装 [Bun](https://bun.sh/) (v1.4.3+)
+- 安装 [Bun](https://bun.sh/) (v1.4.4+)
 
 #### 操作步骤
 
@@ -534,7 +534,7 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
 │   ├── unit/                # Bun 原生纯逻辑单元测试
 │   └── server/              # Bun SQLite/API 集成测试
 ├── docs/                   # GitHub Pages 介绍落地页 (单文件、现代化动效与手绘 SVG)
-├── Dockerfile              # oven/bun:1.4.3-alpine 纯 Bun 多阶段极小容器构建 (零 Node.js)
+├── Dockerfile              # oven/bun:1.4.4-alpine 纯 Bun 多阶段极小容器构建 (零 Node.js)
 ├── docker-compose.yml      # 容器化编排配置文件
 └── bun.lock                # Bun 统一依赖锁文件
 ```

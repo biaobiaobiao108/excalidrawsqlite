@@ -18,7 +18,7 @@
     ]
   },
   "engines": {
-    "bun": ">=1.4.3"
+    "bun": ">=1.4.4"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.14",

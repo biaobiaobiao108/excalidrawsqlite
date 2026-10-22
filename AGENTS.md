@@ -1,6 +1,6 @@
 # Agent Guidelines
 
-本项目使用 Bun 1.4.3+、Bun HTML Bundler 和原生 SQLite。项目结构、配置与部署见 [README.md](README.md)。
+本项目使用 Bun 1.4.4+、Bun HTML Bundler 和原生 SQLite。项目结构、配置与部署见 [README.md](README.md)。
 
 ## 日常开发
 

@@ -3,7 +3,7 @@
 # Stage 1: Build the frontend app with Bun
 # The output is platform-independent frontend assets, so build it once on the
 # native CI builder instead of repeating it under QEMU for every target.
-FROM --platform=$BUILDPLATFORM oven/bun:1.4.3-alpine AS builder
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.4-alpine AS builder
 
 WORKDIR /app
 
@@ -41,7 +41,7 @@ RUN bun run build:server
 RUN bun --cwd ./excalidraw-app build
 
 # Stage 2: Production runtime with Bun + SQLite
-FROM oven/bun:1.4.3-alpine AS runner
+FROM oven/bun:1.4.4-alpine AS runner
 
 WORKDIR /app
 
