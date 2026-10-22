@@ -8,6 +8,19 @@ type Bounds = { x: number; y: number; width: number; height: number };
 type Point = [number, number];
 type Region = NonNullable<Diagram["regions"]>[number];
 const padding = 32, gap = 80, nodeWidth = 320;
+export const DIAGRAM_ROUTER_CELL_LIMIT = 100_000;
+export const DIAGRAM_ROUTER_WORK_LIMIT = 20_000_000;
+const ROUTER_SEARCH_WORK_PER_CELL = 8;
+
+export const assertDiagramRouterCells = (cells: number) => {
+  if (!Number.isSafeInteger(cells) || cells < 0 || cells > DIAGRAM_ROUTER_CELL_LIMIT)
+    throw new HttpError(400, "DIAGRAM_ROUTING_LIMIT", "连线路由网格超过容量上限，请减少节点、区域或连接数量");
+};
+
+export const assertDiagramRouterWork = (work: number) => {
+  if (!Number.isSafeInteger(work) || work < 0 || work > DIAGRAM_ROUTER_WORK_LIMIT)
+    throw new HttpError(400, "DIAGRAM_ROUTING_LIMIT", "连线路由预计工作量超过上限，请减少节点、区域或连接数量");
+};
 
 export const buildRegionDiagram = (args: Diagram, cards: Spec[], heights: number[], ranks: Map<string, number>,
   edges: NonNullable<Diagram["edges"]>, style: { strokeColor: string; backgroundColor: string }) => {
@@ -160,7 +173,7 @@ export const buildRegionDiagram = (args: Diagram, cards: Spec[], heights: number
     const endPort: Point = vertical ? [end[0], end[1] - 20] : [end[0] - 20, end[1]];
     return { edge, start, end, startPort, endPort };
   });
-  const route = makeRouter(obstacles, endpoints.flatMap((item) => [item.startPort, item.endPort]));
+  const route = makeRouter(obstacles, endpoints.flatMap((item) => [item.startPort, item.endPort]), endpoints.length);
   endpoints.forEach(({ edge, start, end, startPort, endPort }, index) => {
     const points = [start, ...route(startPort, endPort), end];
     const fromRegion = byId.get(args.nodes.find((node) => node.id === edge.from)!.regionId!)!;
@@ -193,11 +206,16 @@ export const buildRegionDiagram = (args: Diagram, cards: Spec[], heights: number
     estimated: true, nodeRegions: args.nodes.map((node) => ({ nodeId: node.id, regionId: node.regionId! })) };
 };
 
-const makeRouter = (obstacles: Bounds[], ports: Point[]) => {
+const makeRouter = (obstacles: Bounds[], ports: Point[], routeCount: number) => {
   const boxes = obstacles.map((box) => ({ x: box.x - 10, y: box.y - 10, width: box.width + 20, height: box.height + 20 }));
   const xs = [...new Set([...boxes.flatMap((box) => [box.x - 10, box.x + box.width + 10]), ...ports.map((point) => point[0])])].sort((first, second) => first - second);
   const ys = [...new Set([...boxes.flatMap((box) => [box.y - 10, box.y + box.height + 10]), ...ports.map((point) => point[1])])].sort((first, second) => first - second);
   const columns = xs.length, count = columns * ys.length;
+  assertDiagramRouterCells(count);
+  const gridEdges = columns * Math.max(0, ys.length - 1) + ys.length * Math.max(0, columns - 1);
+  // Bound the worst case before allocating the grid: each grid edge can inspect
+  // every obstacle, and each route can visit every cell while scanning neighbors.
+  assertDiagramRouterWork(gridEdges * boxes.length + count * routeCount * ROUTER_SEARCH_WORK_PER_CELL);
   const horizontal = new Uint8Array(count), downward = new Uint8Array(count);
   const clear = (start: Point, end: Point) => !boxes.some((box) => start[1] === end[1]
     ? start[1] > box.y && start[1] < box.y + box.height && Math.max(start[0], end[0]) > box.x && Math.min(start[0], end[0]) < box.x + box.width

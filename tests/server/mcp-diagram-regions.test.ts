@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { buildDiagram, diagramSchema } from "../../server/mcp-diagram";
+import { assertDiagramRouterCells, assertDiagramRouterWork, DIAGRAM_ROUTER_CELL_LIMIT, DIAGRAM_ROUTER_WORK_LIMIT } from "../../server/mcp-diagram-regions";
 import { createDrawingBatch, updateDrawingElements } from "../../server/mcp-drawing";
 import { inspectLayout } from "../../server/mcp-inspect";
 import { copyDrawingSelection } from "../../server/mcp-copy";
@@ -87,5 +88,29 @@ describe("MCP region diagrams", () => {
     expect(result.nodeCount).toBe(100);
     expect(result.edgeCount).toBe(200);
     expect(createDrawingBatch(result.elements).elements.length).toBe(408);
+  });
+
+  it("accepts the routing work budget boundary and rejects work above it", () => {
+    expect(() => assertDiagramRouterCells(DIAGRAM_ROUTER_CELL_LIMIT)).not.toThrow();
+    expect(() => assertDiagramRouterCells(DIAGRAM_ROUTER_CELL_LIMIT + 1)).toThrow("网格超过容量上限");
+    expect(() => assertDiagramRouterWork(DIAGRAM_ROUTER_WORK_LIMIT)).not.toThrow();
+    expect(() => assertDiagramRouterWork(DIAGRAM_ROUTER_WORK_LIMIT + 1)).toThrow("预计工作量超过上限");
+  });
+
+  it("rejects the maximum node, edge, and region combination when routing exceeds its budget", () => {
+    const manyNodes = Array.from({ length: 100 }, (_, index) => ({ id: `n${index}`, title: "节点", regionId: `r${index % 24}` }));
+    const manyEdges = [
+      ...Array.from({ length: 99 }, (_, index) => ({ from: `n${index}`, to: `n${index + 1}` })),
+      ...Array.from({ length: 98 }, (_, index) => ({ from: `n${index}`, to: `n${index + 2}` })),
+      ...Array.from({ length: 3 }, (_, index) => ({ from: `n${index}`, to: `n${index + 3}` })),
+    ];
+    const manyRegions = Array.from({ length: 24 }, (_, index) => ({ id: `r${index}`, title: "区域" }));
+    let error: unknown;
+    try {
+      buildDiagram({ name: "预算边界", layout: "swimlane", nodes: manyNodes, edges: manyEdges, regions: manyRegions });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ code: "DIAGRAM_ROUTING_LIMIT" });
   });
 });
