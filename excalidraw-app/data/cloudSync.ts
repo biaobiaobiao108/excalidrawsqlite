@@ -117,6 +117,7 @@ export const getCloudSceneLoadSignatures = (
 type QueueCallbacks = {
   onAuthRequired: (sceneId: string) => void;
   onConflict: (sceneId: string, snapshot: CloudSaveSnapshot) => void;
+  onSceneUnavailable?: (sceneId: string, snapshot: CloudSaveSnapshot) => void;
   onError: (error: Error) => void;
   onStatusChange?: (sceneId: string, status: CloudSaveStatus) => void;
   /** Receives only snapshots confirmed by the server, with their committed revision. */
@@ -132,7 +133,7 @@ export type CloudSaveStatus =
   | "auth"
   | "conflict";
 
-type BlockReason = "auth" | "conflict";
+type BlockReason = "auth" | "conflict" | "deleted";
 
 type CloudSaveDependencies = {
   fetchCloudScene: typeof fetchCloudScene;
@@ -710,8 +711,20 @@ export class CloudSaveQueue {
   }
 
   getPendingSnapshot(sceneId: string) {
-    const snapshot = this.pending.get(sceneId) || this.conflicts.get(sceneId);
+    const snapshot =
+      this.pending.get(sceneId) ||
+      this.conflicts.get(sceneId) ||
+      (this.activeSceneId === sceneId ? this.activeSnapshot : null);
     return snapshot ? cloneCloudSaveSnapshot(snapshot) : null;
+  }
+
+  getUnavailableScenes() {
+    return [...this.blocked]
+      .filter(([, reason]) => reason === "deleted")
+      .flatMap(([sceneId]) => {
+        const snapshot = this.pending.get(sceneId);
+        return snapshot ? [{ sceneId, name: snapshot.name }] : [];
+      });
   }
 
   getStatus(sceneId: string): CloudSaveStatus {
@@ -786,6 +799,28 @@ export class CloudSaveQueue {
     removeSessionSnapshotRecovery(sceneId);
     void this.removePersistedSnapshot(sceneId);
     this.setStatus(sceneId, "idle");
+  }
+
+  /** Keep a deleted scene's latest local edit available for recovery as a new board. */
+  preserveForRecovery(sceneId: string) {
+    const snapshot =
+      this.pending.get(sceneId) ||
+      this.conflicts.get(sceneId) ||
+      (this.activeSceneId === sceneId ? this.activeSnapshot : null);
+    if (!snapshot) {
+      return false;
+    }
+    const timer = this.timers.get(sceneId);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(sceneId);
+    }
+    this.pending.set(sceneId, snapshot);
+    this.conflicts.delete(sceneId);
+    this.blocked.set(sceneId, "deleted");
+    this.setStatus(sceneId, "error");
+    void this.persistSnapshot(snapshot);
+    return true;
   }
 
   resumeAfterAuth(sceneId: string) {
@@ -1043,6 +1078,20 @@ export class CloudSaveQueue {
             this.blocked.set(sceneId, "auth");
             this.setStatus(sceneId, "auth");
             this.callbacks.onAuthRequired(sceneId);
+            return;
+          }
+          if (error instanceof CloudApiError && error.status === 404) {
+            if (!this.pending.has(sceneId)) {
+              this.pending.set(sceneId, snapshot);
+            }
+            const recoverySnapshot = this.pending.get(sceneId)!;
+            this.blocked.set(sceneId, "deleted");
+            this.setStatus(sceneId, "error");
+            void this.persistSnapshot(recoverySnapshot);
+            this.callbacks.onSceneUnavailable?.(
+              sceneId,
+              cloneCloudSaveSnapshot(recoverySnapshot),
+            );
             return;
           }
           if (error instanceof CloudApiError && error.status === 409) {

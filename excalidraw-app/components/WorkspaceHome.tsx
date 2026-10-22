@@ -1360,6 +1360,13 @@ export const WorkspaceHome = ({
     null,
   );
   const [loadingMore, setLoadingMore] = useState(false);
+  const handleRequestError = useCallback((requestError: any, fallback: string) => {
+    if (requestError?.status === 401 || requestError?.code === "AUTH_REQUIRED") {
+      setAuthOpen(true);
+    } else {
+      setError(requestError?.message || fallback);
+    }
+  }, []);
   const loadRequestRef = useRef(0);
   const pageRequestRef = useRef(0);
   const loadMoreRequestRef = useRef(0);
@@ -1679,7 +1686,7 @@ export const WorkspaceHome = ({
         pageRequestId === pageRequestRef.current &&
         queryKey === pageQueryKeyRef.current
       ) {
-        setError(requestError?.message || "加载更多画板失败");
+        handleRequestError(requestError, "加载更多画板失败");
       }
     } finally {
       if (requestId === loadMoreRequestRef.current) {
@@ -1688,6 +1695,7 @@ export const WorkspaceHome = ({
     }
   }, [
     getCurrentPageOptions,
+    handleRequestError,
     loadingMore,
     pageQueryKey,
     sceneCursor,
@@ -2141,11 +2149,7 @@ export const WorkspaceHome = ({
       notifyWorkspaceChanged();
       navigateToScene(scene);
     } catch (requestError: any) {
-      if (requestError?.status === 401) {
-        setAuthOpen(true);
-      } else {
-        setError(requestError?.message || "创建画板失败");
-      }
+      handleRequestError(requestError, "创建画板失败");
     } finally {
       setPendingAction(null);
     }
@@ -2177,7 +2181,7 @@ export const WorkspaceHome = ({
           item.id === scene.id ? { ...item, favorite: scene.favorite } : item,
         ),
       );
-      setError(requestError?.message || "更新收藏状态失败");
+      handleRequestError(requestError, "更新收藏状态失败");
     } finally {
       setPendingAction(null);
     }
@@ -2207,7 +2211,7 @@ export const WorkspaceHome = ({
       setMetadataDialog(null);
       notifyWorkspaceChanged();
     } catch (requestError: any) {
-      setError(requestError?.message || "保存画板信息失败");
+      handleRequestError(requestError, "保存画板信息失败");
     } finally {
       setPendingAction(null);
     }
@@ -2229,7 +2233,7 @@ export const WorkspaceHome = ({
             );
             notifyWorkspaceChanged();
           } catch (requestError: any) {
-            setError(requestError?.message || "彻底删除画板失败");
+            handleRequestError(requestError, "彻底删除画板失败");
           } finally {
             setPendingAction(null);
           }
@@ -2248,7 +2252,7 @@ export const WorkspaceHome = ({
       ]);
       notifyWorkspaceChanged();
     } catch (requestError: any) {
-      setError(requestError?.message || "删除画板失败");
+      handleRequestError(requestError, "删除画板失败");
     } finally {
       setPendingAction(null);
     }
@@ -2270,7 +2274,7 @@ export const WorkspaceHome = ({
           setTrashScenes([]);
           notifyWorkspaceChanged();
         } catch (requestError: any) {
-          setError(requestError?.message || "清空回收站失败");
+          handleRequestError(requestError, "清空回收站失败");
         } finally {
           setPendingAction(null);
         }
@@ -2289,7 +2293,7 @@ export const WorkspaceHome = ({
       setScenes((current) => [{ ...scene, deleted_at: null }, ...current]);
       notifyWorkspaceChanged();
     } catch (requestError: any) {
-      setError(requestError?.message || "还原画板失败");
+      handleRequestError(requestError, "还原画板失败");
     } finally {
       setPendingAction(null);
     }
@@ -2306,6 +2310,16 @@ export const WorkspaceHome = ({
       return completed.map((result) => result.scene);
     }
     const firstError = failed[0]?.error as { message?: string } | undefined;
+    if (
+      failed.some((result) => {
+        const batchError = result.error as { status?: number; code?: string } | undefined;
+        return batchError?.status === 401 || batchError?.code === "AUTH_REQUIRED";
+      })
+    ) {
+      setAuthOpen(true);
+      setError("");
+      return completed.map((result) => result.scene);
+    }
     setError(
       `${completed.length ? `已${action} ${completed.length} 个画板；` : ""}${
         failed.length
@@ -2436,7 +2450,7 @@ export const WorkspaceHome = ({
       }
       setFolderDialog(null);
     } catch (requestError: any) {
-      setError(requestError?.message || "保存文件夹失败");
+      handleRequestError(requestError, "保存文件夹失败");
     } finally {
       setPendingAction(null);
     }
@@ -2467,7 +2481,7 @@ export const WorkspaceHome = ({
             setSelectedFolderId(null);
           }
         } catch (requestError: any) {
-          setError(requestError?.message || "删除文件夹失败");
+          handleRequestError(requestError, "删除文件夹失败");
         } finally {
           setPendingAction(null);
         }

@@ -589,6 +589,64 @@ describe("cloud save queue", () => {
     queue.cancel("scene");
   });
 
+  it("keeps a deleted scene's queued snapshot available for recovery", async () => {
+    const { persistence, snapshots } = createPersistence();
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async () => {
+        throw new Error("the deleted scene must not be written");
+      },
+    });
+    try {
+      await queue.ready();
+      queue.enqueue(snapshot("unsynced edit"));
+      expect(queue.preserveForRecovery("scene")).toBe(true);
+      expect(queue.getPendingSnapshot("scene")?.name).toBe("unsynced edit");
+      expect(queue.getUnavailableScenes()).toEqual([
+        { sceneId: "scene", name: "unsynced edit" },
+      ]);
+      expect(await queue.flush("scene")).toBe("error");
+      await Bun.sleep(0);
+      expect(snapshots.get("scene")?.name).toBe("unsynced edit");
+      queue.cancel("scene");
+      await Bun.sleep(0);
+      expect(snapshots.has("scene")).toBe(false);
+      expect(queue.getUnavailableScenes()).toEqual([]);
+    } finally {
+      queue.dispose();
+    }
+  });
+
+  it("surfaces a scene deleted during save without removing its recovery snapshot", async () => {
+    const { persistence, snapshots } = createPersistence();
+    const unavailable: CloudSaveSnapshot[] = [];
+    const queue = new CloudSaveQueue({
+      ...callbacks,
+      onSceneUnavailable: (_sceneId, value) => unavailable.push(value),
+    }, {
+      persistence,
+      saveFilesToCloud: async () => {},
+      saveCloudScene: async () => {
+        throw new CloudApiError("scene not found", 404, "SCENE_NOT_FOUND");
+      },
+    });
+    try {
+      await queue.ready();
+      queue.enqueue(snapshot("edit before deletion"));
+      expect(await queue.flush("scene")).toBe("error");
+      expect(unavailable.map((item) => item.name)).toEqual(["edit before deletion"]);
+      expect(queue.getPendingSnapshot("scene")?.name).toBe("edit before deletion");
+      expect(queue.getUnavailableScenes()).toEqual([
+        { sceneId: "scene", name: "edit before deletion" },
+      ]);
+      await Bun.sleep(0);
+      expect(snapshots.get("scene")?.name).toBe("edit before deletion");
+    } finally {
+      queue.dispose();
+    }
+  });
+
   it("keeps the latest edit after an in-flight save exhausts retries", async () => {
     const { persistence } = createPersistence();
     const savedNames: string[] = [];
