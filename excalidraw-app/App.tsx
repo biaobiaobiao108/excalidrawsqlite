@@ -1,7 +1,5 @@
 import {
-  lazy,
   startTransition,
-  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -12,29 +10,34 @@ import "./app-pwa";
 import { Provider, appJotaiStore } from "./app-jotai";
 import { WorkspaceHome } from "./components/WorkspaceHome";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
+import { loadEditorApp } from "./editorAppLoader";
 
-let editorAppLoadPromise: Promise<typeof import("./EditorApp")> | null = null;
-
-const loadEditorApp = () => {
-  if (!editorAppLoadPromise) {
-    editorAppLoadPromise = import("./EditorApp");
-  }
-  return editorAppLoadPromise;
-};
 type EditorAppComponent = typeof import("./EditorApp").default;
 
-const LazyEditorApp = lazy(loadEditorApp);
-
 const preloadEditorApp = () => {
-  void loadEditorApp();
+  void loadEditorApp().catch((error) => {
+    console.warn("预加载编辑器失败", error);
+  });
 };
 
-const EditorLoadingState = () => (
-  <div
-    className="editor-loading-state"
-    role="status"
-  >
-    正在加载编辑器...
+const EditorLoadingState = ({
+  error,
+  onRetry,
+}: {
+  error: string | null;
+  onRetry: () => void;
+}) => (
+  <div className="editor-loading-state" role={error ? "alert" : "status"}>
+    {error ? (
+      <>
+        <p>{error}</p>
+        <button type="button" onClick={onRetry}>
+          重试
+        </button>
+      </>
+    ) : (
+      "正在加载编辑器..."
+    )}
   </div>
 );
 
@@ -42,30 +45,15 @@ const ExcalidrawApp = () => {
   const [currentUrl, setCurrentUrl] = useState(() => window.location.href);
   const [editorAppComponent, setEditorAppComponent] =
     useState<EditorAppComponent | null>(null);
+  const [editorLoadError, setEditorLoadError] = useState<string | null>(null);
+  const [editorLoadAttempt, setEditorLoadAttempt] = useState(0);
   const navigationRequestRef = useRef(0);
 
   useEffect(() => {
     const handlePopState = () => {
       const nextUrl = window.location.href;
-      const requestId = ++navigationRequestRef.current;
-      if (!new URL(nextUrl).searchParams.has("id")) {
-        startTransition(() => setCurrentUrl(nextUrl));
-        return;
-      }
-
-      void loadEditorApp()
-        .then((module) => {
-          if (navigationRequestRef.current !== requestId) {
-            return;
-          }
-          startTransition(() => {
-            setEditorAppComponent(() => module.default);
-            setCurrentUrl(nextUrl);
-          });
-        })
-        .catch((error) => {
-          console.error("加载编辑器失败", error);
-        });
+      navigationRequestRef.current += 1;
+      startTransition(() => setCurrentUrl(nextUrl));
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -74,29 +62,43 @@ const ExcalidrawApp = () => {
   const location = new URL(currentUrl);
   const sceneId = location.searchParams.get("id");
   const shouldRenderWorkspaceHome = !sceneId;
-  const EditorApp = editorAppComponent || LazyEditorApp;
+  const EditorApp = editorAppComponent;
 
-  const navigateToScene = useCallback((targetSceneId: string) => {
+  useEffect(() => {
+    if (!sceneId || editorAppComponent) {
+      return;
+    }
+
     const requestId = ++navigationRequestRef.current;
-    const url = new URL(window.location.href);
-    url.search = `?id=${encodeURIComponent(targetSceneId)}`;
-    url.hash = "";
-
+    setEditorLoadError(null);
     void loadEditorApp()
       .then((module) => {
         if (navigationRequestRef.current !== requestId) {
           return;
         }
-        const nextUrl = url.href;
-        window.history.pushState(null, "", `${url.pathname}${url.search}`);
-        startTransition(() => {
-          setEditorAppComponent(() => module.default);
-          setCurrentUrl(nextUrl);
-        });
+        setEditorAppComponent(() => module.default);
       })
       .catch((error) => {
+        if (navigationRequestRef.current !== requestId) {
+          return;
+        }
         console.error("加载编辑器失败", error);
+        setEditorLoadError("编辑器加载失败，请检查网络后重试。");
       });
+
+    return () => {
+      if (navigationRequestRef.current === requestId) {
+        navigationRequestRef.current += 1;
+      }
+    };
+  }, [currentUrl, editorAppComponent, editorLoadAttempt, sceneId]);
+
+  const navigateToScene = useCallback((targetSceneId: string) => {
+    const url = new URL(window.location.href);
+    url.search = `?id=${encodeURIComponent(targetSceneId)}`;
+    url.hash = "";
+    window.history.pushState(null, "", `${url.pathname}${url.search}`);
+    startTransition(() => setCurrentUrl(url.href));
   }, []);
 
   const navigateToWorkspace = useCallback(() => {
@@ -116,13 +118,16 @@ const ExcalidrawApp = () => {
             onSelectScene={navigateToScene}
             onPreloadScene={preloadEditorApp}
           />
+        ) : EditorApp ? (
+          <EditorApp
+            key={sceneId || currentUrl}
+            onNavigateHome={navigateToWorkspace}
+          />
         ) : (
-          <Suspense fallback={<EditorLoadingState />}>
-            <EditorApp
-              key={sceneId || currentUrl}
-              onNavigateHome={navigateToWorkspace}
-            />
-          </Suspense>
+          <EditorLoadingState
+            error={editorLoadError}
+            onRetry={() => setEditorLoadAttempt((attempt) => attempt + 1)}
+          />
         )}
       </Provider>
     </TopErrorBoundary>
