@@ -5424,35 +5424,47 @@ class App extends React.Component<AppProps, AppState> {
    * adds supplied files to existing files in the appState.
    * NOTE if file already exists in editor state, the file data is not updated
    * */
-  public addFiles: ExcalidrawImperativeAPI["addFiles"] = withBatchedUpdates(
-    (files) => {
-      const { addedFiles } = this.addMissingFiles(files);
+  public addFiles: ExcalidrawImperativeAPI["addFiles"] = (files, options) =>
+    withBatchedUpdates(() => {
+      const { addedFiles } = this.addMissingFiles(
+        files,
+        false,
+        options?.replace,
+      );
 
       this.clearImageShapeCache(addedFiles);
       this.scene.triggerUpdate();
 
       this.addNewImagesToImageCache();
-    },
-  );
+    })();
 
   private addMissingFiles = (
     files: BinaryFiles | BinaryFileData[],
-    replace = false,
+    replaceAll = false,
+    replaceExisting = false,
   ) => {
     const previousFiles = this.files;
-    const nextFiles = replace ? {} : { ...this.files };
+    const nextFiles = replaceAll ? {} : { ...this.files };
     const addedFiles: BinaryFiles = {};
 
     const _files = Array.isArray(files) ? files : Object.values(files);
 
     for (const fileData of _files) {
-      if (nextFiles[fileData.id]) {
+      const previousFile = previousFiles[fileData.id];
+      if (nextFiles[fileData.id] && !replaceExisting) {
         continue;
       }
 
-      const previousFile = previousFiles[fileData.id];
       if (
-        replace &&
+        replaceExisting &&
+        previousFile &&
+        previousFile.dataURL === fileData.dataURL
+      ) {
+        continue;
+      }
+
+      if (
+        (replaceAll || replaceExisting) &&
         previousFile &&
         previousFile.dataURL !== fileData.dataURL
       ) {
