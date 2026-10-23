@@ -7,6 +7,7 @@ import { createRuntime } from "../../server/runtime";
 import { createRequestHandler } from "../../server/routes";
 import { lookupMcpCreateReplay, MAX_CREATE_REQUESTS, registerMcpCreateSession, unregisterMcpCreateSession } from "../../server/create-idempotency";
 import type { ServerRuntime } from "../../server/types";
+import { getLocalSceneMigrationIdentity } from "../../excalidraw-app/data/localSceneMigration";
 
 const resources: Array<{ runtime: ServerRuntime; directory: string }> = [];
 const setup = () => {
@@ -27,6 +28,42 @@ afterEach(async () => {
 });
 
 describe("persistent create idempotency", () => {
+  it("creates one board for concurrent migration requests with legacy elements", async () => {
+    const { entry, call } = setup();
+    const rawElements = [
+      { type: "rectangle", x: 1, y: 2, width: 20, height: 10 },
+      { id: "duplicate", type: "ellipse", x: 4, y: 5, width: 8, height: 9 },
+      { id: "duplicate", type: "diamond", x: 7, y: 8, width: 10, height: 11 },
+    ] as any[];
+    const createBody = () => {
+      const appState = {};
+      return {
+        ...getLocalSceneMigrationIdentity({
+          name: "本地画板",
+          elements: rawElements,
+          appState,
+        }),
+        name: "本地画板",
+        elements: rawElements,
+        appState,
+      };
+    };
+
+    const responses = await Promise.all([
+      call(createBody()),
+      call(createBody()),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      200, 201,
+    ]);
+    const bodies = await Promise.all(responses.map((response) => response.json()));
+    expect(bodies[0].id).toBe(bodies[1].id);
+    expect(bodies.some((body) => body.idempotentReplay)).toBe(true);
+    expect(
+      entry.runtime.db.query("SELECT COUNT(*) AS count FROM scenes").get(),
+    ).toEqual({ count: 1 });
+  });
+
   it("serializes concurrent retries, survives restart and returns the current revision", async () => {
     const { entry, options, call } = setup();
     const responses = await Promise.all(Array.from({ length: 4 }, () => call({ name: "创建一次", idempotencyKey: "retry-key", appState: { b: 2, a: 1 } })));

@@ -7,10 +7,7 @@ const hashPart = (bytes: Uint8Array, seed: number) => {
   return (hash >>> 0).toString(16).padStart(8, "0");
 };
 
-/**
- * Derive a repeatable identity so concurrent tabs and retries create the same
- * cloud board. The fingerprint is for deduplication, not authentication.
- */
+/** The fingerprint is for repeatable migration requests, not authentication. */
 export const getLocalSceneMigrationIdentity = (payload: {
   name: string;
   elements: readonly unknown[];
@@ -20,10 +17,9 @@ export const getLocalSceneMigrationIdentity = (payload: {
   const fingerprint = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35]
     .map((seed) => hashPart(bytes, seed))
     .join("");
-  const id = `scene_legacy_${fingerprint}`;
 
   return {
-    id,
+    id: `scene_legacy_${fingerprint}`,
     idempotencyKey: `local-scene-migration-v1-${fingerprint}`,
   };
 };

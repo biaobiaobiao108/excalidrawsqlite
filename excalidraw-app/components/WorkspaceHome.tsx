@@ -283,11 +283,16 @@ const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
   }
 
   const localData = importFromLocalStorage();
-  const elements = restoreElements(localData.elements, null, {
-    repairBindings: true,
-    deleteInvisibleElements: true,
-  });
-  if (!elements.length) {
+  const elements = localData.elements;
+  const restoredElements = restoreElements(
+    elements,
+    null,
+    {
+      repairBindings: true,
+      deleteInvisibleElements: true,
+    },
+  );
+  if (!restoredElements.length) {
     try {
       localStorage.setItem(LOCAL_SCENE_MIGRATION_KEY, "empty");
     } catch {
@@ -305,7 +310,7 @@ const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
 
   const fileIds = [
     ...new Set(
-      elements
+      restoredElements
         .filter(
           (element) =>
             element.type === "image" &&
@@ -333,16 +338,12 @@ const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
     await saveFilesToCloud(files);
   }
 
-  // The cloud API wrapper serializes this extra field for server-side replay.
-  const createData = {
+  const scene = await createCloudScene({
     ...migrationIdentity,
     name: "本地画板",
     elements,
     appState,
-  } as Parameters<typeof createCloudScene>[0] & {
-    idempotencyKey: string;
-  };
-  const scene = await createCloudScene(createData);
+  });
   try {
     localStorage.setItem(LOCAL_SCENE_MIGRATION_KEY, "completed");
   } catch {
