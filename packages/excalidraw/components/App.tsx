@@ -5421,9 +5421,9 @@ class App extends React.Component<AppProps, AppState> {
   };
 
   /**
-   * adds supplied files to existing files in the appState.
-   * NOTE if file already exists in editor state, the file data is not updated
-   * */
+   * Adds supplied files to the app state. Existing IDs are ignored by default;
+   * pass `replace` to update their payloads and refresh the affected caches.
+   */
   public addFiles: ExcalidrawImperativeAPI["addFiles"] = (files, options) =>
     withBatchedUpdates(() => {
       const { addedFiles } = this.addMissingFiles(
@@ -5458,7 +5458,8 @@ class App extends React.Component<AppProps, AppState> {
       if (
         replaceExisting &&
         previousFile &&
-        previousFile.dataURL === fileData.dataURL
+        previousFile.dataURL === fileData.dataURL &&
+        previousFile.mimeType === fileData.mimeType
       ) {
         continue;
       }
@@ -5466,7 +5467,8 @@ class App extends React.Component<AppProps, AppState> {
       if (
         (replaceAll || replaceExisting) &&
         previousFile &&
-        previousFile.dataURL !== fileData.dataURL
+        (previousFile.dataURL !== fileData.dataURL ||
+          (replaceExisting && previousFile.mimeType !== fileData.mimeType))
       ) {
         // Preserve a monotonic file version when an imported scene replaces
         // the payload for an existing file ID. Persistence signatures and

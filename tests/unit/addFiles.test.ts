@@ -140,6 +140,19 @@ it("can replace a file by ID while preserving other files and cached content", (
     expect(app.files["undo-file"]).toBe(originalUndoFile);
     expect(app.imageCache.has("image-file" as never)).toBe(false);
     expect(deleteShape).toHaveBeenCalledWith(imageElement);
+
+    app.imageCache.set("image-file" as never, {
+      image: decodedImage,
+      mimeType: MIME_TYPES.png,
+    });
+    app.addFiles(
+      [{ ...app.files["image-file"], mimeType: MIME_TYPES.jpg }],
+      { replace: true },
+    );
+    expect(app.files["image-file"].version).toBe(10);
+    expect(app.files["image-file"].mimeType).toBe(MIME_TYPES.jpg);
+    expect(app.imageCache.has("image-file" as never)).toBe(false);
+    expect(deleteShape).toHaveBeenCalledTimes(2);
   } finally {
     deleteShape.mockRestore();
     app.imageCache.clear();
