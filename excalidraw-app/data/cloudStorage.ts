@@ -15,6 +15,12 @@ const CLOUD_READ_RETRIES = 2;
 const uploadedCloudFileHashes = new WeakMap<object, string>();
 const uploadedCloudFileDataUrls = new WeakMap<object, string>();
 const cloudFileEtags = new Map<string, string>();
+// Bind validators to the bytes actually held by an editor, not just the file
+// ID: another tab may already have uploaded different bytes under that ID.
+const downloadedCloudFileEtags = new WeakMap<
+  BinaryFileData,
+  { dataURL: string; etag: string }
+>();
 const MAX_CLOUD_FILE_METADATA = 512;
 const MAX_CACHED_CLOUD_SCENES = 2;
 const cloudSceneCache = new Map<
@@ -27,8 +33,7 @@ const getCloudFileConcurrency = (estimatedBytes = 0) => {
     typeof navigator === "undefined"
       ? undefined
       : (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  const userAgent =
-    typeof navigator === "undefined" ? "" : navigator.userAgent;
+  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
   const deviceConcurrency =
     getDeviceMemoryTier(deviceMemory, userAgent) === "standard" ? 4 : 2;
   if (estimatedBytes >= 32 * 1024 * 1024) {
@@ -575,7 +580,7 @@ export async function fetchCloudScenePage(
     fallback,
     CLOUD_READ_RETRIES,
   );
-};
+}
 
 export async function fetchCloudScene(
   id: string,
@@ -642,6 +647,7 @@ export async function fetchCloudSceneSummary(
 
 export async function createCloudScene(data: {
   id?: string;
+  idempotencyKey?: string;
   name?: string;
   elements?: readonly any[];
   appState?: any;
@@ -872,9 +878,7 @@ export async function deleteCloudScene(
   if (permanent && revision === undefined) {
     throw new Error("彻底删除画板需要修订号");
   }
-  const query = permanent
-    ? `?permanent=true&revision=${revision}`
-    : "";
+  const query = permanent ? `?permanent=true&revision=${revision}` : "";
   const result = await fetchJson<{ success: boolean }>(
     `/api/scenes/${encodeURIComponent(id)}${query}`,
     {
@@ -954,51 +958,56 @@ export async function saveFilesToCloud(
     (total, file) => total + Math.ceil(file.dataURL.length * 0.75),
     0,
   );
-  await runWithConcurrency(entries, async (file) => {
-    const blob = dataUrlToBlob(file.dataURL, file.mimeType);
-    const digest = await sha256Hex(blob);
-    if (!options.forceUpload && (
-      (digest && uploadedCloudFileHashes.get(file) === digest) ||
-      (!digest && uploadedCloudFileDataUrls.get(file) === file.dataURL)
-    )) {
-      return;
-    }
-    const knownEtag = cloudFileEtags.get(file.id);
-    if (!options.forceUpload && digest && knownEtag === `"${digest}"`) {
-      rememberCloudFileHash(file, digest);
-      uploadedCloudFileDataUrls.set(file, file.dataURL);
-      return;
-    }
-    const res = await fetchWithTimeout(
-      `/api/files/${encodeURIComponent(file.id)}`,
-      {
-        method: "PUT",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": file.mimeType,
+  await runWithConcurrency(
+    entries,
+    async (file) => {
+      const blob = dataUrlToBlob(file.dataURL, file.mimeType);
+      const digest = await sha256Hex(blob);
+      if (
+        !options.forceUpload &&
+        ((digest && uploadedCloudFileHashes.get(file) === digest) ||
+          (!digest && uploadedCloudFileDataUrls.get(file) === file.dataURL))
+      ) {
+        return;
+      }
+      const knownEtag = cloudFileEtags.get(file.id);
+      if (!options.forceUpload && digest && knownEtag === `"${digest}"`) {
+        rememberCloudFileHash(file, digest);
+        uploadedCloudFileDataUrls.set(file, file.dataURL);
+        return;
+      }
+      const res = await fetchWithTimeout(
+        `/api/files/${encodeURIComponent(file.id)}`,
+        {
+          method: "PUT",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": file.mimeType,
+          },
+          body: blob,
         },
-        body: blob,
-      },
-      "保存云端图片失败",
-    );
-    await assertResponse(res, "保存云端图片失败");
-    // The acknowledgement is tiny, but leaving it unread keeps the request
-    // timeout armed for the whole window and holds the keep-alive connection.
-    await res.arrayBuffer();
-    const etag = res.headers.get("etag");
-    if (etag) {
-      rememberCloudFileEtag(file.id, etag);
-    }
-    if (digest) {
-      rememberCloudFileHash(file, digest);
-    }
-    uploadedCloudFileDataUrls.set(file, file.dataURL);
-  }, getCloudFileConcurrency(estimatedBytes));
+        "保存云端图片失败",
+      );
+      await assertResponse(res, "保存云端图片失败");
+      // The acknowledgement is tiny, but leaving it unread keeps the request
+      // timeout armed for the whole window and holds the keep-alive connection.
+      await res.arrayBuffer();
+      const etag = res.headers.get("etag");
+      if (etag) {
+        rememberCloudFileEtag(file.id, etag);
+      }
+      if (digest) {
+        rememberCloudFileHash(file, digest);
+      }
+      uploadedCloudFileDataUrls.set(file, file.dataURL);
+    },
+    getCloudFileConcurrency(estimatedBytes),
+  );
 }
 
 export async function fetchCloudFiles(
   fileIds: readonly FileId[],
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; existingFiles?: BinaryFiles } = {},
 ): Promise<{
   loadedFiles: BinaryFileData[];
   erroredFiles: Map<FileId, true>;
@@ -1021,15 +1030,30 @@ export async function fetchCloudFiles(
       async (id) => {
         try {
           await withCloudFileDownloadSlot(controller.signal, async () => {
+            const existing = options.existingFiles?.[id];
+            const validator =
+              existing && downloadedCloudFileEtags.get(existing);
+            const etag =
+              validator?.dataURL === existing?.dataURL
+                ? validator?.etag
+                : undefined;
             const res = await fetchWithTimeout(
               `/api/files/${encodeURIComponent(id)}`,
               {
-                headers: { Accept: "application/octet-stream" },
+                headers: {
+                  Accept: "application/octet-stream",
+                  ...(etag ? { "If-None-Match": etag } : {}),
+                },
                 signal: controller.signal,
               },
               "加载云端图片失败",
               CLOUD_TRANSFER_TIMEOUT_MS,
             );
+            if (res.status === 304 && existing && etag) {
+              await res.arrayBuffer();
+              loadedFiles.push(existing);
+              return;
+            }
             await assertResponse(res, "加载云端图片失败");
             const contentType =
               res.headers.get("content-type")?.split(";")[0].trim() ||
@@ -1038,17 +1062,24 @@ export async function fetchCloudFiles(
               await res.blob(),
               controller.signal,
             );
-            const etag = res.headers.get("etag");
-            if (etag) {
-              rememberCloudFileEtag(id, etag);
+            const responseEtag = res.headers.get("etag");
+            if (responseEtag) {
+              rememberCloudFileEtag(id, responseEtag);
             }
-            loadedFiles.push({
+            const file: BinaryFileData = {
               id,
               mimeType: contentType as BinaryFileData["mimeType"],
               dataURL: dataURL as BinaryFileData["dataURL"],
               created:
                 Number(res.headers.get("X-File-Created-At")) || Date.now(),
-            });
+            };
+            if (responseEtag) {
+              downloadedCloudFileEtags.set(file, {
+                dataURL,
+                etag: responseEtag,
+              });
+            }
+            loadedFiles.push(file);
           });
         } catch (error) {
           if (

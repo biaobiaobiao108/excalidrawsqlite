@@ -12,15 +12,54 @@ import {
   saveCloudSceneThumbnail,
 } from "../../excalidraw-app/data/cloudStorage";
 
+class TestFileReader {
+  static readonly LOADING = 1;
+  readyState = 0;
+  result: string | ArrayBuffer | null = null;
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onabort: (() => void) | null = null;
+
+  readAsDataURL(blob: Blob) {
+    this.readyState = TestFileReader.LOADING;
+    void blob
+      .arrayBuffer()
+      .then((buffer) => {
+        this.result = `data:${blob.type};base64,${Buffer.from(buffer).toString("base64")}`;
+        this.readyState = 2;
+        this.onload?.();
+      })
+      .catch(() => this.onerror?.());
+  }
+
+  abort() {
+    this.readyState = 2;
+    this.onabort?.();
+  }
+}
+
 it("sends the content revision for both thumbnail uploads and empty-board deletions", async () => {
   const originalFetch = globalThis.fetch;
   const requests: Array<[string, string | undefined, string | undefined]> = [];
   try {
     globalThis.fetch = (async (input, init) => {
-      requests.push([String(input), init?.method, new Headers(init?.headers).get("X-Thumbnail-Version") || undefined]);
-      return Response.json({ success: true, id: "scene", thumbnail_file_id: null });
+      requests.push([
+        String(input),
+        init?.method,
+        new Headers(init?.headers).get("X-Thumbnail-Version") || undefined,
+      ]);
+      return Response.json({
+        success: true,
+        id: "scene",
+        thumbnail_file_id: null,
+      });
     }) as typeof fetch;
-    await saveCloudSceneThumbnail("scene", new Blob(["preview"], { type: "image/png" }), 123, 7);
+    await saveCloudSceneThumbnail(
+      "scene",
+      new Blob(["preview"], { type: "image/png" }),
+      123,
+      7,
+    );
     await saveCloudSceneThumbnail("scene", null, 124, 8);
     expect(requests).toEqual([
       ["/api/scenes/scene/thumbnail?revision=7", "PUT", "123"],
@@ -44,15 +83,25 @@ describe("cloud file upload", () => {
       };
       let requests = 0;
       try {
-        const digest = Array.from(new Uint8Array(await originalCrypto.subtle.digest(
-          "SHA-256", new TextEncoder().encode("hello"),
-        ))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        const digest = Array.from(
+          new Uint8Array(
+            await originalCrypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode("hello"),
+            ),
+          ),
+        )
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("");
         if (!webCrypto) {
           globalThis.crypto = { subtle: undefined } as unknown as Crypto;
         }
         globalThis.fetch = (async () => {
           requests++;
-          return new Response(null, { status: 204, headers: { etag: `"${digest}"` } });
+          return new Response(null, {
+            status: 204,
+            headers: { etag: `"${digest}"` },
+          });
         }) as unknown as typeof fetch;
         const files = { [file.id]: file } as unknown as BinaryFiles;
         await saveFilesToCloud(files);
@@ -60,7 +109,9 @@ describe("cloud file upload", () => {
         expect(requests).toBe(1);
         if (webCrypto) {
           // Queue snapshots clone files, so this hits the ID/ETag cache.
-          await saveFilesToCloud({ [file.id]: { ...file } } as unknown as BinaryFiles);
+          await saveFilesToCloud({
+            [file.id]: { ...file },
+          } as unknown as BinaryFiles);
           expect(requests).toBe(1);
         }
         await saveFilesToCloud(files, { forceUpload: true });
@@ -109,7 +160,10 @@ describe("cloud file upload", () => {
 
 it("limits image downloads across overlapping scene loads", async () => {
   const originalFetch = globalThis.fetch;
-  const previousFileReader = Object.getOwnPropertyDescriptor(globalThis, "FileReader");
+  const previousFileReader = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "FileReader",
+  );
   let activeRequests = 0;
   let peakRequests = 0;
   let releaseRequests!: () => void;
@@ -120,29 +174,6 @@ it("limits image downloads across overlapping scene loads", async () => {
   const requestsCanFinish = new Promise<void>((resolve) => {
     releaseRequests = resolve;
   });
-
-  class TestFileReader {
-    static readonly LOADING = 1;
-    readyState = 0;
-    result: string | ArrayBuffer | null = null;
-    onload: (() => void) | null = null;
-    onerror: (() => void) | null = null;
-    onabort: (() => void) | null = null;
-
-    readAsDataURL(blob: Blob) {
-      this.readyState = TestFileReader.LOADING;
-      void blob.arrayBuffer().then((buffer) => {
-        this.result = `data:${blob.type};base64,${Buffer.from(buffer).toString("base64")}`;
-        this.readyState = 2;
-        this.onload?.();
-      }).catch(() => this.onerror?.());
-    }
-
-    abort() {
-      this.readyState = 2;
-      this.onabort?.();
-    }
-  }
 
   Object.defineProperty(globalThis, "FileReader", {
     configurable: true,
@@ -162,19 +193,23 @@ it("limits image downloads across overlapping scene loads", async () => {
   }) as unknown as typeof fetch;
 
   try {
-    const firstLoad = fetchCloudFiles(
-      ["scene-a-file-1", "scene-a-file-2"] as FileId[],
-    );
-    const secondLoad = fetchCloudFiles(
-      ["scene-b-file-1", "scene-b-file-2"] as FileId[],
-    );
+    const firstLoad = fetchCloudFiles([
+      "scene-a-file-1",
+      "scene-a-file-2",
+    ] as FileId[]);
+    const secondLoad = fetchCloudFiles([
+      "scene-b-file-1",
+      "scene-b-file-2",
+    ] as FileId[]);
     await requestsStarted;
     await Bun.sleep(5);
     releaseRequests();
     const results = await Promise.all([firstLoad, secondLoad]);
 
     expect(peakRequests).toBe(2);
-    expect(results.map(({ loadedFiles }) => loadedFiles.length)).toEqual([2, 2]);
+    expect(results.map(({ loadedFiles }) => loadedFiles.length)).toEqual([
+      2, 2,
+    ]);
   } finally {
     releaseRequests();
     globalThis.fetch = originalFetch;
@@ -186,6 +221,107 @@ it("limits image downloads across overlapping scene loads", async () => {
   }
 });
 
+describe("cloud attachment revalidation", () => {
+  it("reuses unchanged bytes and downloads replacements under the same file ID", async () => {
+    const originalFetch = globalThis.fetch;
+    const previousFileReader = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "FileReader",
+    );
+    Object.defineProperty(globalThis, "FileReader", {
+      configurable: true,
+      value: TestFileReader,
+    });
+    const requests: Array<{ method: string; validator: string | null }> = [];
+    let bytes = "old image";
+    let etag = '"original"';
+    globalThis.fetch = (async (_input, init) => {
+      const validator = new Headers(init?.headers).get("If-None-Match");
+      requests.push({ method: init?.method || "GET", validator });
+      return validator === etag
+        ? new Response(null, { status: 304, headers: { ETag: etag } })
+        : new Response(bytes, {
+            headers: { ETag: etag, "Content-Type": "image/png" },
+          });
+    }) as typeof fetch;
+    try {
+      const id = "revalidated-image" as FileId;
+      const first = (await fetchCloudFiles([id])).loadedFiles[0];
+      const existingFiles = { [id]: first };
+      const unchanged = await fetchCloudFiles([id], { existingFiles });
+      expect(unchanged.loadedFiles[0]).toBe(first);
+      expect(requests.at(-1)?.validator).toBe('"original"');
+
+      bytes = "new image";
+      etag = '"replacement"';
+      const changed = await fetchCloudFiles([id], { existingFiles });
+      expect(changed.loadedFiles[0].id).toBe(id);
+      expect(changed.loadedFiles[0].dataURL).not.toBe(first.dataURL);
+      expect(changed.loadedFiles[0].dataURL).toContain(
+        Buffer.from(bytes).toString("base64"),
+      );
+      expect(first.dataURL).toContain(
+        Buffer.from("old image").toString("base64"),
+      );
+
+      // An in-place local edit no longer matches its remembered validator.
+      first.dataURL = "data:image/png;base64,bG9jYWw=" as typeof first.dataURL;
+      await fetchCloudFiles([id], { existingFiles });
+      expect(requests.at(-1)?.validator).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (previousFileReader)
+        Object.defineProperty(globalThis, "FileReader", previousFileReader);
+      else Reflect.deleteProperty(globalThis, "FileReader");
+    }
+  });
+
+  it("does not use a new upload's validator for stale editor bytes", async () => {
+    const originalFetch = globalThis.fetch;
+    const previousFileReader = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "FileReader",
+    );
+    Object.defineProperty(globalThis, "FileReader", {
+      configurable: true,
+      value: TestFileReader,
+    });
+    const id = "revalidated-upload" as FileId;
+    const validators: Array<string | null> = [];
+    let uploads = 0;
+    globalThis.fetch = (async (_input, init) => {
+      if (init?.method === "PUT") {
+        uploads++;
+        return new Response(null, {
+          status: 204,
+          headers: { ETag: '"new-upload"' },
+        });
+      }
+      validators.push(new Headers(init?.headers).get("If-None-Match"));
+      return new Response("remote", {
+        headers: { ETag: '"remote"', "Content-Type": "image/png" },
+      });
+    }) as typeof fetch;
+    try {
+      const old = (await fetchCloudFiles([id])).loadedFiles[0];
+      await saveFilesToCloud({
+        [id]: {
+          ...old,
+          dataURL: "data:image/png;base64,bmV3" as typeof old.dataURL,
+        },
+      });
+      await fetchCloudFiles([id], { existingFiles: { [id]: old } });
+      expect(uploads).toBe(1);
+      expect(validators.at(-1)).toBe('"remote"');
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (previousFileReader)
+        Object.defineProperty(globalThis, "FileReader", previousFileReader);
+      else Reflect.deleteProperty(globalThis, "FileReader");
+    }
+  });
+});
+
 describe("cloud API timeouts", () => {
   for (const download of [downloadCloudBackup, downloadCloudFullBackup]) {
     for (const expires of [false, true]) {
@@ -194,16 +330,20 @@ describe("cloud API timeouts", () => {
         let elapsed = 0;
         let nextTimerId = 0;
         const timers = new Map<number, { deadline: number; run: () => void }>();
-        const timeoutSpy = spyOn(globalThis, "setTimeout").mockImplementation(
-          ((run: () => void, delay: number) => {
-            const id = ++nextTimerId;
-            timers.set(id, { deadline: elapsed + delay, run });
-            return id;
-          }) as typeof setTimeout,
-        );
-        const clearTimeoutSpy = spyOn(globalThis, "clearTimeout").mockImplementation(
-          (id) => { timers.delete(Number(id)); },
-        );
+        const timeoutSpy = spyOn(globalThis, "setTimeout").mockImplementation(((
+          run: () => void,
+          delay: number,
+        ) => {
+          const id = ++nextTimerId;
+          timers.set(id, { deadline: elapsed + delay, run });
+          return id;
+        }) as typeof setTimeout);
+        const clearTimeoutSpy = spyOn(
+          globalThis,
+          "clearTimeout",
+        ).mockImplementation((id) => {
+          timers.delete(Number(id));
+        });
         const advance = (duration: number) => {
           elapsed += duration;
           for (const [id, timer] of timers) {
@@ -217,14 +357,16 @@ describe("cloud API timeouts", () => {
         let body!: ReadableStreamDefaultController<Uint8Array>;
         globalThis.fetch = (async (_input, init) => {
           signal = init!.signal!;
-          return new Response(new ReadableStream<Uint8Array>({
-            start(controller) {
-              body = controller;
-              signal.addEventListener("abort", () => {
-                controller.error(new DOMException("Aborted", "AbortError"));
-              });
-            },
-          }));
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                body = controller;
+                signal.addEventListener("abort", () => {
+                  controller.error(new DOMException("Aborted", "AbortError"));
+                });
+              },
+            }),
+          );
         }) as typeof fetch;
         try {
           const pending = download();
@@ -241,7 +383,10 @@ describe("cloud API timeouts", () => {
             body.close();
           }
           if (expires) {
-            await expect(pending).rejects.toMatchObject({ status: 0, code: "NETWORK_TIMEOUT" });
+            await expect(pending).rejects.toMatchObject({
+              status: 0,
+              code: "NETWORK_TIMEOUT",
+            });
           } else {
             const backup = await pending;
             expect(await backup.text()).toBe("backup");
