@@ -72,12 +72,35 @@ html.dark #root {
 }
 
 .editor-loading-state {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   height: 100%;
   background: #fbfaf7;
   color: #747487;
   font-family: var(--ui-font, system-ui, sans-serif);
+
+  p {
+    margin: 0;
+    text-align: center;
+  }
+
+  button {
+    padding: 6px 12px;
+    border: 1px solid currentColor;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 2px;
+    }
+  }
 }
 
 html.dark .editor-loading-state {
