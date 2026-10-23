@@ -199,7 +199,11 @@ const runCloudSceneBatch = async (
   operation: (entries: CloudSceneBatchEntry[]) => Promise<unknown>,
 ): Promise<SceneBatchResult[]> => {
   const results: SceneBatchResult[] = [];
-  for (let offset = 0; offset < scenes.length; offset += CLOUD_SCENE_BATCH_SIZE) {
+  for (
+    let offset = 0;
+    offset < scenes.length;
+    offset += CLOUD_SCENE_BATCH_SIZE
+  ) {
     const batch = scenes.slice(offset, offset + CLOUD_SCENE_BATCH_SIZE);
     try {
       await operation(batch.map(({ id, revision }) => ({ id, revision })));
@@ -253,14 +257,14 @@ const sortScenes = (scenes: CloudSceneSummary[], sort: SortMode) =>
       sort === "opened"
         ? left.last_opened_at || 0
         : sort === "created"
-        ? left.created_at
-        : left.updated_at;
+          ? left.created_at
+          : left.updated_at;
     const rightValue =
       sort === "opened"
         ? right.last_opened_at || 0
         : sort === "created"
-        ? right.created_at
-        : right.updated_at;
+          ? right.created_at
+          : right.updated_at;
     if (rightValue !== leftValue) {
       return rightValue - leftValue;
     }
@@ -284,14 +288,10 @@ const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
 
   const localData = importFromLocalStorage();
   const elements = localData.elements;
-  const restoredElements = restoreElements(
-    elements,
-    null,
-    {
-      repairBindings: true,
-      deleteInvisibleElements: true,
-    },
-  );
+  const restoredElements = restoreElements(elements, null, {
+    repairBindings: true,
+    deleteInvisibleElements: true,
+  });
   if (!restoredElements.length) {
     try {
       localStorage.setItem(LOCAL_SCENE_MIGRATION_KEY, "empty");
@@ -324,7 +324,9 @@ const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
   if (fileIds.length) {
     const { loadedFiles } = await LocalData.fileStorage.getFiles(fileIds);
     const loadedFileIds = new Set(loadedFiles.map((file) => file.id));
-    const missingFileIds = fileIds.filter((fileId) => !loadedFileIds.has(fileId));
+    const missingFileIds = fileIds.filter(
+      (fileId) => !loadedFileIds.has(fileId),
+    );
     if (missingFileIds.length) {
       throw new Error(
         `本地画板迁移失败：${missingFileIds.length} 张图片无法从本地存储读取`,
@@ -391,11 +393,7 @@ const FolderIcon = () => (
   </svg>
 );
 
-const FolderAppearanceIcon = ({
-  icon,
-}: {
-  icon: FolderIconName;
-}) => {
+const FolderAppearanceIcon = ({ icon }: { icon: FolderIconName }) => {
   if (icon === "folder") {
     return <FolderIcon />;
   }
@@ -544,7 +542,9 @@ const WorkspaceContextMenuIcon = ({
       {icon === "open" && <path d="M7 17 17 7M8 7h9v9" />}
       {icon === "plus" && <path d="M12 5v14M5 12h14" />}
       {icon === "close" && <path d="m6 6 12 12M18 6 6 18" />}
-      {icon === "folder" && <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" />}
+      {icon === "folder" && (
+        <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" />
+      )}
       {icon === "commands" && <path d="m5 7 5 5-5 5M13 17h6" />}
       {icon === "refresh" && (
         <>
@@ -575,7 +575,10 @@ const thumbnailRepairQueue = new ThumbnailRepairQueue();
 const EmptyThumbnail = ({
   label = "空白画板",
   containerRef,
-}: { label?: string; containerRef?: React.Ref<HTMLDivElement> }) => (
+}: {
+  label?: string;
+  containerRef?: React.Ref<HTMLDivElement>;
+}) => (
   <div ref={containerRef} className="board-thumbnail board-thumbnail-empty">
     <div className="empty-thumbnail-mark">
       <span />
@@ -594,11 +597,16 @@ const BoardThumbnail = ({
   eager?: boolean;
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [repaired, setRepaired] = useState<{ revision: number; id: string } | null>(null);
+  const [repaired, setRepaired] = useState<{
+    revision: number;
+    id: string;
+  } | null>(null);
   const [failed, setFailed] = useState(false);
-  const thumbnailId = scene.thumbnail_file_id ||
+  const thumbnailId =
+    scene.thumbnail_file_id ||
     (repaired?.revision === scene.revision ? repaired.id : null);
-  const needsRepair = !thumbnailId && (scene.element_count || 0) > 0 && !scene.deleted_at;
+  const needsRepair =
+    !thumbnailId && (scene.element_count || 0) > 0 && !scene.deleted_at;
 
   useEffect(() => {
     setFailed(false);
@@ -617,8 +625,13 @@ const BoardThumbnail = ({
           return;
         }
         try {
-          const { repairSceneThumbnail } = await import("../data/repairSceneThumbnail");
-          const id = await repairSceneThumbnail(scene.id, scene.revision, () => cancelled);
+          const { repairSceneThumbnail } =
+            await import("../data/repairSceneThumbnail");
+          const id = await repairSceneThumbnail(
+            scene.id,
+            scene.revision,
+            () => cancelled,
+          );
           if (!cancelled) {
             if (id) {
               setRepaired({ revision: scene.revision, id });
@@ -645,9 +658,13 @@ const BoardThumbnail = ({
     return (
       <EmptyThumbnail
         containerRef={containerRef}
-        label={(scene.element_count || 0) > 0
-          ? (failed || scene.deleted_at ? "预览暂不可用" : "正在生成预览…")
-          : "空白画板"}
+        label={
+          (scene.element_count || 0) > 0
+            ? failed || scene.deleted_at
+              ? "预览暂不可用"
+              : "正在生成预览…"
+            : "空白画板"
+        }
       />
     );
   }
@@ -667,292 +684,291 @@ const BoardThumbnail = ({
   );
 };
 
-const BoardCard = React.memo(({
-  scene,
-  onOpen,
-  onPreload,
-  onToggleFavorite,
-  onEdit,
-  onDelete,
-  onRestore,
-  onOpenContextMenu,
-  onToggleSelection,
-  hasSelectionActive,
-  folderAppearance = DEFAULT_FOLDER_APPEARANCE,
-  isTrash = false,
-  isSelected = false,
-  actionPending = false,
-  eager,
-}: {
-  scene: CloudSceneSummary;
-  onOpen: (scene: CloudSceneSummary, newTab?: boolean) => void;
-  onPreload?: () => void;
-  onToggleFavorite: (scene: CloudSceneSummary) => void;
-  onEdit: (scene: CloudSceneSummary) => void;
-  onDelete: (scene: CloudSceneSummary) => void;
-  onRestore?: (scene: CloudSceneSummary) => void;
-  onOpenContextMenu: (
-    scene: CloudSceneSummary,
-    event: React.MouseEvent<HTMLElement>,
-  ) => void;
-  onToggleSelection: (
-    sceneId: string,
-    modifiers?: Omit<BoardSelectionClick, "id">,
-  ) => void;
-  hasSelectionActive: boolean;
-  folderAppearance?: FolderAppearance;
-  isTrash?: boolean;
-  isSelected?: boolean;
-  actionPending?: boolean;
-  eager?: boolean;
-}) => {
-  const sceneName = scene.name || "未命名白板";
-  const hasBadges =
-    !isTrash && (Boolean(scene.folder_name) || scene.tags.length > 0);
+const BoardCard = React.memo(
+  ({
+    scene,
+    onOpen,
+    onPreload,
+    onToggleFavorite,
+    onEdit,
+    onDelete,
+    onRestore,
+    onOpenContextMenu,
+    onToggleSelection,
+    hasSelectionActive,
+    folderAppearance = DEFAULT_FOLDER_APPEARANCE,
+    isTrash = false,
+    isSelected = false,
+    actionPending = false,
+    eager,
+  }: {
+    scene: CloudSceneSummary;
+    onOpen: (scene: CloudSceneSummary, newTab?: boolean) => void;
+    onPreload?: () => void;
+    onToggleFavorite: (scene: CloudSceneSummary) => void;
+    onEdit: (scene: CloudSceneSummary) => void;
+    onDelete: (scene: CloudSceneSummary) => void;
+    onRestore?: (scene: CloudSceneSummary) => void;
+    onOpenContextMenu: (
+      scene: CloudSceneSummary,
+      event: React.MouseEvent<HTMLElement>,
+    ) => void;
+    onToggleSelection: (
+      sceneId: string,
+      modifiers?: Omit<BoardSelectionClick, "id">,
+    ) => void;
+    hasSelectionActive: boolean;
+    folderAppearance?: FolderAppearance;
+    isTrash?: boolean;
+    isSelected?: boolean;
+    actionPending?: boolean;
+    eager?: boolean;
+  }) => {
+    const sceneName = scene.name || "未命名白板";
+    const hasBadges =
+      !isTrash && (Boolean(scene.folder_name) || scene.tags.length > 0);
 
-  const handleOpen = (event: React.MouseEvent) => {
-    const isNewTab =
-      event.button === 1 || event.ctrlKey || event.metaKey;
-    if (isNewTab) {
-      event.preventDefault();
-      event.stopPropagation();
-      onOpen(scene, true);
-      return;
-    }
-    if (event.button === 0) {
-      event.preventDefault();
-      onOpen(scene, false);
-    }
-  };
-
-  return (
-    <article
-      className={`board-card ${isTrash ? "is-trash-card" : ""} ${
-        isSelected ? "is-selected" : ""
-      }`.trim()}
-      tabIndex={0}
-      aria-label={`${sceneName}，${isSelected ? "已选择" : "未选择"}；空格键切换选择，回车打开画板`}
-      aria-keyshortcuts="Space Enter"
-      onMouseEnter={onPreload}
-      onFocusCapture={onPreload}
-      onContextMenu={(event) => onOpenContextMenu(scene, event)}
-      onClickCapture={(event) => {
-        if (
-          event.target instanceof Element &&
-          event.target.closest(
-            ".board-card-selection-toggle, .board-card-actions",
-          )
-        ) {
-          return;
-        }
-        if (
-          !isBoardSelectionModifierClick(event) &&
-          !hasSelectionActive
-        ) {
-          return;
-        }
+    const handleOpen = (event: React.MouseEvent) => {
+      const isNewTab = event.button === 1 || event.ctrlKey || event.metaKey;
+      if (isNewTab) {
         event.preventDefault();
         event.stopPropagation();
-        onToggleSelection(scene.id, {
-          metaKey: event.metaKey,
-          ctrlKey:
-            event.ctrlKey ||
-            (!event.shiftKey && !event.metaKey && hasSelectionActive),
-          shiftKey: event.shiftKey,
-        });
-      }}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget || actionPending) {
-          return;
-        }
-        if (event.key === " " || event.key === "Spacebar") {
+        onOpen(scene, true);
+        return;
+      }
+      if (event.button === 0) {
+        event.preventDefault();
+        onOpen(scene, false);
+      }
+    };
+
+    return (
+      <article
+        className={`board-card ${isTrash ? "is-trash-card" : ""} ${
+          isSelected ? "is-selected" : ""
+        }`.trim()}
+        tabIndex={0}
+        aria-label={`${sceneName}，${isSelected ? "已选择" : "未选择"}；空格键切换选择，回车打开画板`}
+        aria-keyshortcuts="Space Enter"
+        onMouseEnter={onPreload}
+        onFocusCapture={onPreload}
+        onContextMenu={(event) => onOpenContextMenu(scene, event)}
+        onClickCapture={(event) => {
+          if (
+            event.target instanceof Element &&
+            event.target.closest(
+              ".board-card-selection-toggle, .board-card-actions",
+            )
+          ) {
+            return;
+          }
+          if (!isBoardSelectionModifierClick(event) && !hasSelectionActive) {
+            return;
+          }
           event.preventDefault();
+          event.stopPropagation();
           onToggleSelection(scene.id, {
             metaKey: event.metaKey,
             ctrlKey:
-              event.ctrlKey || (!event.shiftKey && !event.metaKey),
+              event.ctrlKey ||
+              (!event.shiftKey && !event.metaKey && hasSelectionActive),
             shiftKey: event.shiftKey,
           });
-        } else if (event.key === "Enter" && !isTrash) {
-          event.preventDefault();
-          onOpen(scene, false);
-        }
-      }}
-    >
-      <button
-        type="button"
-        className="board-card-selection-toggle"
-        aria-label={`${isSelected ? "取消选择" : "选择"}画板“${sceneName}”`}
-        aria-pressed={isSelected}
-        title={isSelected ? "取消选择" : "加入多选"}
-        onClick={() => onToggleSelection(scene.id, { ctrlKey: true })}
-        disabled={actionPending}
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget || actionPending) {
+            return;
+          }
+          if (event.key === " " || event.key === "Spacebar") {
+            event.preventDefault();
+            onToggleSelection(scene.id, {
+              metaKey: event.metaKey,
+              ctrlKey: event.ctrlKey || (!event.shiftKey && !event.metaKey),
+              shiftKey: event.shiftKey,
+            });
+          } else if (event.key === "Enter" && !isTrash) {
+            event.preventDefault();
+            onOpen(scene, false);
+          }
+        }}
       >
-        <BoardSelectionIcon selected={isSelected} />
-      </button>
-      {isTrash ? (
-        <div
-          className="board-card-open is-disabled"
-          title="已在回收站中，还原后可打开"
+        <button
+          type="button"
+          className="board-card-selection-toggle"
+          aria-label={`${isSelected ? "取消选择" : "选择"}画板“${sceneName}”`}
+          aria-pressed={isSelected}
+          title={isSelected ? "取消选择" : "加入多选"}
+          onClick={() => onToggleSelection(scene.id, { ctrlKey: true })}
+          disabled={actionPending}
         >
-          <BoardThumbnail scene={scene} eager={eager} />
-          <span className="board-card-title" title={sceneName}>
-            {sceneName}
-          </span>
-        </div>
-      ) : (
-        <div className="board-card-open">
-          <button
-            className="board-card-thumbnail-button"
-            onClick={handleOpen}
-            onAuxClick={handleOpen}
-            type="button"
-            aria-label={`打开画板“${sceneName}”`}
+          <BoardSelectionIcon selected={isSelected} />
+        </button>
+        {isTrash ? (
+          <div
+            className="board-card-open is-disabled"
+            title="已在回收站中，还原后可打开"
           >
             <BoardThumbnail scene={scene} eager={eager} />
-          </button>
-          <button
-            className="board-card-title"
-            onClick={handleOpen}
-            onAuxClick={handleOpen}
-            type="button"
-            aria-label={`打开画板“${sceneName}”`}
-            title={sceneName}
-          >
-            {sceneName}
-          </button>
-        </div>
-      )}
-      <div className="board-card-footer">
-        <div className="board-card-details">
-          {isTrash ? (
-            <span className="board-card-mobile-title" title={sceneName}>
+            <span className="board-card-title" title={sceneName}>
               {sceneName}
             </span>
-          ) : (
+          </div>
+        ) : (
+          <div className="board-card-open">
             <button
-              type="button"
-              className="board-card-mobile-title"
+              className="board-card-thumbnail-button"
               onClick={handleOpen}
               onAuxClick={handleOpen}
+              type="button"
+              aria-label={`打开画板“${sceneName}”`}
+            >
+              <BoardThumbnail scene={scene} eager={eager} />
+            </button>
+            <button
+              className="board-card-title"
+              onClick={handleOpen}
+              onAuxClick={handleOpen}
+              type="button"
               aria-label={`打开画板“${sceneName}”`}
               title={sceneName}
             >
               {sceneName}
             </button>
-          )}
-          {hasBadges && (
-            <BoardCardBadges
-              tags={scene.tags}
-              folderName={scene.folder_name}
-              folderIcon={<FolderAppearanceIcon icon={folderAppearance.icon} />}
-              folderColor={folderAppearance.color}
-            />
-          )}
-          <div className="board-card-meta-row">
-            <span
-              className="board-card-elements-count"
-              title={`包含 ${scene.element_count ?? 0} 个图元`}
-            >
-              {scene.element_count ?? 0} 个图元
-            </span>
-            <span className="meta-separator" aria-hidden="true">
-              •
-            </span>
-            {isTrash && scene.deleted_at ? (
-              <span className="board-card-updated">
-                删除于 {formatDate(scene.deleted_at)}
+          </div>
+        )}
+        <div className="board-card-footer">
+          <div className="board-card-details">
+            {isTrash ? (
+              <span className="board-card-mobile-title" title={sceneName}>
+                {sceneName}
               </span>
             ) : (
-              <span className="board-card-updated">
-                更新于 {formatDate(scene.updated_at)}
+              <button
+                type="button"
+                className="board-card-mobile-title"
+                onClick={handleOpen}
+                onAuxClick={handleOpen}
+                aria-label={`打开画板“${sceneName}”`}
+                title={sceneName}
+              >
+                {sceneName}
+              </button>
+            )}
+            {hasBadges && (
+              <BoardCardBadges
+                tags={scene.tags}
+                folderName={scene.folder_name}
+                folderIcon={
+                  <FolderAppearanceIcon icon={folderAppearance.icon} />
+                }
+                folderColor={folderAppearance.color}
+              />
+            )}
+            <div className="board-card-meta-row">
+              <span
+                className="board-card-elements-count"
+                title={`包含 ${scene.element_count ?? 0} 个图元`}
+              >
+                {scene.element_count ?? 0} 个图元
               </span>
+              <span className="meta-separator" aria-hidden="true">
+                •
+              </span>
+              {isTrash && scene.deleted_at ? (
+                <span className="board-card-updated">
+                  删除于 {formatDate(scene.deleted_at)}
+                </span>
+              ) : (
+                <span className="board-card-updated">
+                  更新于 {formatDate(scene.updated_at)}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="board-card-actions">
+            {isTrash ? (
+              <>
+                {onRestore && (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`还原画板“${sceneName}”`}
+                    title="还原画板"
+                    onClick={() => onRestore(scene)}
+                    disabled={actionPending}
+                  >
+                    <RestoreIcon />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="icon-button danger"
+                  aria-label={`彻底删除“${sceneName}”`}
+                  title="彻底删除"
+                  onClick={() => onDelete(scene)}
+                  disabled={actionPending}
+                >
+                  <TrashIcon />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className={`icon-button favorite-button ${
+                    scene.favorite ? "is-favorite" : ""
+                  }`}
+                  aria-label={scene.favorite ? "取消收藏" : "收藏画板"}
+                  aria-pressed={scene.favorite}
+                  title={scene.favorite ? "取消收藏" : "收藏画板"}
+                  onClick={() => onToggleFavorite(scene)}
+                  disabled={actionPending}
+                >
+                  <StarIcon filled={scene.favorite} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button edit-button"
+                  aria-label={`编辑画板信息“${sceneName}”`}
+                  title="编辑画板信息"
+                  onClick={() => onEdit(scene)}
+                  disabled={actionPending}
+                >
+                  <EditIcon />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button danger delete-button"
+                  aria-label={`移至回收站“${sceneName}”`}
+                  title="移至回收站"
+                  onClick={() => onDelete(scene)}
+                  disabled={actionPending}
+                >
+                  <TrashIcon />
+                </button>
+              </>
             )}
           </div>
         </div>
-        <div className="board-card-actions">
-          {isTrash ? (
-            <>
-              {onRestore && (
-                <button
-                  type="button"
-                className="icon-button"
-                aria-label={`还原画板“${sceneName}”`}
-                title="还原画板"
-                onClick={() => onRestore(scene)}
-                disabled={actionPending}
-              >
-                  <RestoreIcon />
-                </button>
-              )}
-              <button
-                type="button"
-                className="icon-button danger"
-                aria-label={`彻底删除“${sceneName}”`}
-                title="彻底删除"
-                onClick={() => onDelete(scene)}
-                disabled={actionPending}
-              >
-                <TrashIcon />
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className={`icon-button favorite-button ${
-                  scene.favorite ? "is-favorite" : ""
-                }`}
-                aria-label={scene.favorite ? "取消收藏" : "收藏画板"}
-                aria-pressed={scene.favorite}
-                title={scene.favorite ? "取消收藏" : "收藏画板"}
-                onClick={() => onToggleFavorite(scene)}
-                disabled={actionPending}
-              >
-                <StarIcon filled={scene.favorite} />
-              </button>
-              <button
-                type="button"
-                className="icon-button edit-button"
-                aria-label={`编辑画板信息“${sceneName}”`}
-                title="编辑画板信息"
-                onClick={() => onEdit(scene)}
-                disabled={actionPending}
-              >
-                <EditIcon />
-              </button>
-              <button
-                type="button"
-                className="icon-button danger delete-button"
-                aria-label={`移至回收站“${sceneName}”`}
-                title="移至回收站"
-                onClick={() => onDelete(scene)}
-                disabled={actionPending}
-              >
-                <TrashIcon />
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </article>
-  );
-}, (previous, next) =>
-  previous.scene === next.scene &&
-  previous.isTrash === next.isTrash &&
-  previous.isSelected === next.isSelected &&
-  previous.hasSelectionActive === next.hasSelectionActive &&
-  previous.actionPending === next.actionPending &&
-  previous.eager === next.eager &&
-  previous.folderAppearance === next.folderAppearance &&
-  previous.onOpen === next.onOpen &&
-  previous.onPreload === next.onPreload &&
-  previous.onToggleFavorite === next.onToggleFavorite &&
-  previous.onEdit === next.onEdit &&
-  previous.onDelete === next.onDelete &&
-  previous.onRestore === next.onRestore &&
-  previous.onOpenContextMenu === next.onOpenContextMenu &&
-  previous.onToggleSelection === next.onToggleSelection,
+      </article>
+    );
+  },
+  (previous, next) =>
+    previous.scene === next.scene &&
+    previous.isTrash === next.isTrash &&
+    previous.isSelected === next.isSelected &&
+    previous.hasSelectionActive === next.hasSelectionActive &&
+    previous.actionPending === next.actionPending &&
+    previous.eager === next.eager &&
+    previous.folderAppearance === next.folderAppearance &&
+    previous.onOpen === next.onOpen &&
+    previous.onPreload === next.onPreload &&
+    previous.onToggleFavorite === next.onToggleFavorite &&
+    previous.onEdit === next.onEdit &&
+    previous.onDelete === next.onDelete &&
+    previous.onRestore === next.onRestore &&
+    previous.onOpenContextMenu === next.onOpenContextMenu &&
+    previous.onToggleSelection === next.onToggleSelection,
 );
 
 const WorkspaceModal = WorkspaceDialog;
@@ -1075,9 +1091,7 @@ const FolderDialog = ({
             <button
               key={option.id}
               type="button"
-              className={
-                state.icon === option.id ? "is-selected" : ""
-              }
+              className={state.icon === option.id ? "is-selected" : ""}
               aria-label={option.label}
               aria-pressed={state.icon === option.id}
               title={option.label}
@@ -1097,9 +1111,7 @@ const FolderDialog = ({
               key={option.color}
               type="button"
               className={
-                state.color.toLowerCase() === option.color
-                  ? "is-selected"
-                  : ""
+                state.color.toLowerCase() === option.color ? "is-selected" : ""
               }
               style={{ "--swatch-color": option.color } as React.CSSProperties}
               aria-label={option.label}
@@ -1123,11 +1135,7 @@ const FolderDialog = ({
           </button>
         )}
         <button type="submit" className="primary-button" disabled={pending}>
-          {pending
-            ? "保存中..."
-            : state.id
-            ? "保存修改"
-            : "创建文件夹"}
+          {pending ? "保存中..." : state.id ? "保存修改" : "创建文件夹"}
         </button>
       </div>
     </form>
@@ -1152,8 +1160,14 @@ const WorkspaceContextMenu = ({
     }
     const padding = 8;
     setPosition({
-      x: Math.max(padding, Math.min(state.x, window.innerWidth - bounds.width - padding)),
-      y: Math.max(padding, Math.min(state.y, window.innerHeight - bounds.height - padding)),
+      x: Math.max(
+        padding,
+        Math.min(state.x, window.innerWidth - bounds.width - padding),
+      ),
+      y: Math.max(
+        padding,
+        Math.min(state.y, window.innerHeight - bounds.height - padding),
+      ),
     });
   }, [state.x, state.y, state.items.length]);
 
@@ -1173,13 +1187,17 @@ const WorkspaceContextMenu = ({
         return;
       }
       const buttons = Array.from(
-        menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || [],
+        menuRef.current?.querySelectorAll<HTMLButtonElement>(
+          "button:not(:disabled)",
+        ) || [],
       );
       if (!buttons.length) {
         return;
       }
       event.preventDefault();
-      const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      const currentIndex = buttons.indexOf(
+        document.activeElement as HTMLButtonElement,
+      );
       const nextIndex =
         event.key === "ArrowDown"
           ? (currentIndex + 1) % buttons.length
@@ -1209,7 +1227,10 @@ const WorkspaceContextMenu = ({
       }}
       onPointerLeave={() => setActiveItem(null)}
       onPointerMove={(event) => {
-        if (!(event.target instanceof Element) || !event.target.closest("button:not(:disabled)")) {
+        if (
+          !(event.target instanceof Element) ||
+          !event.target.closest("button:not(:disabled)")
+        ) {
           setActiveItem(null);
         }
       }}
@@ -1218,7 +1239,10 @@ const WorkspaceContextMenu = ({
       {state.items.map((item) => (
         <React.Fragment key={item.label}>
           {item.separatorBefore && (
-            <div className="workspace-context-menu-separator" role="separator" />
+            <div
+              className="workspace-context-menu-separator"
+              role="separator"
+            />
           )}
           <button
             type="button"
@@ -1317,11 +1341,10 @@ export const WorkspaceHome = ({
     left: false,
     right: false,
   });
-  const [scenes, setScenes] = useState<CloudSceneSummary[]>(
-    () =>
-      workspaceSnapshot?.pageQueryKey === DEFAULT_PAGE_QUERY_KEY
-        ? workspaceSnapshot.scenes
-        : [],
+  const [scenes, setScenes] = useState<CloudSceneSummary[]>(() =>
+    workspaceSnapshot?.pageQueryKey === DEFAULT_PAGE_QUERY_KEY
+      ? workspaceSnapshot.scenes
+      : [],
   );
   const [trashScenes, setTrashScenes] = useState<CloudSceneSummary[]>(
     () => workspaceSnapshot?.trashScenes || [],
@@ -1329,14 +1352,14 @@ export const WorkspaceHome = ({
   const [folders, setFolders] = useState<CloudFolder[]>(
     () => workspaceSnapshot?.folders || [],
   );
-  const [workspaceStats, setWorkspaceStats] = useState<CloudWorkspaceStats | null>(
-    () => workspaceSnapshot?.stats || null,
-  );
-  const [pageTotalCount, setPageTotalCount] = useState(
-    () =>
-      workspaceSnapshot?.pageQueryKey === DEFAULT_PAGE_QUERY_KEY
-        ? workspaceSnapshot.pageTotalCount
-        : 0,
+  const [workspaceStats, setWorkspaceStats] =
+    useState<CloudWorkspaceStats | null>(
+      () => workspaceSnapshot?.stats || null,
+    );
+  const [pageTotalCount, setPageTotalCount] = useState(() =>
+    workspaceSnapshot?.pageQueryKey === DEFAULT_PAGE_QUERY_KEY
+      ? workspaceSnapshot.pageTotalCount
+      : 0,
   );
   const loadedPageQueryKeyRef = useRef(workspaceSnapshot?.pageQueryKey || "");
   // Keep the visible page and its filters together until the next request wins.
@@ -1370,17 +1393,21 @@ export const WorkspaceHome = ({
     useState<WorkspaceContextMenuState | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [sceneCursor, setSceneCursor] = useState<string | null>(null);
-  const [trashSceneCursor, setTrashSceneCursor] = useState<string | null>(
-    null,
-  );
+  const [trashSceneCursor, setTrashSceneCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const handleRequestError = useCallback((requestError: any, fallback: string) => {
-    if (requestError?.status === 401 || requestError?.code === "AUTH_REQUIRED") {
-      setAuthOpen(true);
-    } else {
-      setError(requestError?.message || fallback);
-    }
-  }, []);
+  const handleRequestError = useCallback(
+    (requestError: any, fallback: string) => {
+      if (
+        requestError?.status === 401 ||
+        requestError?.code === "AUTH_REQUIRED"
+      ) {
+        setAuthOpen(true);
+      } else {
+        setError(requestError?.message || fallback);
+      }
+    },
+    [],
+  );
   const loadRequestRef = useRef(0);
   const pageRequestRef = useRef(0);
   const loadMoreRequestRef = useRef(0);
@@ -1398,8 +1425,8 @@ export const WorkspaceHome = ({
   const pageTransitionPending = loadedPageQueryKeyRef.current !== pageQueryKey;
   const hasDisplayedFilters = Boolean(
     displayedPageOptions.query ||
-      displayedPageOptions.tag ||
-      displayedPageOptions.folderId,
+    displayedPageOptions.tag ||
+    displayedPageOptions.folderId,
   );
   const currentPageOptions: CloudScenePageOptions = {
     trash: view === "trash",
@@ -1409,7 +1436,10 @@ export const WorkspaceHome = ({
     opened: view === "recent",
     sort: view === "recent" ? "opened" : sort,
   };
-  const currentPageRef = useRef({ key: pageQueryKey, options: currentPageOptions });
+  const currentPageRef = useRef({
+    key: pageQueryKey,
+    options: currentPageOptions,
+  });
   currentPageRef.current = { key: pageQueryKey, options: currentPageOptions };
   const loadedScenesRef = useRef({ scenes, trashScenes });
   loadedScenesRef.current = { scenes, trashScenes };
@@ -1443,15 +1473,21 @@ export const WorkspaceHome = ({
     [updateSceneSelection],
   );
   const showContextMenu = useCallback(
-    (event: React.MouseEvent<HTMLElement>, items: WorkspaceContextMenuItem[]) => {
+    (
+      event: React.MouseEvent<HTMLElement>,
+      items: WorkspaceContextMenuItem[],
+    ) => {
       event.preventDefault();
       event.stopPropagation();
-      const target = event.target instanceof Element ? event.target : event.currentTarget;
+      const target =
+        event.target instanceof Element ? event.target : event.currentTarget;
       setContextMenu({
         x: event.clientX,
         y: event.clientY,
         items,
-        portalTarget: target.closest<HTMLElement>('dialog, [role="dialog"]') || event.currentTarget.ownerDocument.body,
+        portalTarget:
+          target.closest<HTMLElement>('dialog, [role="dialog"]') ||
+          event.currentTarget.ownerDocument.body,
       });
     },
     [],
@@ -1475,7 +1511,8 @@ export const WorkspaceHome = ({
       loadedPageQueryKeyRef.current === queryKey
         ? (options.trash
             ? loadedScenesRef.current.trashScenes
-            : loadedScenesRef.current.scenes).length
+            : loadedScenesRef.current.scenes
+          ).length
         : 0;
     if (!workspaceSnapshot) {
       setLoading(true);
@@ -1661,7 +1698,8 @@ export const WorkspaceHome = ({
     const isTrash = view === "trash";
     const cursor = isTrash ? trashSceneCursor : sceneCursor;
     if (
-      !cursor || loadingMore ||
+      !cursor ||
+      loadingMore ||
       loadedPageQueryKeyRef.current !== pageQueryKey
     ) {
       return;
@@ -1774,7 +1812,10 @@ export const WorkspaceHome = ({
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = subscribeCloudRealtime(null, (event) => {
-      if (event.type !== "scene_changed" && event.type !== "workspace_changed") {
+      if (
+        event.type !== "scene_changed" &&
+        event.type !== "workspace_changed"
+      ) {
         return;
       }
       if (refreshTimer) {
@@ -1853,8 +1894,12 @@ export const WorkspaceHome = ({
     updateWorkspaceNavOverflow();
     const observer = new ResizeObserver(updateWorkspaceNavOverflow);
     observer.observe(nav);
-    nav.querySelectorAll("button").forEach((button) => observer.observe(button));
-    nav.addEventListener("scroll", updateWorkspaceNavOverflow, { passive: true });
+    nav
+      .querySelectorAll("button")
+      .forEach((button) => observer.observe(button));
+    nav.addEventListener("scroll", updateWorkspaceNavOverflow, {
+      passive: true,
+    });
     const ownerWindow = nav.ownerDocument.defaultView;
     ownerWindow?.addEventListener("resize", updateWorkspaceNavOverflow);
     return () => {
@@ -1876,7 +1921,8 @@ export const WorkspaceHome = ({
         return false;
       }
       if (
-        !options.trash && options.folderId &&
+        !options.trash &&
+        options.folderId &&
         scene.folder_id !== options.folderId
       ) {
         return false;
@@ -1890,11 +1936,7 @@ export const WorkspaceHome = ({
       return searchable.includes(normalizedQuery);
     });
     return sortScenes(filtered, options.sort || "updated");
-  }, [
-    scenes,
-    trashScenes,
-    displayedPageOptions,
-  ]);
+  }, [scenes, trashScenes, displayedPageOptions]);
 
   const selectedScenes = useMemo(
     () => filteredScenes.filter((scene) => selectedSceneIds.has(scene.id)),
@@ -1902,10 +1944,7 @@ export const WorkspaceHome = ({
   );
 
   const handleToggleSceneSelection = useCallback(
-    (
-      id: string,
-      modifiers: Omit<BoardSelectionClick, "id"> = {},
-    ) => {
+    (id: string, modifiers: Omit<BoardSelectionClick, "id"> = {}) => {
       const next = applyBoardSelectionClick(
         sceneSelectionRef.current,
         filteredScenes.map((scene) => scene.id),
@@ -1948,10 +1987,14 @@ export const WorkspaceHome = ({
       gridRect.top - rootRect.top - root.clientTop + root.scrollTop,
     );
 
-    const templateColumns = style.gridTemplateColumns.trim().split(/\s+/).filter(Boolean);
+    const templateColumns = style.gridTemplateColumns
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
     const columns = Math.max(
       1,
-      templateColumns.length || (gridRect.width <= 640 ? 1 : BOARD_GRID_COLUMNS),
+      templateColumns.length ||
+        (gridRect.width <= 640 ? 1 : BOARD_GRID_COLUMNS),
     );
 
     setBoardGridMetrics((current) => {
@@ -1968,15 +2011,13 @@ export const WorkspaceHome = ({
 
   const hasMoreScenes = Boolean(
     !pageTransitionPending &&
-      (view === "trash" ? trashSceneCursor : sceneCursor),
+    (view === "trash" ? trashSceneCursor : sceneCursor),
   );
 
   const shouldVirtualizeBoardGrid =
     filteredScenes.length > BOARD_GRID_VIRTUALIZATION_THRESHOLD;
   const boardGridColumns = boardGridMetrics.columns;
-  const boardGridRowCount = Math.ceil(
-    filteredScenes.length / boardGridColumns,
-  );
+  const boardGridRowCount = Math.ceil(filteredScenes.length / boardGridColumns);
   const getBoardGridRowKey = useCallback(
     (index: number) =>
       `${boardGridColumns}:${filteredScenes[index * boardGridColumns]?.id || index}`,
@@ -2009,7 +2050,9 @@ export const WorkspaceHome = ({
       }
 
       const focusableElements = getBoardGridFocusableElements(activeRow);
-      const activeIndex = focusableElements.indexOf(activeElement as HTMLElement);
+      const activeIndex = focusableElements.indexOf(
+        activeElement as HTMLElement,
+      );
       const direction: 1 | -1 = event.shiftKey ? -1 : 1;
       const atRowBoundary =
         direction === 1
@@ -2326,8 +2369,11 @@ export const WorkspaceHome = ({
     const firstError = failed[0]?.error as { message?: string } | undefined;
     if (
       failed.some((result) => {
-        const batchError = result.error as { status?: number; code?: string } | undefined;
-        return batchError?.status === 401 || batchError?.code === "AUTH_REQUIRED";
+        const batchError = result.error as
+          { status?: number; code?: string } | undefined;
+        return (
+          batchError?.status === 401 || batchError?.code === "AUTH_REQUIRED"
+        );
       })
     ) {
       setAuthOpen(true);
@@ -2356,7 +2402,9 @@ export const WorkspaceHome = ({
       }
       const completedIds = new Set(completed.map((scene) => scene.id));
       const deletedAt = Date.now();
-      setScenes((current) => current.filter((scene) => !completedIds.has(scene.id)));
+      setScenes((current) =>
+        current.filter((scene) => !completedIds.has(scene.id)),
+      );
       setTrashScenes((current) => [
         ...completed.map((scene) => ({ ...scene, deleted_at: deletedAt })),
         ...current.filter((scene) => !completedIds.has(scene.id)),
@@ -2487,7 +2535,7 @@ export const WorkspaceHome = ({
             current.map((scene) =>
               scene.folder_id === folder.id
                 ? { ...scene, folder_id: null, folder_name: null }
-              : scene,
+                : scene,
             ),
           );
           notifyWorkspaceChanged();
@@ -2578,8 +2626,7 @@ export const WorkspaceHome = ({
       label: isSelected ? "从多选中移除" : "加入多选",
       icon: isSelected ? "check" : "plus",
       disabled: !!pendingAction,
-      onSelect: () =>
-        handleToggleSceneSelection(scene.id, { ctrlKey: true }),
+      onSelect: () => handleToggleSceneSelection(scene.id, { ctrlKey: true }),
     });
     if (selectedCount) {
       items.push({
@@ -2659,7 +2706,9 @@ export const WorkspaceHome = ({
     showContextMenu(event, items);
   };
 
-  const openBackgroundContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+  const openBackgroundContextMenu = (
+    event: React.MouseEvent<HTMLDivElement>,
+  ) => {
     const target = event.target;
     event.preventDefault();
     if (pageTransitionPending) {
@@ -2669,20 +2718,26 @@ export const WorkspaceHome = ({
       return;
     }
 
-    const input = target.closest<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
+    const input = target.closest<HTMLInputElement | HTMLTextAreaElement>(
+      "input, textarea",
+    );
     if (input) {
-      const items: WorkspaceContextMenuItem[] = [{
-        label: "全选文本",
-        icon: "check",
-        disabled:
-          input.disabled ||
-          (!(["text", "search", "url", "tel", "password", "email"].includes(input.type)) &&
-            input.tagName !== "TEXTAREA"),
-        onSelect: () => {
-          input.focus();
-          input.select();
+      const items: WorkspaceContextMenuItem[] = [
+        {
+          label: "全选文本",
+          icon: "check",
+          disabled:
+            input.disabled ||
+            (!["text", "search", "url", "tel", "password", "email"].includes(
+              input.type,
+            ) &&
+              input.tagName !== "TEXTAREA"),
+          onSelect: () => {
+            input.focus();
+            input.select();
+          },
         },
-      }];
+      ];
       if (input === searchInputRef.current) {
         items.push({
           label: "清空搜索",
@@ -2701,30 +2756,50 @@ export const WorkspaceHome = ({
     // Keep portaled dialogs and the command palette in their own context.
     if (!event.currentTarget.contains(target)) {
       const dialog = target.closest('dialog, [role="dialog"]');
-      showContextMenu(event, [{
-        label: "返回当前窗口",
-        icon: "open",
-        onSelect: () => dialog?.querySelector<HTMLElement>('input, button:not(:disabled), [tabindex="0"]')?.focus(),
-      }]);
+      showContextMenu(event, [
+        {
+          label: "返回当前窗口",
+          icon: "open",
+          onSelect: () =>
+            dialog
+              ?.querySelector<HTMLElement>(
+                'input, button:not(:disabled), [tabindex="0"]',
+              )
+              ?.focus(),
+        },
+      ]);
       return;
     }
 
     const navigation = target.closest<HTMLElement>("[data-workspace-view]");
     if (navigation) {
       const nextView = navigation.dataset.workspaceView as BoardView;
-      const labels = { all: "所有画板", recent: "最近打开", favorites: "收藏", trash: "回收站" };
-      const items: WorkspaceContextMenuItem[] = [{
-        label: `打开${labels[nextView]}`,
-        icon: nextView === "favorites" ? "star" : nextView === "trash" ? "trash" : "open",
-        onSelect: () => {
-          setView(nextView);
-          setSelectedFolderId(null);
+      const labels = {
+        all: "所有画板",
+        recent: "最近打开",
+        favorites: "收藏",
+        trash: "回收站",
+      };
+      const items: WorkspaceContextMenuItem[] = [
+        {
+          label: `打开${labels[nextView]}`,
+          icon:
+            nextView === "favorites"
+              ? "star"
+              : nextView === "trash"
+                ? "trash"
+                : "open",
+          onSelect: () => {
+            setView(nextView);
+            setSelectedFolderId(null);
+          },
         },
-      }, {
-        label: "命令菜单",
-        icon: "commands",
-        onSelect: () => setCommandPaletteOpen(true),
-      }];
+        {
+          label: "命令菜单",
+          icon: "commands",
+          onSelect: () => setCommandPaletteOpen(true),
+        },
+      ];
       if (nextView === "trash") {
         items.push({
           label: "清空回收站",
@@ -2750,22 +2825,34 @@ export const WorkspaceHome = ({
     const clickedControl = target.closest<HTMLButtonElement>("button");
     // Dropdown options can unmount when the context menu is clicked; reopen via
     // their persistent trigger instead of invoking a detached option button.
-    const control = clickedControl?.closest(".custom-select")
-      ?.querySelector<HTMLButtonElement>(".custom-select__trigger") || clickedControl;
+    const control =
+      clickedControl
+        ?.closest(".custom-select")
+        ?.querySelector<HTMLButtonElement>(".custom-select__trigger") ||
+      clickedControl;
     if (control) {
-      const label = control.getAttribute("aria-label") || control.textContent?.trim() || control.title || "打开选项";
-      showContextMenu(event, [{
-        label,
-        icon: control.classList.contains("empty-trash-button") ? "trash" : "open",
-        danger: control.classList.contains("empty-trash-button"),
-        disabled: control.disabled,
-        onSelect: () => control.click(),
-      }, {
-        label: "命令菜单",
-        icon: "commands",
-        separatorBefore: true,
-        onSelect: () => setCommandPaletteOpen(true),
-      }]);
+      const label =
+        control.getAttribute("aria-label") ||
+        control.textContent?.trim() ||
+        control.title ||
+        "打开选项";
+      showContextMenu(event, [
+        {
+          label,
+          icon: control.classList.contains("empty-trash-button")
+            ? "trash"
+            : "open",
+          danger: control.classList.contains("empty-trash-button"),
+          disabled: control.disabled,
+          onSelect: () => control.click(),
+        },
+        {
+          label: "命令菜单",
+          icon: "commands",
+          separatorBefore: true,
+          onSelect: () => setCommandPaletteOpen(true),
+        },
+      ]);
       return;
     }
 
@@ -2775,10 +2862,14 @@ export const WorkspaceHome = ({
     if (!inTrash) {
       items.push(
         {
-          label: !inSidebar && selectedFolderId ? "在此文件夹中新建画板" : "新建画板",
+          label:
+            !inSidebar && selectedFolderId
+              ? "在此文件夹中新建画板"
+              : "新建画板",
           icon: "plus",
           disabled: !!pendingAction,
-          onSelect: () => void handleCreateScene(inSidebar ? null : selectedFolderId),
+          onSelect: () =>
+            void handleCreateScene(inSidebar ? null : selectedFolderId),
         },
         {
           label: "新建文件夹",
@@ -3045,9 +3136,7 @@ export const WorkspaceHome = ({
                       folder.color || DEFAULT_FOLDER_APPEARANCE.color,
                   } as React.CSSProperties
                 }
-                onContextMenu={(event) =>
-                  openFolderContextMenu(folder, event)
-                }
+                onContextMenu={(event) => openFolderContextMenu(folder, event)}
               >
                 <button
                   type="button"
@@ -3058,9 +3147,7 @@ export const WorkspaceHome = ({
                 >
                   <span className="folder-row-icon" aria-hidden="true">
                     <FolderAppearanceIcon
-                      icon={
-                        folder.icon || DEFAULT_FOLDER_APPEARANCE.icon
-                      }
+                      icon={folder.icon || DEFAULT_FOLDER_APPEARANCE.icon}
                     />
                   </span>
                   <span>{folder.name}</span>
@@ -3113,13 +3200,13 @@ export const WorkspaceHome = ({
                   {view === "trash"
                     ? "已删除画板"
                     : selectedFolderId
-                    ? folders.find((folder) => folder.id === selectedFolderId)
-                        ?.name
-                    : view === "favorites"
-                    ? "收藏"
-                    : view === "recent"
-                    ? "最近打开"
-                    : "所有画板"}
+                      ? folders.find((folder) => folder.id === selectedFolderId)
+                          ?.name
+                      : view === "favorites"
+                        ? "收藏"
+                        : view === "recent"
+                          ? "最近打开"
+                          : "所有画板"}
                 </h2>
                 <span>
                   {loadedPageQueryKeyRef.current === pageQueryKey
@@ -3132,7 +3219,9 @@ export const WorkspaceHome = ({
                   <CustomSelect
                     className="workspace-select-folder"
                     value={selectedFolderId || ""}
-                    onChange={(folderId) => setSelectedFolderId(folderId || null)}
+                    onChange={(folderId) =>
+                      setSelectedFolderId(folderId || null)
+                    }
                     ariaLabel="按文件夹筛选"
                     options={[
                       {
@@ -3167,74 +3256,69 @@ export const WorkspaceHome = ({
               ) : filteredScenes.length === 0 ? (
                 <div className="workspace-empty-state">
                   <div className="empty-state-icon">
-                    {displayedPageOptions.trash
-                      ? <EmptyTrashIcon />
-                      : <ExcalidrawMark />}
+                    {displayedPageOptions.trash ? (
+                      <EmptyTrashIcon />
+                    ) : (
+                      <ExcalidrawMark />
+                    )}
                   </div>
                   <h3>
                     {displayedPageOptions.trash
                       ? "回收站为空"
                       : hasDisplayedFilters
-                      ? "没有找到匹配的画板"
-                      : "还没有画板"}
+                        ? "没有找到匹配的画板"
+                        : "还没有画板"}
                   </h3>
                   <p>
                     {displayedPageOptions.trash
                       ? "删除的画板会暂存在这里，方便随时还原。"
                       : hasDisplayedFilters
-                      ? "试试更换关键词或筛选条件。"
-                      : "创建一个画板，把下一个想法画出来。"}
+                        ? "试试更换关键词或筛选条件。"
+                        : "创建一个画板，把下一个想法画出来。"}
                   </p>
-                  {!hasDisplayedFilters &&
-                    !displayedPageOptions.trash && (
-                      <button
-                        className="primary-button"
-                        type="button"
-                        onClick={() => void handleCreateScene()}
+                  {!hasDisplayedFilters && !displayedPageOptions.trash && (
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={() => void handleCreateScene()}
+                    >
+                      新建第一个画板
+                    </button>
+                  )}
+                </div>
+              ) : shouldVirtualizeBoardGrid ? (
+                <div
+                  ref={boardGridRef}
+                  className="board-grid board-grid-virtualized"
+                  style={{ height: boardGridVirtualizer.getTotalSize() }}
+                  onKeyDown={handleBoardGridKeyDown}
+                >
+                  {boardGridVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const startIndex = virtualRow.index * boardGridColumns;
+                    return (
+                      <div
+                        key={virtualRow.key}
+                        ref={boardGridVirtualizer.measureElement}
+                        data-index={virtualRow.index}
+                        className="board-grid-virtual-row"
+                        style={
+                          {
+                            transform: `translateY(${virtualRow.start - boardGridMetrics.scrollMargin}px)`,
+                            gridTemplateColumns: `repeat(${boardGridColumns}, minmax(0, 1fr))`,
+                          } as React.CSSProperties
+                        }
                       >
-                        新建第一个画板
-                      </button>
-                    )}
+                        {filteredScenes
+                          .slice(startIndex, startIndex + boardGridColumns)
+                          .map(renderBoardCard)}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
-                shouldVirtualizeBoardGrid ? (
-                  <div
-                    ref={boardGridRef}
-                    className="board-grid board-grid-virtualized"
-                    style={{ height: boardGridVirtualizer.getTotalSize() }}
-                    onKeyDown={handleBoardGridKeyDown}
-                  >
-                    {boardGridVirtualizer.getVirtualItems().map((virtualRow) => {
-                      const startIndex =
-                        virtualRow.index * boardGridColumns;
-                      return (
-                        <div
-                          key={virtualRow.key}
-                          ref={boardGridVirtualizer.measureElement}
-                          data-index={virtualRow.index}
-                          className="board-grid-virtual-row"
-                          style={
-                            {
-                              transform: `translateY(${virtualRow.start - boardGridMetrics.scrollMargin}px)`,
-                              gridTemplateColumns: `repeat(${boardGridColumns}, minmax(0, 1fr))`,
-                            } as React.CSSProperties
-                          }
-                        >
-                          {filteredScenes
-                            .slice(
-                              startIndex,
-                              startIndex + boardGridColumns,
-                            )
-                            .map(renderBoardCard)}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div ref={boardGridRef} className="board-grid">
-                    {filteredScenes.map(renderBoardCard)}
-                  </div>
-                )
+                <div ref={boardGridRef} className="board-grid">
+                  {filteredScenes.map(renderBoardCard)}
+                </div>
               )}
               {hasMoreScenes && (
                 <div className="workspace-load-more">
@@ -3338,10 +3422,7 @@ export const WorkspaceHome = ({
         onReload={loadWorkspace}
       />
       {contextMenu && (
-        <WorkspaceContextMenu
-          state={contextMenu}
-          onClose={closeContextMenu}
-        />
+        <WorkspaceContextMenu state={contextMenu} onClose={closeContextMenu} />
       )}
     </div>
   );

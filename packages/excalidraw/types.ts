@@ -979,8 +979,7 @@ export interface ExcalidrawProps {
    * UI for each surface — in addition to a plain node.
    */
   currentUserControls?:
-    | React.ReactNode
-    | ((isMobile: boolean) => React.ReactNode);
+    React.ReactNode | ((isMobile: boolean) => React.ReactNode);
   /**
    * The user being followed on the canvas, if any. Controlled by the host —
    * the editor never sets it; it emits follow/unfollow intents via
@@ -1385,13 +1384,7 @@ export type KeyboardModifiersObject = {
 };
 
 export type Primitive =
-  | number
-  | string
-  | boolean
-  | bigint
-  | symbol
-  | null
-  | undefined;
+  number | string | boolean | bigint | symbol | null | undefined;
 
 export type JSONValue = string | number | boolean | null | object;
 
@@ -1406,8 +1399,7 @@ export type PendingExcalidrawElements = NonDeletedExcalidrawElement[];
 
 /** Runtime gridSize value. Null indicates disabled grid. */
 export type NullableGridSize =
-  | (AppState["gridSize"] & MakeBrand<"NullableGridSize">)
-  | null;
+  (AppState["gridSize"] & MakeBrand<"NullableGridSize">) | null;
 
 export type GenerateDiagramToCode = (props: {
   frame: NonDeleted<ExcalidrawMagicFrameElement>;

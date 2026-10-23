@@ -713,17 +713,19 @@ class App extends React.Component<AppProps, AppState> {
     const editorRenderScale = this.getEditorRenderScale();
     const canvasPixels =
       this.state.width *
-        this.state.height *
-        editorRenderScale *
-        editorRenderScale *
-        (this.state.newElement ? 3 : 2);
+      this.state.height *
+      editorRenderScale *
+      editorRenderScale *
+      (this.state.newElement ? 3 : 2);
 
     return {
       filesBytes,
       fileCount: Object.keys(this.files).length,
       editorRenderScale,
       canvasPixels,
-      elementCanvasCache: elementWithCanvasCache.getMemoryStats(this.imageCache),
+      elementCanvasCache: elementWithCanvasCache.getMemoryStats(
+        this.imageCache,
+      ),
       history: this.history.getMemoryStats(),
       imageCache: this.imageCache.getMemoryStats(),
     };
@@ -1470,13 +1472,13 @@ class App extends React.Component<AppProps, AppState> {
     const currentBinding = startDragged
       ? "startBinding"
       : endDragged
-      ? "endBinding"
-      : null;
+        ? "endBinding"
+        : null;
     const otherBinding = startDragged
       ? "endBinding"
       : endDragged
-      ? "startBinding"
-      : null;
+        ? "startBinding"
+        : null;
     const isAlreadyInsideBindingToSameElement =
       (otherBinding &&
         arrow[otherBinding]?.mode === "inside" &&
@@ -1812,10 +1814,7 @@ class App extends React.Component<AppProps, AppState> {
 
   private isDoubleClick = (
     lastPointerEvent:
-      | PointerEvent
-      | React.PointerEvent<HTMLElement>
-      | undefined
-      | null,
+      PointerEvent | React.PointerEvent<HTMLElement> | undefined | null,
     currentPointerEvent: PointerEvent | React.PointerEvent<HTMLElement>,
   ) => {
     return (
@@ -2149,8 +2148,8 @@ class App extends React.Component<AppProps, AppState> {
                         srcDoc={srcUrl ? undefined : srcDoc}
                         src={
                           src?.type === "document"
-                            ? srcUrl ?? undefined
-                            : src?.link ?? ""
+                            ? (srcUrl ?? undefined)
+                            : (src?.link ?? "")
                         }
                         // https://stackoverflow.com/q/18470015
                         scrolling="no"
@@ -2695,20 +2694,21 @@ class App extends React.Component<AppProps, AppState> {
                               </ElementCanvasButtons>
                             )}
 
-                          {this.isDefaultUIEnabled() && this.state.contextMenu && (
-                            <ContextMenu
-                              items={this.state.contextMenu.items}
-                              top={this.state.contextMenu.top}
-                              left={this.state.contextMenu.left}
-                              actionManager={this.actionManager}
-                              onClose={(callback) => {
-                                this.setState({ contextMenu: null }, () => {
-                                  this.focusContainer();
-                                  callback?.();
-                                });
-                              }}
-                            />
-                          )}
+                          {this.isDefaultUIEnabled() &&
+                            this.state.contextMenu && (
+                              <ContextMenu
+                                items={this.state.contextMenu.items}
+                                top={this.state.contextMenu.top}
+                                left={this.state.contextMenu.left}
+                                actionManager={this.actionManager}
+                                onClose={(callback) => {
+                                  this.setState({ contextMenu: null }, () => {
+                                    this.focusContainer();
+                                    callback?.();
+                                  });
+                                }}
+                              />
+                            )}
                           <StaticCanvas
                             canvas={this.canvas}
                             rc={this.rc}
@@ -2743,7 +2743,9 @@ class App extends React.Component<AppProps, AppState> {
                               appState={this.state}
                               newElement={newElementCanvasElement}
                               scale={this.editorRenderScale}
-                              onScaleFallback={this.handleCanvasAllocationFailure}
+                              onScaleFallback={
+                                this.handleCanvasAllocationFailure
+                              }
                               rc={this.rc}
                               elementsMap={renderableElementsMap}
                               allElementsMap={allElementsMap}
@@ -3072,8 +3074,7 @@ class App extends React.Component<AppProps, AppState> {
       trackEvent("ai", "tool-select (empty-selection)", "d2c");
     } else {
       const selectedMagicFrame:
-        | NonDeleted<ExcalidrawMagicFrameElement>
-        | false =
+        NonDeleted<ExcalidrawMagicFrameElement> | false =
         selectedElements.length === 1 &&
         isMagicFrameElement(selectedElements[0]) &&
         selectedElements[0];
@@ -3540,8 +3541,8 @@ class App extends React.Component<AppProps, AppState> {
     b: { type: string; customType?: string | null } | null | undefined,
   ) =>
     a?.type === b?.type &&
-    (a?.type === "custom" ? a.customType ?? null : null) ===
-      (b?.type === "custom" ? b.customType ?? null : null);
+    (a?.type === "custom" ? (a.customType ?? null) : null) ===
+      (b?.type === "custom" ? (b.customType ?? null) : null);
 
   /**
    * Keeps `state.activeTool` synced to the host-controlled
@@ -4942,14 +4943,14 @@ class App extends React.Component<AppProps, AppState> {
       typeof opts.position === "object"
         ? opts.position.clientX
         : opts.position === "cursor"
-        ? this.viewport.lastPosition.x
-        : this.state.width / 2 + this.state.offsetLeft;
+          ? this.viewport.lastPosition.x
+          : this.state.width / 2 + this.state.offsetLeft;
     const clientY =
       typeof opts.position === "object"
         ? opts.position.clientY
         : opts.position === "cursor"
-        ? this.viewport.lastPosition.y
-        : this.state.height / 2 + this.state.offsetTop;
+          ? this.viewport.lastPosition.y
+          : this.state.height / 2 + this.state.offsetTop;
 
     const { x, y } = viewportCoordsToSceneCoords(
       { clientX, clientY },
@@ -5866,8 +5867,8 @@ class App extends React.Component<AppProps, AppState> {
               this.state.currentItemArrowType === ARROW_TYPE.sharp
                 ? ARROW_TYPE.round
                 : this.state.currentItemArrowType === ARROW_TYPE.round
-                ? ARROW_TYPE.elbow
-                : ARROW_TYPE.sharp;
+                  ? ARROW_TYPE.elbow
+                  : ARROW_TYPE.sharp;
             this.setState({ currentItemArrowType: nextArrowType });
             this.cursorHints.onArrowTypeCycled(nextArrowType);
           } else if (shape === "arrow" || shape === "line") {
@@ -6321,13 +6322,13 @@ class App extends React.Component<AppProps, AppState> {
             lastActiveTool: null,
           })
         : isToggleTool && this.state.activeTool.type !== tool.type
-        ? // activating a toggle tool records the currently active tool so
-          // ESC and the next `toggle` activation can switch back to it
-          updateActiveTool(this.state, {
-            ...tool,
-            lastActiveTool: this.state.activeTool,
-          })
-        : updateActiveTool(this.state, tool);
+          ? // activating a toggle tool records the currently active tool so
+            // ESC and the next `toggle` activation can switch back to it
+            updateActiveTool(this.state, {
+              ...tool,
+              lastActiveTool: this.state.activeTool,
+            })
+          : updateActiveTool(this.state, tool);
     if (nextActiveTool.type === "hand") {
       this.cursor.set(CURSOR_TYPE.GRAB);
     } else if (!isHoldingSpace) {
@@ -7129,23 +7130,23 @@ class App extends React.Component<AppProps, AppState> {
         // caret-centering fudge may nudge it
         { x: sceneX, y: sceneY }
       : parentCenterPosition
-      ? {
-          x: parentCenterPosition.elementCenterX,
-          y: parentCenterPosition.elementCenterY,
-        }
-      : !existingTextElement
-      ? {
-          x: textCreationGridPoint?.x ?? sceneX,
-          y:
-            textCreationGridPoint === null
-              ? // Free text starts from a point cursor, so center the first line box on it.
-                sceneY - getLineHeightInPx(fontSize, lineHeight) / 2
-              : textCreationGridPoint.y,
-        }
-      : {
-          x: sceneX,
-          y: sceneY,
-        };
+        ? {
+            x: parentCenterPosition.elementCenterX,
+            y: parentCenterPosition.elementCenterY,
+          }
+        : !existingTextElement
+          ? {
+              x: textCreationGridPoint?.x ?? sceneX,
+              y:
+                textCreationGridPoint === null
+                  ? // Free text starts from a point cursor, so center the first line box on it.
+                    sceneY - getLineHeightInPx(fontSize, lineHeight) / 2
+                  : textCreationGridPoint.y,
+            }
+          : {
+              x: sceneX,
+              y: sceneY,
+            };
 
     const topLayerFrame = this.getTopLayerFrameAtSceneCoords({
       x: newTextElementPosition.x,
@@ -7806,8 +7807,9 @@ class App extends React.Component<AppProps, AppState> {
       // to support a case of dragging a pre-existing frame child underneath
       // a non-frame element covering the cursor
       const currentFrame = opts?.currentFrameId
-        ? framesUnderCursor.find((frame) => frame.id === opts.currentFrameId) ??
-          null
+        ? (framesUnderCursor.find(
+            (frame) => frame.id === opts.currentFrameId,
+          ) ?? null)
         : null;
 
       if (currentFrame) {
@@ -7815,8 +7817,8 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       return hitElement.frameId
-        ? framesUnderCursor.find((frame) => frame.id === hitElement.frameId) ??
-            null
+        ? (framesUnderCursor.find((frame) => frame.id === hitElement.frameId) ??
+            null)
         : null;
     }
 
@@ -8378,8 +8380,8 @@ class App extends React.Component<AppProps, AppState> {
           hoveredArrowTextAnchor
             ? CURSOR_TYPE.POINTER
             : isTextElement(hitElement)
-            ? CURSOR_TYPE.TEXT
-            : CURSOR_TYPE.CROSSHAIR,
+              ? CURSOR_TYPE.TEXT
+              : CURSOR_TYPE.CROSSHAIR,
         );
       } else if (
         !event[KEYS.CTRL_OR_CMD] &&
@@ -9224,19 +9226,17 @@ class App extends React.Component<AppProps, AppState> {
   public handleCanvasPanUsingWheelOrSpaceDrag = (
     event: React.PointerEvent<HTMLElement> | MouseEvent,
   ): boolean => {
-    if (
-      !(
-        gesture.pointers.size <= 1 &&
-        (((event.button === POINTER_BUTTON.WHEEL ||
-          (event.button === POINTER_BUTTON.MAIN && isHoldingSpace) ||
-          isHandToolActive(this.state)) &&
-          // reachable while non-interactive when the active tool is allowed
-          // via `interaction.enabled.tools` — panning must remain gated on
-          // `navigation` then
-          (this.isInteractionEnabled() || this.isNavigationEnabled())) ||
-          (this.state.viewModeEnabled && !this.isActiveToolPointerCapturing()))
-      )
-    ) {
+    if (!(
+      gesture.pointers.size <= 1 &&
+      (((event.button === POINTER_BUTTON.WHEEL ||
+        (event.button === POINTER_BUTTON.MAIN && isHoldingSpace) ||
+        isHandToolActive(this.state)) &&
+        // reachable while non-interactive when the active tool is allowed
+        // via `interaction.enabled.tools` — panning must remain gated on
+        // `navigation` then
+        (this.isInteractionEnabled() || this.isNavigationEnabled())) ||
+        (this.state.viewModeEnabled && !this.isActiveToolPointerCapturing()))
+    )) {
       return false;
     }
     isPanning = true;
@@ -9463,12 +9463,13 @@ class App extends React.Component<AppProps, AppState> {
       ),
       // we need to duplicate because we'll be updating this state
       lastCoords: { ...origin },
-      originalElements: this.scene
-        .getNonDeletedElements()
-        .reduce((acc, element) => {
+      originalElements: this.scene.getNonDeletedElements().reduce(
+        (acc, element) => {
           acc.set(element.id, deepCopyElement(element));
           return acc;
-        }, new Map() as PointerDownState["originalElements"]),
+        },
+        new Map() as PointerDownState["originalElements"],
+      ),
       resize: {
         handleType: false,
         isResizing: false,
@@ -9510,9 +9511,9 @@ class App extends React.Component<AppProps, AppState> {
     event: React.PointerEvent<HTMLElement>,
     pointerDownState: PointerDownState,
   ): boolean {
-    if (
-      !(pointerDownState.scrollbars.isOverEither && !this.state.multiElement)
-    ) {
+    if (!(
+      pointerDownState.scrollbars.isOverEither && !this.state.multiElement
+    )) {
       return false;
     }
     isDraggingScrollBar = true;
@@ -13128,7 +13129,9 @@ class App extends React.Component<AppProps, AppState> {
     imageElements?: InitializedExcalidrawImageElement[],
     files: BinaryFiles = this.files,
   ) => {
-    const uncachedImageElements = (imageElements || this.getImagesToDecode()).filter(
+    const uncachedImageElements = (
+      imageElements || this.getImagesToDecode()
+    ).filter(
       (element) => !element.isDeleted && !this.imageCache.has(element.fileId),
     );
 
@@ -13312,7 +13315,9 @@ class App extends React.Component<AppProps, AppState> {
 
       const nextElements = this.scene
         .getElementsIncludingDeleted()
-        .map((el) => positionedMap.get(el.id) ?? initializedMap.get(el.id) ?? el);
+        .map(
+          (el) => positionedMap.get(el.id) ?? initializedMap.get(el.id) ?? el,
+        );
 
       this.updateScene({
         appState: {
@@ -14088,15 +14093,13 @@ class App extends React.Component<AppProps, AppState> {
       if (!this.isNavigationEnabled()) {
         return;
       }
-      if (
-        !(
-          event.target instanceof this.ownerWindow.HTMLCanvasElement ||
-          event.target instanceof this.ownerWindow.HTMLTextAreaElement ||
-          event.target instanceof this.ownerWindow.HTMLIFrameElement ||
-          (event.target instanceof this.ownerWindow.HTMLElement &&
-            event.target.classList.contains(CLASSES.FRAME_NAME))
-        )
-      ) {
+      if (!(
+        event.target instanceof this.ownerWindow.HTMLCanvasElement ||
+        event.target instanceof this.ownerWindow.HTMLTextAreaElement ||
+        event.target instanceof this.ownerWindow.HTMLIFrameElement ||
+        (event.target instanceof this.ownerWindow.HTMLElement &&
+          event.target.classList.contains(CLASSES.FRAME_NAME))
+      )) {
         // prevent zooming the browser (but allow scrolling DOM)
         if (event[KEYS.CTRL_OR_CMD]) {
           event.preventDefault();
