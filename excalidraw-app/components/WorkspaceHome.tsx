@@ -41,6 +41,7 @@ import {
   subscribeCloudRealtime,
   subscribeCloudTabSync,
 } from "../data/cloudSync";
+import { getLocalSceneMigrationIdentity } from "../data/localSceneMigration";
 
 import { AuthDialog } from "./AuthDialog";
 import { WorkspaceDialog } from "./WorkspaceDialog";
@@ -295,6 +296,13 @@ const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
     return null;
   }
 
+  const appState = localData.appState || {};
+  const migrationIdentity = getLocalSceneMigrationIdentity({
+    name: "本地画板",
+    elements,
+    appState,
+  });
+
   const fileIds = [
     ...new Set(
       elements
@@ -325,11 +333,16 @@ const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
     await saveFilesToCloud(files);
   }
 
-  const scene = await createCloudScene({
+  // The cloud API wrapper serializes this extra field for server-side replay.
+  const createData = {
+    ...migrationIdentity,
     name: "本地画板",
     elements,
-    appState: localData.appState || undefined,
-  });
+    appState,
+  } as Parameters<typeof createCloudScene>[0] & {
+    idempotencyKey: string;
+  };
+  const scene = await createCloudScene(createData);
   try {
     localStorage.setItem(LOCAL_SCENE_MIGRATION_KEY, "completed");
   } catch {
