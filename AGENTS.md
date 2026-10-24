@@ -21,8 +21,6 @@
 
 ## 验证与提交
 
-- 文档改动：检查链接、示例和格式。
-- 服务端或持久化改动：运行 `bun run test:server`。
-- 局部前端改动：运行相关单测或 `bun run test:unit`；涉及界面行为时补 `bun run build`。需要类型检查时运行 `bun run test:typecheck`。
-- 依赖、构建配置、跨模块或发布级改动：运行 `bun run test:all`。按改动范围选择验证，浏览器测试保持必要且精简。
-- 每个独立改动验证通过后提交一次，使用中文主题的 Conventional Commit 信息，如 `fix: 修复画板保存`、`docs: 更新开发说明`。
+- 每个独立改动完成后，提交前仅对本次修改的文件运行 `bun fmt`，检查 diff，避免混入无关格式变动；随后必须通过 `bun run format:check` 和 `bun run test:all`，不以局部测试替代全量验证。
+- 依赖变更额外运行 `bun audit`；文档变更检查链接和示例；浏览器测试保持必要且精简。
+- 验证通过后提交一次，使用中文主题的 Conventional Commit 信息，如 `fix: 修复画板保存`、`docs: 更新开发说明`。多 agent 并行修改时，由主 agent 统一核验并提交完整改动。
