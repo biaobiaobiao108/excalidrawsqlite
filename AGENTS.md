@@ -2,6 +2,17 @@
 
 本项目使用 Bun 1.4.4+、Bun HTML Bundler 和原生 SQLite。项目结构、配置与部署见 [README.md](README.md)。
 
+## 目录导航
+
+- `excalidraw-app/`：前端应用与界面。
+- `server/`：服务端 API、SQLite、鉴权、附件、实时同步与 MCP；入口为 `server/server.ts`。
+- `packages/`：Monorepo 内部共享包。
+- `scripts/`：构建、发布和维护脚本。
+- `tests/unit/`、`tests/server/`：单元测试与服务端测试。
+- `public/`：静态资源。
+- `data/`：本地运行数据，不作为源码修改。
+- `excalidraw-app/build/`、`server-build/`：构建产物；应修改对应源码并重新构建。
+
 ## 日常开发
 
 - 使用中文沟通，优先简单、易维护的改动；需求明确时直接执行。
