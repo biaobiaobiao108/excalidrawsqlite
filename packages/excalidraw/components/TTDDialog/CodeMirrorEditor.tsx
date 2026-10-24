@@ -207,9 +207,7 @@ const CodeMirrorEditor = ({
           lineNumbers(),
           EditorView.lineWrapping,
           themeCompartment.of(getThemeExtensions(theme)),
-          languageCompartmentRef.current.of(
-            getLanguageExtension(language),
-          ),
+          languageCompartmentRef.current.of(getLanguageExtension(language)),
           errorLineCompartmentRef.current.of([]),
           EditorView.contentAttributes.of(
             ariaLabel ? { "aria-label": ariaLabel } : {},

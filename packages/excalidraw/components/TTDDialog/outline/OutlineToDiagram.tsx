@@ -257,9 +257,7 @@ export const OutlineToDiagram = ({ isActive }: { isActive?: boolean }) => {
             emptyMessage={
               t("outline.emptyPreview") || "输入大纲后将在此处显示思维导图预览"
             }
-            canvasAriaLabel={
-              t("outline.previewAriaLabel") || "Mindmap preview"
-            }
+            canvasAriaLabel={t("outline.previewAriaLabel") || "Mindmap preview"}
             sourceText={text}
           />
         </TTDDialogPanel>

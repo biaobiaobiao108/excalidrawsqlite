@@ -12,7 +12,11 @@ import {
 import type { ServerRuntime } from "./types";
 
 const storedInteger = (value: unknown, minimum: number): number => {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum) {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < minimum
+  ) {
     throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
   }
   return value;
@@ -39,7 +43,9 @@ export const parseStoredElements = (value: unknown): unknown[] => {
   return elements;
 };
 
-export const parseStoredAppState = (value: unknown): Record<string, unknown> => {
+export const parseStoredAppState = (
+  value: unknown,
+): Record<string, unknown> => {
   const appState = parseSceneJson(value);
   if (!appState || typeof appState !== "object" || Array.isArray(appState)) {
     throw new HttpError(500, "CORRUPT_SCENE", "画板数据损坏");
@@ -110,10 +116,7 @@ const assertFolderExists = (
   runtime: ServerRuntime,
   folderId: string | null,
 ) => {
-  if (
-    folderId &&
-    !getFolderQuery(runtime).getFolderId.get(folderId)
-  ) {
+  if (folderId && !getFolderQuery(runtime).getFolderId.get(folderId)) {
     throw new HttpError(400, "FOLDER_NOT_FOUND", "文件夹不存在");
   }
 };

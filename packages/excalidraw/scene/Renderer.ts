@@ -121,12 +121,14 @@ export class Renderer {
         : elementsMap.values();
 
     const visibleElements: NonDeletedExcalidrawElement[] = [];
-    const indexedBounds = this.visibleElementIndex?.elementsMap === elementsMap
-      ? this.visibleElementIndex.bounds
-      : null;
+    const indexedBounds =
+      this.visibleElementIndex?.elementsMap === elementsMap
+        ? this.visibleElementIndex.bounds
+        : null;
     for (const element of candidates) {
       const [x1, y1, x2, y2] =
-        indexedBounds?.get(element.id) || getElementBounds(element, elementsMap);
+        indexedBounds?.get(element.id) ||
+        getElementBounds(element, elementsMap);
       if (
         topLeftSceneCoords.x <= x2 &&
         topLeftSceneCoords.y <= y2 &&

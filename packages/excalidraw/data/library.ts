@@ -512,8 +512,7 @@ export const validateLibraryUrl = (
    * @returns `true` if the URL is valid, throws otherwise.
    */
   validator:
-    | ((libraryUrl: string) => boolean)
-    | string[] = ALLOWED_LIBRARY_URLS,
+    ((libraryUrl: string) => boolean) | string[] = ALLOWED_LIBRARY_URLS,
 ): true => {
   if (
     typeof validator === "function"

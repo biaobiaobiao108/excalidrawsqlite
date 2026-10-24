@@ -93,15 +93,9 @@ export const getMostUsedCustomColors = (
 };
 
 export type ActiveColorPickerSectionAtomType =
-  | "custom"
-  | "baseColors"
-  | "shades"
-  | "hex"
-  | null;
+  "custom" | "baseColors" | "shades" | "hex" | null;
 export const activeColorPickerSectionAtom =
   atom<ActiveColorPickerSectionAtomType>(null);
 
 export type ColorPickerType =
-  | "canvasBackground"
-  | "elementBackground"
-  | "elementStroke";
+  "canvasBackground" | "elementBackground" | "elementStroke";

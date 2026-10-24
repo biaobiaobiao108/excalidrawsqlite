@@ -32,13 +32,7 @@ import type { Scene } from "@excalidraw/element";
 import type { AppState } from "../../types";
 
 export type StatsInputProperty =
-  | "x"
-  | "y"
-  | "width"
-  | "height"
-  | "angle"
-  | "fontSize"
-  | "gridStep";
+  "x" | "y" | "width" | "height" | "angle" | "fontSize" | "gridStep";
 
 export const SMALLEST_DELTA = 0.01;
 export const STEP_SIZE = 10;

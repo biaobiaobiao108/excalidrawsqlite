@@ -8,9 +8,7 @@ const indexFile = path.join(appBuildDir, "index.html");
 
 const versionDate = (date: Date) => date.toISOString().replace(".000", "");
 
-const buildHash = (process.env.BUILD_SHA || "")
-  .trim()
-  .slice(0, 7);
+const buildHash = (process.env.BUILD_SHA || "").trim().slice(0, 7);
 const buildDate = (process.env.BUILD_DATE || "").trim();
 
 const commitHash = (): string => {
@@ -76,4 +74,3 @@ if (await indexFileHandle.exists()) {
   const result = content.replace(/{version}/g, version);
   await Bun.write(indexFile, result);
 }
-

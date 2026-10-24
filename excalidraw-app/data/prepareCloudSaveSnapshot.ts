@@ -17,9 +17,15 @@ export const prepareCloudSaveSnapshot = async (
       }
       const elements = current.elements.filter((element) => !element.isDeleted);
       snapshot = { ...current, elements };
-      return [...new Set(elements.flatMap((element) =>
-        element.type === "image" && element.fileId ? [element.fileId as FileId] : [],
-      ))];
+      return [
+        ...new Set(
+          elements.flatMap((element) =>
+            element.type === "image" && element.fileId
+              ? [element.fileId as FileId]
+              : [],
+          ),
+        ),
+      ];
     },
     () => snapshot!.files,
     isCurrentScene,

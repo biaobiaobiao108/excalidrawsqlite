@@ -178,7 +178,10 @@ export class History {
       1,
       Math.trunc(options.maxEntries ?? HISTORY_MAX_ENTRIES),
     );
-    this.maxBytes = Math.max(1, Math.trunc(options.maxBytes ?? HISTORY_MAX_BYTES));
+    this.maxBytes = Math.max(
+      1,
+      Math.trunc(options.maxBytes ?? HISTORY_MAX_BYTES),
+    );
   }
 
   public clear() {
@@ -213,10 +216,7 @@ export class History {
         historyDelta.elements.updated,
       ]) {
         for (const elementDelta of Object.values(delta)) {
-          for (const partial of [
-            elementDelta.deleted,
-            elementDelta.inserted,
-          ]) {
+          for (const partial of [elementDelta.deleted, elementDelta.inserted]) {
             const fileId = (partial as { fileId?: unknown }).fileId;
             if (typeof fileId === "string") {
               fileIds.add(fileId as FileId);
@@ -405,10 +405,7 @@ export class History {
     ) {
       const oldest = stack.shift();
       if (oldest) {
-        this.updateStackBytes(
-          stackName,
-          -estimateHistoryDeltaBytes(oldest),
-        );
+        this.updateStackBytes(stackName, -estimateHistoryDeltaBytes(oldest));
       }
     }
   }

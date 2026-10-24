@@ -4,7 +4,8 @@ import * as z from "zod/v4";
  * https://www.w3.org/TR/css-color-4/#named-colors
  * Context-dependent keywords (currentColor and system colors) are intentionally excluded.
  */
-export const CSS_NAMED_COLORS = `aliceblue antiquewhite aqua aquamarine azure beige bisque black
+export const CSS_NAMED_COLORS =
+  `aliceblue antiquewhite aqua aquamarine azure beige bisque black
 blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral
 cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen
 darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon
@@ -23,12 +24,24 @@ seagreen seashell sienna silver skyblue slateblue slategray slategrey snow sprin
 steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow
 yellowgreen`.split(/\s+/);
 const colorNames = [...CSS_NAMED_COLORS, "transparent"];
-export const COLOR_PATTERN = new RegExp(`^(?:#[\\da-f]{3}|#[\\da-f]{4}|#[\\da-f]{6}|#[\\da-f]{8}|${colorNames.join("|")})$`, "i");
-export const COLOR_DESCRIPTION = "颜色须为 #RGB/#RGBA/#RRGGBB/#RRGGBBAA、transparent 或标准 CSS 命名色（含 rebeccapurple），不区分大小写";
-export const isValidColor = (value: unknown): value is string => typeof value === "string" && value.trim().length <= 64 && COLOR_PATTERN.test(value.trim());
+export const COLOR_PATTERN = new RegExp(
+  `^(?:#[\\da-f]{3}|#[\\da-f]{4}|#[\\da-f]{6}|#[\\da-f]{8}|${colorNames.join("|")})$`,
+  "i",
+);
+export const COLOR_DESCRIPTION =
+  "颜色须为 #RGB/#RGBA/#RRGGBB/#RRGGBBAA、transparent 或标准 CSS 命名色（含 rebeccapurple），不区分大小写";
+export const isValidColor = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.trim().length <= 64 &&
+  COLOR_PATTERN.test(value.trim());
 
 // Keep format validation at the Standard Schema boundary before any handler runs.
 // Advertising a large pattern makes clients echo that pattern on every invalid color;
 // the wire schema advertises type/length and guidance, and the server checks the format.
-export const colorSchema = z.string().trim().toLowerCase().max(64)
-  .refine(isValidColor, COLOR_DESCRIPTION).describe(COLOR_DESCRIPTION);
+export const colorSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(64)
+  .refine(isValidColor, COLOR_DESCRIPTION)
+  .describe(COLOR_DESCRIPTION);

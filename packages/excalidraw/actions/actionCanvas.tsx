@@ -306,8 +306,8 @@ export const actionZoomToFitSelectionInViewport = register({
     const bounds = selectedElements.length
       ? getCommonBounds(getNonDeletedElements(selectedElements))
       : appState.scrollConstraints
-      ? getScrollConstraintsBounds(appState.scrollConstraints)
-      : getCommonBounds(getNonDeletedElements(elements));
+        ? getScrollConstraintsBounds(appState.scrollConstraints)
+        : getCommonBounds(getNonDeletedElements(elements));
     const result = zoomToFitBounds({
       bounds,
       appState,
@@ -349,8 +349,8 @@ export const actionZoomToFitSelection = register({
     const bounds = selectedElements.length
       ? getCommonBounds(getNonDeletedElements(selectedElements))
       : appState.scrollConstraints
-      ? getScrollConstraintsBounds(appState.scrollConstraints)
-      : getCommonBounds(getNonDeletedElements(elements));
+        ? getScrollConstraintsBounds(appState.scrollConstraints)
+        : getCommonBounds(getNonDeletedElements(elements));
     const result = zoomToFitBounds({
       bounds,
       appState,

@@ -97,48 +97,137 @@ afterEach(async () => {
 describe("cloud persistence server", () => {
   it("rejects duplicate folder names and preserves timestamps for unchanged metadata", async () => {
     const { handler, runtime } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
-    const created = await jsonRequest(handler, "/api/folders", { name: " 项目 " });
+    const created = await jsonRequest(handler, "/api/folders", {
+      name: " 项目 ",
+    });
     expect(created.status).toBe(201);
-    const folder = await responseJson<{ id: string; updated_at: number }>(created);
-    expect(() => runtime.db.run(
-      "INSERT INTO folders (id, name, icon, color, created_at, updated_at) SELECT 'duplicate_folder', name, icon, color, created_at, updated_at FROM folders WHERE id = ?",
-      [folder.id],
-    )).toThrow("UNIQUE constraint failed: folders.name");
-    const duplicate = await jsonRequest(handler, "/api/folders", { name: "项目" });
+    const folder = await responseJson<{ id: string; updated_at: number }>(
+      created,
+    );
+    expect(() =>
+      runtime.db.run(
+        "INSERT INTO folders (id, name, icon, color, created_at, updated_at) SELECT 'duplicate_folder', name, icon, color, created_at, updated_at FROM folders WHERE id = ?",
+        [folder.id],
+      ),
+    ).toThrow("UNIQUE constraint failed: folders.name");
+    const duplicate = await jsonRequest(handler, "/api/folders", {
+      name: "项目",
+    });
     expect(duplicate.status).toBe(409);
-    expect(await responseJson(duplicate)).toMatchObject({ code: "FOLDER_NAME_EXISTS" });
-    const other = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/folders", { name: "其他" }));
-    expect((await jsonRequest(handler, `/api/folders/${other.id}`, { name: "项目" }, { method: "PATCH" })).status).toBe(409);
+    expect(await responseJson(duplicate)).toMatchObject({
+      code: "FOLDER_NAME_EXISTS",
+    });
+    const other = await responseJson<{ id: string }>(
+      await jsonRequest(handler, "/api/folders", { name: "其他" }),
+    );
+    expect(
+      (
+        await jsonRequest(
+          handler,
+          `/api/folders/${other.id}`,
+          { name: "项目" },
+          { method: "PATCH" },
+        )
+      ).status,
+    ).toBe(409);
     await Bun.sleep(5);
-    const folderNoop = await jsonRequest(handler, `/api/folders/${folder.id}`, { name: "项目" }, { method: "PATCH" });
-    expect(await responseJson(folderNoop)).toMatchObject({ updated_at: folder.updated_at, noop: true });
-    const board = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/scenes", { name: "无变化", elements: [], tags: ["甲", "乙"], favorite: true, folder_id: folder.id }));
-    const stored = runtime.db.query("SELECT updated_at, revision FROM scenes WHERE id = ?").get(board.id);
+    const folderNoop = await jsonRequest(
+      handler,
+      `/api/folders/${folder.id}`,
+      { name: "项目" },
+      { method: "PATCH" },
+    );
+    expect(await responseJson(folderNoop)).toMatchObject({
+      updated_at: folder.updated_at,
+      noop: true,
+    });
+    const board = await responseJson<{ id: string }>(
+      await jsonRequest(handler, "/api/scenes", {
+        name: "无变化",
+        elements: [],
+        tags: ["甲", "乙"],
+        favorite: true,
+        folder_id: folder.id,
+      }),
+    );
+    const stored = runtime.db
+      .query("SELECT updated_at, revision FROM scenes WHERE id = ?")
+      .get(board.id);
     await Bun.sleep(5);
-    const unchanged = await jsonRequest(handler, `/api/scenes/${board.id}`, { name: "无变化", tags: ["乙", "甲"], favorite: true, folder_id: folder.id }, { method: "PATCH" });
+    const unchanged = await jsonRequest(
+      handler,
+      `/api/scenes/${board.id}`,
+      {
+        name: "无变化",
+        tags: ["乙", "甲"],
+        favorite: true,
+        folder_id: folder.id,
+      },
+      { method: "PATCH" },
+    );
     expect(unchanged.status).toBe(200);
     expect(await responseJson(unchanged)).toMatchObject({ noop: true });
-    expect(runtime.db.query("SELECT updated_at, revision FROM scenes WHERE id = ?").get(board.id)).toEqual(stored);
-    const conflict = await jsonRequest(handler, `/api/scenes/${board.id}`, { favorite: true, baseRevision: 999 }, { method: "PATCH" });
+    expect(
+      runtime.db
+        .query("SELECT updated_at, revision FROM scenes WHERE id = ?")
+        .get(board.id),
+    ).toEqual(stored);
+    const conflict = await jsonRequest(
+      handler,
+      `/api/scenes/${board.id}`,
+      { favorite: true, baseRevision: 999 },
+      { method: "PATCH" },
+    );
     expect(conflict.status).toBe(409);
   });
 
   it("requires null for root-folder writes and retains the empty root-folder query", async () => {
     const { handler, runtime } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
-    const folder = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/folders", { name: "目录" }));
-    const board = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/scenes", { name: "目录内画板", folder_id: folder.id }));
-    const before = runtime.db.query("SELECT * FROM scenes WHERE id = ?").get(board.id);
+    const folder = await responseJson<{ id: string }>(
+      await jsonRequest(handler, "/api/folders", { name: "目录" }),
+    );
+    const board = await responseJson<{ id: string }>(
+      await jsonRequest(handler, "/api/scenes", {
+        name: "目录内画板",
+        folder_id: folder.id,
+      }),
+    );
+    const before = runtime.db
+      .query("SELECT * FROM scenes WHERE id = ?")
+      .get(board.id);
     for (const method of ["POST", "PATCH", "PUT"]) {
-      const pathname = method === "POST" ? "/api/scenes" : `/api/scenes/${board.id}`;
-      const rejected = await jsonRequest(handler, pathname, { folder_id: "" }, { method });
+      const pathname =
+        method === "POST" ? "/api/scenes" : `/api/scenes/${board.id}`;
+      const rejected = await jsonRequest(
+        handler,
+        pathname,
+        { folder_id: "" },
+        { method },
+      );
       expect(rejected.status).toBe(400);
-      expect(await responseJson(rejected)).toMatchObject({ code: "INVALID_ID" });
-      expect(runtime.db.query("SELECT * FROM scenes WHERE id = ?").get(board.id)).toEqual(before);
+      expect(await responseJson(rejected)).toMatchObject({
+        code: "INVALID_ID",
+      });
+      expect(
+        runtime.db.query("SELECT * FROM scenes WHERE id = ?").get(board.id),
+      ).toEqual(before);
     }
-    const root = await responseJson<{ id: string }>(await jsonRequest(handler, "/api/scenes", { name: "根目录", folder_id: null }));
-    const listing = await responseJson<{ items: Array<{ id: string }> }>(await request(handler, "/api/scenes?folder_id="));
+    const root = await responseJson<{ id: string }>(
+      await jsonRequest(handler, "/api/scenes", {
+        name: "根目录",
+        folder_id: null,
+      }),
+    );
+    const listing = await responseJson<{ items: Array<{ id: string }> }>(
+      await request(handler, "/api/scenes?folder_id="),
+    );
     expect(listing.items.map((item) => item.id)).toEqual([root.id]);
-    const moved = await jsonRequest(handler, `/api/scenes/${board.id}`, { folder_id: null }, { method: "PATCH" });
+    const moved = await jsonRequest(
+      handler,
+      `/api/scenes/${board.id}`,
+      { folder_id: null },
+      { method: "PATCH" },
+    );
     expect(moved.status).toBe(200);
     expect(await responseJson(moved)).toMatchObject({ folder_id: null });
   });
@@ -314,7 +403,9 @@ describe("cloud persistence server", () => {
       tags: ["共享", "尾页", "更新标签", "精确"],
     });
     for (const query of ["opened=invalid", `tag=${"长".repeat(121)}`]) {
-      const invalid = await request(handler, `/api/scenes?${query}`, { headers });
+      const invalid = await request(handler, `/api/scenes?${query}`, {
+        headers,
+      });
       expect(invalid.status).toBe(400);
     }
   });
@@ -369,11 +460,9 @@ describe("cloud persistence server", () => {
       "ETag",
     );
 
-    const notModified = await request(
-      handler,
-      "/api/scenes/scene_cors_etag",
-      { headers: { ...headers, "If-None-Match": etag! } },
-    );
+    const notModified = await request(handler, "/api/scenes/scene_cors_etag", {
+      headers: { ...headers, "If-None-Match": etag! },
+    });
     expect(notModified.status).toBe(304);
     expect(notModified.headers.get("access-control-expose-headers")).toContain(
       "ETag",
@@ -459,9 +548,11 @@ describe("cloud persistence server", () => {
       user_version: 0,
     });
     expect(
-      (runtime.db.query("PRAGMA table_info(files)").all() as Array<{
-        name: string;
-      }>).map((column) => column.name),
+      (
+        runtime.db.query("PRAGMA table_info(files)").all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
     ).toEqual([
       "id",
       "storage_path",
@@ -472,9 +563,11 @@ describe("cloud persistence server", () => {
       "updated_at",
     ]);
     expect(
-      (runtime.db.query("PRAGMA table_info(scenes)").all() as Array<{
-        name: string;
-      }>).map((column) => column.name),
+      (
+        runtime.db.query("PRAGMA table_info(scenes)").all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
     ).toContain("content_sha256");
   });
 
@@ -625,9 +718,9 @@ describe("cloud persistence server", () => {
         ),
       );
     }
-    expect(responses.slice(0, 5).map((response) => response.status)).toEqual(
-      [401, 401, 401, 401, 401],
-    );
+    expect(responses.slice(0, 5).map((response) => response.status)).toEqual([
+      401, 401, 401, 401, 401,
+    ]);
     expect(responses[5].status).toBe(429);
   });
 
@@ -894,9 +987,7 @@ describe("cloud persistence server", () => {
         handler,
         "/api/scenes/scene_race",
         {
-          elements: [
-            { id: elementId, type: "image", fileId: "file_race" },
-          ],
+          elements: [{ id: elementId, type: "image", fileId: "file_race" }],
           appState: {},
           baseRevision: created.revision,
         },
@@ -905,8 +996,7 @@ describe("cloud persistence server", () => {
 
     const responses = await Promise.all([save("element-a"), save("element-b")]);
     expect(responses.map((response) => response.status).sort()).toEqual([
-      200,
-      409,
+      200, 409,
     ]);
 
     const sceneResponse = await request(handler, "/api/scenes/scene_race", {
@@ -965,13 +1055,15 @@ describe("cloud persistence server", () => {
         ...firstPageBody.items.map((item) => item.id),
         ...secondPageBody.items.map((item) => item.id),
       ]),
-    ).toEqual(
-      new Set(["scene_page_a", "scene_page_b", "scene_page_c"]),
-    );
+    ).toEqual(new Set(["scene_page_a", "scene_page_b", "scene_page_c"]));
 
-    const filtered = await request(handler, "/api/scenes?q=%E5%88%86%E9%A1%B5%20B", {
-      headers: { Cookie: cookie },
-    });
+    const filtered = await request(
+      handler,
+      "/api/scenes?q=%E5%88%86%E9%A1%B5%20B",
+      {
+        headers: { Cookie: cookie },
+      },
+    );
     expect(
       (await responseJson<{ items: Array<{ id: string }> }>(filtered)).items,
     ).toEqual([expect.objectContaining({ id: "scene_page_b" })]);
@@ -1023,9 +1115,8 @@ describe("cloud persistence server", () => {
     });
     expect(afterThumbnail.status).toBe(200);
     expect(
-      (await responseJson<{ thumbnail_file_id: string | null }>(
-        afterThumbnail,
-      )).thumbnail_file_id,
+      (await responseJson<{ thumbnail_file_id: string | null }>(afterThumbnail))
+        .thumbnail_file_id,
     ).toMatch(/^thumbnail_/);
 
     const thumbnailEtag = afterThumbnail.headers.get("etag");
@@ -1045,9 +1136,11 @@ describe("cloud persistence server", () => {
     );
     expect(afterThumbnailDelete.status).toBe(200);
     expect(
-      (await responseJson<{ thumbnail_file_id: string | null }>(
-        afterThumbnailDelete,
-      )).thumbnail_file_id,
+      (
+        await responseJson<{ thumbnail_file_id: string | null }>(
+          afterThumbnailDelete,
+        )
+      ).thumbnail_file_id,
     ).toBe(null);
 
     const summaryResponse = await request(
@@ -1081,11 +1174,9 @@ describe("cloud persistence server", () => {
       (await responseJson<{ items: Array<{ id: string }> }>(openedPage)).items,
     ).toHaveLength(2);
 
-    const invalidSort = await request(
-      handler,
-      "/api/scenes?sort=unsupported",
-      { headers: { Cookie: cookie } },
-    );
+    const invalidSort = await request(handler, "/api/scenes?sort=unsupported", {
+      headers: { Cookie: cookie },
+    });
     expect(invalidSort.status).toBe(400);
   });
 
@@ -1106,12 +1197,19 @@ describe("cloud persistence server", () => {
       insert.run(id, id, updatedAt, updatedAt, openedAt);
     }
     insert.finalize();
-    type Page = { items: Array<{ id: string; last_opened_at: number | null }>; nextCursor: string | null };
+    type Page = {
+      items: Array<{ id: string; last_opened_at: number | null }>;
+      nextCursor: string | null;
+    };
     const readIds = async (sort: string, limit: number) => {
       const ids: string[] = [];
       let cursor: string | null = null;
       do {
-        const response = await request(handler, `/api/scenes?sort=${sort}&limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, { headers: { Cookie: cookie } });
+        const response = await request(
+          handler,
+          `/api/scenes?sort=${sort}&limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+          { headers: { Cookie: cookie } },
+        );
         expect(response.status).toBe(200);
         const page = await responseJson<Page>(response);
         ids.push(...page.items.map(({ id }) => id));
@@ -1121,9 +1219,23 @@ describe("cloud persistence server", () => {
       return ids;
     };
     for (const limit of [1, 2, 4]) {
-      expect(await readIds("opened", limit)).toEqual(["opened_c", "opened_b", "opened_a", "unopened_c", "unopened_b", "unopened_a"]);
+      expect(await readIds("opened", limit)).toEqual([
+        "opened_c",
+        "opened_b",
+        "opened_a",
+        "unopened_c",
+        "unopened_b",
+        "unopened_a",
+      ]);
     }
-    const byUpdate = ["unopened_a", "unopened_c", "opened_a", "opened_c", "opened_b", "unopened_b"];
+    const byUpdate = [
+      "unopened_a",
+      "unopened_c",
+      "opened_a",
+      "opened_c",
+      "opened_b",
+      "unopened_b",
+    ];
     expect(await readIds("updated", 2)).toEqual(byUpdate);
     expect(await readIds("created", 2)).toEqual(byUpdate);
   });
@@ -1274,7 +1386,12 @@ describe("cloud persistence server", () => {
     const created = await jsonRequest(
       handler,
       "/api/scenes",
-      { id: "scene_stale_delete", name: "待删除画板", elements: [], appState: {} },
+      {
+        id: "scene_stale_delete",
+        name: "待删除画板",
+        elements: [],
+        appState: {},
+      },
       { headers: { Cookie: cookie } },
     );
     expect(created.status).toBe(201);
@@ -1494,9 +1611,11 @@ describe("cloud persistence server", () => {
       },
     );
     expect(restoreRes.status).toBe(200);
-    expect(await responseJson<{ restored: boolean }>(restoreRes)).toMatchObject({
-      restored: true,
-    });
+    expect(await responseJson<{ restored: boolean }>(restoreRes)).toMatchObject(
+      {
+        restored: true,
+      },
+    );
 
     // 4.1 Repeat restore on an active scene should be idempotent and return restored: false
     const repeatRestoreRes = await request(
@@ -1525,15 +1644,13 @@ describe("cloud persistence server", () => {
     });
 
     // 5. Normal /api/scenes should contain it again
-    const activeAfterRestore = await request(
-      handler,
-      "/api/scenes?limit=100",
-      {
-        headers: { Cookie: cookie },
-      },
-    );
+    const activeAfterRestore = await request(handler, "/api/scenes?limit=100", {
+      headers: { Cookie: cookie },
+    });
     const activeItems = (
-      await responseJson<{ items: Array<{ id: string; revision: number }> }>(activeAfterRestore)
+      await responseJson<{ items: Array<{ id: string; revision: number }> }>(
+        activeAfterRestore,
+      )
     ).items;
     expect(activeItems.length).toBe(1);
     expect(activeItems[0].id).toBe("scene_trash_test");
@@ -1602,7 +1719,7 @@ describe("cloud persistence server", () => {
       handler,
       "/api/scenes/trash?limit=100",
       {
-      headers: { Cookie: cookie },
+        headers: { Cookie: cookie },
       },
     );
     expect(
@@ -1638,9 +1755,11 @@ describe("cloud persistence server", () => {
       { headers: { Cookie: cookie } },
     );
     expect(
-      (await responseJson<{ items: Array<{ id: string }> }>(
-        trashAfterStaleAttempt,
-      )).items,
+      (
+        await responseJson<{ items: Array<{ id: string }> }>(
+          trashAfterStaleAttempt,
+        )
+      ).items,
     ).toEqual([]);
 
     const trashed = await jsonRequest(
@@ -1657,7 +1776,10 @@ describe("cloud persistence server", () => {
     const restored = await jsonRequest(
       handler,
       "/api/scenes/batch",
-      { scenes: entries.map((entry) => ({ ...entry, revision: 2 })), deleted: false },
+      {
+        scenes: entries.map((entry) => ({ ...entry, revision: 2 })),
+        deleted: false,
+      },
       { method: "PATCH", headers: { Cookie: cookie } },
     );
     expect(restored.status).toBe(200);
@@ -1737,7 +1859,11 @@ describe("cloud persistence server", () => {
         folderListResponse,
       ),
     ).toContainEqual(
-      expect.objectContaining({ id: folder.id, icon: "book", color: "#bd8054" }),
+      expect.objectContaining({
+        id: folder.id,
+        icon: "book",
+        color: "#bd8054",
+      }),
     );
 
     const createdResponse = await jsonRequest(
@@ -1935,13 +2061,9 @@ describe("cloud persistence server", () => {
     );
     expect(updateWithDeletedElements.status).toBe(200);
 
-    const listAfterDeleteAll = await request(
-      handler,
-      "/api/scenes?limit=100",
-      {
-        headers: { Cookie: cookie },
-      },
-    );
+    const listAfterDeleteAll = await request(handler, "/api/scenes?limit=100", {
+      headers: { Cookie: cookie },
+    });
     const scenesAfterDeleteAll = (
       await responseJson<{
         items: Array<{
@@ -2033,7 +2155,10 @@ describe("cloud persistence server", () => {
       handler,
       "/api/scenes/scene_utf8_bytes",
       {
-        elements: [...elements, { id: "element_more", type: "text", text: "修改" }],
+        elements: [
+          ...elements,
+          { id: "element_more", type: "text", text: "修改" },
+        ],
         baseRevision: 1,
       },
       { method: "PUT", headers: { Cookie: cookie } },
@@ -2056,7 +2181,12 @@ describe("cloud persistence server", () => {
     const created = await jsonRequest(
       handler,
       "/api/scenes",
-      { id: "scene_thumb_order", name: "缩略图顺序", elements: [], appState: {} },
+      {
+        id: "scene_thumb_order",
+        name: "缩略图顺序",
+        elements: [],
+        appState: {},
+      },
       { headers: { Cookie: cookie } },
     );
     expect(created.status).toBe(201);
@@ -2172,9 +2302,10 @@ describe("cloud persistence server", () => {
     const afterDelete = await request(handler, "/api/folders", {
       headers: { Cookie: cookie },
     });
-    const foldersAfterDelete = await responseJson<
-      Array<{ id: string; scene_count: number }>
-    >(afterDelete);
+    const foldersAfterDelete =
+      await responseJson<Array<{ id: string; scene_count: number }>>(
+        afterDelete,
+      );
     expect(foldersAfterDelete).toHaveLength(1);
     expect(foldersAfterDelete[0]).toMatchObject({
       id: folder.id,
@@ -2190,9 +2321,10 @@ describe("cloud persistence server", () => {
     const afterRestore = await request(handler, "/api/folders", {
       headers: { Cookie: cookie },
     });
-    const foldersAfterRestore = await responseJson<
-      Array<{ id: string; scene_count: number }>
-    >(afterRestore);
+    const foldersAfterRestore =
+      await responseJson<Array<{ id: string; scene_count: number }>>(
+        afterRestore,
+      );
     expect(foldersAfterRestore).toHaveLength(1);
     expect(foldersAfterRestore[0]).toMatchObject({
       id: folder.id,
@@ -2286,9 +2418,7 @@ describe("cloud persistence server", () => {
     expect(download.headers.get("content-type")).toBe(
       "application/octet-stream",
     );
-    expect(download.headers.get("content-disposition")).toContain(
-      "attachment",
-    );
+    expect(download.headers.get("content-disposition")).toContain("attachment");
     expect(download.headers.get("cache-control")).toBe("private, no-store");
     expect(await download.text()).toBe(svg);
   });
@@ -2493,7 +2623,6 @@ describe("cloud persistence server", () => {
 
     const hashedRootAsset = await request(handler, "/chunk-a1b2c3d4.js");
     expect(hashedRootAsset.headers.get("cache-control")).toContain("immutable");
-
   });
 
   it("cleans abandoned final backup files while preserving active downloads", async () => {
@@ -2705,7 +2834,20 @@ describe("cloud persistence server", () => {
        (id, name, elements, app_state, created_at, updated_at, revision,
         tags_json, is_favorite, element_count, content_bytes, content_sha256)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ["large_backup_scene", "large", elements, "{}", 1, 1, 1, "[]", 0, 0, elements.length, ""],
+      [
+        "large_backup_scene",
+        "large",
+        elements,
+        "{}",
+        1,
+        1,
+        1,
+        "[]",
+        0,
+        0,
+        elements.length,
+        "",
+      ],
     );
 
     await expect(
@@ -2728,9 +2870,7 @@ describe("cloud persistence server", () => {
     runtime.config.maxBackupBytes = Math.max(compactSize * 2, 64 * 1024);
 
     const createPadding = runtime.db.transaction(() => {
-      runtime.db.run(
-        "CREATE TABLE backup_padding (payload TEXT NOT NULL)",
-      );
+      runtime.db.run("CREATE TABLE backup_padding (payload TEXT NOT NULL)");
       const insert = runtime.db.query(
         "INSERT INTO backup_padding (payload) VALUES (?)",
       );
@@ -2749,9 +2889,7 @@ describe("cloud persistence server", () => {
       (runtime.db.query("PRAGMA page_size").get() as { page_size: number })
         .page_size,
     );
-    expect(pageCount * pageSize).toBeGreaterThan(
-      runtime.config.maxBackupBytes,
-    );
+    expect(pageCount * pageSize).toBeGreaterThan(runtime.config.maxBackupBytes);
 
     const snapshot = await createDatabaseSnapshot(
       runtime,
@@ -2851,7 +2989,14 @@ describe("cloud persistence server", () => {
     const cookie = await authenticate(handler);
     const elementsWithDeleted = [
       { id: "el_1", type: "rectangle", x: 10, y: 10, width: 100, height: 100 },
-      { id: "el_2", type: "text", x: 20, y: 20, isDeleted: true, text: "deleted element" },
+      {
+        id: "el_2",
+        type: "text",
+        x: 20,
+        y: 20,
+        isDeleted: true,
+        text: "deleted element",
+      },
     ];
     const created = await jsonRequest(
       handler,
@@ -2860,7 +3005,10 @@ describe("cloud persistence server", () => {
       { headers: { Cookie: cookie } },
     );
     expect(created.status).toBe(201);
-    const createdData = await responseJson<{ id: string; element_count: number }>(created);
+    const createdData = await responseJson<{
+      id: string;
+      element_count: number;
+    }>(created);
     expect(createdData.element_count).toBe(1);
 
     const row = runtime.db
@@ -2895,7 +3043,9 @@ describe("cloud persistence server", () => {
   });
 
   it("automatically cleans up expired trash scenes and publishes workspace update", async () => {
-    const { runtime, handler } = createTestRuntime({ TRASH_RETENTION_DAYS: "15" });
+    const { runtime, handler } = createTestRuntime({
+      TRASH_RETENTION_DAYS: "15",
+    });
     const cookie = await authenticate(handler);
     const created = await jsonRequest(
       handler,
@@ -2911,7 +3061,10 @@ describe("cloud persistence server", () => {
     });
 
     const expiredTime = Date.now() - 20 * 24 * 60 * 60 * 1000;
-    runtime.db.run("UPDATE scenes SET deleted_at = ? WHERE id = ?", [expiredTime, id]);
+    runtime.db.run("UPDATE scenes SET deleted_at = ? WHERE id = ?", [
+      expiredTime,
+      id,
+    ]);
 
     let workspaceChanged = false;
     runtime.realtime = {
@@ -2924,7 +3077,8 @@ describe("cloud persistence server", () => {
     const cleanedCount = cleanupExpiredTrashScenes(runtime);
     expect(cleanedCount).toBe(1);
     expect(workspaceChanged).toBe(true);
-    expect(runtime.db.query("SELECT id FROM scenes WHERE id = ?").get(id)).toBeNull();
+    expect(
+      runtime.db.query("SELECT id FROM scenes WHERE id = ?").get(id),
+    ).toBeNull();
   });
-
 });

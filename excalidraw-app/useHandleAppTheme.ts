@@ -12,9 +12,7 @@ export const useHandleAppTheme = () => {
   const [appTheme, setAppTheme] = useState<Theme | "system">(() => {
     return (
       (localStorage.getItem(STORAGE_KEYS.LOCAL_STORAGE_THEME) as
-        | Theme
-        | "system"
-        | null) || THEME.LIGHT
+        Theme | "system" | null) || THEME.LIGHT
     );
   });
   const [editorTheme, setEditorTheme] = useState<Theme>(THEME.LIGHT);

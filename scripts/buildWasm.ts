@@ -17,26 +17,20 @@ const wasmModules = [
 ];
 
 (async () => {
-for (const { pkg, src, dest } of wasmModules) {
-  const packagePath = path.resolve(import.meta.dir, pkg, "package.json");
-  const licensePath = path.resolve(import.meta.dir, pkg, "LICENSE");
-  const sourcePath = path.resolve(import.meta.dir, src);
-  const destPath = path.resolve(import.meta.dir, dest);
+  for (const { pkg, src, dest } of wasmModules) {
+    const packagePath = path.resolve(import.meta.dir, pkg, "package.json");
+    const licensePath = path.resolve(import.meta.dir, pkg, "LICENSE");
+    const sourcePath = path.resolve(import.meta.dir, src);
+    const destPath = path.resolve(import.meta.dir, dest);
 
-  const {
-    name,
-    version,
-    author,
-    license,
-    authors,
-    licenses,
-  } = await Bun.file(packagePath).json();
+    const { name, version, author, license, authors, licenses } =
+      await Bun.file(packagePath).json();
 
-  const licenseContent = (await Bun.file(licensePath).text()) || "";
-  const base64 = new Uint8Array(
-    await Bun.file(sourcePath).arrayBuffer(),
-  ).toBase64();
-  const content = `// GENERATED CODE -- DO NOT EDIT!
+    const licenseContent = (await Bun.file(licensePath).text()) || "";
+    const base64 = new Uint8Array(
+      await Bun.file(sourcePath).arrayBuffer(),
+    ).toBase64();
+    const content = `// GENERATED CODE -- DO NOT EDIT!
 // @ts-nocheck
 
 /**
@@ -72,6 +66,6 @@ const __toBinary = /* @__PURE__ */ (() => {
 export default __toBinary(\`${base64}\`);
 `;
 
-  await Bun.write(destPath, content);
-}
+    await Bun.write(destPath, content);
+  }
 })();

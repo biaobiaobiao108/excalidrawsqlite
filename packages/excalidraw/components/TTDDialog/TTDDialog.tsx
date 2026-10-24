@@ -22,8 +22,7 @@ export const TTDDialog = () => {
   const app = useApp();
 
   const activeTab: TTDDialogTabType =
-    appState.openDialog?.name === "ttd" &&
-    appState.openDialog.tab === "mermaid"
+    appState.openDialog?.name === "ttd" && appState.openDialog.tab === "mermaid"
       ? "mermaid"
       : "outline";
 

@@ -78,10 +78,7 @@ const getImageDecodeLimiter = (
   return limiter;
 };
 
-const acquireImageDecodeBudget = (
-  limiter: DecodeLimiter,
-  bytes: number,
-) =>
+const acquireImageDecodeBudget = (limiter: DecodeLimiter, bytes: number) =>
   new Promise<() => void>((resolve) => {
     limiter.waiting.push({ bytes, resolve });
     const drain = () => {
@@ -156,14 +153,16 @@ const parseSvgLength = (value: string | undefined) => {
   if (!Number.isFinite(number) || number <= 0) {
     return null;
   }
-  const scale = ({
-    px: 1,
-    pt: 96 / 72,
-    pc: 16,
-    mm: 96 / 25.4,
-    cm: 96 / 2.54,
-    in: 96,
-  } as Record<string, number>)[match[2]?.toLowerCase() || "px"];
+  const scale = (
+    {
+      px: 1,
+      pt: 96 / 72,
+      pc: 16,
+      mm: 96 / 25.4,
+      cm: 96 / 2.54,
+      in: 96,
+    } as Record<string, number>
+  )[match[2]?.toLowerCase() || "px"];
   return number * scale;
 };
 
@@ -173,7 +172,10 @@ const getSvgDimensions = (dataURL: DataURL) => {
     return null;
   }
   const metadata = dataURL.slice(0, separator).toLowerCase();
-  const payload = dataURL.slice(separator + 1, separator + 1 + MAX_IMAGE_HEADER_BYTES);
+  const payload = dataURL.slice(
+    separator + 1,
+    separator + 1 + MAX_IMAGE_HEADER_BYTES,
+  );
   let source: string;
   try {
     source = metadata.includes(";base64")
@@ -303,9 +305,12 @@ const getImageDimensions = (dataURL: DataURL) => {
         height: view.getUint16(28, true) & 0x3fff,
       };
     }
-    if (chunk === "VP8L" && headerBytes.length >= 25 && headerBytes[20] === 0x2f) {
-      const width =
-        1 + headerBytes[21] + ((headerBytes[22] & 0x3f) << 8);
+    if (
+      chunk === "VP8L" &&
+      headerBytes.length >= 25 &&
+      headerBytes[20] === 0x2f
+    ) {
+      const width = 1 + headerBytes[21] + ((headerBytes[22] & 0x3f) << 8);
       const height =
         1 +
         (headerBytes[22] >> 6) +
@@ -329,10 +334,7 @@ const getImageDimensions = (dataURL: DataURL) => {
       if (marker === 0xd9 || marker === 0xda) {
         break;
       }
-      if (
-        marker === 0x01 ||
-        (marker >= 0xd0 && marker <= 0xd7)
-      ) {
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
         continue;
       }
       if (offset + 1 >= headerBytes.length) {
@@ -344,8 +346,8 @@ const getImageDimensions = (dataURL: DataURL) => {
       }
       if (
         [
-          0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb,
-          0xcd, 0xce, 0xcf,
+          0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd,
+          0xce, 0xcf,
         ].includes(marker)
       ) {
         return {
@@ -456,8 +458,9 @@ export const updateImageCache = async ({
     }
   };
   await Promise.all(
-    Array.from({ length: Math.min(limiter.concurrency, uniqueFileIds.length) }, () =>
-      loadNext(),
+    Array.from(
+      { length: Math.min(limiter.concurrency, uniqueFileIds.length) },
+      () => loadNext(),
     ),
   );
 

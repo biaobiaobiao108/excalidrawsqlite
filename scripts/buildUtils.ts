@@ -12,9 +12,18 @@ const getConfig = (outdir) => ({
   entryNames: "[name]",
   assetNames: "[dir]/[name]",
   alias: {
-    "@excalidraw/common": path.resolve(import.meta.dir, "../packages/common/src"),
-    "@excalidraw/element": path.resolve(import.meta.dir, "../packages/element/src"),
-    "@excalidraw/excalidraw": path.resolve(import.meta.dir, "../packages/excalidraw"),
+    "@excalidraw/common": path.resolve(
+      import.meta.dir,
+      "../packages/common/src",
+    ),
+    "@excalidraw/element": path.resolve(
+      import.meta.dir,
+      "../packages/element/src",
+    ),
+    "@excalidraw/excalidraw": path.resolve(
+      import.meta.dir,
+      "../packages/excalidraw",
+    ),
     "@excalidraw/math": path.resolve(import.meta.dir, "../packages/math/src"),
     "@excalidraw/fractional-indexing": path.resolve(
       import.meta.dir,

@@ -116,18 +116,15 @@ export const CustomSelect = ({
 
     const updatePosition = () => {
       const triggerRect = trigger.getBoundingClientRect();
-      const viewportWidth = ownerDocument.documentElement.clientWidth ||
-        ownerWindow.innerWidth;
-      const viewportHeight = ownerDocument.documentElement.clientHeight ||
-        ownerWindow.innerHeight;
+      const viewportWidth =
+        ownerDocument.documentElement.clientWidth || ownerWindow.innerWidth;
+      const viewportHeight =
+        ownerDocument.documentElement.clientHeight || ownerWindow.innerHeight;
       const isMobileViewport = viewportWidth <= 720;
       const maxMenuHeight = isMobileViewport
         ? Math.min(420, Math.round(viewportHeight * 0.62))
         : MENU_MAX_HEIGHT;
-      const maxWidth = Math.max(
-        0,
-        viewportWidth - MENU_VIEWPORT_PADDING * 2,
-      );
+      const maxWidth = Math.max(0, viewportWidth - MENU_VIEWPORT_PADDING * 2);
       const width = Math.min(
         isMobileViewport
           ? Math.max(triggerRect.width, Math.min(280, maxWidth))
@@ -171,9 +168,10 @@ export const CustomSelect = ({
         ? triggerRect.left + (triggerRect.width - width) / 2
         : triggerRect.left;
       const left = Math.min(Math.max(preferredLeft, minLeft), maxLeft);
-      const top = placement === "top"
-        ? triggerRect.top - MENU_GAP - renderedHeight
-        : triggerRect.bottom + MENU_GAP;
+      const top =
+        placement === "top"
+          ? triggerRect.top - MENU_GAP - renderedHeight
+          : triggerRect.bottom + MENU_GAP;
 
       setMenuPosition((previous) => {
         if (
@@ -253,7 +251,9 @@ export const CustomSelect = ({
     closeMenu();
   };
 
-  const handleTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+  const handleTriggerKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
       if (!open) {
@@ -340,17 +340,13 @@ export const CustomSelect = ({
           aria-selected={option.value === value}
           className={`custom-select__option ${
             option.value === value ? "is-selected" : ""
-          } ${
-            index === highlightedIndex ? "is-highlighted" : ""
-          }`.trim()}
+          } ${index === highlightedIndex ? "is-highlighted" : ""}`.trim()}
           disabled={option.disabled}
           onMouseEnter={() => setHighlightedIndex(index)}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => selectOption(option)}
         >
-          <span className="custom-select__option-label">
-            {option.label}
-          </span>
+          <span className="custom-select__option-label">{option.label}</span>
           {option.value === value && (
             <span className="custom-select__check">
               <CheckIcon />

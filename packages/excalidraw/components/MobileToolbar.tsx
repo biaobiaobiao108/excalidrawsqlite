@@ -107,7 +107,7 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
   const showImageToolOutside = toolbarWidth >= MIN_WIDTH + 2 * ADDITIONAL_WIDTH;
   const showFrameToolOutside = toolbarWidth >= MIN_WIDTH + 3 * ADDITIONAL_WIDTH;
 
-  const extraTools: readonly typeof activeTool.type[] = (
+  const extraTools: readonly (typeof activeTool.type)[] = (
     [
       "text",
       "frame",
@@ -130,16 +130,16 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
     ? activeTool.type === "text"
       ? TextIcon
       : activeTool.type === "image"
-      ? ImageIcon
-      : activeTool.type === "frame"
-      ? frameToolIcon
-      : activeTool.type === "embeddable"
-      ? EmbedIcon
-      : activeTool.type === "laser"
-      ? laserPointerToolIcon
-      : activeTool.type === "bucketfill"
-      ? bucketFillIcon
-      : DotsIcon
+        ? ImageIcon
+        : activeTool.type === "frame"
+          ? frameToolIcon
+          : activeTool.type === "embeddable"
+            ? EmbedIcon
+            : activeTool.type === "laser"
+              ? laserPointerToolIcon
+              : activeTool.type === "bucketfill"
+                ? bucketFillIcon
+                : DotsIcon
     : DotsIcon;
 
   const toolProps = { app, activeTool };

@@ -77,10 +77,13 @@ export const actionDeselect = register({
           : getElementsInGroup(
               nonDeletedElements,
               appState.editingGroupId,
-            ).reduce((acc, element) => {
-              acc[element.id] = true;
-              return acc;
-            }, {} as Record<string, true>);
+            ).reduce(
+              (acc, element) => {
+                acc[element.id] = true;
+                return acc;
+              },
+              {} as Record<string, true>,
+            );
 
       return {
         appState: {

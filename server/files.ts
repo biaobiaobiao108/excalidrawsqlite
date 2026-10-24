@@ -291,9 +291,10 @@ const upsertPreparedFile = async (
       : await writeFileAtomically(filePath, prepared.data!);
     try {
       assertCanWrite?.();
-      runtime.db.transaction(() => {
-        runtime.db.run(
-          `INSERT INTO files
+      runtime.db
+        .transaction(() => {
+          runtime.db.run(
+            `INSERT INTO files
              (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
@@ -302,18 +303,19 @@ const upsertPreparedFile = async (
              byte_size = excluded.byte_size,
              sha256 = excluded.sha256,
              updated_at = excluded.updated_at`,
-          [
-            id,
-            id,
-            mimeType,
-            prepared.byteLength,
-            prepared.sha256,
-            previous?.created_at || createdAt || now,
-            now,
-          ],
-        );
-        onReplacement?.();
-      }).immediate();
+            [
+              id,
+              id,
+              mimeType,
+              prepared.byteLength,
+              prepared.sha256,
+              previous?.created_at || createdAt || now,
+              now,
+            ],
+          );
+          onReplacement?.();
+        })
+        .immediate();
     } catch (error) {
       try {
         await atomicWrite.restore();
@@ -351,7 +353,10 @@ export const stageRequestBodyToFile = async (
   req: Request,
 ): Promise<PreparedFile> => {
   const contentLength = Number(req.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > runtime.config.maxFileBytes) {
+  if (
+    Number.isFinite(contentLength) &&
+    contentLength > runtime.config.maxFileBytes
+  ) {
     throw getFileTooLargeError(runtime.config.maxFileBytes);
   }
   if (!req.body) {
@@ -475,9 +480,7 @@ export const assertReferencedFilesExist = async (
     }
     const placeholders = chunk.map(() => "?").join(", ");
     const rows = runtime.db
-      .query(
-        `SELECT id, storage_path FROM files WHERE id IN (${placeholders})`,
-      )
+      .query(`SELECT id, storage_path FROM files WHERE id IN (${placeholders})`)
       .all(...chunk) as Array<{
       id: string;
       storage_path: string | null;
@@ -533,9 +536,9 @@ export const syncSceneFileReferences = (
 ) => {
   const statements = getSceneFileReferenceStatements(runtime);
   const existingFileIds = new Set(
-    (
-      statements.list.all(sceneId) as Array<{ file_id: string }>
-    ).map((row) => row.file_id),
+    (statements.list.all(sceneId) as Array<{ file_id: string }>).map(
+      (row) => row.file_id,
+    ),
   );
   const nextFileIds = new Set(fileIds);
 
@@ -682,9 +685,11 @@ const recoverInterruptedFileReplacements = async (runtime: ServerRuntime) => {
     backups.map(async (backup) => ({
       ...backup,
       mtimeMs:
-        (await fs.promises
-          .stat(path.join(runtime.filesDir, backup.name))
-          .catch(() => null))?.mtimeMs || 0,
+        (
+          await fs.promises
+            .stat(path.join(runtime.filesDir, backup.name))
+            .catch(() => null)
+        )?.mtimeMs || 0,
     })),
   );
   backupsWithTime.sort((left, right) => right.mtimeMs - left.mtimeMs);
@@ -812,9 +817,8 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
       const stat = await fs.promises.stat(filePath).catch(() => null);
       if (stat && (!staleOnly || stat.mtimeMs < cutoff)) {
         if (/\.bak$/i.test(entry.name)) {
-          const backupMatch = /^([A-Za-z0-9_-]{1,128})\.[a-f0-9]{16}\.bak$/i.exec(
-            entry.name,
-          );
+          const backupMatch =
+            /^([A-Za-z0-9_-]{1,128})\.[a-f0-9]{16}\.bak$/i.exec(entry.name);
           if (
             backupMatch &&
             !(await fileExists(getFilePath(runtime, backupMatch[1])))

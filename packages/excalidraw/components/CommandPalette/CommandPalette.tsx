@@ -541,13 +541,7 @@ function CommandPaletteInner({
           label: `${t("outline.title")}...`,
           category: DEFAULT_CATEGORIES.tools,
           icon: outlineToDiagramIcon,
-          keywords: [
-            "outline",
-            "mindmap",
-            "markdown",
-            "大纲",
-            "思维导图",
-          ],
+          keywords: ["outline", "mindmap", "markdown", "大纲", "思维导图"],
           viewMode: false,
           perform: () => {
             setAppState((state) => ({

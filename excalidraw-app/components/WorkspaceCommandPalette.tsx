@@ -243,11 +243,7 @@ const SortIcon = () =>
     </>,
   );
 
-const CommandShortcutHint = ({
-  shortcut,
-}: {
-  shortcut: string;
-}) => {
+const CommandShortcutHint = ({ shortcut }: { shortcut: string }) => {
   const parts = shortcut.replace("++", "+$").split("+");
 
   return (
@@ -261,7 +257,9 @@ const CommandShortcutHint = ({
   );
 };
 
-export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = ({
+export const WorkspaceCommandPalette: React.FC<
+  WorkspaceCommandPaletteProps
+> = ({
   isOpen,
   onClose,
   scenes,
@@ -603,7 +601,10 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
       ];
 
       const sceneTimestampMap = new Map(
-        scenes.map((s) => [`scene-${s.id}`, s.last_opened_at || s.updated_at || 0]),
+        scenes.map((s) => [
+          `scene-${s.id}`,
+          s.last_opened_at || s.updated_at || 0,
+        ]),
       );
 
       for (const cat of commonCategories) {
@@ -643,11 +644,7 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     const queryTokens = normalizeText(trimmed).split(/\s+/).filter(Boolean);
     const matches = (cmd: PaletteCommand) => {
       const target = normalizeText(
-        [
-          cmd.label,
-          cmd.category,
-          ...(cmd.keywords || []),
-        ].join(" "),
+        [cmd.label, cmd.category, ...(cmd.keywords || [])].join(" "),
       );
       return queryTokens.every((token) => target.includes(token));
     };
@@ -708,7 +705,10 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     for (const cat of categoryOrder) {
       let items: PaletteCommand[] = [];
       if (cat === "常用操作") {
-        items = [...dynamicActions, ...matchedActions.filter((item) => item.category === cat)];
+        items = [
+          ...dynamicActions,
+          ...matchedActions.filter((item) => item.category === cat),
+        ];
       } else if (cat === "画板") {
         items = matchedScenes;
       } else {
@@ -757,12 +757,9 @@ export const WorkspaceCommandPalette: React.FC<WorkspaceCommandPaletteProps> = (
     scrollCommandIntoView(list, item);
   }, [activeIndex, flattenedItems]);
 
-  const executeItem = useCallback(
-    (item: PaletteCommand, newTab = false) => {
-      item.perform({ newTab });
-    },
-    [],
-  );
+  const executeItem = useCallback((item: PaletteCommand, newTab = false) => {
+    item.perform({ newTab });
+  }, []);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {

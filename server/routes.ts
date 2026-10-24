@@ -7,7 +7,12 @@ import {
 } from "./config";
 import { randomHex, sha256Hex } from "./crypto";
 import { HttpError } from "./errors";
-import { findCreateReplay, isMcpCreateSession, parseCreateRequest, recordCreateRequest } from "./create-idempotency";
+import {
+  findCreateReplay,
+  isMcpCreateSession,
+  parseCreateRequest,
+  recordCreateRequest,
+} from "./create-idempotency";
 import {
   cleanupExpiredSessions,
   clearSessionCookies,
@@ -52,10 +57,7 @@ import {
   storedSceneRevision,
   sanitizeSceneElements,
 } from "./scenes";
-import {
-  handleEarlySystemRequest,
-  handleStaticRequest,
-} from "./system-routes";
+import { handleEarlySystemRequest, handleStaticRequest } from "./system-routes";
 import {
   hasOwn,
   requireJsonObject,
@@ -158,11 +160,7 @@ const parseThumbnailVersion = (req: Request) => {
     version <= 0 ||
     version > Date.now() + MAX_THUMBNAIL_VERSION_FUTURE_SKEW_MS
   ) {
-    throw new HttpError(
-      400,
-      "INVALID_THUMBNAIL_VERSION",
-      "画板缩略图版本无效",
-    );
+    throw new HttpError(400, "INVALID_THUMBNAIL_VERSION", "画板缩略图版本无效");
   }
   return version;
 };
@@ -194,10 +192,13 @@ const writeRateLimitResponse = (
   );
 };
 
-const streamBackupArchive = (archive: {
-  archivePath: string;
-  cleanup: () => Promise<void>;
-}, releaseBackupLock: () => void) => {
+const streamBackupArchive = (
+  archive: {
+    archivePath: string;
+    cleanup: () => Promise<void>;
+  },
+  releaseBackupLock: () => void,
+) => {
   const source = Bun.file(archive.archivePath).stream();
   const reader = source.getReader();
   let cleanupTask: Promise<void> | undefined;
@@ -330,7 +331,11 @@ const parseScenePageSize = (value: string | null) => {
     return DEFAULT_SCENE_PAGE_SIZE;
   }
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > MAX_SCENE_PAGE_SIZE) {
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed < 1 ||
+    parsed > MAX_SCENE_PAGE_SIZE
+  ) {
     throw new HttpError(
       400,
       "INVALID_LIMIT",
@@ -343,11 +348,7 @@ const parseScenePageSize = (value: string | null) => {
 const escapeLikePattern = (value: string) =>
   value.replace(/[\\%_]/g, (character) => `\\${character}`);
 
-const listScenePage = (
-  runtime: ServerRuntime,
-  url: URL,
-  trashed: boolean,
-) => {
+const listScenePage = (runtime: ServerRuntime, url: URL, trashed: boolean) => {
   const limit = parseScenePageSize(url.searchParams.get("limit"));
   const cursor = decodeSceneCursor(url.searchParams.get("cursor"));
   const query = url.searchParams.get("q")?.trim() || "";
@@ -365,7 +366,9 @@ const listScenePage = (
     throw new HttpError(400, "INVALID_OPENED", "opened 参数无效");
   }
   const hasFolderFilter = url.searchParams.has("folder_id");
-  const folderId = hasFolderFilter ? url.searchParams.get("folder_id") : undefined;
+  const folderId = hasFolderFilter
+    ? url.searchParams.get("folder_id")
+    : undefined;
   const favorite = url.searchParams.has("favorite")
     ? url.searchParams.get("favorite")
     : undefined;
@@ -416,23 +419,21 @@ const listScenePage = (
     const column = trashed
       ? "scenes.deleted_at"
       : requestedSort === "opened"
-      ? "COALESCE(scenes.last_opened_at, 0)"
-      : requestedSort === "created"
-      ? "scenes.created_at"
-      : "scenes.updated_at";
-    conditions.push(
-      `(${column} < ? OR (${column} = ? AND scenes.id < ?))`,
-    );
+        ? "COALESCE(scenes.last_opened_at, 0)"
+        : requestedSort === "created"
+          ? "scenes.created_at"
+          : "scenes.updated_at";
+    conditions.push(`(${column} < ? OR (${column} = ? AND scenes.id < ?))`);
     params.push(cursor.timestamp, cursor.timestamp, cursor.id);
   }
 
   const orderColumn = trashed
     ? "scenes.deleted_at"
     : requestedSort === "opened"
-    ? "COALESCE(scenes.last_opened_at, 0)"
-    : requestedSort === "created"
-    ? "scenes.created_at"
-    : "scenes.updated_at";
+      ? "COALESCE(scenes.last_opened_at, 0)"
+      : requestedSort === "created"
+        ? "scenes.created_at"
+        : "scenes.updated_at";
   const rows = runtime.db
     .query(
       `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
@@ -459,15 +460,15 @@ const listScenePage = (
   return {
     items,
     totalCount,
-    nextCursor: hasMore
-      ? encodeSceneCursor(rows[limit - 1])
-      : null,
+    nextCursor: hasMore ? encodeSceneCursor(rows[limit - 1]) : null,
   };
 };
 
 const publishSceneChanged = (
   runtime: ServerRuntime,
-  event: Parameters<NonNullable<ServerRuntime["realtime"]>["publishSceneChanged"]>[0],
+  event: Parameters<
+    NonNullable<ServerRuntime["realtime"]>["publishSceneChanged"]
+  >[0],
 ) => runtime.realtime?.publishSceneChanged(event);
 
 const publishWorkspaceChanged = (runtime: ServerRuntime, updatedAt?: number) =>
@@ -512,7 +513,11 @@ const updateScenesAfterFileReplacement = (
         [nextRevision, now, scene.id, revision],
       );
       if (result.changes !== 1) {
-        throw new HttpError(409, "REVISION_CONFLICT", "画板版本冲突或状态已变更");
+        throw new HttpError(
+          409,
+          "REVISION_CONFLICT",
+          "画板版本冲突或状态已变更",
+        );
       }
       events.push({
         type: "scene_changed",
@@ -809,7 +814,11 @@ export const createRequestHandler = (
             size: backupFile.size,
           };
           if (backupFile.size > runtime.config.maxBackupBytes) {
-            throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+            throw new HttpError(
+              413,
+              "BACKUP_TOO_LARGE",
+              "备份内容超过大小限制",
+            );
           }
           return response(
             runtime,
@@ -890,10 +899,9 @@ export const createRequestHandler = (
         if (token) {
           runtime.sessions.delete(token);
           try {
-            runtime.db.run(
-              "DELETE FROM sessions WHERE token = ?",
-              [hashSessionToken(runtime, token)],
-            );
+            runtime.db.run("DELETE FROM sessions WHERE token = ?", [
+              hashSessionToken(runtime, token),
+            ]);
           } catch {
             // ignore
           }
@@ -986,7 +994,12 @@ export const createRequestHandler = (
                 "选中的画板已发生变化，请刷新列表后重新选择",
               );
             }
-            if (isPermanent || (isRestore ? existing.deleted_at !== null : existing.deleted_at === null)) {
+            if (
+              isPermanent ||
+              (isRestore
+                ? existing.deleted_at !== null
+                : existing.deleted_at === null)
+            ) {
               changedEntries.push(entry);
             }
           }
@@ -1006,7 +1019,11 @@ export const createRequestHandler = (
                 );
               }
             } else if (isRestore) {
-              const result = stmts.restoreScene.run(now, entry.id, entry.revision);
+              const result = stmts.restoreScene.run(
+                now,
+                entry.id,
+                entry.revision,
+              );
               if (result.changes !== 1) {
                 throw new HttpError(
                   409,
@@ -1076,89 +1093,144 @@ export const createRequestHandler = (
           ? validateAppState(body.appState)
           : {};
         const tags = hasOwn(body, "tags") ? validateTags(body.tags) : [];
-        const favorite = hasOwn(body, "favorite") ? validateFavorite(body.favorite) : false;
-        const folderId = hasOwn(body, "folder_id") ? validateFolderId(body.folder_id) : null;
+        const favorite = hasOwn(body, "favorite")
+          ? validateFavorite(body.favorite)
+          : false;
+        const folderId = hasOwn(body, "folder_id")
+          ? validateFolderId(body.folder_id)
+          : null;
         const fileIds = extractFileIds(elements);
         const elementsJson = JSON.stringify(elements);
         const appStateJson = JSON.stringify(appState);
         const tagsJson = JSON.stringify(tags);
         const contentBytes = Buffer.byteLength(elementsJson, "utf8");
         const now = Date.now();
-        if (hasOwn(body, "idempotencyPayload") && (!hasOwn(body, "idempotencyKey") || !isMcpCreateSession(runtime, getSessionToken(runtime, req)))) {
-          throw new HttpError(400, "INVALID_IDEMPOTENCY_PAYLOAD", "idempotencyPayload 仅供内部 MCP 创建请求使用");
+        if (
+          hasOwn(body, "idempotencyPayload") &&
+          (!hasOwn(body, "idempotencyKey") ||
+            !isMcpCreateSession(runtime, getSessionToken(runtime, req)))
+        ) {
+          throw new HttpError(
+            400,
+            "INVALID_IDEMPOTENCY_PAYLOAD",
+            "idempotencyPayload 仅供内部 MCP 创建请求使用",
+          );
         }
-        const createRequest = parseCreateRequest(body, hasOwn(body, "idempotencyPayload") ? body.idempotencyPayload : {
-          id: hasOwn(body, "id") ? id : null,
-          name, elements, appState, tags, favorite, folderId,
-        });
-        const replay = { summary: null as ReturnType<typeof getSceneSummary> | null };
-        await withStorageMutationLock(runtime, async () => {
-          // Check before attachment I/O. Retries return the current board even
-          // if its original attachments were replaced after creation.
-          if (createRequest) {
-            runtime.db.transaction(() => {
-              const replayId = findCreateReplay(runtime.db, createRequest, now);
-              if (!replayId) return;
-              const row = stmts.getSceneSummaryById.get(replayId) as any;
-              if (!row || row.deleted_at != null) throw new HttpError(409, "IDEMPOTENT_BOARD_DELETED", "该幂等创建请求的画板已删除；如需新建请使用新 key");
-              replay.summary = getSceneSummary(row);
-            }).immediate();
-            if (replay.summary) return;
-          }
-          await assertReferencedFilesExist(runtime, fileIds);
-          try {
-            const transaction = runtime.db.transaction(() => {
-              if (createRequest) {
-                // Another process may have committed while file I/O yielded.
-                const replayId = findCreateReplay(runtime.db, createRequest, now);
-                if (replayId) {
+        const createRequest = parseCreateRequest(
+          body,
+          hasOwn(body, "idempotencyPayload")
+            ? body.idempotencyPayload
+            : {
+                id: hasOwn(body, "id") ? id : null,
+                name,
+                elements,
+                appState,
+                tags,
+                favorite,
+                folderId,
+              },
+        );
+        const replay = {
+          summary: null as ReturnType<typeof getSceneSummary> | null,
+        };
+        await withStorageMutationLock(
+          runtime,
+          async () => {
+            // Check before attachment I/O. Retries return the current board even
+            // if its original attachments were replaced after creation.
+            if (createRequest) {
+              runtime.db
+                .transaction(() => {
+                  const replayId = findCreateReplay(
+                    runtime.db,
+                    createRequest,
+                    now,
+                  );
+                  if (!replayId) return;
                   const row = stmts.getSceneSummaryById.get(replayId) as any;
-                  if (!row || row.deleted_at != null) throw new HttpError(409, "IDEMPOTENT_BOARD_DELETED", "该幂等创建请求的画板已删除；如需新建请使用新 key");
+                  if (!row || row.deleted_at != null)
+                    throw new HttpError(
+                      409,
+                      "IDEMPOTENT_BOARD_DELETED",
+                      "该幂等创建请求的画板已删除；如需新建请使用新 key",
+                    );
                   replay.summary = getSceneSummary(row);
-                  return;
+                })
+                .immediate();
+              if (replay.summary) return;
+            }
+            await assertReferencedFilesExist(runtime, fileIds);
+            try {
+              const transaction = runtime.db.transaction(() => {
+                if (createRequest) {
+                  // Another process may have committed while file I/O yielded.
+                  const replayId = findCreateReplay(
+                    runtime.db,
+                    createRequest,
+                    now,
+                  );
+                  if (replayId) {
+                    const row = stmts.getSceneSummaryById.get(replayId) as any;
+                    if (!row || row.deleted_at != null)
+                      throw new HttpError(
+                        409,
+                        "IDEMPOTENT_BOARD_DELETED",
+                        "该幂等创建请求的画板已删除；如需新建请使用新 key",
+                      );
+                    replay.summary = getSceneSummary(row);
+                    return;
+                  }
                 }
-              }
-              // Attachment checks and the storage queue can yield after metadata
-              // validation. Recheck inside the synchronous commit so deletion
-              // cannot leave a board referencing a folder that no longer exists.
-              assertSceneFolderExists(folderId);
-              runtime.db.run(
-                `INSERT INTO scenes
+                // Attachment checks and the storage queue can yield after metadata
+                // validation. Recheck inside the synchronous commit so deletion
+                // cannot leave a board referencing a folder that no longer exists.
+                assertSceneFolderExists(folderId);
+                runtime.db.run(
+                  `INSERT INTO scenes
                  (id, name, elements, app_state, created_at, updated_at, revision,
                   tags_json, is_favorite, folder_id, element_count, content_bytes,
                   content_sha256)
                  VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
-                [
-                  id,
-                  name,
-                  elementsJson,
-                  appStateJson,
-                  now,
-                  now,
-                  tagsJson,
-                  favorite ? 1 : 0,
-                  folderId,
-                  elements.length,
-                  contentBytes,
-                  sha256Hex(elementsJson),
-                ],
-              );
-              syncSceneFileReferences(runtime, id, fileIds);
-              if (createRequest) recordCreateRequest(runtime.db, createRequest, id, now);
-            });
-            transaction.immediate();
-          } catch (error: any) {
-            if (
-              String(error?.message || "")
-                .toLowerCase()
-                .includes("unique")
-            ) {
-              throw new HttpError(409, "SCENE_EXISTS", "画板 ID 已存在");
+                  [
+                    id,
+                    name,
+                    elementsJson,
+                    appStateJson,
+                    now,
+                    now,
+                    tagsJson,
+                    favorite ? 1 : 0,
+                    folderId,
+                    elements.length,
+                    contentBytes,
+                    sha256Hex(elementsJson),
+                  ],
+                );
+                syncSceneFileReferences(runtime, id, fileIds);
+                if (createRequest)
+                  recordCreateRequest(runtime.db, createRequest, id, now);
+              });
+              transaction.immediate();
+            } catch (error: any) {
+              if (
+                String(error?.message || "")
+                  .toLowerCase()
+                  .includes("unique")
+              ) {
+                throw new HttpError(409, "SCENE_EXISTS", "画板 ID 已存在");
+              }
+              throw error;
             }
-            throw error;
-          }
-        }, req.signal);
-        if (replay.summary) return jsonResponse(runtime, req, { ...replay.summary, idempotentReplay: true }, 200);
+          },
+          req.signal,
+        );
+        if (replay.summary)
+          return jsonResponse(
+            runtime,
+            req,
+            { ...replay.summary, idempotentReplay: true },
+            200,
+          );
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
@@ -1210,15 +1282,21 @@ export const createRequestHandler = (
         const id = `folder_${Date.now().toString(36)}_${randomHex(4)}`;
         const now = Date.now();
         try {
-          runtime.db.transaction(() => {
-            if (stmts.getFolderNameConflict.get(name, id)) {
-              throw new HttpError(409, "FOLDER_NAME_EXISTS", "同名文件夹已存在，请使用已有文件夹或更换名称");
-            }
-            runtime.db.run(
-              "INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-              [id, name, icon, color, now, now],
-            );
-          }).immediate();
+          runtime.db
+            .transaction(() => {
+              if (stmts.getFolderNameConflict.get(name, id)) {
+                throw new HttpError(
+                  409,
+                  "FOLDER_NAME_EXISTS",
+                  "同名文件夹已存在，请使用已有文件夹或更换名称",
+                );
+              }
+              runtime.db.run(
+                "INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                [id, name, icon, color, now, now],
+              );
+            })
+            .immediate();
         } catch (error: any) {
           if (
             String(error?.message || "")
@@ -1267,19 +1345,33 @@ export const createRequestHandler = (
         const color = hasOwn(body, "color")
           ? validateFolderColor(body.color)
           : existing.color;
-        if (name === existing.name && icon === existing.icon && color === existing.color) {
-          return jsonResponse(runtime, req, { success: true, ...(getFolderSummary(runtime, id) as Record<string, unknown>), noop: true });
+        if (
+          name === existing.name &&
+          icon === existing.icon &&
+          color === existing.color
+        ) {
+          return jsonResponse(runtime, req, {
+            success: true,
+            ...(getFolderSummary(runtime, id) as Record<string, unknown>),
+            noop: true,
+          });
         }
         const now = Date.now();
-        runtime.db.transaction(() => {
-          if (stmts.getFolderNameConflict.get(name, id)) {
-            throw new HttpError(409, "FOLDER_NAME_EXISTS", "同名文件夹已存在，请更换名称");
-          }
-          runtime.db.run(
-            "UPDATE folders SET name = ?, icon = ?, color = ?, updated_at = ? WHERE id = ?",
-            [name, icon, color, now, id],
-          );
-        }).immediate();
+        runtime.db
+          .transaction(() => {
+            if (stmts.getFolderNameConflict.get(name, id)) {
+              throw new HttpError(
+                409,
+                "FOLDER_NAME_EXISTS",
+                "同名文件夹已存在，请更换名称",
+              );
+            }
+            runtime.db.run(
+              "UPDATE folders SET name = ?, icon = ?, color = ?, updated_at = ? WHERE id = ?",
+              [name, icon, color, now, id],
+            );
+          })
+          .immediate();
         const updated = getFolderSummary(runtime, id);
         if (!updated) {
           throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
@@ -1302,7 +1394,9 @@ export const createRequestHandler = (
           });
         }
         const affectedScenes = runtime.db
-          .query("SELECT id, revision, updated_at FROM scenes WHERE folder_id = ?")
+          .query(
+            "SELECT id, revision, updated_at FROM scenes WHERE folder_id = ?",
+          )
           .all(id) as Array<{
           id: string;
           revision: number;
@@ -1373,7 +1467,11 @@ export const createRequestHandler = (
         const revision = storedSceneRevision(existing.revision) + 1;
         const result = stmts.restoreScene.run(updatedAt, id, revision - 1);
         if (result.changes !== 1) {
-          throw new HttpError(409, "REVISION_CONFLICT", "画板版本冲突或状态已变更");
+          throw new HttpError(
+            409,
+            "REVISION_CONFLICT",
+            "画板版本冲突或状态已变更",
+          );
         }
         publishSceneChanged(runtime, {
           type: "scene_changed",
@@ -1510,15 +1608,21 @@ export const createRequestHandler = (
         const thumbnailId = `thumbnail_${sha256Hex(id)}`;
         const thumbnailVersion = parseThumbnailVersion(req);
         const revisionParam = url.searchParams.get("revision");
-        const expectedRevision = revisionParam === null
-          ? sceneRevision
-          : requireRevision(Number(revisionParam))!;
+        const expectedRevision =
+          revisionParam === null
+            ? sceneRevision
+            : requireRevision(Number(revisionParam))!;
         const assertThumbnailRevision = () => {
           const current = stmts.getSceneVersionById.get(id) as {
-            revision: number; thumbnail_file_id: string | null;
+            revision: number;
+            thumbnail_file_id: string | null;
           } | null;
           if (!current || current.revision !== expectedRevision) {
-            throw new HttpError(409, "REVISION_CONFLICT", "画板内容已更新，请重新生成预览");
+            throw new HttpError(
+              409,
+              "REVISION_CONFLICT",
+              "画板内容已更新，请重新生成预览",
+            );
           }
           return current;
         };
@@ -1528,13 +1632,15 @@ export const createRequestHandler = (
             // Another tab may have repaired the same board while this upload waited.
             if (current.thumbnail_file_id) {
               return jsonResponse(runtime, req, {
-                success: true, id, thumbnail_file_id: current.thumbnail_file_id,
+                success: true,
+                id,
+                thumbnail_file_id: current.thumbnail_file_id,
               });
             }
           }
-          const currentThumbnail = stmts.getFileUpdatedAt.get(thumbnailId) as
-            | { updated_at: number }
-            | null;
+          const currentThumbnail = stmts.getFileUpdatedAt.get(thumbnailId) as {
+            updated_at: number;
+          } | null;
           if (
             thumbnailVersion !== undefined &&
             currentThumbnail &&
@@ -1547,7 +1653,11 @@ export const createRequestHandler = (
               stale: true,
             });
           }
-          const prepared = await stageRequestBodyToFile(runtime, thumbnailId, req);
+          const prepared = await stageRequestBodyToFile(
+            runtime,
+            thumbnailId,
+            req,
+          );
           try {
             assertThumbnailRevision();
             await upsertStagedFile(
@@ -1570,7 +1680,11 @@ export const createRequestHandler = (
             [thumbnailId, id, expectedRevision],
           );
           if (linked.changes !== 1) {
-            throw new HttpError(409, "REVISION_CONFLICT", "画板内容已更新，请重新生成预览");
+            throw new HttpError(
+              409,
+              "REVISION_CONFLICT",
+              "画板内容已更新，请重新生成预览",
+            );
           }
           publishSceneChanged(runtime, {
             type: "scene_changed",
@@ -1611,17 +1725,24 @@ export const createRequestHandler = (
         const thumbnailId = `thumbnail_${sha256Hex(id)}`;
         const thumbnailVersion = parseThumbnailVersion(req);
         const revisionParam = url.searchParams.get("revision");
-        const expectedRevision = revisionParam === null
-          ? sceneRevision
-          : requireRevision(Number(revisionParam))!;
+        const expectedRevision =
+          revisionParam === null
+            ? sceneRevision
+            : requireRevision(Number(revisionParam))!;
         return await withThumbnailWriteLock(thumbnailId, async () => {
-          const current = stmts.getSceneVersionById.get(id) as { revision: number } | null;
+          const current = stmts.getSceneVersionById.get(id) as {
+            revision: number;
+          } | null;
           if (!current || current.revision !== expectedRevision) {
-            throw new HttpError(409, "REVISION_CONFLICT", "画板内容已更新，请重新生成预览");
+            throw new HttpError(
+              409,
+              "REVISION_CONFLICT",
+              "画板内容已更新，请重新生成预览",
+            );
           }
-          const currentThumbnail = stmts.getFileUpdatedAt.get(thumbnailId) as
-            | { updated_at: number }
-            | null;
+          const currentThumbnail = stmts.getFileUpdatedAt.get(thumbnailId) as {
+            updated_at: number;
+          } | null;
           if (
             thumbnailVersion !== undefined &&
             currentThumbnail &&
@@ -1715,7 +1836,10 @@ export const createRequestHandler = (
           folderId === existing.folder_id &&
           tagsUnchanged
         ) {
-          return jsonResponse(runtime, req, { ...getSceneSummary(stmts.getSceneSummaryById.get(id)), noop: true });
+          return jsonResponse(runtime, req, {
+            ...getSceneSummary(stmts.getSceneSummaryById.get(id)),
+            noop: true,
+          });
         }
         const now = Date.now();
         const revision = currentRevision + 1;
@@ -1798,7 +1922,9 @@ export const createRequestHandler = (
         const elementCount = elements.length;
         const contentBytes = Buffer.byteLength(elementsJson, "utf8");
         const contentSha256 = sha256Hex(elementsJson);
-        const contentChanged = existing.elements !== elementsJson || existing.app_state !== appStateJson;
+        const contentChanged =
+          existing.elements !== elementsJson ||
+          existing.app_state !== appStateJson;
         const isUnchanged =
           existing.name === name &&
           existing.elements === elementsJson &&
@@ -1852,10 +1978,14 @@ export const createRequestHandler = (
           }
           syncSceneFileReferences(runtime, id, fileIds);
         });
-        await withStorageMutationLock(runtime, async () => {
-          await assertReferencedFilesExist(runtime, fileIds);
-          transaction.immediate();
-        }, req.signal);
+        await withStorageMutationLock(
+          runtime,
+          async () => {
+            await assertReferencedFilesExist(runtime, fileIds);
+            transaction.immediate();
+          },
+          req.signal,
+        );
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
@@ -1888,9 +2018,10 @@ export const createRequestHandler = (
         const id = getPathId(pathname, "/api/scenes/", "scene");
         const isPermanent = url.searchParams.get("permanent") === "true";
         const revisionParam = url.searchParams.get("revision");
-        const expectedRevision = revisionParam === null
-          ? undefined
-          : requireRevision(Number(revisionParam));
+        const expectedRevision =
+          revisionParam === null
+            ? undefined
+            : requireRevision(Number(revisionParam));
         if (isPermanent && expectedRevision === undefined) {
           throw new HttpError(
             400,
@@ -1978,7 +2109,11 @@ export const createRequestHandler = (
         const revision = storedSceneRevision(existing.revision) + 1;
         const result = stmts.softDeleteScene.run(now, now, id, revision - 1);
         if (result.changes !== 1) {
-          throw new HttpError(409, "REVISION_CONFLICT", "画板版本冲突或状态已变更");
+          throw new HttpError(
+            409,
+            "REVISION_CONFLICT",
+            "画板版本冲突或状态已变更",
+          );
         }
         publishSceneChanged(runtime, {
           type: "scene_changed",
@@ -2018,7 +2153,8 @@ export const createRequestHandler = (
           undefined,
           undefined,
           undefined,
-          () => sceneEvents.push(...updateScenesAfterFileReplacement(runtime, id)),
+          () =>
+            sceneEvents.push(...updateScenesAfterFileReplacement(runtime, id)),
         );
         for (const event of sceneEvents) {
           publishSceneChanged(runtime, event);

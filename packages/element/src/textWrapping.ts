@@ -105,7 +105,7 @@ const CJK = {
    *      ↑ BREAK BEFORE "「"
    *         ↑ BREAK AFTER "」"
    */
-  OPENING:/（［｛〈《｟｢「『【〖〔〘〚＜〝/u,
+  OPENING: /（［｛〈《｟｢「『【〖〔〘〚＜〝/u,
   CLOSING: /）］｝〉》｠｣」』】〗〕〙〛＞。．，、〟‥？！：；・〜〞/u,
   /**
    * Currency symbols break before, not after

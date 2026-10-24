@@ -14,5 +14,4 @@ export interface SpreadsheetSeries {
 }
 
 export type ParseSpreadsheetResult =
-  | { ok: false; reason: string }
-  | { ok: true; data: Spreadsheet };
+  { ok: false; reason: string } | { ok: true; data: Spreadsheet };

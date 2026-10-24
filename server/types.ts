@@ -58,7 +58,9 @@ export class BodyMemoryBudget {
       };
       if (signal) {
         const abort = () =>
-          waiter.reject(new DOMException("The request was aborted", "AbortError"));
+          waiter.reject(
+            new DOMException("The request was aborted", "AbortError"),
+          );
         signal.addEventListener("abort", abort, { once: true });
         waiter.remove = () => {
           signal.removeEventListener("abort", abort);
@@ -128,12 +130,7 @@ export type SceneRealtimeEvent = {
   revision: number;
   updatedAt: number;
   changeKind:
-    | "created"
-    | "content"
-    | "metadata"
-    | "thumbnail"
-    | "deleted"
-    | "restored";
+    "created" | "content" | "metadata" | "thumbnail" | "deleted" | "restored";
 };
 
 export type WorkspaceRealtimeEvent = {

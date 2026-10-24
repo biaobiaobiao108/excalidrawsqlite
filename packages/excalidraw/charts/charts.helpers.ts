@@ -320,8 +320,8 @@ export const createRadarAxisLabels = (
       cos > RADAR_AXIS_LABEL_ALIGNMENT_THRESHOLD
         ? "left"
         : cos < -RADAR_AXIS_LABEL_ALIGNMENT_THRESHOLD
-        ? "right"
-        : "center";
+          ? "right"
+          : "center";
 
     // Keep labels outside the radar ring by projecting text extents
     // onto the axis direction.
@@ -338,8 +338,8 @@ export const createRadarAxisLabels = (
       sin > RADAR_AXIS_LABEL_ALIGNMENT_THRESHOLD
         ? BAR_GAP / 3
         : sin < -RADAR_AXIS_LABEL_ALIGNMENT_THRESHOLD
-        ? -BAR_GAP / 3
-        : 0;
+          ? -BAR_GAP / 3
+          : 0;
 
     return newTextElement({
       backgroundColor,

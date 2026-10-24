@@ -24,7 +24,9 @@ export const applyBoardSelectionClick = (
   }
 
   if (click.shiftKey) {
-    const anchorIndex = state.anchorId ? orderedIds.indexOf(state.anchorId) : -1;
+    const anchorIndex = state.anchorId
+      ? orderedIds.indexOf(state.anchorId)
+      : -1;
     if (anchorIndex < 0) {
       return { ids: new Set([click.id]), anchorId: click.id };
     }
@@ -60,10 +62,11 @@ export const pruneBoardSelection = (
   const visibleIds = new Set(orderedIds);
   const ids = new Set([...state.ids].filter((id) => visibleIds.has(id)));
   const firstSelectedId = ids.values().next().value;
-  const anchorId = state.anchorId && visibleIds.has(state.anchorId)
-    ? state.anchorId
-    : typeof firstSelectedId === "string"
-      ? firstSelectedId
-      : null;
+  const anchorId =
+    state.anchorId && visibleIds.has(state.anchorId)
+      ? state.anchorId
+      : typeof firstSelectedId === "string"
+        ? firstSelectedId
+        : null;
   return { ids, anchorId };
 };

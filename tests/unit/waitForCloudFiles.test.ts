@@ -11,9 +11,15 @@ describe("cloud save attachment hydration", () => {
     const fileId = "save-hydration" as FileId;
     let files: BinaryFiles = {};
     const token = FileStatusStore.beginLoading([fileId]);
-    const waiting = waitForCloudFiles([fileId], () => files, () => true);
+    const waiting = waitForCloudFiles(
+      [fileId],
+      () => files,
+      () => true,
+    );
     const file = {
-      id: fileId, mimeType: "image/png" as const, created: 1,
+      id: fileId,
+      mimeType: "image/png" as const,
+      created: 1,
       dataURL: "data:image/png;base64,aGVsbG8=" as DataURL,
     };
     files = { [fileId]: file };
@@ -25,7 +31,11 @@ describe("cloud save attachment hydration", () => {
     const fileId = "save-scene-switch" as FileId;
     let isCurrent = true;
     const token = FileStatusStore.beginLoading([fileId]);
-    const waiting = waitForCloudFiles([fileId], () => ({}), () => isCurrent);
+    const waiting = waitForCloudFiles(
+      [fileId],
+      () => ({}),
+      () => isCurrent,
+    );
     isCurrent = false;
     FileStatusStore.cancelLoading(token);
     await expect(waiting).rejects.toThrow("画板已切换");
@@ -33,10 +43,20 @@ describe("cloud save attachment hydration", () => {
 
   it("keeps missing and failed attachments from being silently saved", async () => {
     const fileId = "save-missing" as FileId;
-    await expect(waitForCloudFiles([fileId], () => ({}), () => true))
-      .rejects.toThrow("尚未准备完成");
+    await expect(
+      waitForCloudFiles(
+        [fileId],
+        () => ({}),
+        () => true,
+      ),
+    ).rejects.toThrow("尚未准备完成");
     FileStatusStore.updateStatuses([[fileId, "error"]]);
-    await expect(waitForCloudFiles([fileId], () => ({}), () => true))
-      .rejects.toThrow("加载失败");
+    await expect(
+      waitForCloudFiles(
+        [fileId],
+        () => ({}),
+        () => true,
+      ),
+    ).rejects.toThrow("加载失败");
   });
 });

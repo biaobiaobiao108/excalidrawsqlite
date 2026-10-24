@@ -26,13 +26,15 @@ export const handleDevReloadRequest = (req: Request): Response => {
   });
 
   // Initial handshake message
-  writer.write(new TextEncoder().encode("retry: 1500\ndata: connected\n\n")).catch(() => {});
+  writer
+    .write(new TextEncoder().encode("retry: 1500\ndata: connected\n\n"))
+    .catch(() => {});
 
   return new Response(readable, {
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
+      Connection: "keep-alive",
     },
   });
 };

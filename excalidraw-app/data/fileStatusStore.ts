@@ -51,7 +51,8 @@ export class FileStatusStore {
         ? this.previousLoadStatuses.get(previousLoad)?.get(id)
         : statuses.get(id);
       if (previousLoad) {
-        const previousLoadStatuses = this.previousLoadStatuses.get(previousLoad);
+        const previousLoadStatuses =
+          this.previousLoadStatuses.get(previousLoad);
         previousLoadStatuses?.delete(id);
         if (previousLoadStatuses?.size === 0) {
           this.previousLoadStatuses.delete(previousLoad);

@@ -22,15 +22,13 @@ const getDeviceMemory = () =>
 
 export const isLowMemoryDevice = () => {
   const deviceMemory = getDeviceMemory();
-  const userAgent =
-    typeof navigator === "undefined" ? "" : navigator.userAgent;
+  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
   return getDeviceMemoryTier(deviceMemory, userAgent) === "low";
 };
 
 export const getDefaultImageCacheBytes = () => {
   const deviceMemory = getDeviceMemory();
-  const userAgent =
-    typeof navigator === "undefined" ? "" : navigator.userAgent;
+  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
   const memoryTier = getDeviceMemoryTier(deviceMemory, userAgent);
   return memoryTier === "low"
     ? LOW_MEMORY_IMAGE_CACHE_BYTES
@@ -128,10 +126,7 @@ export class ImageCache extends Map<FileId, ImageCacheEntry> {
   }
 
   public trim() {
-    while (
-      this.decodedBytes + this.pendingDecodeBytes >
-      this.maxDecodedBytes
-    ) {
+    while (this.decodedBytes + this.pendingDecodeBytes > this.maxDecodedBytes) {
       let candidate: FileId | undefined;
       let candidateLastUsed = Number.POSITIVE_INFINITY;
 
@@ -159,7 +154,8 @@ export class ImageCache extends Map<FileId, ImageCacheEntry> {
       entries: this.size,
       decodedBytes: this.decodedBytes,
       pendingDecodes: this.entryPendingBytes.size
-        ? [...this.entryPendingBytes.values()].filter((bytes) => bytes > 0).length
+        ? [...this.entryPendingBytes.values()].filter((bytes) => bytes > 0)
+            .length
         : 0,
       pendingDecodeBytes: this.pendingDecodeBytes,
       maxDecodedBytes: this.maxDecodedBytes,

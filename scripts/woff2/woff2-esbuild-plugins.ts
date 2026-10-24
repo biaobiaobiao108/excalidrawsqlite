@@ -17,9 +17,8 @@ const decodeFont = async (woff2Buffer: ArrayBuffer) => {
   });
   await previous;
   try {
-    const snftBuffer = new Uint8Array(
-      await wawoff.decompress(woff2Buffer),
-    ).buffer;
+    const snftBuffer = new Uint8Array(await wawoff.decompress(woff2Buffer))
+      .buffer;
     try {
       return Font.create(snftBuffer, {
         type: "ttf",
@@ -47,7 +46,9 @@ const decodeFont = async (woff2Buffer: ArrayBuffer) => {
  *    - merging fallback font for each
  *    - printing out font metrics
  */
-export const woff2ServerPlugin = (options: { outdir?: string } = {}): Plugin => ({
+export const woff2ServerPlugin = (
+  options: { outdir?: string } = {},
+): Plugin => ({
   name: "woff2ServerPlugin",
   setup(build) {
     const fonts = new Map<string, Partial<Record<string, FontInstance[]>>>();
@@ -108,10 +109,9 @@ export const woff2ServerPlugin = (options: { outdir?: string } = {}): Plugin => 
         import.meta.dir,
         "./assets/NotoEmoji-Regular-2048.ttf",
       );
-      const emojiFont = Font.create(
-        await Bun.file(emojiPath).arrayBuffer(),
-        { type: "ttf" },
-      );
+      const emojiFont = Font.create(await Bun.file(emojiPath).arrayBuffer(), {
+        type: "ttf",
+      });
 
       const sortedFonts = [...fonts.entries()].sort(([family1], [family2]) =>
         family1 > family2 ? 1 : -1,
@@ -132,9 +132,7 @@ export const woff2ServerPlugin = (options: { outdir?: string } = {}): Plugin => 
 
         const mergedFontPath = path.resolve(outputDir, `${family}.ttf`);
         const fallbackFontsPaths = [
-          baseFont.data.head.unitsPerEm === 2048
-            ? emojiPath2048
-            : emojiPath,
+          baseFont.data.head.unitsPerEm === 2048 ? emojiPath2048 : emojiPath,
         ];
 
         const mergeResult = Bun.spawnSync({

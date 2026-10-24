@@ -8,11 +8,7 @@ import {
 } from "node:zlib";
 
 const projectRoot = path.resolve(__dirname, "..");
-const defaultBuildDirectory = path.join(
-  projectRoot,
-  "excalidraw-app",
-  "build",
-);
+const defaultBuildDirectory = path.join(projectRoot, "excalidraw-app", "build");
 
 // Initial assets are budgeted as an aggregate because browsers download them
 // together. Lazy assets are budgeted per file because they load on demand.
@@ -167,15 +163,12 @@ const getSummary = (
 ) =>
   summarizeAssets(
     assets.filter(
-      (asset) =>
-        asset.loadingMode === loadingMode && asset.kind === kind,
+      (asset) => asset.loadingMode === loadingMode && asset.kind === kind,
     ),
   );
 
 const printSummary = (assets: BundleAsset[]) => {
-  for (const loadingMode of Object.keys(
-    BUNDLE_SIZE_BUDGETS,
-  ) as LoadingMode[]) {
+  for (const loadingMode of Object.keys(BUNDLE_SIZE_BUDGETS) as LoadingMode[]) {
     for (const kind of ["js", "css"] as AssetKind[]) {
       const summary = getSummary(assets, loadingMode, kind);
       if (!summary.largest) {
@@ -211,9 +204,7 @@ const printSummary = (assets: BundleAsset[]) => {
 const getViolations = (assets: BundleAsset[]) => {
   const violations: string[] = [];
 
-  for (const loadingMode of Object.keys(
-    BUNDLE_SIZE_BUDGETS,
-  ) as LoadingMode[]) {
+  for (const loadingMode of Object.keys(BUNDLE_SIZE_BUDGETS) as LoadingMode[]) {
     for (const kind of ["js", "css"] as AssetKind[]) {
       const summary = getSummary(assets, loadingMode, kind);
       if (!summary.largest) {

@@ -228,10 +228,10 @@ export class AppBucketFill {
       ? isFrameLikeElement(owner)
         ? owner.id
         : owner.frameId
-      : this.app.getTopLayerFrameAtSceneCoords(scenePointer)?.id ?? null;
+      : (this.app.getTopLayerFrameAtSceneCoords(scenePointer)?.id ?? null);
     const groupIds = owner
       ? owner.groupIds
-      : result.boundaryElementIds
+      : (result.boundaryElementIds
           .map((id) => elementsMap.get(id)?.groupIds)
           .filter((groupIds): groupIds is string[] => !!groupIds)
           .reduce(
@@ -240,7 +240,7 @@ export class AppBucketFill {
                 ? groupIds
                 : common.filter((groupId) => groupIds.includes(groupId)),
             null as string[] | null,
-          ) ?? [];
+          ) ?? []);
 
     const fill = newLinearElement({
       type: "line",
@@ -274,8 +274,8 @@ export class AppBucketFill {
       anchorIndex < 0
         ? null
         : result.insertion.placement === "above"
-        ? anchorIndex + 1
-        : anchorIndex,
+          ? anchorIndex + 1
+          : anchorIndex,
     );
 
     // Keep the bucket fill tool active and do NOT select the new fill, so the

@@ -95,7 +95,8 @@ export class ElementCanvasCache<K extends object, V extends CanvasEntry> {
     }
     this.pixels.set(
       entries,
-      (this.pixels.get(entries) || 0) - value.canvas.width * value.canvas.height,
+      (this.pixels.get(entries) || 0) -
+        value.canvas.width * value.canvas.height,
     );
     entries.delete(key);
     this.references.get(key)?.delete(entries);

@@ -21,9 +21,8 @@ export type RealtimeSocketData = {
 
 const sceneTopic = (sceneId: string) => `${SCENE_TOPIC_PREFIX}${sceneId}`;
 
-const serializeEvent = (
-  event: SceneRealtimeEvent | WorkspaceRealtimeEvent,
-) => JSON.stringify(event);
+const serializeEvent = (event: SceneRealtimeEvent | WorkspaceRealtimeEvent) =>
+  JSON.stringify(event);
 
 const parseClientMessage = (message: string | Buffer) => {
   if (Buffer.byteLength(message) > MAX_CLIENT_MESSAGE_BYTES) {

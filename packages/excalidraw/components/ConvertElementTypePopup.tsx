@@ -213,12 +213,12 @@ const Panel = ({
           (element) => element.type === genericElements[0].type,
         )
       : conversionType === "linear"
-      ? linearElements.every(
-          (element) =>
-            getLinearElementSubType(element) ===
-            getLinearElementSubType(linearElements[0]),
-        )
-      : false;
+        ? linearElements.every(
+            (element) =>
+              getLinearElementSubType(element) ===
+              getLinearElementSubType(linearElements[0]),
+          )
+        : false;
 
   const [panelPosition, setPanelPosition] = useState({ x: 0, y: 0 });
   const positionRef = useRef("");
@@ -230,8 +230,8 @@ const Panel = ({
     );
     const newPositionRef = `
       ${app.state.scrollX}${app.state.scrollY}${app.state.offsetTop}${
-      app.state.offsetLeft
-    }${app.state.zoom.value}${elements.map((el) => el.id).join(",")}`;
+        app.state.offsetLeft
+      }${app.state.zoom.value}${elements.map((el) => el.id).join(",")}`;
 
     if (newPositionRef === positionRef.current) {
       return;
@@ -301,12 +301,12 @@ const Panel = ({
           ["elbowArrow", elbowArrowIcon],
         ]
       : conversionType === "generic"
-      ? [
-          ["rectangle", RectangleIcon],
-          ["diamond", DiamondIcon],
-          ["ellipse", EllipseIcon],
-        ]
-      : [];
+        ? [
+            ["rectangle", RectangleIcon],
+            ["diamond", DiamondIcon],
+            ["ellipse", EllipseIcon],
+          ]
+        : [];
 
   return (
     <div
@@ -351,8 +351,7 @@ const Panel = ({
               convertElementTypes(app, {
                 conversionType,
                 nextType: type as
-                  | ConvertibleGenericTypes
-                  | ConvertibleLinearTypes,
+                  ConvertibleGenericTypes | ConvertibleLinearTypes,
               });
               panelRef.current?.focus();
             }}
@@ -679,10 +678,9 @@ const filterGenericConvetibleElements = <T extends ExcalidrawElement>(
           | ExcalidrawDiamondElement
           | ExcalidrawEllipseElement
         >
-      :
-          | ExcalidrawRectangleElement
-          | ExcalidrawDiamondElement
-          | ExcalidrawEllipseElement
+      : | ExcalidrawRectangleElement
+        | ExcalidrawDiamondElement
+        | ExcalidrawEllipseElement
   >;
 
 const filterLinearConvertibleElements = <T extends ExcalidrawElement>(
@@ -728,12 +726,10 @@ const convertLineToElbow = (line: ExcalidrawLinearElement): LocalPoint[] => {
   // 2. drop obviously colinear middle points
   const trimmed: LocalPoint[] = [ortho[0]];
   for (let i = 1; i < ortho.length - 1; ++i) {
-    if (
-      !(
-        (isVert(ortho[i - 1], ortho[i]) && isVert(ortho[i], ortho[i + 1])) ||
-        (isHorz(ortho[i - 1], ortho[i]) && isHorz(ortho[i], ortho[i + 1]))
-      )
-    ) {
+    if (!(
+      (isVert(ortho[i - 1], ortho[i]) && isVert(ortho[i], ortho[i + 1])) ||
+      (isHorz(ortho[i - 1], ortho[i]) && isHorz(ortho[i], ortho[i + 1]))
+    )) {
       trimmed.push(ortho[i]);
     }
   }

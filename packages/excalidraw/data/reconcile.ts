@@ -1,9 +1,4 @@
-import {
-  arrayToMap,
-  isDevEnv,
-  isTestEnv,
-  throttle,
-} from "@excalidraw/common";
+import { arrayToMap, isDevEnv, isTestEnv, throttle } from "@excalidraw/common";
 
 import {
   orderByFractionalIndex,

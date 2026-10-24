@@ -11,13 +11,9 @@ interface CloudSceneDeletedDialogProps {
   onDiscard: () => void;
 }
 
-export const CloudSceneDeletedDialog: React.FC<CloudSceneDeletedDialogProps> = ({
-  isOpen,
-  sceneName,
-  isRecovering,
-  onRecover,
-  onDiscard,
-}) => {
+export const CloudSceneDeletedDialog: React.FC<
+  CloudSceneDeletedDialogProps
+> = ({ isOpen, sceneName, isRecovering, onRecover, onDiscard }) => {
   if (!isOpen) {
     return null;
   }

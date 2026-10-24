@@ -301,11 +301,8 @@ export function deconstructRectanguloidElement(
 
   const corners =
     offset > 0
-      ? baseCorners.map(
-          (corner) =>
-            curveCatmullRomCubicApproxPoints(
-              curveOffsetPoints(corner, offset),
-            )!,
+      ? baseCorners.map((corner) =>
+          curveCatmullRomCubicApproxPoints(curveOffsetPoints(corner, offset))!,
         )
       : [
           [baseCorners[0]],
@@ -433,11 +430,8 @@ export function deconstructDiamondElement(
 
   const corners =
     offset > 0
-      ? baseCorners.map(
-          (corner) =>
-            curveCatmullRomCubicApproxPoints(
-              curveOffsetPoints(corner, offset),
-            )!,
+      ? baseCorners.map((corner) =>
+          curveCatmullRomCubicApproxPoints(curveOffsetPoints(corner, offset))!,
         )
       : [
           [baseCorners[0]],
@@ -707,8 +701,7 @@ export const projectFixedPointOntoDiagonal = (
     const otherBindable =
       otherBinding &&
       (elementsMap.get(otherBinding.elementId) as
-        | ExcalidrawBindableElement
-        | undefined);
+        ExcalidrawBindableElement | undefined);
     const otherFocusPoint =
       otherBinding &&
       otherBindable &&

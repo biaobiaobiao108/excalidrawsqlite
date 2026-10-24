@@ -77,17 +77,12 @@ export const getStaticETag = async (
   }
 };
 
-export const staticIfNoneMatchMatches = (
-  header: string | null,
-  etag: string,
-) =>
+export const staticIfNoneMatchMatches = (header: string | null, etag: string) =>
   Boolean(
-    header
-      ?.split(",")
-      .some((candidate) => {
-        const value = candidate.trim();
-        return value === "*" || value.replace(/^W\//, "") === etag;
-      }),
+    header?.split(",").some((candidate) => {
+      const value = candidate.trim();
+      return value === "*" || value.replace(/^W\//, "") === etag;
+    }),
   );
 
 export const buildStaticPath = (staticDir: string, pathname: string) => {
@@ -122,9 +117,8 @@ export const getStaticCacheControl = (pathname: string) => {
     return "no-cache";
   }
   const filename = path.posix.basename(pathname);
-  const hasContentHash = /^(?:chunk-[a-z0-9]+|.+-[a-z0-9]{8,})\.[a-z0-9]+$/i.test(
-    filename,
-  );
+  const hasContentHash =
+    /^(?:chunk-[a-z0-9]+|.+-[a-z0-9]{8,})\.[a-z0-9]+$/i.test(filename);
   if (
     pathname.startsWith("/assets/") ||
     pathname.startsWith("/fonts/") ||

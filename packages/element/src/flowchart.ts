@@ -199,13 +199,13 @@ const placeCluster = (
   const anchoredStart =
     stickyCrossStart === null
       ? null
-      : [stickyCrossStart, stickyCrossStart - step]
+      : ([stickyCrossStart, stickyCrossStart - step]
           .filter((start) => intervalIsFree(start, clusterCrossSize, occupied))
           .sort(
             (a, b) =>
               Math.abs(a + clusterCrossSize / 2 - parentCrossCenter) -
               Math.abs(b + clusterCrossSize / 2 - parentCrossCenter),
-          )[0] ?? null;
+          )[0] ?? null);
 
   const crossStart =
     anchoredStart ??

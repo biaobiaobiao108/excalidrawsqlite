@@ -16,9 +16,10 @@ export const waitForCloudFiles = async (
     }
     // Explicit saves may wait while the user adds or removes images. Refresh
     // the required files on every poll instead of retaining the initial scene.
-    const fileIds = typeof requestedFileIds === "function"
-      ? requestedFileIds()
-      : requestedFileIds;
+    const fileIds =
+      typeof requestedFileIds === "function"
+        ? requestedFileIds()
+        : requestedFileIds;
     const statuses = FileStatusStore.getSnapshot().value;
     if (fileIds.some((fileId) => statuses.get(fileId) === "loading")) {
       if (Date.now() >= deadline) {

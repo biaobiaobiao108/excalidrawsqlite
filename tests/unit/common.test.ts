@@ -16,13 +16,13 @@ describe("common primitives", () => {
     [7, 1, 9, 3, 2].forEach((value) => heap.push(value));
 
     expect(heap.size()).toBe(5);
-    expect([heap.pop(), heap.pop(), heap.pop(), heap.pop(), heap.pop()]).toEqual([
-      1,
-      2,
-      3,
-      7,
-      9,
-    ]);
+    expect([
+      heap.pop(),
+      heap.pop(),
+      heap.pop(),
+      heap.pop(),
+      heap.pop(),
+    ]).toEqual([1, 2, 3, 7, 9]);
     expect(heap.pop()).toBeNull();
   });
 
@@ -50,8 +50,8 @@ describe("common primitives", () => {
   });
 
   it("uses system fallbacks for unsupported Excalifont glyphs", () => {
-    expect(
-      getFontFamilyString({ fontFamily: FONT_FAMILY.Excalifont }),
-    ).toBe("Excalifont, Xiaolai SC, sans-serif, Segoe UI Emoji");
+    expect(getFontFamilyString({ fontFamily: FONT_FAMILY.Excalifont })).toBe(
+      "Excalifont, Xiaolai SC, sans-serif, Segoe UI Emoji",
+    );
   });
 });

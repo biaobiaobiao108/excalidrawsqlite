@@ -5,11 +5,7 @@ import {
   FreedrawIcon,
 } from "../icons";
 
-import {
-  FONT_FAMILY,
-  LXGW_WENKAI_FONT,
-  SYSTEM_FONT,
-} from "@excalidraw/common";
+import { FONT_FAMILY, LXGW_WENKAI_FONT, SYSTEM_FONT } from "@excalidraw/common";
 
 import type { FontFamilyValues } from "@excalidraw/element/types";
 

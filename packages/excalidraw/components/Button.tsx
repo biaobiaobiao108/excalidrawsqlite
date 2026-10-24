@@ -5,11 +5,10 @@ import { composeEventHandlers } from "@excalidraw/common";
 
 import "./Button.scss";
 
-interface ButtonProps
-  extends React.DetailedHTMLProps<
-    React.ButtonHTMLAttributes<HTMLButtonElement>,
-    HTMLButtonElement
-  > {
+interface ButtonProps extends React.DetailedHTMLProps<
+  React.ButtonHTMLAttributes<HTMLButtonElement>,
+  HTMLButtonElement
+> {
   type?: "button" | "submit" | "reset";
   onSelect: () => any;
   /** whether button is in active state */

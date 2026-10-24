@@ -34,9 +34,7 @@ describe("element type checks", () => {
   it("requires a file id for initialized images", () => {
     expect(isInitializedImageElement(element("image") as any)).toBe(false);
     expect(
-      isInitializedImageElement(
-        element("image", { fileId: "file-1" }) as any,
-      ),
+      isInitializedImageElement(element("image", { fileId: "file-1" }) as any),
     ).toBe(true);
     expect(isInitializedImageElement(null)).toBe(false);
   });

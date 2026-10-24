@@ -15,9 +15,13 @@ const selection = (
 
 describe("board list selection", () => {
   test("plain selection starts a new selection and modifier clicks toggle individual boards", () => {
-    const first = applyBoardSelectionClick(selection(["a", "c"], "c"), orderedIds, {
-      id: "d",
-    });
+    const first = applyBoardSelectionClick(
+      selection(["a", "c"], "c"),
+      orderedIds,
+      {
+        id: "d",
+      },
+    );
     expect([...first.ids]).toEqual(["d"]);
 
     const added = applyBoardSelectionClick(first, orderedIds, {
@@ -43,7 +47,11 @@ describe("board list selection", () => {
   });
 
   test("pruning removes boards outside the current list and repairs the anchor", () => {
-    const next = pruneBoardSelection(selection(["a", "c", "e"], "e"), ["b", "c", "d"]);
+    const next = pruneBoardSelection(selection(["a", "c", "e"], "e"), [
+      "b",
+      "c",
+      "d",
+    ]);
     expect([...next.ids]).toEqual(["c"]);
     expect(next.anchorId).toBe("c");
   });

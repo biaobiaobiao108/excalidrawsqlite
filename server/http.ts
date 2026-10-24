@@ -168,7 +168,7 @@ export const errorResponse = (
       ? error
       : wasAborted
         ? new HttpError(499, "REQUEST_ABORTED", "请求已取消")
-      : new HttpError(500, "INTERNAL_ERROR", "服务器内部错误");
+        : new HttpError(500, "INTERNAL_ERROR", "服务器内部错误");
   if (!(error instanceof HttpError) && !wasAborted) {
     console.info("[API] request failed", error);
   }

@@ -233,8 +233,8 @@ export const getTextAnchorRatios = (opts: {
     opts.verticalAlign === VERTICAL_ALIGN.MIDDLE
       ? 0.5
       : opts.verticalAlign === VERTICAL_ALIGN.BOTTOM
-      ? 1
-      : 0,
+        ? 1
+        : 0,
 });
 
 /** computes element x/y offset based on textAlign/verticalAlign */

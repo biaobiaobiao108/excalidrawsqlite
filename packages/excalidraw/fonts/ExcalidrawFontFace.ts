@@ -9,8 +9,7 @@ export class ExcalidrawFontFace {
   public readonly fontFace: FontFace;
 
   private static readonly ASSETS_FALLBACK_URL = `https://esm.sh/${
-    typeof import.meta !== "undefined" &&
-    (import.meta as any).env?.PKG_NAME
+    typeof import.meta !== "undefined" && (import.meta as any).env?.PKG_NAME
       ? `${(import.meta as any).env.PKG_NAME}@${(import.meta as any).env.PKG_VERSION}` // is provided during package build
       : "@excalidraw/excalidraw" // fallback to the latest package version (i.e. for app)
   }/dist/prod/`;
@@ -41,8 +40,8 @@ export class ExcalidrawFontFace {
       return;
     }
 
-    const codepoints = Array.from(characters).map(
-      (char) => char.codePointAt(0)!,
+    const codepoints = Array.from(characters).map((char) =>
+      char.codePointAt(0)!,
     );
 
     return this.getContent(codepoints).then(

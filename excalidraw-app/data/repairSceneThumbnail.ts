@@ -1,8 +1,15 @@
-import { restoreAppState, restoreElements } from "@excalidraw/excalidraw/data/restore";
+import {
+  restoreAppState,
+  restoreElements,
+} from "@excalidraw/excalidraw/data/restore";
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { FileId } from "@excalidraw/element/types";
 
-import { fetchCloudScene, fetchCloudFiles, saveCloudSceneThumbnail } from "./cloudStorage";
+import {
+  fetchCloudScene,
+  fetchCloudFiles,
+  saveCloudSceneThumbnail,
+} from "./cloudStorage";
 import { createSceneThumbnail } from "./sceneThumbnail";
 
 export async function repairSceneThumbnail(
@@ -17,7 +24,9 @@ export async function repairSceneThumbnail(
   if (scene.thumbnail_file_id) {
     return scene.thumbnail_file_id;
   }
-  const elements = restoreElements(scene.elements, null, { repairBindings: true });
+  const elements = restoreElements(scene.elements, null, {
+    repairBindings: true,
+  });
   const fileIds = new Set<FileId>();
   for (const element of elements) {
     if (element.type === "image" && element.fileId && !element.isDeleted) {
@@ -28,7 +37,9 @@ export async function repairSceneThumbnail(
   if (isCancelled() || erroredFiles.size) {
     return null;
   }
-  const files: BinaryFiles = Object.fromEntries(loadedFiles.map((file) => [file.id, file]));
+  const files: BinaryFiles = Object.fromEntries(
+    loadedFiles.map((file) => [file.id, file]),
+  );
   const blob = await createSceneThumbnail({
     elements,
     appState: restoreAppState(scene.appState, null),

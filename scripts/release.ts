@@ -100,7 +100,10 @@ const getPackageJsonPath = (packageName: string) => {
   return path.resolve(PACKAGES_DIR, packageName, "package.json");
 };
 
-const runCommand = (args: string[], { cwd, inherit = false }: { cwd?: string; inherit?: boolean } = {}) => {
+const runCommand = (
+  args: string[],
+  { cwd, inherit = false }: { cwd?: string; inherit?: boolean } = {},
+) => {
   const result = spawnSync(args, {
     cwd: cwd ?? ROOT_DIR,
     stdout: inherit ? "inherit" : "pipe",
@@ -128,7 +131,10 @@ const restoreReleaseFiles = (originalFiles: Map<string, Buffer>) => {
 
 const assertCleanWorkingTree = () => {
   const status = new TextDecoder()
-    .decode(runCommand(["git", "status", "--porcelain", "--untracked-files=all"]).stdout)
+    .decode(
+      runCommand(["git", "status", "--porcelain", "--untracked-files=all"])
+        .stdout,
+    )
     .trim();
 
   if (status) {
@@ -221,7 +227,9 @@ const assertOnlyReleaseFilesAreStaged = () => {
     .filter(Boolean)
     .map((filePath) => path.resolve(ROOT_DIR, filePath));
   const allowedFiles = new Set(getReleaseFilePaths());
-  const unexpectedFiles = stagedFiles.filter((filePath) => !allowedFiles.has(filePath));
+  const unexpectedFiles = stagedFiles.filter(
+    (filePath) => !allowedFiles.has(filePath),
+  );
 
   if (unexpectedFiles.length) {
     throw new Error(
@@ -237,14 +245,18 @@ const askToCommit = async (tag: string, nextVersion: string): Promise<void> => {
     return;
   }
 
-  const answer = (prompt("Would you like to commit these changes to git? (Y/n): ") || "").toLowerCase();
+  const answer = (
+    prompt("Would you like to commit these changes to git? (Y/n): ") || ""
+  ).toLowerCase();
   if (answer === "y") {
     runCommand(
       [
         "git",
         "add",
         "--",
-        ...getReleaseFilePaths().map((filePath) => path.relative(ROOT_DIR, filePath)),
+        ...getReleaseFilePaths().map((filePath) =>
+          path.relative(ROOT_DIR, filePath),
+        ),
       ],
       { inherit: true },
     );
@@ -281,7 +293,9 @@ const buildPackages = () => {
 };
 
 const askToPublish = async (tag: string, version: string): Promise<void> => {
-  const answer = (prompt("Would you like to publish these changes to npm? (Y/n): ") || "").toLowerCase();
+  const answer = (
+    prompt("Would you like to publish these changes to npm? (Y/n): ") || ""
+  ).toLowerCase();
   if (answer === "y") {
     publishPackages(tag, version);
   } else {

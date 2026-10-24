@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
-import { AppStateDelta, ElementsDelta, Delta } from "../../packages/element/src/delta";
+import {
+  AppStateDelta,
+  ElementsDelta,
+  Delta,
+} from "../../packages/element/src/delta";
 import { StoreDelta } from "../../packages/element/src/store";
 import type { Store } from "../../packages/element/src/store";
 import type { FileId } from "../../packages/element/src/types";
@@ -54,16 +58,24 @@ const fileId = (value: string) => value as FileId;
 
 describe("memory budgets", () => {
   it("uses a bounded middle tier when the browser hides device memory", () => {
-    expect(getDeviceMemoryTier(undefined, "Mozilla/5.0 Macintosh Safari/627.1"))
-      .toBe("unknown");
-    expect(getEditorCanvasPixelBudget(undefined, "Mozilla/5.0 Macintosh Safari/627.1"))
-      .toBe(24_000_000);
-    expect(getDeviceMemoryTier(8, "Mozilla/5.0 Macintosh Safari/627.1"))
-      .toBe("standard");
-    expect(getDeviceMemoryTier(4, "Mozilla/5.0 Macintosh Safari/627.1"))
-      .toBe("low");
-    expect(getDeviceMemoryTier(undefined, "Mozilla/5.0 iPhone Mobile"))
-      .toBe("low");
+    expect(
+      getDeviceMemoryTier(undefined, "Mozilla/5.0 Macintosh Safari/627.1"),
+    ).toBe("unknown");
+    expect(
+      getEditorCanvasPixelBudget(
+        undefined,
+        "Mozilla/5.0 Macintosh Safari/627.1",
+      ),
+    ).toBe(24_000_000);
+    expect(getDeviceMemoryTier(8, "Mozilla/5.0 Macintosh Safari/627.1")).toBe(
+      "standard",
+    );
+    expect(getDeviceMemoryTier(4, "Mozilla/5.0 Macintosh Safari/627.1")).toBe(
+      "low",
+    );
+    expect(getDeviceMemoryTier(undefined, "Mozilla/5.0 iPhone Mobile")).toBe(
+      "low",
+    );
   });
 
   it("uses the middle editor scale for desktop browsers without memory data", () => {

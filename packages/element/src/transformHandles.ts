@@ -29,14 +29,7 @@ import type {
 } from "./types";
 
 export type TransformHandleDirection =
-  | "n"
-  | "s"
-  | "w"
-  | "e"
-  | "nw"
-  | "ne"
-  | "sw"
-  | "se";
+  "n" | "s" | "w" | "e" | "nw" | "ne" | "sw" | "se";
 
 export type TransformHandleType = TransformHandleDirection | "rotation";
 
@@ -312,8 +305,8 @@ export const getTransformHandles = (
   const margin = isLinearElement(element)
     ? DEFAULT_TRANSFORM_HANDLE_SPACING + 8
     : isImageElement(element)
-    ? 0
-    : DEFAULT_TRANSFORM_HANDLE_SPACING;
+      ? 0
+      : DEFAULT_TRANSFORM_HANDLE_SPACING;
   return getTransformHandlesFromCoords(
     getElementAbsoluteCoords(element, elementsMap, true),
     element.angle,

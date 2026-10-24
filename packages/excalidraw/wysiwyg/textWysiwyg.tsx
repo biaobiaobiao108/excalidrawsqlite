@@ -505,8 +505,8 @@ export const textWysiwyg = ({
       layout.textAlign === "center"
         ? (layout.width - lineWidth) / 2
         : layout.textAlign === "right"
-        ? layout.width - lineWidth
-        : 0;
+          ? layout.width - lineWidth
+          : 0;
     const relativeX = localX - lineStartX;
 
     if (!line.text) {

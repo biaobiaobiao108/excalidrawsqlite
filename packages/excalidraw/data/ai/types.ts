@@ -1,7 +1,6 @@
 export namespace OpenAIInput {
   type ChatCompletionContentPart =
-    | ChatCompletionContentPartText
-    | ChatCompletionContentPartImage;
+    ChatCompletionContentPartText | ChatCompletionContentPartImage;
 
   interface ChatCompletionContentPartImage {
     image_url: ChatCompletionContentPartImage.ImageURL;
@@ -239,11 +238,7 @@ export namespace OpenAIOutput {
      * function.
      */
     finish_reason:
-      | "stop"
-      | "length"
-      | "tool_calls"
-      | "content_filter"
-      | "function_call";
+      "stop" | "length" | "tool_calls" | "content_filter" | "function_call";
 
     /**
      * The index of the choice in the list of choices.

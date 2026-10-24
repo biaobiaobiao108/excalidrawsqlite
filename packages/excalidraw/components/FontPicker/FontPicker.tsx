@@ -2,11 +2,7 @@ import { Popover } from "radix-ui";
 import clsx from "clsx";
 import React, { useCallback, useMemo } from "react";
 
-import {
-  FONT_FAMILY,
-  LXGW_WENKAI_FONT,
-  SYSTEM_FONT,
-} from "@excalidraw/common";
+import { FONT_FAMILY, LXGW_WENKAI_FONT, SYSTEM_FONT } from "@excalidraw/common";
 
 import type { FontFamilyValues } from "@excalidraw/element/types";
 

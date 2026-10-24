@@ -65,9 +65,10 @@ export const setCanvasDimensionsWithFallback = (
   requestedScale: number,
   onScaleFallback?: (scale: number) => void,
 ) => {
-  const scale = Number.isFinite(requestedScale) && requestedScale > 0
-    ? requestedScale
-    : Number.EPSILON;
+  const scale =
+    Number.isFinite(requestedScale) && requestedScale > 0
+      ? requestedScale
+      : Number.EPSILON;
   let attemptScale = scale;
   let lastAttemptScale = scale;
 
@@ -78,10 +79,7 @@ export const setCanvasDimensionsWithFallback = (
     try {
       canvas.width = expectedWidth;
       canvas.height = expectedHeight;
-      if (
-        canvas.width === expectedWidth &&
-        canvas.height === expectedHeight
-      ) {
+      if (canvas.width === expectedWidth && canvas.height === expectedHeight) {
         if (attemptScale < scale) {
           onScaleFallback?.(attemptScale);
         }

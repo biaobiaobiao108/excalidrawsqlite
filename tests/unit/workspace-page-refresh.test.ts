@@ -5,7 +5,7 @@ import type {
   CloudSceneSummary,
 } from "../../excalidraw-app/data/cloudStorage";
 
-const board = (id: string) => ({ id } as CloudSceneSummary);
+const board = (id: string) => ({ id }) as CloudSceneSummary;
 
 describe("workspace loaded-page refresh", () => {
   it("preserves the loaded window and derives its cursor from fresh ordering", async () => {
@@ -35,7 +35,9 @@ describe("workspace loaded-page refresh", () => {
   });
 
   it("removes deleted boards instead of retaining stale later pages", async () => {
-    const freshBoards = Array.from({ length: 102 }, (_, i) => board(`fresh-${i}`));
+    const freshBoards = Array.from({ length: 102 }, (_, i) =>
+      board(`fresh-${i}`),
+    );
     const result = await refreshWorkspacePage(
       { trash: true },
       205,
@@ -50,7 +52,11 @@ describe("workspace loaded-page refresh", () => {
       },
       () => true,
     );
-    expect(result).toEqual({ items: freshBoards, nextCursor: null, totalCount: 102 });
+    expect(result).toEqual({
+      items: freshBoards,
+      nextCursor: null,
+      totalCount: 102,
+    });
   });
 
   it("discards an obsolete refresh without fetching more pages", async () => {
@@ -62,7 +68,11 @@ describe("workspace loaded-page refresh", () => {
       async () => {
         requests += 1;
         current = false;
-        return { items: [board("old-query")], nextCursor: "next", totalCount: 200 };
+        return {
+          items: [board("old-query")],
+          nextCursor: "next",
+          totalCount: 200,
+        };
       },
       () => current,
     );

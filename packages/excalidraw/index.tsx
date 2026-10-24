@@ -519,9 +519,7 @@ export function useExcalidrawStateValue<T>(
 ): T | undefined;
 export function useExcalidrawStateValue(
   selector:
-    | keyof AppState
-    | (keyof AppState)[]
-    | ((appState: AppState) => unknown),
+    keyof AppState | (keyof AppState)[] | ((appState: AppState) => unknown),
 ) {
   return _useAppStateValue(selector as any, false);
 }

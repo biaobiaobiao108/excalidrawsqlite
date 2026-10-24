@@ -114,4 +114,3 @@ export const updateChangelog = async (nextVersion: string) => {
 };
 
 export default updateChangelog;
-

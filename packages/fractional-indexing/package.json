@@ -22,7 +22,6 @@
   "repository": "https://github.com/excalidraw/excalidraw",
   "author": "arv@rocicorp.dev",
   "license": "CC0-1.0",
-
   "exports": {
     ".": {
       "development": "./dist/dev/index.js",

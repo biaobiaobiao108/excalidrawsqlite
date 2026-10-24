@@ -52,8 +52,7 @@ export class AppCursor {
   } | null = null;
 
   private eraserCanvasCache:
-    | (HTMLCanvasElement & { theme?: AppState["theme"] })
-    | null = null;
+    (HTMLCanvasElement & { theme?: AppState["theme"] }) | null = null;
   private eraserPreviewDataURL: DataURL | null = null;
 
   constructor(private app: App) {}

@@ -125,13 +125,7 @@ type QueueCallbacks = {
 };
 
 export type CloudSaveStatus =
-  | "idle"
-  | "pending"
-  | "saving"
-  | "saved"
-  | "error"
-  | "auth"
-  | "conflict";
+  "idle" | "pending" | "saving" | "saved" | "error" | "auth" | "conflict";
 
 type BlockReason = "auth" | "conflict" | "deleted";
 
@@ -157,7 +151,10 @@ type CloudSavePersistenceWriter = {
 export type CloudSavePersistence = {
   load: () => Promise<CloudSaveSnapshot[]>;
   save: (snapshot: CloudSaveSnapshot) => Promise<void>;
-  remove: (sceneId: string, expectedSnapshot?: CloudSaveSnapshot) => Promise<void>;
+  remove: (
+    sceneId: string,
+    expectedSnapshot?: CloudSaveSnapshot,
+  ) => Promise<void>;
 };
 
 // Compare legacy snapshots without allocating serialized elements or data URLs.
@@ -165,23 +162,32 @@ const snapshotValuesMatch = (left: unknown, right: unknown): boolean => {
   if (left === right) {
     return true;
   }
-  if (!left || !right || typeof left !== "object" || typeof right !== "object") {
+  if (
+    !left ||
+    !right ||
+    typeof left !== "object" ||
+    typeof right !== "object"
+  ) {
     return false;
   }
   if (Array.isArray(left) || Array.isArray(right)) {
     return (
-      Array.isArray(left) && Array.isArray(right) &&
+      Array.isArray(left) &&
+      Array.isArray(right) &&
       left.length === right.length &&
       left.every((value, index) => snapshotValuesMatch(value, right[index]))
     );
   }
   const leftKeys = Object.keys(left);
   return (
-    leftKeys.length === Object.keys(right).length && leftKeys.every(
-      (key) => Object.hasOwn(right, key) && snapshotValuesMatch(
-        (left as Record<string, unknown>)[key],
-        (right as Record<string, unknown>)[key],
-      ),
+    leftKeys.length === Object.keys(right).length &&
+    leftKeys.every(
+      (key) =>
+        Object.hasOwn(right, key) &&
+        snapshotValuesMatch(
+          (left as Record<string, unknown>)[key],
+          (right as Record<string, unknown>)[key],
+        ),
     )
   );
 };
@@ -189,11 +195,13 @@ const snapshotValuesMatch = (left: unknown, right: unknown): boolean => {
 export const matchesPersistedCloudSnapshot = (
   current: CloudSaveSnapshot | undefined,
   expected: CloudSaveSnapshot,
-) => Boolean(
-  current && (expected.persistenceId
-    ? current.persistenceId === expected.persistenceId
-    : !current.persistenceId && snapshotValuesMatch(current, expected)),
-);
+) =>
+  Boolean(
+    current &&
+    (expected.persistenceId
+      ? current.persistenceId === expected.persistenceId
+      : !current.persistenceId && snapshotValuesMatch(current, expected)),
+  );
 
 const cloudSaveStore = createStore("cloud-save-db", "pending-scenes");
 const memoryPendingSnapshots = new Map<string, CloudSaveSnapshot>();
@@ -204,8 +212,10 @@ const memoryCloudSavePersistence: CloudSavePersistence = {
   },
   remove: async (sceneId, expectedSnapshot) => {
     if (
-      !expectedSnapshot || matchesPersistedCloudSnapshot(
-        memoryPendingSnapshots.get(sceneId), expectedSnapshot,
+      !expectedSnapshot ||
+      matchesPersistedCloudSnapshot(
+        memoryPendingSnapshots.get(sceneId),
+        expectedSnapshot,
       )
     ) {
       memoryPendingSnapshots.delete(sceneId);
@@ -216,9 +226,7 @@ const memoryCloudSavePersistence: CloudSavePersistence = {
 const indexedDbCloudSavePersistence: CloudSavePersistence = {
   load: async () => {
     const saved = await entries(cloudSaveStore);
-    return saved
-      .map(([, snapshot]) => snapshot)
-      .filter(isCloudSaveSnapshot);
+    return saved.map(([, snapshot]) => snapshot).filter(isCloudSaveSnapshot);
   },
   save: async (snapshot) => {
     await set(snapshot.sceneId, snapshot, cloudSaveStore);
@@ -250,19 +258,19 @@ const getDefaultCloudSavePersistence = () =>
 const isCloudSaveSnapshot = (value: unknown): value is CloudSaveSnapshot =>
   Boolean(
     value &&
-      typeof value === "object" &&
-      "sceneId" in value &&
-      typeof value.sceneId === "string" &&
-      "name" in value &&
-      typeof value.name === "string" &&
-      "elements" in value &&
-      Array.isArray(value.elements) &&
-      "appState" in value &&
-      value.appState !== null &&
-      typeof value.appState === "object" &&
-      "files" in value &&
-      value.files !== null &&
-      typeof value.files === "object",
+    typeof value === "object" &&
+    "sceneId" in value &&
+    typeof value.sceneId === "string" &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    "elements" in value &&
+    Array.isArray(value.elements) &&
+    "appState" in value &&
+    value.appState !== null &&
+    typeof value.appState === "object" &&
+    "files" in value &&
+    value.files !== null &&
+    typeof value.files === "object",
   );
 
 const SESSION_RECOVERY_KEY_PREFIX = "excalidraw_cloud_save_recovery_v1:";
@@ -366,7 +374,10 @@ const cloneCloudSaveSnapshot = (
   elements: [...snapshot.elements],
   appState: { ...snapshot.appState },
   files: Object.fromEntries(
-    Object.entries(snapshot.files).map(([fileId, file]) => [fileId, { ...file }]),
+    Object.entries(snapshot.files).map(([fileId, file]) => [
+      fileId,
+      { ...file },
+    ]),
   ),
 });
 
@@ -478,7 +489,7 @@ export const subscribeCloudTabSync = (
     } catch {
       // Ignore malformed cross-tab payloads.
     }
-  }
+  };
   window.addEventListener("storage", storageListener);
   return () => {
     if (channel && channelListener) {
@@ -512,7 +523,9 @@ const parseCloudRealtimeEvent = (value: unknown): CloudRealtimeEvent | null => {
   }
   const event = value as Partial<CloudRealtimeEvent>;
   if (event.type === "workspace_changed") {
-    return typeof event.updatedAt === "number" ? (event as CloudRealtimeEvent) : null;
+    return typeof event.updatedAt === "number"
+      ? (event as CloudRealtimeEvent)
+      : null;
   }
   if (event.type === "ready" || event.type === "subscribed") {
     return event.sceneId === null || typeof event.sceneId === "string"
@@ -556,19 +569,18 @@ export const subscribeCloudRealtime = (
   };
 
   const scheduleReconnect = (delay?: number) => {
-    if (
-      closed ||
-      reconnectTimer ||
-      document.visibilityState === "hidden"
-    ) {
+    if (closed || reconnectTimer || document.visibilityState === "hidden") {
       return;
     }
     const backoff = Math.min(30_000, 500 * 2 ** Math.min(reconnectAttempt, 6));
     reconnectAttempt += 1;
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      connect();
-    }, delay ?? backoff + Math.floor(Math.random() * 250));
+    reconnectTimer = setTimeout(
+      () => {
+        reconnectTimer = null;
+        connect();
+      },
+      delay ?? backoff + Math.floor(Math.random() * 250),
+    );
   };
 
   const handleVisibilityChange = () => {
@@ -672,7 +684,8 @@ export class CloudSaveQueue {
       ...dependencies,
     };
     this.hasDurableSnapshotPersistence =
-      dependencies.persistence !== undefined || typeof indexedDB !== "undefined";
+      dependencies.persistence !== undefined ||
+      typeof indexedDB !== "undefined";
     this.readyPromise = this.restorePersistedSnapshots();
   }
 
@@ -1061,11 +1074,7 @@ export class CloudSaveQueue {
           if (this.isDisposed || this.disposed.has(sceneId)) {
             return;
           }
-          await this.markSnapshotSaved(
-            sceneId,
-            snapshot,
-            saved.revision,
-          );
+          await this.markSnapshotSaved(sceneId, snapshot, saved.revision);
           break;
         } catch (error) {
           if (this.isDisposed || this.disposed.has(sceneId)) {
@@ -1096,10 +1105,9 @@ export class CloudSaveQueue {
           }
           if (error instanceof CloudApiError && error.status === 409) {
             try {
-              const remote = await this.dependencies.fetchCloudScene(
-                sceneId,
-                { forceRefresh: true },
-              );
+              const remote = await this.dependencies.fetchCloudScene(sceneId, {
+                forceRefresh: true,
+              });
               if (this.snapshotMatchesScene(snapshot, remote)) {
                 await this.markSnapshotSaved(
                   sceneId,
@@ -1119,7 +1127,8 @@ export class CloudSaveQueue {
           }
           if (
             error instanceof CloudApiError &&
-            error.status === 422 && error.code === "MISSING_FILE" &&
+            error.status === 422 &&
+            error.code === "MISSING_FILE" &&
             attempt < RETRY_DELAYS_MS.length - 1
           ) {
             // Upload caches describe a past server state. GC can reclaim an
@@ -1134,8 +1143,10 @@ export class CloudSaveQueue {
               this.pending.set(sceneId, snapshot);
             }
             this.setStatus(sceneId, "error");
-            this.callbacks.onError(this.persistenceErrors.get(sceneId) ||
-              (error instanceof Error ? error : new Error("云端保存失败")));
+            this.callbacks.onError(
+              this.persistenceErrors.get(sceneId) ||
+                (error instanceof Error ? error : new Error("云端保存失败")),
+            );
             return;
           }
           await sleep(RETRY_DELAYS_MS[attempt]);
@@ -1343,10 +1354,7 @@ export class CloudSaveQueue {
             sceneId,
             operation.expectedSnapshot,
           );
-          removeSessionSnapshotRecovery(
-            sceneId,
-            operation.expectedSnapshot,
-          );
+          removeSessionSnapshotRecovery(sceneId, operation.expectedSnapshot);
         }
         this.persistenceErrors.delete(sceneId);
       } catch (error) {
@@ -1362,10 +1370,7 @@ export class CloudSaveQueue {
       }
     }
     writer.running = false;
-    if (
-      this.persistenceWriters.get(sceneId) === writer &&
-      !writer.desired
-    ) {
+    if (this.persistenceWriters.get(sceneId) === writer && !writer.desired) {
       this.persistenceWriters.delete(sceneId);
     }
   }

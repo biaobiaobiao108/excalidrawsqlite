@@ -6,7 +6,9 @@ export class ThumbnailRepairQueue {
   schedule(run: () => Promise<void>) {
     this.pending.add(run);
     void this.drain();
-    return () => { this.pending.delete(run); };
+    return () => {
+      this.pending.delete(run);
+    };
   }
 
   private async drain() {

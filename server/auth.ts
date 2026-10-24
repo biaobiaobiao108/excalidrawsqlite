@@ -6,11 +6,7 @@ import {
   MAX_AUTH_PASSWORD_LENGTH,
   WRITE_RATE_WINDOW_MS,
 } from "./config";
-import {
-  hmacSha256Hex,
-  randomBase64Url,
-  timingSafeEqual,
-} from "./crypto";
+import { hmacSha256Hex, randomBase64Url, timingSafeEqual } from "./crypto";
 import { getCookie, isSecureRequest } from "./http";
 
 import type { RequestAddressResolver, ServerRuntime } from "./types";
@@ -146,8 +142,9 @@ export const isAuthorized = (runtime: ServerRuntime, req: Request) => {
   let expiresAt = runtime.sessions.get(token);
   if (expiresAt === undefined) {
     try {
-      const row = getSessionStatements(runtime)
-        .getExpiresAt.get(hashSessionToken(runtime, token)) as {
+      const row = getSessionStatements(runtime).getExpiresAt.get(
+        hashSessionToken(runtime, token),
+      ) as {
         expires_at: number;
       } | null;
       if (row) {

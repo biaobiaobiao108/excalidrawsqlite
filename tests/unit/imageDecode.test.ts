@@ -164,11 +164,17 @@ describe("image decode memory budget", () => {
       expect(startedCount).toBe(1);
       expect(cache.getMemoryStats().pendingDecodeBytes).toBe(64 * 1024 * 1024);
       expect(cache.getMemoryStats().pendingDecodes).toBe(1);
-      currentImages[0]?.onload?.call(currentImages[0] as any, new Event("load"));
+      currentImages[0]?.onload?.call(
+        currentImages[0] as any,
+        new Event("load"),
+      );
       await waitForStarts(2);
       expect(startedCount).toBe(2);
       expect(cache.getMemoryStats().pendingDecodeBytes).toBe(4 * 1024 * 1024);
-      currentImages[1]?.onload?.call(currentImages[1] as any, new Event("load"));
+      currentImages[1]?.onload?.call(
+        currentImages[1] as any,
+        new Event("load"),
+      );
       await loading;
       expect(cache.getMemoryStats().pendingDecodeBytes).toBe(0);
       expect(cache.get(fileId("small"))?.image).not.toBeInstanceOf(Promise);
@@ -217,7 +223,10 @@ describe("image decode memory budget", () => {
 
       await decodeStarted;
       expect(cache.getMemoryStats().pendingDecodeBytes).toBe(8 * 1024 * 1024);
-      currentImages[0]?.onload?.call(currentImages[0] as any, new Event("load"));
+      currentImages[0]?.onload?.call(
+        currentImages[0] as any,
+        new Event("load"),
+      );
       await loading;
       expect(cache.getMemoryStats().pendingDecodeBytes).toBe(0);
     } finally {

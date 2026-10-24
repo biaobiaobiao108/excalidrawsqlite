@@ -42,8 +42,8 @@ const getArrowTypeIcon = (arrowType: AppState["currentItemArrowType"]) =>
   arrowType === ARROW_TYPE.elbow
     ? elbowArrowIcon
     : arrowType === ARROW_TYPE.round
-    ? roundArrowIcon
-    : sharpArrowIcon;
+      ? roundArrowIcon
+      : sharpArrowIcon;
 
 /**
  * Owns the cursor-hint policy. App reports semantic interaction events

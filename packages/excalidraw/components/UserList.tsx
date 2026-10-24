@@ -103,8 +103,7 @@ type UserListProps = {
   collaborators: Map<SocketId, UserListUserObject>;
   userToFollow: SocketId | null;
   currentUserControls?:
-    | React.ReactNode
-    | ((isMobile: boolean) => React.ReactNode);
+    React.ReactNode | ((isMobile: boolean) => React.ReactNode);
 };
 
 const collaboratorComparatorKeys = [

@@ -7,9 +7,7 @@ import { getDefaultAppState } from "../appState";
 import type { AppState } from "../types";
 
 type AppStateSelector =
-  | keyof AppState
-  | (keyof AppState)[]
-  | ((appState: AppState) => unknown);
+  keyof AppState | (keyof AppState)[] | ((appState: AppState) => unknown);
 
 const getSelectedValue = (appState: AppState, selector: AppStateSelector) => {
   if (typeof selector === "function") {

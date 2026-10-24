@@ -13,7 +13,9 @@ const directories: string[] = [];
 const runtimes: ServerRuntime[] = [];
 
 const setup = () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "excalidraw-upload-init-"));
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "excalidraw-upload-init-"),
+  );
   directories.push(directory);
   const runtime = createRuntime({
     dbPath: path.join(directory, "excalidraw.db"),
@@ -42,20 +44,24 @@ describe("upload initialization cleanup", () => {
     const { runtime, request } = setup();
     const originalFile = Bun.file;
     const failure = Object.assign(new Error("disk full"), { code: "ENOSPC" });
-    const fileSpy = spyOn(Bun, "file").mockImplementationOnce((filePath, options) => {
-      if (typeof filePath !== "string") {
-        throw new Error("Expected an upload temporary path");
-      }
-      const file = originalFile(filePath, options);
-      return Object.assign(file, {
-        writer: () => {
-          fs.writeFileSync(filePath, "partial");
-          throw failure;
-        },
-      });
-    });
+    const fileSpy = spyOn(Bun, "file").mockImplementationOnce(
+      (filePath, options) => {
+        if (typeof filePath !== "string") {
+          throw new Error("Expected an upload temporary path");
+        }
+        const file = originalFile(filePath, options);
+        return Object.assign(file, {
+          writer: () => {
+            fs.writeFileSync(filePath, "partial");
+            throw failure;
+          },
+        });
+      },
+    );
     try {
-      await expect(stageRequestBodyToFile(runtime, "test", request)).rejects.toBe(failure);
+      await expect(
+        stageRequestBodyToFile(runtime, "test", request),
+      ).rejects.toBe(failure);
       expect(runtime.bodyMemoryBudget.getStats().currentBytes).toBe(0);
       expect(runtime.bodyMemoryBudget.getStats().peakBytes).toBe(4096);
       expect(request.body!.locked).toBe(false);
@@ -69,7 +75,9 @@ describe("upload initialization cleanup", () => {
     const { runtime, request } = setup();
     const reader = request.body!.getReader();
     try {
-      await expect(stageRequestBodyToFile(runtime, "test", request)).rejects.toBeInstanceOf(TypeError);
+      await expect(
+        stageRequestBodyToFile(runtime, "test", request),
+      ).rejects.toBeInstanceOf(TypeError);
       expect(runtime.bodyMemoryBudget.getStats().currentBytes).toBe(0);
       expect(runtime.bodyMemoryBudget.getStats().peakBytes).toBe(4096);
       expect(fs.readdirSync(runtime.filesDir)).toEqual([]);

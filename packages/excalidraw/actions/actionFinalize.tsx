@@ -402,11 +402,11 @@ export const actionFinalize = register<FormData>({
         selectedElementIds: isDrawShapeTool
           ? {}
           : element && !isToolLocked && appState.activeTool.type !== "freedraw"
-          ? {
-              ...appState.selectedElementIds,
-              [element.id]: true,
-            }
-          : appState.selectedElementIds,
+            ? {
+                ...appState.selectedElementIds,
+                [element.id]: true,
+              }
+            : appState.selectedElementIds,
 
         selectedLinearElement: isDrawShapeTool ? null : selectedLinearElement,
       },

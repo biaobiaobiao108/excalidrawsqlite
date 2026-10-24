@@ -1,9 +1,7 @@
 import type { AppState, UnsubscribeCallback } from "../types";
 
 type StateChangeSelector =
-  | keyof AppState
-  | (keyof AppState)[]
-  | ((appState: AppState) => unknown);
+  keyof AppState | (keyof AppState)[] | ((appState: AppState) => unknown);
 
 type StateChangePredicateOptions = {
   predicate: (appState: AppState) => boolean;

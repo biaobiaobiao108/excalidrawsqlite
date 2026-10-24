@@ -32,10 +32,7 @@ export async function buildFrontend(options: BuildOptions = {}) {
     for (const entry of fs.readdirSync(publicDir, { withFileTypes: true })) {
       // These legacy public copies duplicate the bundled Excalifont asset and
       // are not needed because CDN-backed fonts are loaded by the stylesheet links.
-      if (
-        entry.isFile() &&
-        /\.(?:woff2?|ttf|otf)$/i.test(entry.name)
-      ) {
+      if (entry.isFile() && /\.(?:woff2?|ttf|otf)$/i.test(entry.name)) {
         continue;
       }
 
@@ -48,10 +45,7 @@ export async function buildFrontend(options: BuildOptions = {}) {
   }
   // Locale data is loaded with dynamic JSON imports at runtime. Keep those
   // imports lazy, but publish their JSON targets alongside the HTML bundle.
-  const localeSourceDir = path.join(
-    projectRoot,
-    "packages/excalidraw/locales",
-  );
+  const localeSourceDir = path.join(projectRoot, "packages/excalidraw/locales");
   const localeOutputDir = path.join(outDir, "locales");
   fs.mkdirSync(localeOutputDir, { recursive: true });
   for (const entry of fs.readdirSync(localeSourceDir, {
@@ -114,10 +108,7 @@ export async function buildFrontend(options: BuildOptions = {}) {
   };
 
   // 5. Run Bun.build
-  const gitSha =
-    (process.env.BUILD_SHA || "")
-      .trim()
-      .slice(0, 7) || "local";
+  const gitSha = (process.env.BUILD_SHA || "").trim().slice(0, 7) || "local";
   const mode = isDev ? "development" : "production";
   const clientEnv = await getClientEnvVariables(projectRoot, mode, {
     VITE_APP_GIT_SHA: gitSha,

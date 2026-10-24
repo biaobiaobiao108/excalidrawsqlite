@@ -501,8 +501,8 @@ const drawElementOnCanvas = (
           element.textAlign === "center"
             ? element.width / 2
             : element.textAlign === "right"
-            ? element.width
-            : 0;
+              ? element.width
+              : 0;
 
         const lineHeightPx = getLineHeightInPx(
           element.fontSize,
@@ -581,7 +581,8 @@ const generateElementWithCanvas = (
       return null;
     }
 
-    const navigator = elementWithCanvas.canvas.ownerDocument.defaultView?.navigator;
+    const navigator =
+      elementWithCanvas.canvas.ownerDocument.defaultView?.navigator;
     const tier = getDeviceMemoryTier(
       (navigator as (Navigator & { deviceMemory?: number }) | undefined)
         ?.deviceMemory,
@@ -591,7 +592,11 @@ const generateElementWithCanvas = (
       element,
       elementWithCanvas,
       renderConfig.imageCache,
-      tier === "standard" ? 32_000_000 : tier === "low" ? 16_000_000 : 24_000_000,
+      tier === "standard"
+        ? 32_000_000
+        : tier === "low"
+          ? 16_000_000
+          : 24_000_000,
     );
 
     return elementWithCanvas;
@@ -632,7 +637,12 @@ const drawElementFromCanvas = (
         Math.max(distance(x1, x2), distance(y1, y2)) * window.devicePixelRatio +
         padding * 10;
       context.beginPath();
-      context.rect(cx - outerHalf, cy - outerHalf, outerHalf * 2, outerHalf * 2);
+      context.rect(
+        cx - outerHalf,
+        cy - outerHalf,
+        outerHalf * 2,
+        outerHalf * 2,
+      );
       context.rect(
         (boundTextCx -
           boundTextElement.width / 2 -

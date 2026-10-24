@@ -28,9 +28,7 @@ export class PromisePool<T> {
       }
     };
 
-    await Promise.all(
-      Array.from({ length: this.concurrency }, () => worker()),
-    );
+    await Promise.all(Array.from({ length: this.concurrency }, () => worker()));
     return Object.values(this.entries);
   }
 }

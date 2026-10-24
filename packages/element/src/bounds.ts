@@ -1126,8 +1126,7 @@ export interface BoundingBox {
 
 export const getCommonBoundingBox = (
   elements:
-    | readonly ExcalidrawElement[]
-    | readonly NonDeleted<ExcalidrawElement>[],
+    readonly ExcalidrawElement[] | readonly NonDeleted<ExcalidrawElement>[],
 ): BoundingBox => {
   const [minX, minY, maxX, maxY] = getCommonBounds(elements);
   return {

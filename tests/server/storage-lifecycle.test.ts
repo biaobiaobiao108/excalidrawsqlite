@@ -18,7 +18,9 @@ import type { ServerRuntime } from "../../server/types";
 const resources: Array<{ runtime: ServerRuntime; directory: string }> = [];
 
 const setup = async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "storage-lifecycle-"));
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "storage-lifecycle-"),
+  );
   const runtime = createRuntime({
     dbPath: path.join(directory, "excalidraw.db"),
     filesDir: path.join(directory, "files"),
@@ -42,7 +44,14 @@ const upload = async (
       body: Uint8Array.from(data),
     }),
   );
-  return upsertStagedFile(runtime, id, "image/png", prepared, undefined, version);
+  return upsertStagedFile(
+    runtime,
+    id,
+    "image/png",
+    prepared,
+    undefined,
+    version,
+  );
 };
 
 afterEach(async () => {
@@ -65,10 +74,12 @@ describe("storage lifecycle", () => {
     await backup.cleanup();
 
     runtime.config.maxBackupBytes -= 1;
-    await expect(createFullBackup(runtime, "over-limit")).rejects.toMatchObject({
-      status: 413,
-      code: "BACKUP_TOO_LARGE",
-    });
+    await expect(createFullBackup(runtime, "over-limit")).rejects.toMatchObject(
+      {
+        status: 413,
+        code: "BACKUP_TOO_LARGE",
+      },
+    );
     expect(runtime.activeBackupArtifacts.size).toBe(0);
     expect(
       (await fs.readdir(path.dirname(runtime.dbPath))).filter(
@@ -97,7 +108,9 @@ describe("storage lifecycle", () => {
     ).not.toBeNull();
     expect(
       new Uint8Array(
-        await Bun.file(path.join(runtime.filesDir, "reused_image")).arrayBuffer(),
+        await Bun.file(
+          path.join(runtime.filesDir, "reused_image"),
+        ).arrayBuffer(),
       ),
     ).toEqual(data);
   });
@@ -108,10 +121,12 @@ describe("storage lifecycle", () => {
     const version = Date.now() - 1000;
     await upload(runtime, "thumbnail_versioned", data, version);
     expect(
-      (await upload(runtime, "thumbnail_versioned", data, version - 1)).updatedAt,
+      (await upload(runtime, "thumbnail_versioned", data, version - 1))
+        .updatedAt,
     ).toBe(version);
     expect(
-      (await upload(runtime, "thumbnail_versioned", data, version + 1)).updatedAt,
+      (await upload(runtime, "thumbnail_versioned", data, version + 1))
+        .updatedAt,
     ).toBe(version + 1);
   });
 });

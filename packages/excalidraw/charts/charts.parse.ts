@@ -50,8 +50,8 @@ export const tryParseCells = (cells: string[][]): ParseSpreadsheetResult => {
         series.length === 1
           ? series[0].title
           : hasHeader
-          ? cells[0][0].trim() || null
-          : null;
+            ? cells[0][0].trim() || null
+            : null;
       return {
         ok: true,
         data: { title, labels, series },

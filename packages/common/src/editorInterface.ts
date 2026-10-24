@@ -82,8 +82,7 @@ const isMobileOrTablet = (): boolean => {
   const ua = navigator.userAgent || "";
   const platform = navigator.platform || "";
   const uaData = (navigator as any).userAgentData as
-    | { mobile?: boolean; platform?: string }
-    | undefined;
+    { mobile?: boolean; platform?: string } | undefined;
 
   // --- 1) chromium: prefer ua client hints -------------------------------
   if (uaData) {

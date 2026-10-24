@@ -80,14 +80,12 @@ export class LatestThumbnailSaveQueue<Snapshot extends { sceneId: string }> {
     }
   }
 
-  private start(
-    task: {
-      generation: number;
-      run: () => Promise<void>;
-      resolve: () => void;
-      onError: (error: unknown) => void;
-    },
-  ) {
+  private start(task: {
+    generation: number;
+    run: () => Promise<void>;
+    resolve: () => void;
+    onError: (error: unknown) => void;
+  }) {
     const promise = Promise.resolve().then(async () => {
       try {
         if (task.generation !== this.generation) {

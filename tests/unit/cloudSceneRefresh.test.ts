@@ -6,7 +6,9 @@ describe("cloud scene refresh ownership", () => {
     let state = { sceneId: "a", signature: "original", hasPending: false };
     const canApply = createCloudSceneRefreshGuard(() => state);
     let finishFetch!: () => void;
-    const fetch = new Promise<void>((resolve) => { finishFetch = resolve; });
+    const fetch = new Promise<void>((resolve) => {
+      finishFetch = resolve;
+    });
     let canvas = "original";
     let revision = 1;
     const refresh = (async () => {

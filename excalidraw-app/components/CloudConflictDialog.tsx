@@ -36,11 +36,7 @@ export const CloudConflictDialog: React.FC<CloudConflictDialogProps> = ({
       <div
         style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}
       >
-        <FilledButton
-          label="稍后处理"
-          onClick={onDismiss}
-          variant="outlined"
-        />
+        <FilledButton label="稍后处理" onClick={onDismiss} variant="outlined" />
         <FilledButton
           label="重新加载云端"
           onClick={onReload}

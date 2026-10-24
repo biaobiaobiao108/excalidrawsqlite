@@ -375,10 +375,10 @@ const ColorPickerComponent = ({
   // drag & drop customization starts from
   const effectiveTopPicks = customTopPicks?.length
     ? customTopPicks
-    : topPicks ??
+    : (topPicks ??
       (type === "elementStroke"
         ? DEFAULT_ELEMENT_STROKE_PICKS
-        : DEFAULT_ELEMENT_BACKGROUND_PICKS);
+        : DEFAULT_ELEMENT_BACKGROUND_PICKS));
 
   const dnd = useTopPicksDnD({
     enabled: isTopPicksCustomizable,

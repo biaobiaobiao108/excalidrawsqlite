@@ -92,10 +92,9 @@ let currentLangData = {};
 let languageRequestId = 0;
 
 const loadLocaleData = async (code: string) => {
-  const response = await fetch(
-    `/locales/${encodeURIComponent(code)}.json`,
-    { credentials: "same-origin" },
-  );
+  const response = await fetch(`/locales/${encodeURIComponent(code)}.json`, {
+    credentials: "same-origin",
+  });
   if (!response.ok) {
     throw new Error(`Locale request failed with status ${response.status}`);
   }

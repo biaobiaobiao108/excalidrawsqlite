@@ -178,8 +178,8 @@ export const getTextBindingForArrowEndpoint = (
         ? HEADING_RIGHT
         : HEADING_LEFT
       : direction[1] >= 0
-      ? HEADING_DOWN
-      : HEADING_UP;
+        ? HEADING_DOWN
+        : HEADING_UP;
 
   // Keep the tip off the text's bounding box by the usual binding gap so the
   // arrowhead doesn't collide with the glyphs. Must match the gap

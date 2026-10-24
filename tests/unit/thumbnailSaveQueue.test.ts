@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { LatestThumbnailSaveQueue } from "../../excalidraw-app/data/thumbnailSaveQueue";
 
-const deferred = <T,>() => {
+const deferred = <T>() => {
   let resolve!: (value: T | PromiseLike<T>) => void;
   const promise = new Promise<T>((resolvePromise) => {
     resolve = resolvePromise;
@@ -12,7 +12,10 @@ const deferred = <T,>() => {
 
 describe("latest thumbnail save queue", () => {
   it("keeps one latest pending snapshot and lets an active upload finish", async () => {
-    const queue = new LatestThumbnailSaveQueue<{ sceneId: string; name: string }>();
+    const queue = new LatestThumbnailSaveQueue<{
+      sceneId: string;
+      name: string;
+    }>();
     const uploadStarted = deferred<void>();
     const finishUpload = deferred<void>();
     const created: string[] = [];
@@ -65,7 +68,10 @@ describe("latest thumbnail save queue", () => {
   });
 
   it("drops a pending snapshot when cancelled", async () => {
-    const queue = new LatestThumbnailSaveQueue<{ sceneId: string; name: string }>();
+    const queue = new LatestThumbnailSaveQueue<{
+      sceneId: string;
+      name: string;
+    }>();
     const createStarted = deferred<void>();
     const finishCreate = deferred<string>();
     const created: string[] = [];

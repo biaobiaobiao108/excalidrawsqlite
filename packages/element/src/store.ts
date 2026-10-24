@@ -410,13 +410,10 @@ export class Store {
    * Ensures that the scheduled actions invariant is satisfied.
    */
   private satisfiesScheduledActionsInvariant() {
-    if (
-      !(
-        this.scheduledMacroActions.size >= 0 &&
-        this.scheduledMacroActions.size <=
-          Object.keys(CaptureUpdateAction).length
-      )
-    ) {
+    if (!(
+      this.scheduledMacroActions.size >= 0 &&
+      this.scheduledMacroActions.size <= Object.keys(CaptureUpdateAction).length
+    )) {
       const message = `There can be at most three store actions scheduled at the same time, but there are "${this.scheduledMacroActions.size}".`;
       console.error(message, this.scheduledMacroActions.values());
 

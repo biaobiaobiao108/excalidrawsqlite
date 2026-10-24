@@ -663,8 +663,8 @@ const renderElementToSvg = (
           element.textAlign === "center"
             ? element.width / 2
             : element.textAlign === "right"
-            ? element.width
-            : 0;
+              ? element.width
+              : 0;
         const verticalOffset = getVerticalOffset(
           element.fontFamily,
           element.fontSize,
@@ -675,8 +675,8 @@ const renderElementToSvg = (
           element.textAlign === "center"
             ? "middle"
             : element.textAlign === "right" || direction === "rtl"
-            ? "end"
-            : "start";
+              ? "end"
+              : "start";
         for (let i = 0; i < lines.length; i++) {
           const text = svgRoot.ownerDocument.createElementNS(SVG_NS, "text");
           text.textContent = lines[i];

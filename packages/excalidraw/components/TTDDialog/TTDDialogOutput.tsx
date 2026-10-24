@@ -130,15 +130,10 @@ export const TTDDialogOutput = ({
             ref={canvasRef}
             className="ttd-dialog-output-canvas-content"
             role={hasPreview && !loading ? "img" : undefined}
-            aria-label={
-              hasPreview && !loading ? canvasAriaLabel : undefined
-            }
+            aria-label={hasPreview && !loading ? canvasAriaLabel : undefined}
           />
           {loading && (
-            <Spinner
-              className="ttd-dialog-output-loading"
-              size="2rem"
-            />
+            <Spinner className="ttd-dialog-output-loading" size="2rem" />
           )}
           {!loading && !hasPreview && !error && (
             <div

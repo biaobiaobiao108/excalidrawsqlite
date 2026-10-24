@@ -80,7 +80,9 @@ export const initializeDatabase = (db: Database) => {
       expires_at INTEGER NOT NULL
     );
   `);
-  db.run("CREATE INDEX IF NOT EXISTS idx_scene_create_requests_expiry ON scene_create_requests(expires_at)");
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_scene_create_requests_expiry ON scene_create_requests(expires_at)",
+  );
 
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_scenes_updated_at ON scenes(updated_at DESC)",
@@ -138,7 +140,9 @@ export const initializeDatabase = (db: Database) => {
 
 export const performDatabaseMaintenance = (runtime: ServerRuntime) => {
   try {
-    runtime.db.query("DELETE FROM scene_create_requests WHERE expires_at <= ?").run(Date.now());
+    runtime.db
+      .query("DELETE FROM scene_create_requests WHERE expires_at <= ?")
+      .run(Date.now());
     runtime.db.run("PRAGMA wal_checkpoint(PASSIVE);");
   } catch (error) {
     console.info("[Database] WAL checkpoint failed", error);

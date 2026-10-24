@@ -8,8 +8,11 @@ describe("element canvas cache", () => {
   it("evicts the least recently used raster and releases its pixels", () => {
     const cache = new ElementCanvasCache<object, ReturnType<typeof raster>>(50);
     const owner = {};
-    const a = {}, b = {}, c = {};
-    const first = raster(), second = raster();
+    const a = {},
+      b = {},
+      c = {};
+    const first = raster(),
+      second = raster();
     cache.set(a, first, owner);
     cache.set(b, second, owner);
     expect(cache.get(a, owner)).toBe(first);
@@ -26,11 +29,16 @@ describe("element canvas cache", () => {
     const values = scene.map(() => raster());
     scene.forEach((element, index) => cache.set(element, values[index], owner));
     expect(cache.getMemoryStats(owner)).toEqual({ entries: 2, pixels: 50 });
-    expect(values.slice(0, -2).every((entry) => entry.canvas.width === 0)).toBe(true);
+    expect(values.slice(0, -2).every((entry) => entry.canvas.width === 0)).toBe(
+      true,
+    );
   });
 
   it("bounds entry count even for tiny rasters", () => {
-    const cache = new ElementCanvasCache<object, ReturnType<typeof raster>>(100, 2);
+    const cache = new ElementCanvasCache<object, ReturnType<typeof raster>>(
+      100,
+      2,
+    );
     const owner = {};
     for (let index = 0; index < 10; index++) {
       cache.set({}, raster(1, 1), owner);
@@ -40,8 +48,11 @@ describe("element canvas cache", () => {
 
   it("clears one editor without invalidating another editor", () => {
     const cache = new ElementCanvasCache<object, ReturnType<typeof raster>>(50);
-    const firstOwner = {}, secondOwner = {}, element = {};
-    const first = raster(), second = raster();
+    const firstOwner = {},
+      secondOwner = {},
+      element = {};
+    const first = raster(),
+      second = raster();
     cache.set(element, first, firstOwner);
     cache.set(element, second, secondOwner);
     cache.clear(firstOwner);
@@ -56,8 +67,11 @@ describe("element canvas cache", () => {
 
   it("invalidates all cached versions when an element changes", () => {
     const cache = new ElementCanvasCache<object, ReturnType<typeof raster>>(50);
-    const firstOwner = {}, secondOwner = {}, element = {};
-    const first = raster(), second = raster();
+    const firstOwner = {},
+      secondOwner = {},
+      element = {};
+    const first = raster(),
+      second = raster();
     cache.set(element, first, firstOwner);
     cache.set(element, second, secondOwner);
     cache.delete(element);
@@ -69,7 +83,8 @@ describe("element canvas cache", () => {
 
   it("keeps an oversized draw intact until it is drawn, then releases it", () => {
     const cache = new ElementCanvasCache<object, ReturnType<typeof raster>>(20);
-    const owner = {}, element = {};
+    const owner = {},
+      element = {};
     const oversized = raster();
     cache.set(element, oversized, owner);
     expect(oversized.canvas.width).toBe(5);

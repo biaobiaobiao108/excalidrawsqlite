@@ -173,11 +173,7 @@ export const DEFAULT_BUCKET_FILL_OPTIONS: BucketFillOptions = {
 };
 
 export type BucketFillFailureReason =
-  | "no_owner"
-  | "open_region"
-  | "too_complex"
-  | "too_small"
-  | "invalid_polygon";
+  "no_owner" | "open_region" | "too_complex" | "too_small" | "invalid_polygon";
 
 /**
  * Where the generated fill element belongs in the scene order, expressed
@@ -1529,8 +1525,8 @@ export const computeBucketFillPolygon = (args: {
       const segments = isLineElement(element)
         ? lineElementIdealSegments(element, elementsMap)
         : isFreeDrawElement(element)
-        ? freedrawIdealSegments(element, elementsMap)
-        : getElementLineSegments(element, elementsMap);
+          ? freedrawIdealSegments(element, elementsMap)
+          : getElementLineSegments(element, elementsMap);
       // freedraw and non-polygon line loops render as closed once their
       // endpoints are within LINE_CONFIRM_THRESHOLD (isPathALoop), but their
       // segment chain leaves that closure gap open — bridge it explicitly so

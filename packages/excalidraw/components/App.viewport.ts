@@ -540,8 +540,7 @@ export class AppViewport {
             measuredOffsets[side] = Math.max(measuredOffsets[side], offset);
 
             const name = node.dataset.viewportUiName as
-              | ViewportUIName
-              | undefined;
+              ViewportUIName | undefined;
             if (name) {
               renderedSurfaces.add(name);
               if (offset > 0) {

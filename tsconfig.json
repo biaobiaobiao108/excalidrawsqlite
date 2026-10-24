@@ -24,8 +24,12 @@
       "@excalidraw/excalidraw/*": ["./packages/excalidraw/*"],
       "@excalidraw/element": ["./packages/element/src/index.ts"],
       "@excalidraw/element/*": ["./packages/element/src/*"],
-      "@excalidraw/fractional-indexing": ["./packages/fractional-indexing/src/index.ts"],
-      "@excalidraw/fractional-indexing/*": ["./packages/fractional-indexing/src/*"],
+      "@excalidraw/fractional-indexing": [
+        "./packages/fractional-indexing/src/index.ts"
+      ],
+      "@excalidraw/fractional-indexing/*": [
+        "./packages/fractional-indexing/src/*"
+      ],
       "@excalidraw/laser-pointer": ["./packages/laser-pointer/src/index.ts"],
       "@excalidraw/laser-pointer/*": ["./packages/laser-pointer/src/*"],
       "@excalidraw/math": ["./packages/math/src/index.ts"],
@@ -35,5 +39,13 @@
     }
   },
   "include": ["packages", "excalidraw-app", "server", "env.d.ts", "react.d.ts"],
-  "exclude": ["dist", "**/dist", "types", "tests", "**/tests", "**/*.test.*", "excalidraw-app/build"]
+  "exclude": [
+    "dist",
+    "**/dist",
+    "types",
+    "tests",
+    "**/tests",
+    "**/*.test.*",
+    "excalidraw-app/build"
+  ]
 }

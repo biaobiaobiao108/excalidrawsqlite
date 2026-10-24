@@ -222,13 +222,13 @@ export const getTargetElements = (
   appState.editingTextElement
     ? [appState.editingTextElement]
     : // the drawShape recognition preview in `newElement` is not a real
-    // in-progress element — targeting it would make the styles panel track
-    // whatever shape is currently recognized instead of the tool defaults
-    appState.newElement && appState.activeTool.type !== "autoshape"
-    ? [appState.newElement]
-    : getSelectedElements(elements, appState, {
-        includeBoundTextElement: true,
-      });
+      // in-progress element — targeting it would make the styles panel track
+      // whatever shape is currently recognized instead of the tool defaults
+      appState.newElement && appState.activeTool.type !== "autoshape"
+      ? [appState.newElement]
+      : getSelectedElements(elements, appState, {
+          includeBoundTextElement: true,
+        });
 
 /**
  * returns prevState's selectedElementids if no change from previous, so as to

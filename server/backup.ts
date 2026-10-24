@@ -2,11 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Database } from "bun:sqlite";
 
-import {
-  fileExists,
-  getFilePath,
-  withStorageMutationLock,
-} from "./files";
+import { fileExists, getFilePath, withStorageMutationLock } from "./files";
 import { BACKUP_STAGING_DIR_PREFIX } from "./config";
 import { randomHex } from "./crypto";
 import { HttpError } from "./errors";
@@ -38,11 +34,7 @@ const writeOctal = (
   target[offset + length - 1] = 0;
 };
 
-const createTarHeader = (
-  name: string,
-  size: number,
-  type: "file" | "pax",
-) => {
+const createTarHeader = (name: string, size: number, type: "file" | "pax") => {
   const header = new Uint8Array(TAR_BLOCK_SIZE);
   writeAscii(header, 0, 100, name);
   writeOctal(header, 100, 8, 0o644);
@@ -163,9 +155,7 @@ const writeTarFile = async (
 ) => {
   if (name.length > 100) {
     const paxPath = createPaxPath(name);
-    await writer.write(
-      createTarHeader("PaxHeader", paxPath.byteLength, "pax"),
-    );
+    await writer.write(createTarHeader("PaxHeader", paxPath.byteLength, "pax"));
     await writer.write(paxPath);
     await writePadding(writer, paxPath.byteLength);
   }
@@ -376,9 +366,7 @@ export const createFullBackup = async (
     `${BACKUP_STAGING_DIR_PREFIX}${timestamp}-${randomHex(4)}`,
   );
   const unregisterStagingDir = registerBackupArtifact(runtime, stagingDir);
-  let snapshot:
-    | Awaited<ReturnType<typeof createDatabaseSnapshot>>
-    | undefined;
+  let snapshot: Awaited<ReturnType<typeof createDatabaseSnapshot>> | undefined;
   let snapshotDb: Database | undefined;
   try {
     let stagedFiles = new Map<string, number>();
@@ -406,8 +394,7 @@ export const createFullBackup = async (
     const prefix = manifestPrefix(createdAt);
     const databaseFile = Bun.file(snapshot.tempBackupFile);
     const baseArchiveBytes =
-      TAR_BLOCK_SIZE * 2 +
-      tarEntrySize("excalidraw.db", databaseFile.size);
+      TAR_BLOCK_SIZE * 2 + tarEntrySize("excalidraw.db", databaseFile.size);
     let manifestBytes =
       textEncoder.encode(prefix).byteLength +
       textEncoder.encode(manifestSuffix).byteLength;
@@ -445,8 +432,7 @@ export const createFullBackup = async (
     const unregisterTemp = registerBackupArtifact(runtime, tempArchivePath);
     const unregisterFinal = registerBackupArtifact(runtime, archivePath);
     let archiveWriter:
-      | ReturnType<ReturnType<typeof Bun.file>["writer"]>
-      | undefined;
+      ReturnType<ReturnType<typeof Bun.file>["writer"]> | undefined;
     try {
       const writer = Bun.file(tempArchivePath).writer({
         highWaterMark: 64 * 1024,

@@ -4,28 +4,75 @@ import { createDrawingElements, drawingElementSchema } from "./mcp-drawing";
 import { buildRegionDiagram } from "./mcp-diagram-regions";
 
 const nodeId = z.string().trim().min(1).max(80);
-export const diagramSchema = z.object({
-  name: z.string().trim().min(1).max(120),
-  layout: z.enum(["timeline", "flowchart", "architecture", "swimlane"]).optional().describe("timeline 按顺序；flowchart 按连接分层；architecture 两层箱体；swimlane 共享阶段泳道"),
-  direction: z.enum(["vertical", "horizontal"]).optional(),
-  theme: z.enum(["forest", "paper", "ocean"]).optional(),
-  nodes: z.array(z.object({
-    id: nodeId.describe("画板内的稳定图元 ID，供 edges 和后续更新引用"),
-    title: z.string().trim().min(1).max(120),
-    body: z.string().max(1_800).optional(),
-    regionId: nodeId.optional(),
-  }).strict()).min(1).max(100),
-  regions: z.array(z.object({ id: nodeId, title: z.string().trim().min(1).max(120), parentId: nodeId.optional() }).strict()).min(1).max(24).optional(),
-  edges: z.array(z.object({ from: nodeId, to: nodeId,
-    endArrowhead: z.literal("arrow").nullable().optional().describe("默认 arrow；null 为无箭头连接，仍随节点移动"),
-  }).strict()).max(200)
-    .optional().describe("经典布局省略则按节点顺序连接；高级布局省略则无连线；[] 为无连线，支持分支、回路与自连接"),
-}).strict();
+export const diagramSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    layout: z
+      .enum(["timeline", "flowchart", "architecture", "swimlane"])
+      .optional()
+      .describe(
+        "timeline 按顺序；flowchart 按连接分层；architecture 两层箱体；swimlane 共享阶段泳道",
+      ),
+    direction: z.enum(["vertical", "horizontal"]).optional(),
+    theme: z.enum(["forest", "paper", "ocean"]).optional(),
+    nodes: z
+      .array(
+        z
+          .object({
+            id: nodeId.describe("画板内的稳定图元 ID，供 edges 和后续更新引用"),
+            title: z.string().trim().min(1).max(120),
+            body: z.string().max(1_800).optional(),
+            regionId: nodeId.optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
+    regions: z
+      .array(
+        z
+          .object({
+            id: nodeId,
+            title: z.string().trim().min(1).max(120),
+            parentId: nodeId.optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(24)
+      .optional(),
+    edges: z
+      .array(
+        z
+          .object({
+            from: nodeId,
+            to: nodeId,
+            endArrowhead: z
+              .literal("arrow")
+              .nullable()
+              .optional()
+              .describe("默认 arrow；null 为无箭头连接，仍随节点移动"),
+          })
+          .strict(),
+      )
+      .max(200)
+      .optional()
+      .describe(
+        "经典布局省略则按节点顺序连接；高级布局省略则无连线；[] 为无连线，支持分支、回路与自连接",
+      ),
+  })
+  .strict();
 
 export type Diagram = z.infer<typeof diagramSchema>;
 type Spec = z.infer<typeof drawingElementSchema>;
 type Point = [number, number];
-type Box = { x: number; y: number; width: number; height: number; rank: number };
+type Box = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rank: number;
+};
 
 const themes = {
   forest: { strokeColor: "#38634d", backgroundColor: "#eef5ef" },
@@ -35,12 +82,18 @@ const themes = {
 
 // Condense strongly connected components before ranking. Cycles remain usable
 // rather than making topological ordering fail or iterating indefinitely.
-const flowRanks = (ids: string[], edges: Diagram["edges"]): Map<string, number> => {
+const flowRanks = (
+  ids: string[],
+  edges: Diagram["edges"],
+): Map<string, number> => {
   const adjacency = new Map(ids.map((id) => [id, [] as string[]]));
   for (const edge of edges || []) adjacency.get(edge.from)!.push(edge.to);
   let nextIndex = 0;
-  const indices = new Map<string, number>(), low = new Map<string, number>();
-  const stack: string[] = [], active = new Set<string>(), components: string[][] = [];
+  const indices = new Map<string, number>(),
+    low = new Map<string, number>();
+  const stack: string[] = [],
+    active = new Set<string>(),
+    components: string[][] = [];
   const visit = (id: string) => {
     indices.set(id, nextIndex);
     low.set(id, nextIndex++);
@@ -67,17 +120,23 @@ const flowRanks = (ids: string[], edges: Diagram["edges"]): Map<string, number> 
   };
   for (const id of ids) if (!indices.has(id)) visit(id);
   const membership = new Map<string, number>();
-  components.forEach((members, index) => members.forEach((id) => membership.set(id, index)));
+  components.forEach((members, index) =>
+    members.forEach((id) => membership.set(id, index)),
+  );
   const outgoing = components.map(() => new Set<number>());
-  const indegree = components.map(() => 0), ranks = components.map(() => 0);
+  const indegree = components.map(() => 0),
+    ranks = components.map(() => 0);
   for (const { from, to } of edges || []) {
-    const a = membership.get(from)!, b = membership.get(to)!;
+    const a = membership.get(from)!,
+      b = membership.get(to)!;
     if (a !== b && !outgoing[a].has(b)) {
       outgoing[a].add(b);
       indegree[b]++;
     }
   }
-  const queue = indegree.flatMap((degree, index) => degree === 0 ? [index] : []);
+  const queue = indegree.flatMap((degree, index) =>
+    degree === 0 ? [index] : [],
+  );
   for (let offset = 0; offset < queue.length; offset++) {
     const index = queue[offset];
     for (const target of outgoing[index]) {
@@ -90,44 +149,94 @@ const flowRanks = (ids: string[], edges: Diagram["edges"]): Map<string, number> 
 
 /** Produce bounded standard writable specs; persistence is handled by create_board. */
 export const buildDiagram = (input: Diagram) => {
-  const args = diagramSchema.parse({ name: input.name, layout: input.layout,
-    direction: input.direction, theme: input.theme, nodes: input.nodes, edges: input.edges, regions: input.regions });
-  const layout = args.layout ?? "flowchart", direction = args.direction ?? "vertical";
-  const theme = args.theme ?? "forest", style = themes[theme];
-  const ids = args.nodes.map((node) => node.id), unique = new Set(ids);
+  const args = diagramSchema.parse({
+    name: input.name,
+    layout: input.layout,
+    direction: input.direction,
+    theme: input.theme,
+    nodes: input.nodes,
+    edges: input.edges,
+    regions: input.regions,
+  });
+  const layout = args.layout ?? "flowchart",
+    direction = args.direction ?? "vertical";
+  const theme = args.theme ?? "forest",
+    style = themes[theme];
+  const ids = args.nodes.map((node) => node.id),
+    unique = new Set(ids);
   if (unique.size !== ids.length)
     throw new HttpError(400, "DUPLICATE_NODE_ID", "nodes.id 必须唯一");
   const advanced = layout === "architecture" || layout === "swimlane";
-  const edges: NonNullable<Diagram["edges"]> = args.edges ?? (advanced ? [] : ids.slice(1).map((to, index) => ({ from: ids[index], to })));
+  const edges: NonNullable<Diagram["edges"]> =
+    args.edges ??
+    (advanced
+      ? []
+      : ids.slice(1).map((to, index) => ({ from: ids[index], to })));
   const connections = new Set<string>();
   for (const edge of edges) {
     if (!unique.has(edge.from) || !unique.has(edge.to))
-      throw new HttpError(400, "INVALID_DIAGRAM_EDGE", `连接目标不存在：${edge.from} → ${edge.to}`);
+      throw new HttpError(
+        400,
+        "INVALID_DIAGRAM_EDGE",
+        `连接目标不存在：${edge.from} → ${edge.to}`,
+      );
     const key = JSON.stringify([edge.from, edge.to]);
     if (connections.has(key))
-      throw new HttpError(400, "DUPLICATE_DIAGRAM_EDGE", `重复连接：${edge.from} → ${edge.to}`);
+      throw new HttpError(
+        400,
+        "DUPLICATE_DIAGRAM_EDGE",
+        `重复连接：${edge.from} → ${edge.to}`,
+      );
     connections.add(key);
   }
-  const ranks = layout === "timeline"
-    ? new Map(ids.map((id, index) => [id, index]))
-    : flowRanks(ids, edges);
+  const ranks =
+    layout === "timeline"
+      ? new Map(ids.map((id, index) => [id, index]))
+      : flowRanks(ids, edges);
   const width = 320;
   // Measure using the exact same wrapping/metrics as the normal MCP writer.
   // This avoids guesses about Chinese, long words, or explicit line breaks.
-  const cards: Spec[] = args.nodes.map((node) => drawingElementSchema.parse({
-    type: "rectangle", id: node.id, x: 0, y: 0, width, height: 100,
-    text: node.body ? `${node.title}\n\n${node.body}` : node.title,
-    fontSize: 18, fontFamily: "system", textAlign: "left",
-    ...style, fillStyle: "solid", roughness: 0, roundness: 12,
-  }));
+  const cards: Spec[] = args.nodes.map((node) =>
+    drawingElementSchema.parse({
+      type: "rectangle",
+      id: node.id,
+      x: 0,
+      y: 0,
+      width,
+      height: 100,
+      text: node.body ? `${node.title}\n\n${node.body}` : node.title,
+      fontSize: 18,
+      fontFamily: "system",
+      textAlign: "left",
+      ...style,
+      fillStyle: "solid",
+      roughness: 0,
+      roundness: 12,
+    }),
+  );
   const heights = cards.map((card) => {
-    const label = createDrawingElements(card).find((element) => element.type === "text");
+    const label = createDrawingElements(card).find(
+      (element) => element.type === "text",
+    );
     return Math.max(100, Math.ceil((label?.height ?? 0) + 48));
   });
-  if (advanced) return buildRegionDiagram(args, cards, heights, flowRanks(ids, edges), edges, style);
+  if (advanced)
+    return buildRegionDiagram(
+      args,
+      cards,
+      heights,
+      flowRanks(ids, edges),
+      edges,
+      style,
+    );
   if (args.regions || args.nodes.some((node) => node.regionId !== undefined))
-    throw new HttpError(400, "INVALID_DIAGRAM_REGION", "regions 和 regionId 仅用于 architecture 或 swimlane");
-  const height = Math.max(...heights), mainSize = direction === "vertical" ? height : width;
+    throw new HttpError(
+      400,
+      "INVALID_DIAGRAM_REGION",
+      "regions 和 regionId 仅用于 architecture 或 swimlane",
+    );
+  const height = Math.max(...heights),
+    mainSize = direction === "vertical" ? height : width;
   const crossSize = direction === "vertical" ? width : height;
   const rows = new Map<number, string[]>();
   for (const id of ids) {
@@ -137,17 +246,31 @@ export const buildDiagram = (input: Diagram) => {
   }
   const lanes = Math.max(...[...rows.values()].map((row) => row.length));
   const crossExtent = lanes * (crossSize + 80) - 80;
-  const mainExtent = 80 + Math.max(...ranks.values()) * (mainSize + 120) + mainSize;
-  if (mainExtent > 1_000_000 || 80 + crossExtent + 48 + edges.length * 20 > 1_000_000)
-    throw new HttpError(400, "DIAGRAM_TOO_LARGE", "布局超出画布坐标上限，请减少节点数量或标签换行");
+  const mainExtent =
+    80 + Math.max(...ranks.values()) * (mainSize + 120) + mainSize;
+  if (
+    mainExtent > 1_000_000 ||
+    80 + crossExtent + 48 + edges.length * 20 > 1_000_000
+  )
+    throw new HttpError(
+      400,
+      "DIAGRAM_TOO_LARGE",
+      "布局超出画布坐标上限，请减少节点数量或标签换行",
+    );
   const boxes = new Map<string, Box>();
   for (const [rank, members] of rows) {
     const rowExtent = members.length * (crossSize + 80) - 80;
     members.forEach((id, lane) => {
       const main = 80 + rank * (mainSize + 120);
-      const cross = 80 + (crossExtent - rowExtent) / 2 + lane * (crossSize + 80);
-      boxes.set(id, { x: direction === "vertical" ? cross : main,
-        y: direction === "vertical" ? main : cross, width, height, rank });
+      const cross =
+        80 + (crossExtent - rowExtent) / 2 + lane * (crossSize + 80);
+      boxes.set(id, {
+        x: direction === "vertical" ? cross : main,
+        y: direction === "vertical" ? main : cross,
+        width,
+        height,
+        rank,
+      });
     });
   }
   const elements: Spec[] = cards.map((card) => {
@@ -156,42 +279,84 @@ export const buildDiagram = (input: Diagram) => {
   });
   const usedIds = new Set(ids);
   const allocateId = (index: number) => {
-    let id = `diagram_edge_${index}`, suffix = 0;
+    let id = `diagram_edge_${index}`,
+      suffix = 0;
     while (usedIds.has(id)) id = `diagram_edge_${index}_${++suffix}`;
     usedIds.add(id);
     return id;
   };
   edges.forEach((edge, index) => {
-    const from = boxes.get(edge.from)!, to = boxes.get(edge.to)!;
+    const from = boxes.get(edge.from)!,
+      to = boxes.get(edge.to)!;
     const vertical = direction === "vertical";
-    const start: Point = vertical ? [from.x + width / 2, from.y + height]
+    const start: Point = vertical
+      ? [from.x + width / 2, from.y + height]
       : [from.x + width, from.y + height / 2];
-    const end: Point = vertical ? [to.x + width / 2, to.y]
+    const end: Point = vertical
+      ? [to.x + width / 2, to.y]
       : [to.x, to.y + height / 2];
     let points: Point[];
     const startFixed: Point = vertical ? [0.5, 1] : [1, 0.5];
     const endFixed: Point = vertical ? [0.5, 0] : [0, 0.5];
     if (to.rank === from.rank + 1) {
-      const midpoint = vertical ? (start[1] + end[1]) / 2 : (start[0] + end[0]) / 2;
-      points = vertical ? [start, [start[0], midpoint], [end[0], midpoint], end]
+      const midpoint = vertical
+        ? (start[1] + end[1]) / 2
+        : (start[0] + end[0]) / 2;
+      points = vertical
+        ? [start, [start[0], midpoint], [end[0], midpoint], end]
         : [start, [midpoint, start[1]], [midpoint, end[1]], end];
     } else {
       // Loops, back-edges and skipped ranks use an exterior channel, keeping
       // the long segment outside every card instead of running through nodes.
       const exterior = 80 + crossExtent + 48 + index * 20;
       points = vertical
-        ? [start, [start[0], start[1] + 40], [exterior, start[1] + 40],
-            [exterior, end[1] - 40], [end[0], end[1] - 40], end]
-        : [start, [start[0] + 40, start[1]], [start[0] + 40, exterior],
-            [end[0] - 40, exterior], [end[0] - 40, end[1]], end];
+        ? [
+            start,
+            [start[0], start[1] + 40],
+            [exterior, start[1] + 40],
+            [exterior, end[1] - 40],
+            [end[0], end[1] - 40],
+            end,
+          ]
+        : [
+            start,
+            [start[0] + 40, start[1]],
+            [start[0] + 40, exterior],
+            [end[0] - 40, exterior],
+            [end[0] - 40, end[1]],
+            end,
+          ];
     }
     // Remove consecutive duplicate corners, preserving meaningful turns.
-    points = points.filter((point, i) => !i || point[0] !== points[i - 1][0] || point[1] !== points[i - 1][1]);
-    elements.push(drawingElementSchema.parse({ type: "arrow", id: allocateId(index), x: start[0], y: start[1],
-      points: points.map((point) => [point[0] - start[0], point[1] - start[1]]),
-      startBinding: { elementId: edge.from, fixedPoint: startFixed },
-      endBinding: { elementId: edge.to, fixedPoint: endFixed },
-      strokeColor: style.strokeColor, roughness: 0, endArrowhead: edge.endArrowhead === undefined ? "arrow" : edge.endArrowhead }));
+    points = points.filter(
+      (point, i) =>
+        !i || point[0] !== points[i - 1][0] || point[1] !== points[i - 1][1],
+    );
+    elements.push(
+      drawingElementSchema.parse({
+        type: "arrow",
+        id: allocateId(index),
+        x: start[0],
+        y: start[1],
+        points: points.map((point) => [
+          point[0] - start[0],
+          point[1] - start[1],
+        ]),
+        startBinding: { elementId: edge.from, fixedPoint: startFixed },
+        endBinding: { elementId: edge.to, fixedPoint: endFixed },
+        strokeColor: style.strokeColor,
+        roughness: 0,
+        endArrowhead:
+          edge.endArrowhead === undefined ? "arrow" : edge.endArrowhead,
+      }),
+    );
   });
-  return { elements, nodeCount: ids.length, edgeCount: edges.length, layout, direction, theme };
+  return {
+    elements,
+    nodeCount: ids.length,
+    edgeCount: edges.length,
+    layout,
+    direction,
+    theme,
+  };
 };

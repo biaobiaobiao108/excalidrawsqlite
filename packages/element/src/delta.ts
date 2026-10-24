@@ -1113,15 +1113,13 @@ export class ElementsDelta implements DeltaContainer<SceneElementsMap> {
   }: Delta<ElementPartial>) =>
     !!(
       // versions are required integers
-      (
-        Number.isInteger(deleted.version) &&
-        Number.isInteger(inserted.version) &&
-        // versions should be positive, zero included
-        deleted.version! >= 0 &&
-        inserted.version! >= 0 &&
-        // versions should never be the same
-        deleted.version !== inserted.version
-      )
+      Number.isInteger(deleted.version) &&
+      Number.isInteger(inserted.version) &&
+      // versions should be positive, zero included
+      deleted.version! >= 0 &&
+      inserted.version! >= 0 &&
+      // versions should never be the same
+      deleted.version !== inserted.version
     );
 
   private static satisfiesUniqueInvariants = (

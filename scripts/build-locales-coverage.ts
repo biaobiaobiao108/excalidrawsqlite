@@ -23,9 +23,7 @@ const flatten = (
   return result;
 };
 
-const locales = files.filter(
-  (file) => file !== "percentages.json",
-);
+const locales = files.filter((file) => file !== "percentages.json");
 
 const percentages: Record<string, number> = {};
 

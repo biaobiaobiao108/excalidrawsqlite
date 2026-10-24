@@ -35,9 +35,9 @@ describe("math primitives", () => {
     const point = pointFrom(10, 5);
 
     expect(pointTranslate(point, [2, -3] as Vector)).toEqual([12, 2] as any);
-    expect(pointCenter(point, pointFrom<GlobalPoint>(0, 1))).toEqual(
-      [5, 3] as any,
-    );
+    expect(pointCenter(point, pointFrom<GlobalPoint>(0, 1))).toEqual([
+      5, 3,
+    ] as any);
     expect(pointDistance(point, pointFrom<GlobalPoint>(13, 9))).toBe(5);
     const rotated = pointRotateDegs(
       point,
@@ -73,9 +73,9 @@ describe("math primitives", () => {
     const second = rangeInclusive(5, 8);
 
     expect(rangesOverlap(first, second)).toBe(true);
-    expect(rangeIntersection(first, second)).toEqual(
-      [5, 5] as unknown as InclusiveRange,
-    );
+    expect(rangeIntersection(first, second)).toEqual([
+      5, 5,
+    ] as unknown as InclusiveRange);
     expect(rangeIncludesValue(1, first)).toBe(true);
     expect(rangeIncludesValue(6, first)).toBe(false);
   });
