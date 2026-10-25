@@ -65,8 +65,15 @@
   }
 
   .close {
+    appearance: none;
+    display: grid;
+    place-items: center;
     height: 16px;
     width: 16px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
     cursor: pointer;
     svg {
       width: 100%;

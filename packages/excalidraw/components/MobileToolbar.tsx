@@ -110,14 +110,19 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
   const extraTools: readonly (typeof activeTool.type)[] = (
     [
       "text",
+      "image",
       "frame",
       "embeddable",
+      "autoshape",
       "laser",
       "bucketfill",
       "magicframe",
     ] as const
   ).filter((tool) => {
     if (showTextToolOutside && tool === "text") {
+      return false;
+    }
+    if (showImageToolOutside && tool === "image") {
       return false;
     }
     if (showFrameToolOutside && tool === "frame") {
@@ -133,13 +138,15 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
         ? ImageIcon
         : activeTool.type === "frame"
           ? frameToolIcon
-          : activeTool.type === "embeddable"
-            ? EmbedIcon
-            : activeTool.type === "laser"
-              ? laserPointerToolIcon
-              : activeTool.type === "bucketfill"
-                ? bucketFillIcon
-                : DotsIcon
+          : activeTool.type === "autoshape"
+            ? drawShapeToolIcon
+            : activeTool.type === "embeddable"
+              ? EmbedIcon
+              : activeTool.type === "laser"
+                ? laserPointerToolIcon
+                : activeTool.type === "bucketfill"
+                  ? bucketFillIcon
+                  : DotsIcon
     : DotsIcon;
 
   const toolProps = { app, activeTool };
@@ -323,9 +330,7 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
           >
             {t("toolBar.bucketfill")}
           </DropdownMenu.Item>
-          <div style={{ margin: "6px 0", fontSize: 14, fontWeight: 600 }}>
-            Generate
-          </div>
+          <DropdownMenu.Separator />
           <DropdownMenu.Item
             onSelect={() => app.setOpenDialog({ name: "ttd", tab: "outline" })}
             icon={outlineToDiagramIcon}

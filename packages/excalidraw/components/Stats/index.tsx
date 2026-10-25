@@ -186,9 +186,14 @@ export const StatsInner = memo(
         <Island padding={3}>
           <div className="title">
             <h2>{t("stats.title")}</h2>
-            <div className="close" onClick={onClose}>
+            <button
+              className="close"
+              type="button"
+              aria-label={t("buttons.close")}
+              onClick={onClose}
+            >
               {CloseIcon}
-            </div>
+            </button>
           </div>
 
           <Collapsible
