@@ -7,15 +7,15 @@
     "packages/*"
   ],
   "devDependencies": {
-    "@modelcontextprotocol/client": "2.3.1",
-    "@types/node": "26.6.5",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "bun-types": "1.4.4",
-    "sass": "^1.105.1"
+    "sass": "^1.107.1"
   },
   "overrides": {
-    "@babel/runtime": "7.28.4",
+    "@babel/runtime": "7.29.10",
     "@xmldom/xmldom": "0.9.12",
     "brace-expansion": "5.0.12",
     "dompurify": "3.4.17",
@@ -49,7 +49,7 @@
     "build:packages": "bun run --cwd packages/common build:esm && bun run --cwd packages/fractional-indexing build:esm && bun run --cwd packages/laser-pointer build:esm && bun run --cwd packages/math build:esm && bun run --cwd packages/element build:esm && bun run --cwd packages/excalidraw build:esm"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "2.3.1",
-    "zod": "4"
+    "@modelcontextprotocol/server": "2.4.0",
+    "zod": "^4.6.7"
   }
 }

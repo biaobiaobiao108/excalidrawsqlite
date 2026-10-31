@@ -21,12 +21,12 @@
     "bun": ">=1.4.4"
   },
   "dependencies": {
-    "@tanstack/react-virtual": "^3.14.14",
-    "i18next-browser-languagedetector": "^8.2.1",
+    "@tanstack/react-virtual": "^3.14.24",
+    "i18next-browser-languagedetector": "^8.2.4",
     "idb-keyval": "^6.3.0",
     "jotai": "^3.0.1",
-    "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "scripts": {
     "build:app:docker": "bun ../scripts/build-frontend.ts",
