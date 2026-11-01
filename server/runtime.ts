@@ -4,7 +4,7 @@ import path from "node:path";
 import { Database } from "bun:sqlite";
 
 import { createServerConfig } from "./config";
-import { initializeDatabase } from "./database";
+import { DatabaseSchemaError, initializeDatabase } from "./database";
 import { BodyMemoryBudget } from "./types";
 
 import type { ServerConfig, ServerRuntime } from "./types";
@@ -56,12 +56,7 @@ export const createRuntime = (options: {
       // Ignore cleanup failures while reporting the initialization error.
     }
     const schemaError =
-      error instanceof Error &&
-      /^SQLite schema 不兼容：(缺少数据表 [a-z_]+|数据表 [a-z_]+ 的结构与当前版本不一致|数据表 [a-z_]+ 的唯一约束与当前版本不一致|索引 [a-z_]+ 的定义与当前版本不一致)$/.test(
-        error.message,
-      )
-        ? error.message
-        : undefined;
+      error instanceof DatabaseSchemaError ? error.message : undefined;
     throw new Error(
       `无法初始化持久化存储（数据库：${dbPath}，文件目录：${filesDir}）${schemaError ? `：${schemaError}` : "，请查看服务端日志"}`,
       { cause: error },

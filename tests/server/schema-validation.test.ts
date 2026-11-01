@@ -27,7 +27,7 @@ test("does not silently create missing tables in a partial existing database", (
   const db = new Database(":memory:");
   try {
     db.run("CREATE TABLE files(id TEXT PRIMARY KEY, mime_type TEXT NOT NULL)");
-    expect(() => initializeDatabase(db)).toThrow("缺少数据表");
+    expect(() => initializeDatabase(db)).toThrow("table:scenes");
     expect(
       db.query("SELECT name FROM sqlite_master WHERE name = 'scenes'").get(),
     ).toBeNull();

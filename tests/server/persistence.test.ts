@@ -552,10 +552,10 @@ describe("cloud persistence server", () => {
     expect(resolveServerHostname(true, "192.0.2.10")).toBe("192.0.2.10");
   });
 
-  it("initializes the current SQLite schema without versioned migrations", () => {
+  it("initializes the current versioned SQLite schema", () => {
     const { runtime } = createTestRuntime();
     expect(runtime.db.query("PRAGMA user_version").get()).toEqual({
-      user_version: 0,
+      user_version: 1,
     });
     expect(
       (
