@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import nodeFs from "node:fs";
 import fs, { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -16,11 +17,13 @@ import {
 import { createDatabaseSnapshot } from "../../server/backup";
 import { readJson, releaseJsonBodyMemoryBudget } from "../../server/http";
 import {
+  cleanupOrphanedFiles,
   cleanupUntrackedFiles,
   stageRequestBodyToFile,
   upsertStagedFile,
   withStorageMutationLock,
 } from "../../server/files";
+import { ORPHAN_FILE_CLEANUP_BATCH_SIZE } from "../../server/config";
 import { BodyMemoryBudget } from "../../server/types";
 import { cleanupExpiredTrashScenes } from "../../server/scenes";
 import { consumeRateLimit } from "../../server/auth";
@@ -495,6 +498,13 @@ describe("cloud persistence server", () => {
     expect(() =>
       createServerConfig({ NODE_ENV: "production", AUTH_PASSWORD: "short" }),
     ).toThrow("at least 8 characters");
+    expect(
+      createServerConfig({
+        NODE_ENV: "production",
+        AUTH_PASSWORD: "secure-password-123",
+        MCP_TOKEN: "too-short",
+      }).mcpToken,
+    ).toBe("too-short");
     expect(() =>
       createServerConfig({
         AUTH_PASSWORD: "a".repeat(257),
@@ -798,6 +808,79 @@ describe("cloud persistence server", () => {
 
     finishLock();
     await lock;
+  });
+
+  it("continues untracked-file cleanup after an individual removal fails", async () => {
+    const { runtime } = createTestRuntime();
+    const blockedPath = path.join(runtime.filesDir, crypto.randomUUID());
+    const removablePath = path.join(runtime.filesDir, crypto.randomUUID());
+    await fs.writeFile(blockedPath, "blocked");
+    await fs.writeFile(removablePath, "removable");
+    const staleTime = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await Promise.all([
+      fs.utimes(blockedPath, staleTime, staleTime),
+      fs.utimes(removablePath, staleTime, staleTime),
+    ]);
+
+    const originalRm = nodeFs.promises.rm;
+    const originalInfo = console.info;
+    nodeFs.promises.rm = (async (target, ...args) => {
+      if (target === blockedPath) {
+        throw new Error("simulated locked attachment");
+      }
+      return originalRm.call(nodeFs.promises, target, ...args);
+    }) as typeof nodeFs.promises.rm;
+    console.info = () => {};
+    try {
+      await cleanupUntrackedFiles(runtime);
+    } finally {
+      nodeFs.promises.rm = originalRm;
+      console.info = originalInfo;
+    }
+
+    expect(existsSync(blockedPath)).toBe(true);
+    expect(existsSync(removablePath)).toBe(false);
+  });
+
+  it("advances orphan cleanup past a batch of attachments that cannot be quarantined", async () => {
+    const { runtime } = createTestRuntime();
+    const staleTime = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    const fileIds = Array.from(
+      { length: ORPHAN_FILE_CLEANUP_BATCH_SIZE + 1 },
+      (_, index) => `orphan-${index.toString().padStart(3, "0")}`,
+    );
+    const lastFileId = fileIds[fileIds.length - 1]!;
+    const insertFile = runtime.db.query(
+      `INSERT INTO files
+       (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
+       VALUES (?, ?, 'image/png', 0, '', ?, ?)`,
+    );
+    for (const id of fileIds) {
+      await fs.writeFile(path.join(runtime.filesDir, id), "orphan");
+      insertFile.run(id, id, staleTime, staleTime);
+    }
+
+    const originalRename = nodeFs.promises.rename;
+    const originalInfo = console.info;
+    nodeFs.promises.rename = (async () => {
+      throw new Error("simulated locked attachment");
+    }) as typeof nodeFs.promises.rename;
+    console.info = () => {};
+    try {
+      await cleanupOrphanedFiles(runtime);
+    } finally {
+      nodeFs.promises.rename = originalRename;
+      console.info = originalInfo;
+    }
+    expect(
+      runtime.db.query("SELECT id FROM files WHERE id = ?").get(fileIds[0]),
+    ).toBeTruthy();
+
+    await cleanupOrphanedFiles(runtime);
+    expect(
+      runtime.db.query("SELECT id FROM files WHERE id = ?").get(lastFileId),
+    ).toBeNull();
+    expect(existsSync(path.join(runtime.filesDir, lastFileId))).toBe(false);
   });
 
   it("serializes untracked-file cleanup with attachment uploads", async () => {
@@ -1532,6 +1615,92 @@ describe("cloud persistence server", () => {
       authRequired: true,
       authenticated: true,
     });
+  });
+
+  it("revokes sessions across runtimes and reports logout database failures", async () => {
+    const { runtime, directory, handler } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const secondRuntime = createRuntime({
+      dbPath: path.join(directory, "excalidraw.db"),
+      filesDir: path.join(directory, "files"),
+      config: createServerConfig({
+        NODE_ENV: "test",
+        AUTH_PASSWORD: "test-password",
+      }),
+    });
+    runtimes.push(secondRuntime);
+    const secondHandler = createRequestHandler(secondRuntime);
+
+    const originalRun = runtime.db.run.bind(runtime.db);
+    runtime.db.run = ((
+      sql: string,
+      bindings?: Parameters<typeof runtime.db.run>[1],
+    ) => {
+      if (sql === "DELETE FROM sessions WHERE token = ?") {
+        throw new Error("simulated database failure");
+      }
+      return bindings ? originalRun(sql, bindings) : originalRun(sql);
+    }) as typeof runtime.db.run;
+    const failedLogout = await jsonRequest(
+      handler,
+      "/api/auth/logout",
+      {},
+      {
+        headers: { Cookie: cookie },
+      },
+    );
+    expect(failedLogout.status).toBe(500);
+    expect(failedLogout.headers.getSetCookie()).toHaveLength(0);
+    expect(
+      await responseJson<{ authenticated: boolean }>(
+        await request(secondHandler, "/api/auth/status", {
+          headers: { Cookie: cookie },
+        }),
+      ),
+    ).toMatchObject({ authenticated: true });
+
+    runtime.db.run = originalRun as typeof runtime.db.run;
+    const logout = await jsonRequest(
+      handler,
+      "/api/auth/logout",
+      {},
+      {
+        headers: { Cookie: cookie },
+      },
+    );
+    expect(logout.status).toBe(204);
+    expect(
+      await responseJson<{ authenticated: boolean }>(
+        await request(secondHandler, "/api/auth/status", {
+          headers: { Cookie: cookie },
+        }),
+      ),
+    ).toMatchObject({ authenticated: false });
+  });
+
+  it("does not issue a login cookie when the session cannot be persisted", async () => {
+    const { runtime, handler } = createTestRuntime();
+    const originalRun = runtime.db.run.bind(runtime.db);
+    runtime.db.run = ((sql: string) => {
+      if (sql.startsWith("INSERT OR REPLACE INTO sessions")) {
+        throw new Error("simulated database failure");
+      }
+      return originalRun(sql);
+    }) as typeof runtime.db.run;
+
+    const login = await jsonRequest(handler, "/api/auth/verify", {
+      password: "test-password",
+    });
+    expect(login.status).toBe(500);
+    expect(login.headers.getSetCookie()).toHaveLength(0);
+    expect(runtime.sessions.size).toBe(0);
+    expect(
+      (
+        runtime.db.query("SELECT COUNT(*) AS count FROM sessions").get() as {
+          count: number;
+        }
+      ).count,
+    ).toBe(0);
   });
 
   it("supports soft deleting scenes, trash viewing, restoring and permanent deletion", async () => {

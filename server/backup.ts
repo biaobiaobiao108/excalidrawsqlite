@@ -272,63 +272,40 @@ const removeBackupArtifact = async (
   }
 };
 
-const assertDatabaseSnapshotCanFit = (
-  runtime: ServerRuntime,
+const writeDatabaseSnapshot = (
+  dbPath: string,
+  destination: string,
   maxBytes: number,
-) => {
-  const pageSize = Number(
-    (runtime.db.query("PRAGMA page_size").get() as { page_size: number })
-      .page_size,
-  );
-  if (maxBytes < pageSize) {
-    throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
-  }
-
-  // Text payload bytes are a strict lower bound on a SQLite snapshot: these
-  // values must be stored in the database in addition to its pages, headers,
-  // integer columns and indexes. Rejecting from this bound avoids writing a
-  // huge VACUUM INTO artifact while still allowing VACUUM to reclaim free pages.
-  const minimumContentBytes = Number(
-    (
-      runtime.db
-        .query(
-          `SELECT COALESCE(SUM(bytes), 0) AS bytes FROM (
-             SELECT length(CAST(id AS BLOB)) + length(CAST(name AS BLOB)) +
-                    length(CAST(elements AS BLOB)) + length(CAST(app_state AS BLOB)) +
-                    length(CAST(tags_json AS BLOB)) + length(CAST(content_sha256 AS BLOB)) AS bytes
-             FROM scenes
-             UNION ALL
-             SELECT length(CAST(id AS BLOB)) + length(CAST(name AS BLOB)) +
-                    length(CAST(icon AS BLOB)) + length(CAST(color AS BLOB)) AS bytes
-             FROM folders
-             UNION ALL
-             SELECT length(CAST(id AS BLOB)) + COALESCE(length(CAST(storage_path AS BLOB)), 0) +
-                    length(CAST(mime_type AS BLOB)) + length(CAST(sha256 AS BLOB)) AS bytes
-             FROM files
-             UNION ALL
-             SELECT length(CAST(scene_id AS BLOB)) + length(CAST(file_id AS BLOB)) AS bytes
-             FROM scene_files
-             UNION ALL
-             SELECT length(CAST(token AS BLOB)) AS bytes FROM sessions
-             UNION ALL
-             SELECT length(CAST(key_sha256 AS BLOB)) + length(CAST(payload_sha256 AS BLOB)) +
-                    length(CAST(scene_id AS BLOB)) AS bytes
-             FROM scene_create_requests
-           )`,
-        )
-        .get() as { bytes: number }
-    ).bytes,
-  );
-  if (minimumContentBytes > maxBytes) {
-    throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
-  }
-};
+) =>
+  new Promise<void>((resolve, reject) => {
+    const workerFile = import.meta.path.endsWith(".ts")
+      ? "backup-worker.ts"
+      : "backup-worker.js";
+    const worker = new Worker(new URL(workerFile, import.meta.url));
+    worker.onmessage = (
+      event: MessageEvent<{
+        ok: boolean;
+        tooLarge?: boolean;
+        message?: string;
+      }>,
+    ) => {
+      worker.terminate();
+      if (event.data.ok) resolve();
+      else if (event.data.tooLarge)
+        reject(new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制"));
+      else reject(new Error(event.data.message || "数据库快照失败"));
+    };
+    worker.onerror = (event) => {
+      worker.terminate();
+      reject(new Error(`数据库快照工作线程失败: ${event.message}`));
+    };
+    worker.postMessage({ dbPath, destination, maxBytes });
+  });
 
 export const createDatabaseSnapshot = async (
   runtime: ServerRuntime,
   timestamp: string,
 ) => {
-  assertDatabaseSnapshotCanFit(runtime, runtime.config.maxBackupBytes);
   const tempBackupFile = path.join(
     path.dirname(runtime.dbPath),
     `excalidraw-backup-${timestamp}-${randomHex(4)}.db`,
@@ -337,8 +314,11 @@ export const createDatabaseSnapshot = async (
   const unregisterTemp = registerBackupArtifact(runtime, tempBackupPath);
   const unregisterFinal = registerBackupArtifact(runtime, tempBackupFile);
   try {
-    const escapedPath = tempBackupPath.replace(/'/g, "''");
-    runtime.db.run(`VACUUM INTO '${escapedPath}'`);
+    await writeDatabaseSnapshot(
+      runtime.dbPath,
+      tempBackupPath,
+      runtime.config.maxBackupBytes,
+    );
     if (Bun.file(tempBackupPath).size > runtime.config.maxBackupBytes) {
       throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
     }
@@ -370,9 +350,8 @@ export const createFullBackup = async (
   let snapshotDb: Database | undefined;
   try {
     let stagedFiles = new Map<string, number>();
-    // Phase 1 (locked): snapshot the database and freeze the attachments it
-    // references. Both steps cost O(files), not O(bytes), so uploads and scene
-    // writes wait for the snapshot only, never for the whole archive.
+    // Freeze attachment mutations until the snapshot and its attachments agree.
+    // The database copy runs in a worker, so unrelated requests remain responsive.
     await withStorageMutationLock(runtime, async () => {
       snapshot = await createDatabaseSnapshot(runtime, timestamp);
       snapshotDb = new Database(snapshot.tempBackupFile, {

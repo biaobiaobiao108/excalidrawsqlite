@@ -93,6 +93,11 @@ export const createServerConfig = (
         `AUTH_PASSWORD must be at least ${MIN_AUTH_PASSWORD_LENGTH_PRODUCTION} characters long in production`,
       );
     }
+    if (mcpToken && mcpToken.length < 32) {
+      console.warn(
+        "MCP_TOKEN is shorter than 32 characters; use a long, randomly generated token",
+      );
+    }
   }
 
   return {

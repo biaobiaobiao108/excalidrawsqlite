@@ -345,9 +345,6 @@ const parseScenePageSize = (value: string | null) => {
   return parsed;
 };
 
-const escapeLikePattern = (value: string) =>
-  value.replace(/[\\%_]/g, (character) => `\\${character}`);
-
 const listScenePage = (runtime: ServerRuntime, url: URL, trashed: boolean) => {
   const limit = parseScenePageSize(url.searchParams.get("limit"));
   const cursor = decodeSceneCursor(url.searchParams.get("cursor"));
@@ -385,11 +382,10 @@ const listScenePage = (runtime: ServerRuntime, url: URL, trashed: boolean) => {
   ];
   const params: Array<string | number> = [];
   if (query) {
-    const pattern = `%${escapeLikePattern(query)}%`;
     conditions.push(
-      "(scenes.name LIKE ? ESCAPE '\\' OR scenes.tags_json LIKE ? ESCAPE '\\' OR folders.name LIKE ? ESCAPE '\\')",
+      "(unicode_contains(scenes.name, ?) OR EXISTS (SELECT 1 FROM json_each(scenes.tags_json) AS search_tag WHERE search_tag.type = 'text' AND unicode_contains(search_tag.value, ?)) OR unicode_contains(folders.name, ?))",
     );
-    params.push(pattern, pattern, pattern);
+    params.push(query, query, query);
   }
   if (folderId) {
     conditions.push("scenes.folder_id = ?");
@@ -897,14 +893,20 @@ export const createRequestHandler = (
       if (pathname === "/api/auth/logout" && req.method === "POST") {
         const token = getSessionToken(runtime, req);
         if (token) {
-          runtime.sessions.delete(token);
           try {
             runtime.db.run("DELETE FROM sessions WHERE token = ?", [
               hashSessionToken(runtime, token),
             ]);
-          } catch {
-            // ignore
+          } catch (error) {
+            console.info("[Sessions] logout failed", error);
+            return jsonResponse(
+              runtime,
+              req,
+              { error: "退出登录失败，请重试", code: "LOGOUT_FAILED" },
+              500,
+            );
           }
+          runtime.sessions.delete(token);
         }
         const headers = new Headers({
           "Clear-Site-Data": '"cookies"',

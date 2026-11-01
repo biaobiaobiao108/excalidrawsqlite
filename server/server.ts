@@ -173,7 +173,11 @@ export const startServer = async () => {
     runtime,
     (req) => serverRef.current?.requestIP(req)?.address,
   );
-  const mcpHandler = createMcpRequestHandler(runtime, handler);
+  const mcpHandler = createMcpRequestHandler(
+    runtime,
+    handler,
+    (req) => serverRef.current?.requestIP(req)?.address,
+  );
   const port = Number(process.env.PORT) || DEFAULT_PORT;
   const isDev =
     process.argv.includes("--dev") || process.env.NODE_ENV === "development";

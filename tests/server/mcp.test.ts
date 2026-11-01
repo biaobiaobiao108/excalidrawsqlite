@@ -1005,6 +1005,38 @@ describe("Excalidraw MCP endpoint", () => {
     }
   });
 
+  it("rate limits invalid MCP URL-token attempts", async () => {
+    const directory = path.join(
+      os.tmpdir(),
+      `excalidraw-mcp-rate-limit-${crypto.randomUUID()}`,
+    );
+    const runtime = createRuntime({
+      dbPath: path.join(directory, "database.db"),
+      filesDir: path.join(directory, "files"),
+      config: createServerConfig({
+        NODE_ENV: "test",
+        ALLOW_ANONYMOUS: "true",
+        MCP_TOKEN: "mcp-rate-test-secret",
+        AUTH_ATTEMPTS_PER_WINDOW: "2",
+      }),
+    });
+    resources.push({ runtime, directory });
+    const handler = createMcpRequestHandler(
+      runtime,
+      createRequestHandler(runtime),
+    );
+    const request = (token: string) =>
+      handler.fetch(new Request(`http://test.local/mcp/${token}`));
+
+    expect((await request("wrong-token")).status).toBe(401);
+    expect((await request("wrong-token")).status).toBe(401);
+    const limited = await request("mcp-rate-test-secret");
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBeTruthy();
+    expect(runtime.authAttempts.get("mcp:unknown")?.count).toBe(3);
+    await handler.close();
+  });
+
   it("requires its URL path token and supports drawing through normal scene routes", async () => {
     const directory = path.join(
       os.tmpdir(),
@@ -1017,6 +1049,7 @@ describe("Excalidraw MCP endpoint", () => {
         NODE_ENV: "test",
         ALLOW_ANONYMOUS: "true",
         MCP_TOKEN: "mcp-test-secret/+?%",
+        AUTH_ATTEMPTS_PER_WINDOW: "50",
       }),
     });
     resources.push({ runtime, directory });

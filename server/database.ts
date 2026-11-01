@@ -1,7 +1,7 @@
-import type { Database } from "bun:sqlite";
+import { Database } from "bun:sqlite";
 import type { ServerRuntime } from "./types";
 
-export const initializeDatabase = (db: Database) => {
+const createCurrentSchema = (db: Database) => {
   db.run("PRAGMA auto_vacuum = INCREMENTAL;");
   db.run("PRAGMA journal_mode = WAL;");
   db.run("PRAGMA foreign_keys = ON;");
@@ -9,7 +9,8 @@ export const initializeDatabase = (db: Database) => {
   db.run("PRAGMA synchronous = FULL;");
   db.run("PRAGMA wal_autocheckpoint = 1000;");
 
-  db.run(`
+  db.transaction(() => {
+    db.run(`
     CREATE TABLE IF NOT EXISTS scenes (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -30,7 +31,7 @@ export const initializeDatabase = (db: Database) => {
     );
   `);
 
-  db.run(`
+    db.run(`
     CREATE TABLE IF NOT EXISTS folders (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,
@@ -41,7 +42,7 @@ export const initializeDatabase = (db: Database) => {
     );
   `);
 
-  db.run(`
+    db.run(`
     CREATE TABLE IF NOT EXISTS files (
       id TEXT PRIMARY KEY,
       storage_path TEXT,
@@ -53,7 +54,7 @@ export const initializeDatabase = (db: Database) => {
     );
   `);
 
-  db.run(`
+    db.run(`
     CREATE TABLE IF NOT EXISTS scene_files (
       scene_id TEXT NOT NULL,
       file_id TEXT NOT NULL,
@@ -63,7 +64,7 @@ export const initializeDatabase = (db: Database) => {
     );
   `);
 
-  db.run(`
+    db.run(`
     CREATE TABLE IF NOT EXISTS sessions (
       token TEXT PRIMARY KEY,
       expires_at INTEGER NOT NULL,
@@ -71,8 +72,8 @@ export const initializeDatabase = (db: Database) => {
     );
   `);
 
-  // Retain tombstones when boards are removed: a retry must not resurrect one.
-  db.run(`
+    // Retain tombstones when boards are removed: a retry must not resurrect one.
+    db.run(`
     CREATE TABLE IF NOT EXISTS scene_create_requests (
       key_sha256 TEXT PRIMARY KEY,
       payload_sha256 TEXT NOT NULL,
@@ -80,62 +81,160 @@ export const initializeDatabase = (db: Database) => {
       expires_at INTEGER NOT NULL
     );
   `);
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scene_create_requests_expiry ON scene_create_requests(expires_at)",
-  );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scene_create_requests_expiry ON scene_create_requests(expires_at)",
+    );
 
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_updated_at ON scenes(updated_at DESC)",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_last_opened_at ON scenes(last_opened_at DESC)",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_deleted_at ON scenes(deleted_at)",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_folder_id ON scenes(folder_id)",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_active_updated_at ON scenes(updated_at DESC) WHERE deleted_at IS NULL",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_active_updated_id ON scenes(updated_at DESC, id DESC) WHERE deleted_at IS NULL",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_trash_deleted_at ON scenes(deleted_at DESC) WHERE deleted_at IS NOT NULL",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_trash_deleted_id ON scenes(deleted_at DESC, id DESC) WHERE deleted_at IS NOT NULL",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_active_folder_id ON scenes(folder_id) WHERE deleted_at IS NULL",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_active_folder_updated_id ON scenes(folder_id, updated_at DESC, id DESC) WHERE deleted_at IS NULL",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_active_created_id ON scenes(created_at DESC, id DESC) WHERE deleted_at IS NULL",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_active_folder_created_id ON scenes(folder_id, created_at DESC, id DESC) WHERE deleted_at IS NULL",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_active_opened_id ON scenes(last_opened_at DESC, id DESC) WHERE deleted_at IS NULL",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scenes_thumbnail_file_id ON scenes(thumbnail_file_id)",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_scene_files_file_id ON scene_files(file_id)",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_files_updated_at ON files(updated_at)",
-  );
-  db.run(
-    "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",
-  );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_updated_at ON scenes(updated_at DESC)",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_last_opened_at ON scenes(last_opened_at DESC)",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_deleted_at ON scenes(deleted_at)",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_folder_id ON scenes(folder_id)",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_active_updated_at ON scenes(updated_at DESC) WHERE deleted_at IS NULL",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_active_updated_id ON scenes(updated_at DESC, id DESC) WHERE deleted_at IS NULL",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_trash_deleted_at ON scenes(deleted_at DESC) WHERE deleted_at IS NOT NULL",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_trash_deleted_id ON scenes(deleted_at DESC, id DESC) WHERE deleted_at IS NOT NULL",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_active_folder_id ON scenes(folder_id) WHERE deleted_at IS NULL",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_active_folder_updated_id ON scenes(folder_id, updated_at DESC, id DESC) WHERE deleted_at IS NULL",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_active_created_id ON scenes(created_at DESC, id DESC) WHERE deleted_at IS NULL",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_active_folder_created_id ON scenes(folder_id, created_at DESC, id DESC) WHERE deleted_at IS NULL",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_active_opened_id ON scenes(last_opened_at DESC, id DESC) WHERE deleted_at IS NULL",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scenes_thumbnail_file_id ON scenes(thumbnail_file_id)",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_scene_files_file_id ON scene_files(file_id)",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_files_updated_at ON files(updated_at)",
+    );
+    db.run(
+      "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",
+    );
+  })();
   db.run("PRAGMA optimize=0x10002;");
+};
+
+const currentTables = [
+  "scenes",
+  "folders",
+  "files",
+  "scene_files",
+  "sessions",
+  "scene_create_requests",
+] as const;
+
+const schemaRows = (
+  db: Database,
+  pragma: "table_info" | "foreign_key_list",
+  table: string,
+) => db.query(`SELECT * FROM pragma_${pragma}(?)`).all(table);
+
+const uniqueIndexes = (db: Database, table: string) => {
+  const indexes = db
+    .query('SELECT name FROM pragma_index_list(?) WHERE "unique" = 1')
+    .all(table) as Array<{ name: string }>;
+  return indexes
+    .map(({ name }) =>
+      JSON.stringify(
+        db
+          .query("SELECT name FROM pragma_index_info(?) ORDER BY seqno")
+          .all(name),
+      ),
+    )
+    .sort();
+};
+
+const normalizedIndexSql = (sql: string) =>
+  sql
+    .replace(/\s+/g, " ")
+    .replace(/["`\[\]]/g, "")
+    .trim()
+    .toLowerCase();
+
+const assertCurrentSchema = (db: Database) => {
+  const existing = db
+    .query(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*'",
+    )
+    .all() as Array<{ name: string }>;
+  if (existing.length === 0) return;
+
+  const names = new Set(existing.map(({ name }) => name));
+  const expected = new Database(":memory:");
+  try {
+    createCurrentSchema(expected);
+    for (const table of currentTables) {
+      if (!names.has(table))
+        throw new Error(`SQLite schema 不兼容：缺少数据表 ${table}`);
+      for (const pragma of ["table_info", "foreign_key_list"] as const) {
+        if (
+          JSON.stringify(schemaRows(db, pragma, table)) !==
+          JSON.stringify(schemaRows(expected, pragma, table))
+        )
+          throw new Error(
+            `SQLite schema 不兼容：数据表 ${table} 的结构与当前版本不一致`,
+          );
+      }
+      if (
+        JSON.stringify(uniqueIndexes(db, table)) !==
+        JSON.stringify(uniqueIndexes(expected, table))
+      )
+        throw new Error(
+          `SQLite schema 不兼容：数据表 ${table} 的唯一约束与当前版本不一致`,
+        );
+    }
+    const indexes = expected
+      .query(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL",
+      )
+      .all() as Array<{ name: string; sql: string }>;
+    const findIndex = db.query(
+      "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+    );
+    for (const index of indexes) {
+      const actual = findIndex.get(index.name) as { sql: string } | null;
+      if (
+        actual &&
+        normalizedIndexSql(actual.sql) !== normalizedIndexSql(index.sql)
+      )
+        throw new Error(
+          `SQLite schema 不兼容：索引 ${index.name} 的定义与当前版本不一致`,
+        );
+    }
+  } finally {
+    expected.close();
+  }
+};
+
+export const initializeDatabase = (db: Database) => {
+  assertCurrentSchema(db);
+  createCurrentSchema(db);
 };
 
 export const performDatabaseMaintenance = (runtime: ServerRuntime) => {

@@ -34,6 +34,13 @@ import { inspectLayout, inspectLayoutSchema } from "./mcp-inspect";
 import { formatMcpSummary } from "./mcp-summary";
 
 import { randomBase64Url, timingSafeEqual } from "./crypto";
+import {
+  consumeRateLimit,
+  getClientKey,
+  registerInternalSession,
+  unregisterInternalSession,
+} from "./auth";
+import { AUTH_RATE_WINDOW_MS } from "./config";
 import { HttpError } from "./errors";
 import {
   getRequestOrigin,
@@ -43,7 +50,7 @@ import {
 } from "./http";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
-import type { ServerRuntime } from "./types";
+import type { RequestAddressResolver, ServerRuntime } from "./types";
 
 export const MCP_PATH = "/mcp";
 
@@ -439,6 +446,7 @@ const createInternalApi =
 export const createMcpRequestHandler = (
   runtime: ServerRuntime,
   apiHandler: ApiHandler,
+  requestAddressResolver?: RequestAddressResolver,
 ): McpRequestHandler => {
   const expectedToken = runtime.config.mcpToken;
   const maxConcurrentBodyRequests = Math.max(
@@ -456,6 +464,7 @@ export const createMcpRequestHandler = (
     // logic as the browser, using a private in-memory session never exposed to
     // network requests or persisted to SQLite.
     registerMcpCreateSession(runtime, internalSessionToken);
+    registerInternalSession(runtime, internalSessionToken);
     runtime.sessions.set(internalSessionToken, Number.MAX_SAFE_INTEGER);
   }
 
@@ -1819,6 +1828,23 @@ export const createMcpRequestHandler = (
         return response(runtime, req, null, { status: 204, headers });
       }
 
+      const rateKey = `mcp:${getClientKey(runtime, req, requestAddressResolver)}`;
+      const attempt = consumeRateLimit(
+        runtime.authAttempts,
+        rateKey,
+        runtime.config.authAttemptsPerWindow,
+        AUTH_RATE_WINDOW_MS,
+      );
+      if (!attempt.allowed) {
+        return jsonResponse(
+          runtime,
+          req,
+          { error: "MCP 授权尝试过多，请稍后重试", code: "MCP_RATE_LIMITED" },
+          429,
+          { "Retry-After": String(attempt.retryAfter) },
+        );
+      }
+
       const providedToken = getPathToken(req);
       const providedHash = new Uint8Array(
         new Bun.CryptoHasher("sha256").update(providedToken).digest(),
@@ -1826,10 +1852,7 @@ export const createMcpRequestHandler = (
       const expectedHash = new Uint8Array(
         new Bun.CryptoHasher("sha256").update(expectedToken).digest(),
       );
-      if (
-        !timingSafeEqual(providedHash, expectedHash) ||
-        providedToken !== expectedToken
-      ) {
+      if (!timingSafeEqual(providedHash, expectedHash)) {
         return jsonResponse(
           runtime,
           req,
@@ -1837,6 +1860,7 @@ export const createMcpRequestHandler = (
           401,
         );
       }
+      runtime.authAttempts.delete(rateKey);
 
       const releaseBodyRequestSlot = req.body
         ? await requestBodyLimiter.acquire(req.signal)
@@ -1873,6 +1897,7 @@ export const createMcpRequestHandler = (
       if (internalSessionToken) {
         runtime.sessions.delete(internalSessionToken);
         unregisterMcpCreateSession(runtime, internalSessionToken);
+        unregisterInternalSession(runtime, internalSessionToken);
       }
       await mcp?.close();
     },

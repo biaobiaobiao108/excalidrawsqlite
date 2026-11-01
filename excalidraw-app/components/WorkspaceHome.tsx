@@ -1912,7 +1912,7 @@ export const WorkspaceHome = ({
   const filteredScenes = useMemo(() => {
     const options = displayedPageOptions;
     const targetScenes = options.trash ? trashScenes : scenes;
-    const normalizedQuery = (options.query || "").toLocaleLowerCase();
+    const normalizedQuery = (options.query || "").toLowerCase();
     const filtered = targetScenes.filter((scene) => {
       if (options.opened && !scene.last_opened_at) {
         return false;
@@ -1932,7 +1932,7 @@ export const WorkspaceHome = ({
       }
       const searchable = [scene.name, scene.folder_name || "", ...scene.tags]
         .join(" ")
-        .toLocaleLowerCase();
+        .toLowerCase();
       return searchable.includes(normalizedQuery);
     });
     return sortScenes(filtered, options.sort || "updated");

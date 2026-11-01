@@ -16,6 +16,10 @@ import { isRecord, validateId } from "./validation";
 import type { ServerRuntime } from "./types";
 
 const thumbnailWriteLocks = new Map<string, Promise<void>>();
+const orphanFileCleanupCursors = new WeakMap<
+  ServerRuntime,
+  { updatedAt: number; id: string }
+>();
 type StorageMutationWaiter = {
   task: () => Promise<unknown>;
   resolve: (value: unknown) => void;
@@ -557,22 +561,42 @@ export const syncSceneFileReferences = (
 export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
   await withStorageMutationLock(runtime, async () => {
     const cutoff = Date.now() - ORPHAN_FILE_GRACE_MS;
-    const rows = runtime.db
-      .query(
-        `SELECT id, storage_path, updated_at FROM files
-         WHERE updated_at < ?
-           AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)
-           AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)
-         ORDER BY updated_at ASC
-         LIMIT ?`,
-      )
-      .all(cutoff, ORPHAN_FILE_CLEANUP_BATCH_SIZE) as Array<{
-      id: string;
-      storage_path: string | null;
-      updated_at: number;
-    }>;
+    const findRows = (cursor?: { updatedAt: number; id: string }) =>
+      runtime.db
+        .query(
+          `SELECT id, storage_path, updated_at FROM files
+           WHERE updated_at < ?
+             AND NOT EXISTS (SELECT 1 FROM scene_files WHERE scene_files.file_id = files.id)
+             AND NOT EXISTS (SELECT 1 FROM scenes WHERE scenes.thumbnail_file_id = files.id)
+             ${cursor ? "AND (updated_at, id) > (?, ?)" : ""}
+           ORDER BY updated_at ASC, id ASC
+           LIMIT ?`,
+        )
+        .all(
+          ...(cursor
+            ? [
+                cutoff,
+                cursor.updatedAt,
+                cursor.id,
+                ORPHAN_FILE_CLEANUP_BATCH_SIZE,
+              ]
+            : [cutoff, ORPHAN_FILE_CLEANUP_BATCH_SIZE]),
+        ) as Array<{
+        id: string;
+        storage_path: string | null;
+        updated_at: number;
+      }>;
+    let cursor = orphanFileCleanupCursors.get(runtime);
+    let rows = findRows(cursor);
+    if (rows.length === 0 && cursor) {
+      cursor = undefined;
+      orphanFileCleanupCursors.delete(runtime);
+      rows = findRows();
+    }
 
     for (const row of rows) {
+      cursor = { updatedAt: row.updated_at, id: row.id };
+      orphanFileCleanupCursors.set(runtime, cursor);
       const filePath = getFilePath(runtime, row.id);
       const quarantinePath = `${filePath}.${randomHex(8)}.gc`;
       let quarantined = false;
@@ -632,9 +656,16 @@ export const cleanupUntrackedFiles = async (runtime: ServerRuntime) => {
       const filePath = path.join(runtime.filesDir, entry.name);
       const stat = await fs.promises.stat(filePath).catch(() => null);
       if (stat && stat.mtimeMs < cutoff) {
-        await fs.promises.rm(filePath, { force: true });
-        cleaned += 1;
-        console.info("[Files] 清理未跟踪附件", { filePath });
+        try {
+          await fs.promises.rm(filePath, { force: true });
+          cleaned += 1;
+          console.info("[Files] 清理未跟踪附件", { filePath });
+        } catch (error) {
+          console.info("[Files] 清理未跟踪附件失败，保留文件", {
+            filePath,
+            error,
+          });
+        }
       }
     }
   });

@@ -7,9 +7,29 @@ import {
   WRITE_RATE_WINDOW_MS,
 } from "./config";
 import { hmacSha256Hex, randomBase64Url, timingSafeEqual } from "./crypto";
+import { HttpError } from "./errors";
 import { getCookie, isSecureRequest } from "./http";
 
 import type { RequestAddressResolver, ServerRuntime } from "./types";
+
+const internalSessions = new WeakMap<ServerRuntime, Set<string>>();
+
+export const registerInternalSession = (
+  runtime: ServerRuntime,
+  token: string,
+) => {
+  let sessions = internalSessions.get(runtime);
+  if (!sessions) {
+    sessions = new Set();
+    internalSessions.set(runtime, sessions);
+  }
+  sessions.add(token);
+};
+
+export const unregisterInternalSession = (
+  runtime: ServerRuntime,
+  token: string,
+) => internalSessions.get(runtime)?.delete(token);
 
 export const cleanupExpiredSessions = (runtime: ServerRuntime, now: number) => {
   for (const [token, expiresAt] of runtime.sessions) {
@@ -79,7 +99,6 @@ export const hashSessionToken = (runtime: ServerRuntime, token: string) =>
 export const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
   const token = randomBase64Url(32);
   const expiresAt = Date.now() + runtime.config.sessionTtlMs;
-  runtime.sessions.set(token, expiresAt);
   try {
     runtime.db.run(
       "INSERT OR REPLACE INTO sessions (token, expires_at, created_at) VALUES (?, ?, ?)",
@@ -87,7 +106,13 @@ export const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
     );
   } catch (error) {
     console.info("[Sessions] failed to persist session", error);
+    throw new HttpError(
+      500,
+      "SESSION_PERSISTENCE_FAILED",
+      "无法创建登录会话，请重试",
+    );
   }
+  runtime.sessions.set(token, expiresAt);
   const secure = isSecureRequest(runtime, req);
   const name =
     runtime.config.nodeEnv === "production" && secure
@@ -139,21 +164,22 @@ export const isAuthorized = (runtime: ServerRuntime, req: Request) => {
   if (!token) {
     return false;
   }
-  let expiresAt = runtime.sessions.get(token);
-  if (expiresAt === undefined) {
-    try {
-      const row = getSessionStatements(runtime).getExpiresAt.get(
-        hashSessionToken(runtime, token),
-      ) as {
-        expires_at: number;
-      } | null;
-      if (row) {
-        expiresAt = row.expires_at;
-        runtime.sessions.set(token, expiresAt);
-      }
-    } catch (error) {
-      console.info("[Sessions] query failed", error);
-    }
+  if (internalSessions.get(runtime)?.has(token)) {
+    return true;
+  }
+  // The database is authoritative: another server process may revoke a
+  // session, so an in-process cache cannot safely authorize requests.
+  let expiresAt: number | undefined;
+  try {
+    const row = getSessionStatements(runtime).getExpiresAt.get(
+      hashSessionToken(runtime, token),
+    ) as {
+      expires_at: number;
+    } | null;
+    if (row) expiresAt = row.expires_at;
+  } catch (error) {
+    console.info("[Sessions] query failed", error);
+    return false;
   }
   if (!expiresAt || expiresAt <= Date.now()) {
     runtime.sessions.delete(token);

@@ -26,6 +26,12 @@ export const createRuntime = (options: {
     fs.accessSync(path.dirname(dbPath), fs.constants.W_OK);
     fs.accessSync(filesDir, fs.constants.W_OK);
     db = new Database(dbPath, { create: true });
+    db.function("unicode_contains", { deterministic: true }, (value, query) => {
+      if (typeof value !== "string" || typeof query !== "string") {
+        return 0;
+      }
+      return Number(value.toLowerCase().includes(query.toLowerCase()));
+    });
     initializeDatabase(db);
 
     return {
@@ -49,8 +55,15 @@ export const createRuntime = (options: {
     } catch {
       // Ignore cleanup failures while reporting the initialization error.
     }
+    const schemaError =
+      error instanceof Error &&
+      /^SQLite schema 不兼容：(缺少数据表 [a-z_]+|数据表 [a-z_]+ 的结构与当前版本不一致|数据表 [a-z_]+ 的唯一约束与当前版本不一致|索引 [a-z_]+ 的定义与当前版本不一致)$/.test(
+        error.message,
+      )
+        ? error.message
+        : undefined;
     throw new Error(
-      `无法初始化持久化存储（数据库：${dbPath}，文件目录：${filesDir}）`,
+      `无法初始化持久化存储（数据库：${dbPath}，文件目录：${filesDir}）${schemaError ? `：${schemaError}` : "，请查看服务端日志"}`,
       { cause: error },
     );
   }
