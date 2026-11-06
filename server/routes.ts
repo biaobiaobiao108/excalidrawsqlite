@@ -410,12 +410,25 @@ const listScenePage = (runtime: ServerRuntime, url: URL, trashed: boolean) => {
     );
     params.push(tag);
   }
-  const totalCount = getScenePageCount(runtime, conditions, params);
+  const includeTotal = url.searchParams.get("include_total");
+  if (
+    includeTotal !== null &&
+    includeTotal !== "true" &&
+    includeTotal !== "false"
+  ) {
+    throw new HttpError(400, "INVALID_INCLUDE_TOTAL", "include_total 参数无效");
+  }
+  const totalCount =
+    includeTotal === "false"
+      ? null
+      : getScenePageCount(runtime, conditions, params);
   if (cursor) {
     const column = trashed
       ? "scenes.deleted_at"
       : requestedSort === "opened"
-        ? "COALESCE(scenes.last_opened_at, 0)"
+        ? opened === "true"
+          ? "scenes.last_opened_at"
+          : "COALESCE(scenes.last_opened_at, 0)"
         : requestedSort === "created"
           ? "scenes.created_at"
           : "scenes.updated_at";
@@ -426,7 +439,9 @@ const listScenePage = (runtime: ServerRuntime, url: URL, trashed: boolean) => {
   const orderColumn = trashed
     ? "scenes.deleted_at"
     : requestedSort === "opened"
-      ? "COALESCE(scenes.last_opened_at, 0)"
+      ? opened === "true"
+        ? "scenes.last_opened_at"
+        : "COALESCE(scenes.last_opened_at, 0)"
       : requestedSort === "created"
         ? "scenes.created_at"
         : "scenes.updated_at";
@@ -484,11 +499,10 @@ const updateScenesAfterFileReplacement = (
               ) AS references_file,
               scenes.thumbnail_file_id = ? AS is_thumbnail
        FROM scenes
-       WHERE EXISTS (
-               SELECT 1 FROM scene_files
-               WHERE scene_files.scene_id = scenes.id AND scene_files.file_id = ?
-             )
-          OR scenes.thumbnail_file_id = ?`,
+       WHERE scenes.id IN (
+         SELECT scene_id FROM scene_files WHERE file_id = ?
+         UNION SELECT id FROM scenes WHERE thumbnail_file_id = ?
+       )`,
     )
     .all(fileId, fileId, fileId, fileId) as Array<{
     id: string;
@@ -1923,7 +1937,6 @@ export const createRequestHandler = (
         const tagsJson = JSON.stringify(tags);
         const elementCount = elements.length;
         const contentBytes = Buffer.byteLength(elementsJson, "utf8");
-        const contentSha256 = sha256Hex(elementsJson);
         const contentChanged =
           existing.elements !== elementsJson ||
           existing.app_state !== appStateJson;
@@ -1943,6 +1956,7 @@ export const createRequestHandler = (
             unchanged: true,
           });
         }
+        const contentSha256 = sha256Hex(elementsJson);
         const now = Date.now();
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {

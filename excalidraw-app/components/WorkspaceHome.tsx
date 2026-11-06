@@ -2942,6 +2942,40 @@ export const WorkspaceHome = ({
     showContextMenu(event, items);
   };
 
+  const boardActionsRef = useRef({
+    handleToggleFavorite,
+    openMetadataDialog,
+    handleDeleteScene,
+    handleRestoreScene,
+    openBoardContextMenu,
+  });
+  useLayoutEffect(() => {
+    boardActionsRef.current = {
+      handleToggleFavorite,
+      openMetadataDialog,
+      handleDeleteScene,
+      handleRestoreScene,
+      openBoardContextMenu,
+    };
+  });
+  const boardActions = useMemo(
+    () => ({
+      toggleFavorite: (scene: CloudSceneSummary) =>
+        boardActionsRef.current.handleToggleFavorite(scene),
+      edit: (scene: CloudSceneSummary) =>
+        boardActionsRef.current.openMetadataDialog(scene),
+      delete: (scene: CloudSceneSummary) =>
+        boardActionsRef.current.handleDeleteScene(scene),
+      restore: (scene: CloudSceneSummary) =>
+        boardActionsRef.current.handleRestoreScene(scene),
+      contextMenu: (
+        scene: CloudSceneSummary,
+        event: React.MouseEvent<HTMLElement>,
+      ) => boardActionsRef.current.openBoardContextMenu(scene, event),
+    }),
+    [],
+  );
+
   const renderBoardCard = (scene: CloudSceneSummary) => (
     <BoardCard
       key={scene.id}
@@ -2949,11 +2983,11 @@ export const WorkspaceHome = ({
       isTrash={!!displayedPageOptions.trash}
       onOpen={navigateToScene}
       onPreload={onPreloadScene}
-      onToggleFavorite={handleToggleFavorite}
-      onEdit={openMetadataDialog}
-      onDelete={handleDeleteScene}
-      onRestore={handleRestoreScene}
-      onOpenContextMenu={openBoardContextMenu}
+      onToggleFavorite={boardActions.toggleFavorite}
+      onEdit={boardActions.edit}
+      onDelete={boardActions.delete}
+      onRestore={boardActions.restore}
+      onOpenContextMenu={boardActions.contextMenu}
       onToggleSelection={handleToggleSceneSelection}
       hasSelectionActive={selectedSceneIds.size > 0}
       isSelected={selectedSceneIds.has(scene.id)}

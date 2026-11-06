@@ -15,15 +15,7 @@ import {
   DEFAULT_SIDEBAR,
   debounce,
 } from "@excalidraw/common";
-import {
-  createStore,
-  entries,
-  del,
-  getMany,
-  set,
-  setMany,
-  get,
-} from "idb-keyval";
+import { createStore, del, getMany, set, setMany, get } from "idb-keyval";
 
 import { getNonDeletedElements } from "@excalidraw/element";
 
@@ -51,20 +43,26 @@ export const localStorageQuotaExceededAtom = atom(false);
 class LocalFileManager extends FileManager {
   clearObsoleteFiles = async (opts: { currentFileIds: FileId[] }) => {
     const currentFileIds = new Set(opts.currentFileIds);
-    await entries(filesStore).then((entries) => {
-      for (const [id, imageData] of entries as [FileId, BinaryFileData][]) {
-        // if image is unused (not on canvas) & is older than 1 day, delete it
-        // from storage. We check `lastRetrieved` we care about the last time
-        // the image was used (loaded on canvas), not when it was initially
-        // created.
+    await filesStore("readwrite", (store) => {
+      const request = store.openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        const imageData = cursor.value as BinaryFileData;
         if (
           (!imageData.lastRetrieved ||
             Date.now() - imageData.lastRetrieved > 24 * 3600 * 1000) &&
-          !currentFileIds.has(id as FileId)
+          !currentFileIds.has(cursor.primaryKey as FileId)
         ) {
-          del(id, filesStore);
+          cursor.delete();
         }
-      }
+        cursor.continue();
+      };
+      return new Promise<void>((resolve, reject) => {
+        store.transaction.oncomplete = () => resolve();
+        store.transaction.onabort = () => reject(store.transaction.error);
+        store.transaction.onerror = () => reject(store.transaction.error);
+      });
     });
   };
 }

@@ -338,6 +338,15 @@ describe("cloud persistence server", () => {
     expect(secondPage.items).toHaveLength(5);
     expect(secondPage.totalCount).toBe(105);
     expect(secondPage.nextCursor).toBeNull();
+    const withoutCount = await readPage(
+      `/api/scenes?limit=100&include_total=false&cursor=${encodeURIComponent(firstPage.nextCursor!)}`,
+    );
+    expect(withoutCount.items).toEqual(secondPage.items);
+    expect(withoutCount.totalCount).toBeNull();
+    expect(
+      (await request(handler, "/api/scenes?include_total=invalid", { headers }))
+        .status,
+    ).toBe(400);
 
     for (const [query, count] of [
       ["favorite=true", 53],
@@ -760,6 +769,25 @@ describe("cloud persistence server", () => {
     expect(budget.getStats().currentBytes).toBe(128);
     expect(budget.getStats().peakBytes).toBe(128);
     releaseJsonBodyMemoryBudget(req);
+    expect(budget.getStats().currentBytes).toBe(0);
+  });
+
+  it("reserves declared JSON size and rejects bodies larger than that reservation", async () => {
+    const budget = new BodyMemoryBudget(128);
+    const req = new Request("http://localhost/api/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": "7" },
+      body: '{"a":1}',
+    });
+    expect(await readJson(req, 128, budget)).toEqual({ a: 1 });
+    expect(budget.getStats().currentBytes).toBe(7);
+    releaseJsonBodyMemoryBudget(req);
+    const dishonest = new Request("http://localhost/api/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": "2" },
+      body: '{"a":1}',
+    });
+    await expect(readJson(dishonest, 128, budget)).rejects.toThrow();
     expect(budget.getStats().currentBytes).toBe(0);
   });
 
@@ -1311,6 +1339,24 @@ describe("cloud persistence server", () => {
         "unopened_a",
       ]);
     }
+    const recent = await request(
+      handler,
+      "/api/scenes?opened=true&sort=opened&limit=2",
+      { headers: { Cookie: cookie } },
+    );
+    const recentPage = await responseJson<Page>(recent);
+    expect(recentPage.items.map(({ id }) => id)).toEqual([
+      "opened_c",
+      "opened_b",
+    ]);
+    const recentNext = await request(
+      handler,
+      `/api/scenes?opened=true&sort=opened&limit=2&cursor=${encodeURIComponent(recentPage.nextCursor!)}`,
+      { headers: { Cookie: cookie } },
+    );
+    expect(
+      (await responseJson<Page>(recentNext)).items.map(({ id }) => id),
+    ).toEqual(["opened_a"]);
     const byUpdate = [
       "unopened_a",
       "unopened_c",

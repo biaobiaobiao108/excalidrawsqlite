@@ -21,16 +21,29 @@ describe("workspace loaded-page refresh", () => {
         return {
           items: boards.slice(offset, end),
           nextCursor: end < boards.length ? String(end) : null,
-          totalCount: boards.length,
+          totalCount: options.cursor ? 0 : boards.length,
         };
       },
       () => true,
     );
     expect(result?.items).toEqual(boards.slice(0, 105));
     expect(result?.nextCursor).toBe("105");
+    expect(result?.totalCount).toBe(110);
     expect(requests).toEqual([
-      { tag: "work", sort: "created", cursor: null, limit: 100 },
-      { tag: "work", sort: "created", cursor: "100", limit: 5 },
+      {
+        tag: "work",
+        sort: "created",
+        cursor: null,
+        limit: 100,
+        includeTotal: true,
+      },
+      {
+        tag: "work",
+        sort: "created",
+        cursor: "100",
+        limit: 5,
+        includeTotal: false,
+      },
     ]);
   });
 

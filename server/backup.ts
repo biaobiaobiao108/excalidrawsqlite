@@ -237,25 +237,42 @@ const stageAttachments = async (
 ) => {
   await fs.promises.mkdir(stageDir, { recursive: true });
   const staged = new Map<string, number>();
-  for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
-    if (!row.storage_path) {
-      continue;
-    }
-    const source = getFilePath(runtime, row.id);
-    if (!(await fileExists(source))) {
-      throw new Error(`附件文件缺失：${row.id}`);
-    }
-    const target = path.join(stageDir, row.id);
-    try {
-      await fs.promises.link(source, target);
-    } catch (error: any) {
-      if (error?.code !== "EEXIST") {
-        // Filesystems without hard link support still get a consistent copy;
-        // correctness is preserved, only the lock is held for longer.
-        await fs.promises.copyFile(source, target);
+  let batch: Promise<void>[] = [];
+  const finishBatch = async () => {
+    const results = await Promise.allSettled(batch);
+    batch = [];
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
+  };
+  try {
+    for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
+      if (!row.storage_path) {
+        continue;
       }
+      batch.push(
+        (async () => {
+          const source = getFilePath(runtime, row.id);
+          if (!(await fileExists(source))) {
+            throw new Error(`附件文件缺失：${row.id}`);
+          }
+          const target = path.join(stageDir, row.id);
+          try {
+            await fs.promises.link(source, target);
+          } catch (error: any) {
+            if (error?.code !== "EEXIST") {
+              // Preserve a consistent snapshot on filesystems without hard links.
+              await fs.promises.copyFile(source, target);
+            }
+          }
+          staged.set(row.id, Bun.file(target).size);
+        })(),
+      );
+      if (batch.length >= 8) await finishBatch();
     }
-    staged.set(row.id, Bun.file(target).size);
+  } finally {
+    // Drain all started filesystem operations before releasing the lock, even
+    // if iteration or staging failed.
+    await finishBatch();
   }
   return staged;
 };

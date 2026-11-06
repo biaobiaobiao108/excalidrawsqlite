@@ -15,6 +15,7 @@ export const refreshWorkspacePage = async (
   const items: CloudScenePage["items"] = [];
   const seenIds = new Set<string>();
   let cursor: string | null = null;
+  let totalCount = 0;
   do {
     if (!isCurrent()) {
       return null;
@@ -22,11 +23,13 @@ export const refreshWorkspacePage = async (
     const page = await fetchPage({
       ...options,
       cursor,
+      includeTotal: cursor === null,
       limit: Math.min(100, targetCount - items.length),
     });
     if (!isCurrent()) {
       return null;
     }
+    if (cursor === null) totalCount = page.totalCount;
     for (const item of page.items) {
       if (!seenIds.has(item.id)) {
         seenIds.add(item.id);
@@ -34,7 +37,7 @@ export const refreshWorkspacePage = async (
       }
     }
     if (!page.nextCursor || items.length >= targetCount) {
-      return { ...page, items };
+      return { ...page, items, totalCount };
     }
     cursor = page.nextCursor;
   } while (true);

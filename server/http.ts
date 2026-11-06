@@ -316,12 +316,21 @@ export const readJson = async (
       "请求必须使用 JSON 格式",
     );
   }
+  const declaredLength = req.headers.get("content-length");
+  const length =
+    declaredLength !== null && /^\d+$/.test(declaredLength)
+      ? Number(declaredLength)
+      : NaN;
+  const bodyLimit =
+    Number.isSafeInteger(length) && length <= maxBytes ? length : maxBytes;
   const reservedBytes = bodyMemoryBudget
-    ? await bodyMemoryBudget.acquire(maxBytes, req.signal)
+    ? await bodyMemoryBudget.acquire(bodyLimit, req.signal)
     : 0;
   let retained = false;
   try {
-    const text = await readBodyText(req, maxBytes);
+    // Enforce the declared limit while reading: an incorrect Content-Length
+    // must never let a request consume more than its reservation.
+    const text = await readBodyText(req, bodyLimit);
     try {
       const result = JSON.parse(text) as unknown;
       if (bodyMemoryBudget && reservedBytes > 0) {

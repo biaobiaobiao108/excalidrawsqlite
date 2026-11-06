@@ -494,12 +494,18 @@ export const assertReferencedFilesExist = async (
     }
   }
 
-  for (const fileId of fileIds) {
-    const row = rowsById.get(fileId);
-    if (
-      !row?.storage_path ||
-      !(await fileExists(getFilePath(runtime, fileId)))
-    ) {
+  // Keep the check under the storage lock, but avoid one filesystem round trip
+  // per image in series. Bound concurrency to avoid flooding the filesystem.
+  for (let offset = 0; offset < fileIds.length; offset += 8) {
+    const chunk = fileIds.slice(offset, offset + 8);
+    const exists = await Promise.all(
+      chunk.map((fileId) =>
+        rowsById.get(fileId)?.storage_path
+          ? fileExists(getFilePath(runtime, fileId))
+          : false,
+      ),
+    );
+    if (exists.some((value) => !value)) {
       throw new HttpError(422, "MISSING_FILE", "画板引用的图片尚未上传完成");
     }
   }
@@ -634,41 +640,48 @@ export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
 };
 
 export const cleanupUntrackedFiles = async (runtime: ServerRuntime) => {
-  await withStorageMutationLock(runtime, async () => {
-    const knownFileIds = new Set(
-      (
-        runtime.db.query("SELECT id FROM files").all() as Array<{ id: string }>
-      ).map((row) => row.id),
-    );
-    const cutoff = Date.now() - ORPHAN_FILE_GRACE_MS;
-    let cleaned = 0;
-    for (const entry of await fs.promises.readdir(runtime.filesDir, {
-      withFileTypes: true,
-    })) {
-      if (
-        cleaned >= UNTRACKED_FILE_CLEANUP_BATCH_SIZE ||
-        !entry.isFile() ||
-        !FILE_ID_PATTERN.test(entry.name) ||
-        knownFileIds.has(entry.name)
-      ) {
-        continue;
-      }
-      const filePath = path.join(runtime.filesDir, entry.name);
-      const stat = await fs.promises.stat(filePath).catch(() => null);
-      if (stat && stat.mtimeMs < cutoff) {
-        try {
+  const knownFileIds = new Set(
+    (
+      runtime.db.query("SELECT id FROM files").all() as Array<{ id: string }>
+    ).map((row) => row.id),
+  );
+  const cutoff = Date.now() - ORPHAN_FILE_GRACE_MS;
+  let cleaned = 0;
+  for (const entry of await fs.promises.readdir(runtime.filesDir, {
+    withFileTypes: true,
+  })) {
+    if (
+      cleaned >= UNTRACKED_FILE_CLEANUP_BATCH_SIZE ||
+      !entry.isFile() ||
+      !FILE_ID_PATTERN.test(entry.name) ||
+      knownFileIds.has(entry.name)
+    ) {
+      continue;
+    }
+    const filePath = path.join(runtime.filesDir, entry.name);
+    const stat = await fs.promises.stat(filePath).catch(() => null);
+    if (stat && stat.mtimeMs < cutoff) {
+      try {
+        await withStorageMutationLock(runtime, async () => {
+          // An upload may have committed since the directory scan began.
+          if (
+            runtime.db.query("SELECT 1 FROM files WHERE id = ?").get(entry.name)
+          )
+            return;
+          const current = await fs.promises.stat(filePath).catch(() => null);
+          if (!current || current.mtimeMs >= cutoff) return;
           await fs.promises.rm(filePath, { force: true });
           cleaned += 1;
           console.info("[Files] 清理未跟踪附件", { filePath });
-        } catch (error) {
-          console.info("[Files] 清理未跟踪附件失败，保留文件", {
-            filePath,
-            error,
-          });
-        }
+        });
+      } catch (error) {
+        console.info("[Files] 清理未跟踪附件失败，保留文件", {
+          filePath,
+          error,
+        });
       }
     }
-  });
+  }
 };
 
 const fileMatchesMetadata = async (

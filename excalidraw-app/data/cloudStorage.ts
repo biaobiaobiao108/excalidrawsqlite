@@ -544,6 +544,7 @@ export type CloudScenePageOptions = {
   favorite?: boolean;
   opened?: boolean;
   sort?: "updated" | "opened" | "created";
+  includeTotal?: boolean;
 };
 
 export async function fetchCloudScenePage(
@@ -555,6 +556,9 @@ export async function fetchCloudScenePage(
   });
   if (options.cursor) {
     params.set("cursor", options.cursor);
+  }
+  if (options.includeTotal === false) {
+    params.set("include_total", "false");
   }
   if (options.query?.trim()) {
     params.set("q", options.query.trim());
@@ -574,12 +578,16 @@ export async function fetchCloudScenePage(
   if (options.sort && options.sort !== "updated") {
     params.set("sort", options.sort);
   }
-  return fetchJson<CloudScenePage>(
+  const page = await fetchJson<
+    Omit<CloudScenePage, "totalCount"> & { totalCount: number | null }
+  >(
     `${options.trash ? "/api/scenes/trash" : "/api/scenes"}?${params.toString()}`,
     { headers: getHeaders() },
     fallback,
     CLOUD_READ_RETRIES,
   );
+  // A refresh reuses its first page's count when subsequent pages omit it.
+  return { ...page, totalCount: page.totalCount ?? 0 };
 }
 
 export async function fetchCloudScene(
