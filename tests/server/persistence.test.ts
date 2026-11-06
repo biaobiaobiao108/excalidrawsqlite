@@ -564,7 +564,7 @@ describe("cloud persistence server", () => {
   it("initializes the current versioned SQLite schema", () => {
     const { runtime } = createTestRuntime();
     expect(runtime.db.query("PRAGMA user_version").get()).toEqual({
-      user_version: 1,
+      user_version: 2,
     });
     expect(
       (
@@ -587,7 +587,7 @@ describe("cloud persistence server", () => {
           name: string;
         }>
       ).map((column) => column.name),
-    ).toContain("content_sha256");
+    ).not.toContain("content_sha256");
   });
 
   it("surfaces configuration errors before opening persistent storage", () => {
@@ -3047,8 +3047,8 @@ describe("cloud persistence server", () => {
     runtime.db.run(
       `INSERT INTO scenes
        (id, name, elements, app_state, created_at, updated_at, revision,
-        tags_json, is_favorite, element_count, content_bytes, content_sha256)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        tags_json, is_favorite, element_count, content_bytes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         "large_backup_scene",
         "large",
@@ -3061,7 +3061,6 @@ describe("cloud persistence server", () => {
         0,
         0,
         elements.length,
-        "",
       ],
     );
 

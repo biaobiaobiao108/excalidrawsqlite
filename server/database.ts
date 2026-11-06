@@ -133,7 +133,7 @@ const createBaselineSchema = (db: Database) => {
 };
 
 export const BASELINE_SCHEMA_VERSION = 1;
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export type SchemaMigration = {
   sourceVersion: number;
@@ -147,7 +147,18 @@ export type DatabaseInitializationOptions = {
 };
 
 // Add only consecutive transitions; released migrations must not be rewritten.
-const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [];
+const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
+  {
+    sourceVersion: 1,
+    targetVersion: 2,
+    migrate(db) {
+      db.run("DROP INDEX idx_scenes_active_updated_at");
+      db.run("DROP INDEX idx_scenes_trash_deleted_at");
+      db.run("DROP INDEX idx_scenes_active_folder_id");
+      db.run("ALTER TABLE scenes DROP COLUMN content_sha256");
+    },
+  },
+];
 
 const readSchemaVersion = (db: Database) =>
   Number(

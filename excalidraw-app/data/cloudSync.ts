@@ -514,7 +514,18 @@ export type CloudRealtimeEvent =
         | "deleted"
         | "restored";
     }
-  | { type: "workspace_changed"; updatedAt: number }
+  | {
+      type: "workspace_changed";
+      updatedAt: number;
+      sceneId?: string;
+      changeKind?:
+        | "created"
+        | "content"
+        | "metadata"
+        | "thumbnail"
+        | "deleted"
+        | "restored";
+    }
   | { type: "ready" | "subscribed"; sceneId: string | null };
 
 const parseCloudRealtimeEvent = (value: unknown): CloudRealtimeEvent | null => {
@@ -786,7 +797,7 @@ export class CloudSaveQueue {
         snapshot.baseRevision ?? this.revisions.get(snapshot.sceneId),
     });
     this.pending.set(snapshot.sceneId, queuedSnapshot);
-    void this.persistSnapshot(queuedSnapshot);
+    void this.persistSnapshot(queuedSnapshot, true);
     if (
       !(this.isSaving && this.activeSceneId === snapshot.sceneId) &&
       !this.blocked.has(snapshot.sceneId)
@@ -1273,9 +1284,11 @@ export class CloudSaveQueue {
     return generation;
   }
 
-  private persistSnapshot(snapshot: CloudSaveSnapshot) {
+  private persistSnapshot(snapshot: CloudSaveSnapshot, alreadyCloned = false) {
     const generation = this.bumpGeneration(snapshot.sceneId);
-    const persistedSnapshot = cloneCloudSaveSnapshot(snapshot);
+    const persistedSnapshot = alreadyCloned
+      ? snapshot
+      : cloneCloudSaveSnapshot(snapshot);
     return this.queuePersistenceWrite(snapshot.sceneId, {
       generation,
       snapshot: persistedSnapshot,

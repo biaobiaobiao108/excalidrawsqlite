@@ -22,6 +22,7 @@ import {
   deleteCloudScene,
   fetchCloudFolders,
   fetchCloudScenePage,
+  fetchCloudSceneSummary,
   fetchCloudWorkspaceStats,
   permanentlyDeleteCloudScenes,
   renameCloudFolder,
@@ -671,9 +672,7 @@ const BoardThumbnail = ({
   return (
     <div ref={containerRef} className="board-thumbnail">
       <img
-        src={`/api/files/${encodeURIComponent(thumbnailId)}?v=${
-          scene.updated_at
-        }`}
+        src={`/api/files/${encodeURIComponent(thumbnailId)}?v=${scene.updated_at}${scene.thumbnailVersion ? `&t=${scene.thumbnailVersion}` : ""}`}
         alt={`${scene.name} 预览`}
         width={640}
         height={400}
@@ -1811,6 +1810,9 @@ export const WorkspaceHome = ({
 
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const thumbnailRequests = new Map<string, object>();
+    let closed = false;
+    let thumbnailVersion = 0;
     const unsubscribe = subscribeCloudRealtime(null, (event) => {
       if (
         event.type !== "scene_changed" &&
@@ -1818,6 +1820,67 @@ export const WorkspaceHome = ({
       ) {
         return;
       }
+      if (
+        event.type === "workspace_changed" &&
+        event.changeKind === "thumbnail" &&
+        typeof event.sceneId === "string" &&
+        loadedScenesRef.current.scenes.some(
+          (scene) => scene.id === event.sceneId,
+        ) &&
+        thumbnailRequests.size < 100 &&
+        !refreshTimer
+      ) {
+        const id = event.sceneId;
+        thumbnailVersion = Math.max(
+          event.updatedAt,
+          Date.now(),
+          thumbnailVersion + 1,
+        );
+        const version = thumbnailVersion;
+        const token = {};
+        thumbnailRequests.set(id, token);
+        void fetchCloudSceneSummary(id)
+          .then((summary) => {
+            if (closed || thumbnailRequests.get(id) !== token) return;
+            const current = loadedScenesRef.current.scenes.find(
+              (scene) => scene.id === id,
+            );
+            if (current && current.revision !== summary.revision) {
+              void loadWorkspace();
+              return;
+            }
+            setScenes((current) =>
+              current.map((scene) =>
+                scene.id === id && scene.revision === summary.revision
+                  ? {
+                      ...scene,
+                      thumbnail_file_id: summary.thumbnail_file_id,
+                      thumbnailVersion: version,
+                    }
+                  : scene,
+              ),
+            );
+          })
+          .catch(() => {
+            if (!closed && thumbnailRequests.get(id) === token)
+              void loadWorkspace();
+          })
+          .finally(() => {
+            if (thumbnailRequests.get(id) === token)
+              thumbnailRequests.delete(id);
+          });
+        return;
+      }
+      if (
+        event.type === "workspace_changed" &&
+        event.changeKind === "thumbnail" &&
+        typeof event.sceneId === "string" &&
+        !loadedScenesRef.current.scenes.some(
+          (scene) => scene.id === event.sceneId,
+        )
+      )
+        return;
+      thumbnailRequests.clear();
       if (refreshTimer) {
         clearTimeout(refreshTimer);
       }
@@ -1827,6 +1890,8 @@ export const WorkspaceHome = ({
       }, 250);
     });
     return () => {
+      closed = true;
+      thumbnailRequests.clear();
       unsubscribe();
       if (refreshTimer) {
         clearTimeout(refreshTimer);

@@ -72,7 +72,7 @@ describe("SQLite database migrations", () => {
 
   it("adopts a complete unversioned baseline without losing stored data", () => {
     const db = createDatabase();
-    initializeDatabase(db);
+    initializeDatabase(db, { currentSchemaVersion: 1 });
     db.query(
       "INSERT INTO folders (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
     ).run("folder-1", "Existing folder", 100, 200);
@@ -93,7 +93,7 @@ describe("SQLite database migrations", () => {
 
   it("upgrades the known unversioned folder layout and missing indexes", () => {
     const db = createDatabase();
-    initializeDatabase(db);
+    initializeDatabase(db, { currentSchemaVersion: 1 });
     db.run(
       "INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES ('f', 'old', 'star', '#123456', 1, 2)",
     );
@@ -127,11 +127,11 @@ describe("SQLite database migrations", () => {
 
   it("restores known missing indexes in an otherwise current unversioned schema", () => {
     const db = createDatabase();
-    initializeDatabase(db);
+    initializeDatabase(db, { currentSchemaVersion: 1 });
     db.run("DROP INDEX idx_scenes_active_opened_id");
     db.run("PRAGMA user_version = 0");
     initializeDatabase(db);
-    expect(userVersion(db)).toBe(1);
+    expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
     expect(
       db
         .query(
@@ -143,7 +143,7 @@ describe("SQLite database migrations", () => {
 
   it("rejects a modified historical index without changing an unversioned database", () => {
     const db = createDatabase();
-    initializeDatabase(db);
+    initializeDatabase(db, { currentSchemaVersion: 1 });
     db.run("DROP INDEX idx_scenes_active_opened_id");
     db.run("CREATE INDEX idx_scenes_active_opened_id ON scenes(name)");
     db.run("PRAGMA user_version = 0");
@@ -155,7 +155,7 @@ describe("SQLite database migrations", () => {
 
   it("leaves legacy data and schema intact when duplicate folder names prevent upgrade", () => {
     const db = createDatabase();
-    initializeDatabase(db);
+    initializeDatabase(db, { currentSchemaVersion: 1 });
     makeLegacyFolders(db);
     db.run(
       "INSERT INTO folders (id, name, created_at, updated_at) VALUES ('a', 'same', 1, 1), ('b', 'same', 2, 2)",
@@ -197,20 +197,49 @@ describe("SQLite database migrations", () => {
 
   it("does not adopt an unversioned database when a required migration is missing", () => {
     const db = createDatabase();
-    initializeDatabase(db);
+    initializeDatabase(db, { currentSchemaVersion: 1 });
     db.run("PRAGMA user_version = 0");
     const before = schemaSnapshot(db);
 
-    expect(() => initializeDatabase(db, { currentSchemaVersion: 2 })).toThrow(
-      "1 -> 2",
-    );
+    expect(() =>
+      initializeDatabase(db, { currentSchemaVersion: 2, migrations: [] }),
+    ).toThrow("1 -> 2");
     expect(userVersion(db)).toBe(0);
     expect(schemaSnapshot(db)).toEqual(before);
   });
 
+  it("upgrades baseline boards while removing redundant indexes and the unused hash", () => {
+    const db = createDatabase();
+    initializeDatabase(db, { currentSchemaVersion: 1 });
+    db.run(
+      "INSERT INTO scenes(id,name,elements,app_state,created_at,updated_at,content_sha256) VALUES ('kept','board','[{\"id\":1}]','{}',1,2,'old-hash')",
+    );
+    initializeDatabase(db);
+    expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
+    expect(
+      db.query("SELECT elements FROM scenes WHERE id='kept'").get(),
+    ).toEqual({ elements: '[{"id":1}]' });
+    expect(
+      (
+        db.query("PRAGMA table_info(scenes)").all() as Array<{ name: string }>
+      ).some((column) => column.name === "content_sha256"),
+    ).toBe(false);
+    for (const name of [
+      "idx_scenes_active_updated_at",
+      "idx_scenes_trash_deleted_at",
+      "idx_scenes_active_folder_id",
+    ]) {
+      expect(
+        db
+          .query("SELECT name FROM sqlite_master WHERE type='index' AND name=?")
+          .get(name),
+      ).toBeNull();
+    }
+  });
+
   it("rolls back schema changes when a migration produces unexpected structure", () => {
     const db = createDatabase();
-    initializeDatabase(db);
+    initializeDatabase(db, { currentSchemaVersion: 1 });
     db.run(
       "INSERT INTO folders (id, name, created_at, updated_at) VALUES ('f', 'kept', 1, 1)",
     );
@@ -244,7 +273,7 @@ describe("SQLite database migrations", () => {
 
   it("commits migrations step by step and rolls back a failed step", () => {
     const db = createDatabase();
-    initializeDatabase(db);
+    initializeDatabase(db, { currentSchemaVersion: 1 });
     db.query(
       "INSERT INTO scenes (id, name, elements, app_state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
     ).run("scene-1", "Existing scene", "[]", "{}", 100, 200);

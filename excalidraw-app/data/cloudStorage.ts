@@ -132,6 +132,7 @@ export interface CloudSceneSummary {
   folder_name: string | null;
   last_opened_at: number | null;
   thumbnail_file_id: string | null;
+  thumbnailVersion?: number;
   deleted_at?: number | null;
 }
 

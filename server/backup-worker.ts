@@ -21,7 +21,7 @@ self.onmessage = (event: MessageEvent<SnapshotRequest>) => {
         `SELECT COALESCE(SUM(bytes), 0) AS bytes FROM (
       SELECT length(CAST(id AS BLOB)) + length(CAST(name AS BLOB)) +
              length(CAST(elements AS BLOB)) + length(CAST(app_state AS BLOB)) +
-             length(CAST(tags_json AS BLOB)) + length(CAST(content_sha256 AS BLOB)) AS bytes FROM scenes
+             length(CAST(tags_json AS BLOB)) AS bytes FROM scenes
       UNION ALL SELECT length(CAST(id AS BLOB)) + length(CAST(name AS BLOB)) +
              length(CAST(icon AS BLOB)) + length(CAST(color AS BLOB)) FROM folders
       UNION ALL SELECT length(CAST(id AS BLOB)) + COALESCE(length(CAST(storage_path AS BLOB)), 0) +

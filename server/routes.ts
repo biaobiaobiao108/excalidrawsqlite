@@ -1204,9 +1204,8 @@ export const createRequestHandler = (
                 runtime.db.run(
                   `INSERT INTO scenes
                  (id, name, elements, app_state, created_at, updated_at, revision,
-                  tags_json, is_favorite, folder_id, element_count, content_bytes,
-                  content_sha256)
-                 VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
+                  tags_json, is_favorite, folder_id, element_count, content_bytes)
+                 VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
                   [
                     id,
                     name,
@@ -1219,7 +1218,6 @@ export const createRequestHandler = (
                     folderId,
                     elements.length,
                     contentBytes,
-                    sha256Hex(elementsJson),
                   ],
                 );
                 syncSceneFileReferences(runtime, id, fileIds);
@@ -1956,7 +1954,6 @@ export const createRequestHandler = (
             unchanged: true,
           });
         }
-        const contentSha256 = sha256Hex(elementsJson);
         const now = Date.now();
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {
@@ -1965,7 +1962,7 @@ export const createRequestHandler = (
             `UPDATE scenes
              SET name = ?, elements = ?, app_state = ?, tags_json = ?,
                  is_favorite = ?, folder_id = ?, updated_at = ?, revision = ?,
-                 element_count = ?, content_bytes = ?, content_sha256 = ?,
+                 element_count = ?, content_bytes = ?,
                  thumbnail_file_id = CASE WHEN ? THEN NULL ELSE thumbnail_file_id END
              WHERE id = ? AND deleted_at IS NULL AND revision = ?`,
             [
@@ -1979,7 +1976,6 @@ export const createRequestHandler = (
               revision,
               elementCount,
               contentBytes,
-              contentSha256,
               contentChanged ? 1 : 0,
               id,
               currentRevision,

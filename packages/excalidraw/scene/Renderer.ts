@@ -145,7 +145,10 @@ export class Renderer {
     elementsMap: NonDeletedElementsMap,
     visibleBounds: readonly [number, number, number, number],
   ): readonly NonDeletedExcalidrawElement[] => {
-    if (this.visibleElementIndex?.elementsMap !== elementsMap) {
+    if (
+      this.visibleElementIndex?.elementsMap !== elementsMap &&
+      !this.updateVisibleElementIndex(elementsMap)
+    ) {
       const buckets = new Map<string, NonDeletedExcalidrawElement[]>();
       const largeElements: NonDeletedExcalidrawElement[] = [];
       const order = new Map<string, number>();
@@ -210,6 +213,63 @@ export class Renderer {
       (left, right) => index.order.get(left.id)! - index.order.get(right.id)!,
     );
   };
+
+  private updateVisibleElementIndex(elementsMap: NonDeletedElementsMap) {
+    const index = this.visibleElementIndex;
+    if (!index || index.elementsMap.size !== elementsMap.size) return false;
+    let position = 0;
+    for (const element of elementsMap.values()) {
+      if (index.order.get(element.id) !== position++) return false;
+    }
+
+    const visit = (
+      bounds: ElementBounds,
+      element: NonDeletedExcalidrawElement,
+      add: boolean,
+    ) => {
+      const range = getCellRange(...bounds);
+      const cellCount =
+        (range.maxX - range.minX + 1) * (range.maxY - range.minY + 1);
+      if (cellCount > VISIBLE_INDEX_MAX_ELEMENT_CELLS) {
+        if (add) index.largeElements.push(element);
+        else {
+          const offset = index.largeElements.indexOf(element);
+          if (offset >= 0) index.largeElements.splice(offset, 1);
+        }
+        return;
+      }
+      for (let x = range.minX; x <= range.maxX; x++) {
+        for (let y = range.minY; y <= range.maxY; y++) {
+          const key = getCellKey(x, y);
+          let bucket = index.buckets.get(key);
+          if (add) {
+            if (!bucket) index.buckets.set(key, (bucket = []));
+            bucket.push(element);
+          } else if (bucket) {
+            const offset = bucket.indexOf(element);
+            if (offset >= 0) bucket.splice(offset, 1);
+            if (!bucket.length) index.buckets.delete(key);
+          }
+        }
+      }
+    };
+    for (const element of elementsMap.values()) {
+      const previous = index.elementsMap.get(element.id)!;
+      const oldBounds = index.bounds.get(element.id)!;
+      // Bounds can depend on other elements, such as a text container.
+      const nextBounds = getElementBounds(element, elementsMap);
+      if (
+        previous !== element ||
+        oldBounds.some((value, i) => value !== nextBounds[i])
+      ) {
+        visit(oldBounds, previous, false);
+        visit(nextBounds, element, true);
+        index.bounds.set(element.id, nextBounds);
+      }
+    }
+    index.elementsMap = elementsMap;
+    return true;
+  }
 
   private getRenderableElementsMap({
     elements,

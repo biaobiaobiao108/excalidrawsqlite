@@ -182,6 +182,22 @@ describe("native websocket realtime", () => {
         reject(new Error("WebSocket connection failed"));
       });
     });
+    const workspaceEventPromise = new Promise<unknown>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("Workspace event timeout")),
+        2_000,
+      );
+      websocket.addEventListener("message", (event) => {
+        const payload = JSON.parse(String(event.data));
+        if (
+          payload.type === "workspace_changed" &&
+          payload.sceneId === "scene_realtime"
+        ) {
+          clearTimeout(timeout);
+          resolve(payload);
+        }
+      });
+    });
 
     try {
       await openPromise;
@@ -200,6 +216,11 @@ describe("native websocket realtime", () => {
         type: "scene_changed",
         sceneId: "scene_realtime",
         revision: 1,
+      });
+      await expect(workspaceEventPromise).resolves.toMatchObject({
+        type: "workspace_changed",
+        sceneId: "scene_realtime",
+        changeKind: "created",
       });
     } finally {
       websocket.close();
