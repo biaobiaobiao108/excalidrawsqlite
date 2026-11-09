@@ -1665,8 +1665,8 @@ const ExcalidrawWrapper = (props: {
                   display: "flex",
                   alignItems: "center",
                   gap: "6px",
-                  background: "var(--color-primary, #6965db)",
-                  border: "1px solid var(--color-primary, #6965db)",
+                  background: "var(--brand-primary, #315f4c)",
+                  border: "1px solid var(--brand-primary, #315f4c)",
                   borderRadius: "8px",
                   padding: "6px 12px",
                   fontSize: "0.85rem",
@@ -1675,7 +1675,7 @@ const ExcalidrawWrapper = (props: {
                     !currentSceneId || isCloudSaveBusy
                       ? "not-allowed"
                       : "pointer",
-                  color: "var(--color-primary-contrast, #fff)",
+                  color: "#fff",
                   height: "36px",
                   opacity: !currentSceneId || isCloudSaveBusy ? 0.65 : 1,
                 }}
@@ -1717,18 +1717,18 @@ const ExcalidrawWrapper = (props: {
                   display: "flex",
                   alignItems: "center",
                   gap: "6px",
-                  background: "var(--color-surface-low, #ececf4)",
-                  border: "1px solid var(--default-border-color, #dcdce6)",
+                  background: "var(--surface-panel, #f7f6f1)",
+                  border: "1px solid var(--border-subtle, #e7e5dd)",
                   borderRadius: "8px",
                   padding: "6px 12px",
                   fontSize: "0.85rem",
                   fontWeight: 500,
                   cursor: "pointer",
-                  color: "var(--text-color-primary, #333)",
+                  color: "var(--text-primary, #1f2622)",
                   height: "36px",
                 }}
                 onClick={() => void navigateHomeAfterSave()}
-                title="管理我的云端画板 (SQLite 持久化)"
+                title="管理我的云端画板"
               >
                 <svg
                   viewBox="0 0 24 24"

@@ -1,26 +1,27 @@
 .custom-select {
-  --custom-select-bg: var(--island-bg-color, #fff);
-  --custom-select-border: var(
-    --workspace-border,
-    var(--default-border-color, #e8e8f0)
-  );
-  --custom-select-text: var(--workspace-text, var(--color-on-surface, #22212c));
-  --custom-select-muted: var(--workspace-muted, var(--icon-fill-color, #747487));
-  --custom-select-hover: var(
-    --workspace-surface-hover,
-    var(--button-hover-bg, #f6f5ff)
-  );
-  --custom-select-selected: var(
-    --workspace-primary-soft,
-    var(--color-primary-light, #f0efff)
-  );
-  --custom-select-primary: var(--workspace-primary, var(--color-primary, #6965db));
+  --custom-select-bg: var(--surface-elevated, #fff);
+  --custom-select-border: var(--border-subtle, #e7e5dd);
+  --custom-select-text: var(--text-primary, #1f2622);
+  --custom-select-muted: var(--text-secondary, #5d6861);
+  --custom-select-hover: var(--surface-hover, #eeeee8);
+  --custom-select-selected: var(--brand-soft, #e7efe9);
+  --custom-select-primary: var(--brand-primary, #315f4c);
   position: relative;
   z-index: 0;
   display: inline-flex;
   min-inline-size: 0;
   color: var(--custom-select-text);
   font-family: inherit;
+}
+
+html.dark .custom-select {
+  --custom-select-bg: var(--surface-elevated, #242a26);
+  --custom-select-border: var(--border-subtle, #2e3631);
+  --custom-select-text: var(--text-primary, #e8ece9);
+  --custom-select-muted: var(--text-secondary, #9da8a0);
+  --custom-select-hover: var(--surface-hover, #2d3530);
+  --custom-select-selected: var(--brand-soft, #1d2d24);
+  --custom-select-primary: var(--brand-primary, #437b62);
 }
 
 .custom-select--open {
@@ -58,7 +59,7 @@
 .custom-select__trigger:focus-visible,
 .custom-select__trigger[aria-expanded="true"] {
   border-color: var(--custom-select-primary);
-  box-shadow: 0 0 0 3px rgba(105, 101, 219, 0.12);
+  box-shadow: 0 0 0 3px rgba(49, 95, 76, 0.15);
   color: var(--custom-select-text);
 }
 
@@ -97,27 +98,12 @@
 }
 
 .custom-select__menu {
-  --custom-select-bg: var(--island-bg-color, #fff);
-  --custom-select-border: var(
-    --workspace-border,
-    var(--default-border-color, #e8e8f0)
-  );
-  --custom-select-text: var(
-    --workspace-text,
-    var(--color-on-surface, #22212c)
-  );
-  --custom-select-hover: var(
-    --workspace-surface-hover,
-    var(--button-hover-bg, #f6f5ff)
-  );
-  --custom-select-selected: var(
-    --workspace-primary-soft,
-    var(--color-primary-light, #f0efff)
-  );
-  --custom-select-primary: var(
-    --workspace-primary,
-    var(--color-primary, #6965db)
-  );
+  --custom-select-bg: var(--surface-elevated, #fff);
+  --custom-select-border: var(--border-subtle, #e7e5dd);
+  --custom-select-text: var(--text-primary, #1f2622);
+  --custom-select-hover: var(--surface-hover, #eeeee8);
+  --custom-select-selected: var(--brand-soft, #e7efe9);
+  --custom-select-primary: var(--brand-primary, #315f4c);
   position: fixed;
   z-index: 1100;
   inset: auto;
@@ -133,9 +119,20 @@
   border: 1px solid var(--custom-select-border);
   border-radius: 10px;
   background: var(--custom-select-bg);
-  box-shadow: 0 12px 32px rgba(36, 33, 85, 0.14),
-    0 2px 8px rgba(36, 33, 85, 0.08);
+  box-shadow: 0 12px 32px rgba(32, 45, 37, 0.12),
+    0 2px 8px rgba(32, 45, 37, 0.06);
   animation: custom-select-menu-enter 140ms ease-out both;
+}
+
+html.dark .custom-select__menu {
+  --custom-select-bg: var(--surface-elevated, #242a26);
+  --custom-select-border: var(--border-subtle, #2e3631);
+  --custom-select-text: var(--text-primary, #e8ece9);
+  --custom-select-hover: var(--surface-hover, #2d3530);
+  --custom-select-selected: var(--brand-soft, #1d2d24);
+  --custom-select-primary: var(--brand-primary, #437b62);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4),
+    0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .custom-select__option {
@@ -157,6 +154,7 @@
   font-size: 0.8rem;
   text-align: start;
   white-space: nowrap;
+  transition: background-color 100ms ease;
 }
 
 .custom-select__option:hover,
@@ -207,8 +205,8 @@
     gap: 0.2rem;
     padding: 0.35rem;
     border-radius: 12px;
-    box-shadow: 0 14px 34px rgba(36, 33, 85, 0.2),
-      0 3px 10px rgba(36, 33, 85, 0.1);
+    box-shadow: 0 14px 34px rgba(32, 45, 37, 0.16),
+      0 3px 10px rgba(32, 45, 37, 0.08);
   }
 
   .custom-select__option {
@@ -265,3 +263,4 @@
     transform: translateY(3px);
   }
 }
+

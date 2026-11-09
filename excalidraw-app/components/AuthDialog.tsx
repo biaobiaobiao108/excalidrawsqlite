@@ -102,7 +102,7 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
           </div>
           <h2 className="auth-dialog-title">访问授权验证</h2>
           <p className="auth-dialog-desc">
-            当前白板系统已开启私有访问保护，请输入访问密码以继续使用与同步数据
+            请输入访问密码以解锁云端画板与同步功能
           </p>
         </div>
 

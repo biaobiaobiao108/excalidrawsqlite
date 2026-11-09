@@ -6,11 +6,12 @@ import React, { useEffect } from "react";
 
 export const AppWelcomeScreen: React.FC = React.memo(() => {
   const { t } = useI18n();
-  const headingText = [
+  const lines = [
     t("welcomeScreen.app.cloud_heading"),
     t("welcomeScreen.app.cloud_heading_line2"),
     t("welcomeScreen.app.cloud_heading_line3"),
-  ].join("\n");
+  ].filter(Boolean);
+  const headingText = lines.join(String.fromCharCode(10));
 
   useEffect(() => {
     const fontProbe = newTextElement({
@@ -25,11 +26,12 @@ export const AppWelcomeScreen: React.FC = React.memo(() => {
 
   const headingContent = (
     <>
-      {t("welcomeScreen.app.cloud_heading")}
-      <br />
-      {t("welcomeScreen.app.cloud_heading_line2")}
-      <br />
-      {t("welcomeScreen.app.cloud_heading_line3")}
+      {lines.map((line, idx) => (
+        <React.Fragment key={idx}>
+          {line}
+          {idx < lines.length - 1 && <br />}
+        </React.Fragment>
+      ))}
     </>
   );
 

@@ -1,0 +1,100 @@
+# DESIGN.md - 狐涂画板设计系统规范 (Fox & Ink Studio)
+
+## 1. 核心方向 (Direction)
+
+- **概念**：狐涂书斋 · 纸墨工坊 (Fox & Ink Studio) —— 将传统东方文人书斋的澄泥纸墨质感，与现代高生产力手绘思维白板融为一体的数字创作空间。
+- **目标品质**：
+  - **温润纸素 (Warm Tactility)**：以米宣、澄泥、素绢为基准底色，光泽微哑柔和，长时间构思不刺眼。
+  - **苍松沉墨 (Restrained Pine & Ink)**：以苍松墨绿为印章点睛，以焦墨为字，等级分明，绝不使用轻浮霓虹。
+  - **工坊精工 (Atelier Precision)**：卡片如工坊画稿装裱，边界清晰（1px 砚石微边），动效具有水墨落纸般的轻微弹性反馈。
+- **杜绝品质 (Anti-Qualities)**：
+  - 杜绝未经统筹的 Excalidraw 原生紫（`#6965db`）、高光描边与发光阴影。
+  - 杜绝药丸胶囊徽标泛滥与中点符号（`•`）堆叠碎裂排版。
+  - 杜绝无反馈的硬切操作、死角菜单与隐蔽式右键交互。
+
+---
+
+## 2. 色彩系统 (Color Palette & Semantic Tokens)
+
+所有组件严格使用语义 CSS 变量，支持纸墨浅色（默认）与玄墨深色（`html.dark`）：
+
+| 语义角色 Token | 纸墨浅色 (Light) | 玄墨深色 (Dark) | 用途说明 |
+| :--- | :--- | :--- | :--- |
+| `--surface-canvas` | `#fbfaf7` (宣纸原白) | `#141715` (玄青深案) | 全局底层背景、画布环境底色 |
+| `--surface-sidebar` | `#f4f2ec` (素绫浅灰) | `#1a1e1b` (墨石案面) | 工作台侧边栏底色 |
+| `--surface-panel` | `#f7f6f1` (澄泥素底) | `#1f2421` (松烟深板) | 卡片缩略图衬槽、微悬浮底 |
+| `--surface-elevated` | `#ffffff` (纯素绢白) | `#242a26` (苍墨浮层) | 卡片卡体、弹出对话框、悬浮菜单 |
+| `--surface-hover` | `#eeeee8` (浅墨润泽) | `#2d3530` (苍墨高亮) | 悬浮高亮状态底色 |
+| `--border-subtle` | `#e7e5dd` (浅砚灰) | `#2e3631` (墨灰微界) | 卡片外框、分隔线、常规线框 |
+| `--border-strong` | `#cfcbbe` (澄泥界石) | `#424d46` (石刻深棱) | 聚焦外框、激活线、深色分割 |
+| `--text-primary` | `#1f2622` (焦墨) | `#e8ece9` (素雪银白) | 主标题、卡片名称、正文字色 |
+| `--text-secondary` | `#5d6861` (淡墨) | `#9da8a0` (青烟浅灰) | 辅助信息、元数据、表单标签 |
+| `--text-tertiary` | `#8c9790` (轻霭) | `#69746c` (苔灰暗纹) | 图元数、次级计数、空态提示 |
+| `--brand-primary` | `#315f4c` (苍松墨绿) | `#437b62` (松青明翠) | 核心品牌色、主要操作按键 |
+| `--brand-hover` | `#294f40` (幽竹深青) | `#4f9173` (翠羽亮青) | 品牌主要操作悬浮态 |
+| `--brand-active` | `#203f33` (寒松深绿) | `#3b6d56` (晚松暗青) | 品牌主要操作按压态 |
+| `--brand-soft` | `#e7efe9` (松雪轻素) | `#1d2d24` (幽林青底) | 选中项底色、品牌徽标浅底 |
+| `--accent-danger` | `#a63e3b` (朱砂赤) | `#cf5d59` (丹砂明红) | 删除、清空、冲突高危操作 |
+| `--accent-danger-hover` | `#8a3230` (暗朱砂) | `#e06e6a` (鲜丹砂) | 危险操作悬浮态 |
+| `--accent-warning` | `#b8742b` (沉香赭) | `#df9543` (秋枫金褐) | 冲突提示、未保存警示 |
+
+---
+
+## 3. 字体与文字阶梯 (Typography)
+
+- **系统 UI 字体**：`var(--ui-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif)`
+- **画布手绘中文**：霞鹜文楷 (LXGW WenKai) / 思源黑体 (Source Han Sans)
+- **文字层级阶梯**：
+  - `display`：`24px / 1.3`，`font-weight: 650`，用于主视区顶部标题（如“我的画板”）。
+  - `heading`：`16px / 1.4`，`font-weight: 600`，用于子分区标题、对话框标题。
+  - `subheading`：`14px / 1.4`，`font-weight: 600`，用于小分组标签、侧边栏标题。
+  - `body`：`13px / 1.5`，`font-weight: 500`，用于卡片标题、列表项、主正文。
+  - `caption`：`12px / 1.4`，`font-weight: 400`，用于图元统计、修改日期、辅助描述。
+  - `micro`：`11px / 1.2`，`font-weight: 500`，用于角标、计数徽标。
+
+---
+
+## 4. 间距与对齐几何 (Spacing & Layout Geometry)
+
+- **标准间距阶梯**：
+  - `4px` (`0.25rem`)：紧凑组件内边距、图标与文字间距；
+  - `8px` (`0.5rem`)：行内元素间距、按钮内纵向边距；
+  - `12px` (`0.75rem`)：卡片内衬边距、列表项间距；
+  - `16px` (`1rem`)：普通区域留白、对话框内边距；
+  - `20px` (`1.25rem`)：网格卡片列间距；
+  - `24px` (`1.5rem`)：分区纵向间距；
+  - `32px` (`2rem`)：主页面头部与网格间距。
+- **响应式画板网格规则**：
+  - `min-width: 1200px`：**3 列**（每列宽 ≥ 280px）；
+  - `641px ~ 1199px`（含平板端 768px）：**2 列**（每列宽 ≥ 240px，彻底杜绝元数据挤压乱码）；
+  - `≤ 640px`（移动端）：**1 列通栏**，高度自适应。
+
+---
+
+## 5. 圆角与边框 (Radii & Elevation)
+
+- **圆角标尺**：
+  - `radius-xs` (`4px`)：极小徽标、微型按键；
+  - `radius-sm` (`6px`)：常规按钮、下拉菜单触发项、输入框；
+  - `radius-md` (`10px`)：下拉菜单浮层、卡片内缩略图；
+  - `radius-lg` (`12px`)：画板卡片外壳、多选浮动操作栏；
+  - `radius-xl` (`16px`)：模态对话框外壳；
+  - `radius-pill` (`9999px`)：计数胶囊、圆状按键。
+- **阴影与界石**：
+  - 卡片静态无厚重拟物阴影，依靠 `1px solid var(--border-subtle)` 分隔；
+  - 悬浮卡片微升：`box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05)`；
+  - 模态对话框浮层：`box-shadow: 0 16px 48px rgba(20, 23, 21, 0.18)`。
+
+---
+
+## 6. 动效与微交互 (Motion & Interaction Kit)
+
+- **按压基准 (Press Feedback)**：
+  - 按钮与交互卡片具备按下反馈：`:active { transform: scale(0.98); }`；
+  - 动效时长：80ms ~ 120ms，缓动曲线 `cubic-bezier(0.2, 0.8, 0.3, 1)`。
+- **浮动工具栏与对话框入场**：
+  - 多选操作栏自屏幕底部滑入：`translateY(12px) -> translateY(0)`，伴随 `opacity` 渐现；
+  - 对话框微缩缩放：`scale(0.96) -> scale(1)`。
+- **减弱动效回退**：
+  - `@media (prefers-reduced-motion: reduce)` 时完全禁用空间位移，仅保留瞬时透明度切换。
+

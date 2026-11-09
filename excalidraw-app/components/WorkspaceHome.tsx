@@ -870,9 +870,7 @@ const BoardCard = React.memo(
               >
                 {scene.element_count ?? 0} 个图元
               </span>
-              <span className="meta-separator" aria-hidden="true">
-                •
-              </span>
+
               {isTrash && scene.deleted_at ? (
                 <span className="board-card-updated">
                   删除于 {formatDate(scene.deleted_at)}
@@ -2059,7 +2057,11 @@ export const WorkspaceHome = ({
     const columns = Math.max(
       1,
       templateColumns.length ||
-        (gridRect.width <= 640 ? 1 : BOARD_GRID_COLUMNS),
+        (gridRect.width <= 640
+          ? 1
+          : gridRect.width <= 1100
+            ? 2
+            : BOARD_GRID_COLUMNS),
     );
 
     setBoardGridMetrics((current) => {
@@ -3523,6 +3525,69 @@ export const WorkspaceHome = ({
       {contextMenu && (
         <WorkspaceContextMenu state={contextMenu} onClose={closeContextMenu} />
       )}
+      {selectedSceneIds.size > 0 &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="workspace-batch-bar"
+            role="toolbar"
+            aria-label="批量操作"
+          >
+            <div className="workspace-batch-bar-count">
+              已选择 <strong>{selectedSceneIds.size}</strong> 项
+            </div>
+            <div className="workspace-batch-bar-divider" aria-hidden="true" />
+            <div className="workspace-batch-bar-actions">
+              {view !== "trash" ? (
+                <button
+                  type="button"
+                  className="batch-bar-button danger"
+                  onClick={() => void handleBatchMoveToTrash(selectedScenes)}
+                  disabled={!!pendingAction}
+                  title={
+                    "将所选 " + selectedSceneIds.size + " 个画板移入回收站"
+                  }
+                >
+                  <TrashIcon />
+                  <span>移入回收站</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="batch-bar-button"
+                    onClick={() => void handleBatchRestore(selectedScenes)}
+                    disabled={!!pendingAction}
+                    title={"还原所选 " + selectedSceneIds.size + " 个画板"}
+                  >
+                    <RestoreIcon />
+                    <span>还原</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="batch-bar-button danger"
+                    onClick={() => handleBatchPermanentDelete(selectedScenes)}
+                    disabled={!!pendingAction}
+                    title={"彻底删除所选 " + selectedSceneIds.size + " 个画板"}
+                  >
+                    <TrashIcon />
+                    <span>彻底删除</span>
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className="batch-bar-button close"
+                onClick={clearSceneSelection}
+                aria-label="退出多选"
+                title="退出多选 (Esc)"
+              >
+                取消
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };
