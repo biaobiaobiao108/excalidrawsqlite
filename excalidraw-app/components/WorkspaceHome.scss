@@ -773,7 +773,7 @@ html.dark .workspace-dialog {
   position: absolute;
   z-index: 3;
   inset-block-start: 10px;
-  inset-inline-end: 10px;
+  inset-inline-start: 10px;
   display: grid;
   place-items: center;
   inline-size: 30px;
@@ -782,7 +782,9 @@ html.dark .workspace-dialog {
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: #738178;
+  color: var(--workspace-text);
+  filter: drop-shadow(0 1px 1px rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 2px rgba(255, 255, 255, 0.8));
   cursor: pointer;
   opacity: 0;
   transform: scale(0.94);
@@ -967,16 +969,15 @@ html.dark .workspace-dialog {
 }
 
 .board-card-footer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 0.25rem 0.5rem;
+  display: block;
   margin-block-start: auto;
   padding: 0.45rem 0.65rem 0.65rem 0.75rem;
 }
 
 .board-card-details {
-  display: contents;
+  display: grid;
+  gap: 0.25rem;
+  min-inline-size: 0;
 }
 
 .board-card-mobile-title {
@@ -994,14 +995,12 @@ html.dark .workspace-dialog {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  grid-column: 1 / -1;
 }
 
 .board-card-badges {
   position: relative;
   display: flex;
   flex-wrap: nowrap;
-  grid-column: 1 / -1;
   align-items: center;
   gap: 0.28rem;
   min-inline-size: 0;
@@ -1109,11 +1108,28 @@ html.dark .workspace-dialog {
 }
 
 .board-card-actions {
+  position: absolute;
+  z-index: 3;
+  inset-block-start: 10px;
+  inset-inline-end: 10px;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 0.15rem;
   block-size: 30px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 140ms ease, transform 140ms ease;
+  filter: drop-shadow(0 1px 1px rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 2px rgba(255, 255, 255, 0.8));
+}
+
+.board-card:hover .board-card-actions,
+.board-card:focus-within .board-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .icon-button {
@@ -1124,7 +1140,7 @@ html.dark .workspace-dialog {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #819087;
+  color: var(--workspace-text);
   cursor: pointer;
   opacity: 0.85;
   transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease,
@@ -1136,12 +1152,17 @@ html.dark .workspace-dialog {
   }
 }
 
+html.dark .board-card-selection-toggle,
+html.dark .board-card-actions {
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9))
+    drop-shadow(0 0 2px rgba(0, 0, 0, 0.75));
+}
+
 .board-card:hover .icon-button {
   opacity: 1;
 }
 
 .icon-button:hover {
-  background: var(--workspace-surface-hover);
   color: var(--workspace-accent-text);
   opacity: 1;
   transform: scale(1.05);
@@ -1152,7 +1173,6 @@ html.dark .workspace-dialog {
 }
 
 .icon-button:focus-visible {
-  background: var(--workspace-surface-hover);
   color: var(--workspace-accent-text);
   outline: 2px solid var(--workspace-accent-text);
   outline-offset: 2px;
@@ -1164,12 +1184,10 @@ html.dark .workspace-dialog {
 }
 
 .icon-button.danger:hover {
-  background: #fdf2f2;
   color: #e03131;
 }
 
 .icon-button.danger:focus-visible {
-  background: #fdf2f2;
   color: #e03131;
   outline-color: #e03131;
 }
@@ -1627,18 +1645,6 @@ html.dark .workspace-dialog {
   }
 }
 
-@container (max-width: 290px) {
-  .board-card-footer {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
-  }
-
-  .board-card-actions {
-    justify-content: end;
-  }
-}
-
-
 @media (max-width: 1100px) and (min-width: 641px) {
   .board-grid {
     grid-template-columns: repeat(
@@ -2017,11 +2023,8 @@ html.dark .workspace-dialog {
   }
 
   .board-grid .board-card-footer {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
+    display: block;
     min-block-size: 0;
-    gap: 0.45rem 0.65rem;
     padding: 0.7rem 0.8rem 0.75rem;
   }
 
@@ -2038,7 +2041,6 @@ html.dark .workspace-dialog {
   }
 
   .board-grid .board-card-badges {
-    grid-column: 1;
     inline-size: 100%;
     block-size: 1.5rem;
     margin: 0;
@@ -2049,11 +2051,11 @@ html.dark .workspace-dialog {
   }
 
   .board-grid .board-card-actions {
-    grid-column: 2;
-    align-self: center;
-    justify-content: end;
     block-size: 36px;
     gap: 0.2rem;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
   }
 
   .board-grid .board-card-actions .icon-button {
