@@ -16,7 +16,19 @@ import { compactDrawingElements } from "./mcp-read";
 import { copyDrawingSelection } from "./mcp-copy";
 import { inspectDrawingOverlaps } from "./mcp-overlap";
 import { registerManagementTools, resolveFolder } from "./mcp-management";
-import { measureMcpApi, measureMcpPhase, traceMcpTool } from "./mcp-trace";
+import { measureMcpPhase, traceMcpTool } from "./mcp-trace";
+import {
+  cleanBoardRecord,
+  drawingReceipt,
+  positionReceipt,
+  responseModeSchema,
+  result,
+} from "./mcp-response";
+import {
+  createInternalApi,
+  createRequestBodyLimiter,
+  type ApiHandler,
+} from "./mcp-internal-api";
 import { compactMcpSchema } from "./mcp-schema";
 import { buildDiagram, diagramSchema } from "./mcp-diagram";
 import {
@@ -66,7 +78,6 @@ const getMcpServerInstructions = (runtime: ServerRuntime) =>
     `delete_board 仅移入回收站，restore_board 还原，无永久删除工具。${runtime.config.trashRetentionDays === 0 ? "回收站自动清理已禁用。" : `回收站保留 ${runtime.config.trashRetentionDays} 天后自动清理。`}`,
   ].join(" ");
 
-type ApiHandler = (req: Request) => Promise<Response>;
 type McpRequestHandler = {
   fetch: (req: Request) => Promise<Response>;
   close: () => Promise<void>;
@@ -78,132 +89,6 @@ type SceneData = {
   elements: ExcalidrawElement[];
   appState: Record<string, unknown>;
   revision: number;
-};
-
-const cleanBoardRecord = (
-  value: Record<string, unknown>,
-): Record<string, unknown> => {
-  const { thumbnail_file_id: _thumbnail, size: _size, ...clean } = value;
-  if (typeof value.id === "string" && typeof value.revision === "number") {
-    clean.boardId = value.id;
-    delete clean.id;
-  }
-  if (typeof clean.boardId === "string") {
-    for (const [stored, exposed] of [
-      ["element_count", "elementCount"],
-      ["folder_id", "folderId"],
-      ["folder_name", "folderName"],
-      ["created_at", "createdAt"],
-      ["updated_at", "updatedAt"],
-      ["last_opened_at", "lastOpenedAt"],
-      ["deleted_at", "deletedAt"],
-    ]) {
-      if (Object.hasOwn(clean, stored)) {
-        clean[exposed] = clean[stored];
-        delete clean[stored];
-      }
-    }
-  }
-  if (typeof clean.icon === "string" && typeof clean.id === "string") {
-    for (const [stored, exposed] of [
-      ["scene_count", "boardCount"],
-      ["created_at", "createdAt"],
-      ["updated_at", "updatedAt"],
-    ]) {
-      if (Object.hasOwn(clean, stored)) {
-        clean[exposed] = clean[stored];
-        delete clean[stored];
-      }
-    }
-  }
-  return clean;
-};
-
-const result = (value: Record<string, unknown>) =>
-  measureMcpPhase("responseBuildMs", () => {
-    const structuredContent = {
-      ok: !value.error,
-      ...cleanBoardRecord(value),
-      ...Object.fromEntries(
-        ["items", "boards", "results", "folders"]
-          .filter((key) => Array.isArray(value[key]))
-          .map((key) => [
-            key,
-            (value[key] as Record<string, unknown>[]).map(cleanBoardRecord),
-          ]),
-      ),
-      ...(value.folder && typeof value.folder === "object"
-        ? { folder: cleanBoardRecord(value.folder as Record<string, unknown>) }
-        : {}),
-    };
-    return {
-      structuredContent,
-      content: [] as Array<{ type: "text"; text: string }>,
-    };
-  });
-
-const responseModeSchema = z
-  .enum(["minimal", "ids"])
-  .optional()
-  .describe(
-    "默认 minimal 仅返回修订号/数量/URL；ids 另含图元 ID 与 inputIndex 映射",
-  );
-
-const drawingReceipt = (
-  created: readonly ExcalidrawElement[],
-  mode: "minimal" | "ids" = "minimal",
-) => {
-  if (mode === "minimal") return { addedCount: created.length };
-  const ids = new Set(created.map((element) => element.id));
-  const generated = created.filter(
-    (element) =>
-      element.type === "text" &&
-      element.containerId &&
-      ids.has(element.containerId),
-  );
-  const generatedIds = new Set(generated.map((element) => element.id));
-  const requested = created.filter((element) => !generatedIds.has(element.id));
-  return {
-    addedCount: created.length,
-    requestedElementIds: requested.map((element) => element.id),
-    generatedElementIds: generated.map((element) => element.id),
-    elementMap: requested.map((element, inputIndex) => ({
-      inputIndex,
-      elementId: element.id,
-      ...(element.boundElements?.find((bound) => bound.type === "text")
-        ? {
-            labelId: element.boundElements.find(
-              (bound) => bound.type === "text",
-            )!.id,
-          }
-        : {}),
-    })),
-  };
-};
-
-const positionReceipt = (
-  elements: readonly ExcalidrawElement[],
-  id: string,
-) => {
-  const element = elements.find((item) => item.id === id && !item.isDeleted);
-  if (!element) return { elementId: id };
-  const geometry = (item: ExcalidrawElement) => ({
-    x: item.x,
-    y: item.y,
-    width: item.width,
-    height: item.height,
-  });
-  const labelId = element.boundElements?.find(
-    (bound) => bound.type === "text",
-  )?.id;
-  const label = labelId
-    ? elements.find((item) => item.id === labelId && !item.isDeleted)
-    : undefined;
-  return {
-    elementId: id,
-    ...geometry(element),
-    ...(label ? { label: { id: label.id, ...geometry(label) } } : {}),
-  };
 };
 
 const makeSafeTool =
@@ -327,121 +212,6 @@ const getPathToken = (req: Request) => {
     return "";
   }
 };
-
-const createRequestBodyLimiter = (maxConcurrent: number) => {
-  let active = 0;
-  const waiters: Array<{
-    resolve: () => void;
-    reject: (error: unknown) => void;
-    remove: () => void;
-    settled: boolean;
-  }> = [];
-
-  const releaseSlot = () => {
-    active = Math.max(0, active - 1);
-    while (waiters.length) {
-      const waiter = waiters.shift()!;
-      if (waiter.settled) {
-        continue;
-      }
-      waiter.settled = true;
-      waiter.remove();
-      active += 1;
-      waiter.resolve();
-      return;
-    }
-  };
-
-  return {
-    acquire: (signal?: AbortSignal) =>
-      new Promise<() => void>((resolve, reject) => {
-        if (signal?.aborted) {
-          reject(new DOMException("The request was aborted", "AbortError"));
-          return;
-        }
-        if (active < maxConcurrent) {
-          active += 1;
-          let released = false;
-          resolve(() => {
-            if (!released) {
-              released = true;
-              releaseSlot();
-            }
-          });
-          return;
-        }
-
-        const waiter = {
-          resolve: () => {
-            let released = false;
-            resolve(() => {
-              if (!released) {
-                released = true;
-                releaseSlot();
-              }
-            });
-          },
-          reject: (error: unknown) => {
-            if (waiter.settled) {
-              return;
-            }
-            waiter.settled = true;
-            waiter.remove();
-            reject(error);
-          },
-          remove: () => {
-            signal?.removeEventListener("abort", abort);
-            const index = waiters.indexOf(waiter);
-            if (index >= 0) {
-              waiters.splice(index, 1);
-            }
-          },
-          settled: false,
-        };
-        const abort = () =>
-          waiter.reject(
-            new DOMException("The request was aborted", "AbortError"),
-          );
-        signal?.addEventListener("abort", abort, { once: true });
-        waiters.push(waiter);
-      }),
-  };
-};
-
-const createInternalApi =
-  (apiHandler: ApiHandler, sessionToken: string) =>
-  async <T>(
-    path: string,
-    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
-    body?: unknown,
-  ) =>
-    measureMcpApi(method, async () => {
-      const req = new Request(`http://excalidraw-mcp.internal${path}`, {
-        method,
-        headers: {
-          Cookie: `excalidraw_session=${sessionToken}`,
-          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
-      const res = await apiHandler(req);
-      const responseBody = await res.text();
-      let parsed: unknown;
-      try {
-        parsed = responseBody ? JSON.parse(responseBody) : null;
-      } catch {
-        parsed = responseBody;
-      }
-      if (!res.ok) {
-        const error = parsed as { code?: string; error?: string } | null;
-        throw new HttpError(
-          res.status,
-          error?.code || "MCP_API_ERROR",
-          error?.error || `内部画板 API 请求失败（HTTP ${res.status}）`,
-        );
-      }
-      return parsed as T;
-    });
 
 export const createMcpRequestHandler = (
   runtime: ServerRuntime,
