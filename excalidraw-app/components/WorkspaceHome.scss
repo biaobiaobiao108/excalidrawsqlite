@@ -1145,8 +1145,7 @@ html.dark .workspace-dialog {
   color: var(--workspace-text);
   cursor: pointer;
   opacity: 0.85;
-  transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease,
-    transform 140ms ease;
+  transition: color 140ms ease, opacity 140ms ease, transform 140ms ease;
 
   svg {
     inline-size: 16px;
@@ -1181,20 +1180,10 @@ html.dark .board-card-actions {
   stroke: #f2ad22;
 }
 
-.icon-button.danger:hover {
-  color: #e03131;
-}
-
-.icon-button.danger:focus-visible {
-  color: #e03131;
-  outline-color: #e03131;
-}
-
 .favorite-button.is-favorite {
   color: #e9a621;
 }
 
-.board-card-favorite-indicator,
 .board-card-mobile-menu-toggle {
   display: none;
 }
@@ -2054,14 +2043,27 @@ html.dark .board-card-actions {
   }
 
   .board-grid .board-card-actions {
-    display: none;
+    display: flex;
+    block-size: 36px;
+  }
+
+  .board-grid .board-card-actions .icon-button {
+    inline-size: 36px;
+    block-size: 36px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .board-grid .board-card-actions .icon-button svg {
+    inline-size: 18px;
+    block-size: 18px;
   }
 
   .board-grid .board-card-mobile-menu-toggle {
     position: absolute;
     z-index: 3;
     inset-block-start: 10px;
-    inset-inline-end: 10px;
+    inset-inline-end: 52px;
     display: grid;
     place-items: center;
     inline-size: 36px;
@@ -2095,28 +2097,11 @@ html.dark .board-card-actions {
     outline-offset: 2px;
   }
 
-  .board-grid .board-card-favorite-indicator {
-    position: absolute;
-    z-index: 3;
-    inset-block-start: 16px;
-    inset-inline-end: 52px;
-    display: grid;
-    place-items: center;
-    inline-size: 24px;
-    block-size: 24px;
-    color: #e9a621;
-    pointer-events: none;
-    filter: drop-shadow(0 1px 1px rgba(255, 255, 255, 0.95))
-      drop-shadow(0 0 2px rgba(255, 255, 255, 0.8));
+  .board-grid .board-card.is-trash-card .board-card-mobile-menu-toggle {
+    inset-inline-end: 10px;
   }
 
-  .board-grid .board-card-favorite-indicator svg {
-    inline-size: 18px;
-    block-size: 18px;
-  }
-
-  html.dark .board-grid .board-card-mobile-menu-toggle,
-  html.dark .board-grid .board-card-favorite-indicator {
+  html.dark .board-grid .board-card-mobile-menu-toggle {
     filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9))
       drop-shadow(0 0 2px rgba(0, 0, 0, 0.75));
   }

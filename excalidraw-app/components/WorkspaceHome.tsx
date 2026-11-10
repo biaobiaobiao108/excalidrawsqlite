@@ -1961,17 +1961,11 @@ export const WorkspaceHome = ({
 
   const boardActionsRef = useRef({
     handleToggleFavorite,
-    openMetadataDialog,
-    handleDeleteScene,
-    handleRestoreScene,
     openBoardContextMenu,
   });
   useLayoutEffect(() => {
     boardActionsRef.current = {
       handleToggleFavorite,
-      openMetadataDialog,
-      handleDeleteScene,
-      handleRestoreScene,
       openBoardContextMenu,
     };
   });
@@ -1979,12 +1973,6 @@ export const WorkspaceHome = ({
     () => ({
       toggleFavorite: (scene: CloudSceneSummary) =>
         boardActionsRef.current.handleToggleFavorite(scene),
-      edit: (scene: CloudSceneSummary) =>
-        boardActionsRef.current.openMetadataDialog(scene),
-      delete: (scene: CloudSceneSummary) =>
-        boardActionsRef.current.handleDeleteScene(scene),
-      restore: (scene: CloudSceneSummary) =>
-        boardActionsRef.current.handleRestoreScene(scene),
       contextMenu: (
         scene: CloudSceneSummary,
         event: React.MouseEvent<HTMLElement>,
@@ -2002,9 +1990,6 @@ export const WorkspaceHome = ({
       onOpen={navigateToScene}
       onPreload={onPreloadScene}
       onToggleFavorite={boardActions.toggleFavorite}
-      onEdit={boardActions.edit}
-      onDelete={boardActions.delete}
-      onRestore={boardActions.restore}
       onOpenContextMenu={boardActions.contextMenu}
       onToggleSelection={handleToggleSceneSelection}
       hasSelectionActive={selectedSceneIds.size > 0}

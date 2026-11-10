@@ -9,12 +9,9 @@ import {
 } from "./board-list-selection";
 import {
   BoardSelectionIcon,
-  EditIcon,
   FolderAppearanceIcon,
   MoreIcon,
-  RestoreIcon,
   StarIcon,
-  TrashIcon,
 } from "./WorkspaceIcons";
 import {
   DEFAULT_FOLDER_APPEARANCE,
@@ -164,9 +161,6 @@ export const BoardCard = React.memo(
     onOpen,
     onPreload,
     onToggleFavorite,
-    onEdit,
-    onDelete,
-    onRestore,
     onOpenContextMenu,
     onToggleSelection,
     hasSelectionActive,
@@ -180,9 +174,6 @@ export const BoardCard = React.memo(
     onOpen: (scene: CloudSceneSummary, newTab?: boolean) => void;
     onPreload?: () => void;
     onToggleFavorite: (scene: CloudSceneSummary) => void;
-    onEdit: (scene: CloudSceneSummary) => void;
-    onDelete: (scene: CloudSceneSummary) => void;
-    onRestore?: (scene: CloudSceneSummary) => void;
     onOpenContextMenu: (
       scene: CloudSceneSummary,
       event: React.MouseEvent<HTMLElement>,
@@ -224,7 +215,7 @@ export const BoardCard = React.memo(
         tabIndex={0}
         aria-label={
           isTrash
-            ? `${sceneName}，${isSelected ? "已选择" : "未选择"}；空格键切换选择，使用操作按钮还原或彻底删除`
+            ? `${sceneName}，${isSelected ? "已选择" : "未选择"}；空格键切换选择，使用画板操作菜单还原或彻底删除`
             : `${sceneName}，${isSelected ? "已选择" : "未选择"}；空格键切换选择，回车打开画板`
         }
         aria-keyshortcuts={isTrash ? "Space" : "Space Enter"}
@@ -361,16 +352,6 @@ export const BoardCard = React.memo(
               )}
             </div>
           </div>
-          {scene.favorite && (
-            <span
-              className="board-card-favorite-indicator"
-              role="img"
-              aria-label="已收藏"
-              title="已收藏"
-            >
-              <StarIcon filled />
-            </span>
-          )}
           <button
             type="button"
             className="board-card-mobile-menu-toggle"
@@ -384,70 +365,23 @@ export const BoardCard = React.memo(
           >
             <MoreIcon />
           </button>
-          <div className="board-card-actions">
-            {isTrash ? (
-              <>
-                {onRestore && (
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={`还原画板“${sceneName}”`}
-                    title="还原画板"
-                    onClick={() => onRestore(scene)}
-                    disabled={actionPending}
-                  >
-                    <RestoreIcon />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="icon-button danger"
-                  aria-label={`彻底删除“${sceneName}”`}
-                  title="彻底删除"
-                  onClick={() => onDelete(scene)}
-                  disabled={actionPending}
-                >
-                  <TrashIcon />
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className={`icon-button favorite-button ${
-                    scene.favorite ? "is-favorite" : ""
-                  }`}
-                  aria-label={scene.favorite ? "取消收藏" : "收藏画板"}
-                  aria-pressed={scene.favorite}
-                  title={scene.favorite ? "取消收藏" : "收藏画板"}
-                  onClick={() => onToggleFavorite(scene)}
-                  disabled={actionPending}
-                >
-                  <StarIcon filled={scene.favorite} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button edit-button"
-                  aria-label={`编辑画板信息“${sceneName}”`}
-                  title="编辑画板信息"
-                  onClick={() => onEdit(scene)}
-                  disabled={actionPending}
-                >
-                  <EditIcon />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button danger delete-button"
-                  aria-label={`移至回收站“${sceneName}”`}
-                  title="移至回收站"
-                  onClick={() => onDelete(scene)}
-                  disabled={actionPending}
-                >
-                  <TrashIcon />
-                </button>
-              </>
-            )}
-          </div>
+          {!isTrash && (
+            <div className="board-card-actions">
+              <button
+                type="button"
+                className={`icon-button favorite-button ${
+                  scene.favorite ? "is-favorite" : ""
+                }`}
+                aria-label={scene.favorite ? "取消收藏" : "收藏画板"}
+                aria-pressed={scene.favorite}
+                title={scene.favorite ? "取消收藏" : "收藏画板"}
+                onClick={() => onToggleFavorite(scene)}
+                disabled={actionPending}
+              >
+                <StarIcon filled={scene.favorite} />
+              </button>
+            </div>
+          )}
         </div>
       </article>
     );
@@ -463,9 +397,6 @@ export const BoardCard = React.memo(
     previous.onOpen === next.onOpen &&
     previous.onPreload === next.onPreload &&
     previous.onToggleFavorite === next.onToggleFavorite &&
-    previous.onEdit === next.onEdit &&
-    previous.onDelete === next.onDelete &&
-    previous.onRestore === next.onRestore &&
     previous.onOpenContextMenu === next.onOpenContextMenu &&
     previous.onToggleSelection === next.onToggleSelection,
 );
