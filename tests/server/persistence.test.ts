@@ -2807,6 +2807,36 @@ describe("cloud persistence server", () => {
     const expectedHasher = new Bun.CryptoHasher("sha256");
     expectedHasher.update("export {};");
     expect(assetEtag).toBe(`"${expectedHasher.digest("hex")}"`);
+    await fs.writeFile(
+      path.join(staticDir, "assets", "valid.js.br"),
+      "brotli-representation",
+    );
+    await fs.writeFile(
+      path.join(staticDir, "assets", "valid.js.gz"),
+      "gzip-representation",
+    );
+    const brotliAsset = await request(handler, "/assets/valid.js", {
+      headers: { "Accept-Encoding": "gzip;q=0.5, br;q=1" },
+    });
+    expect(brotliAsset.headers.get("content-encoding")).toBe("br");
+    expect(brotliAsset.headers.get("vary")).toContain("Accept-Encoding");
+    expect(await brotliAsset.text()).toBe("brotli-representation");
+    const brotliEtag = brotliAsset.headers.get("etag");
+    const revalidatedBrotliAsset = await request(handler, "/assets/valid.js", {
+      headers: {
+        "Accept-Encoding": "br",
+        "If-None-Match": brotliEtag || "",
+      },
+    });
+    expect(revalidatedBrotliAsset.status).toBe(304);
+    expect(revalidatedBrotliAsset.headers.get("content-encoding")).toBe("br");
+
+    const gzipAsset = await request(handler, "/assets/valid.js", {
+      headers: { "Accept-Encoding": "gzip" },
+    });
+    expect(gzipAsset.headers.get("content-encoding")).toBe("gzip");
+    expect(await gzipAsset.text()).toBe("gzip-representation");
+
     const revalidatedAsset = await request(handler, "/assets/valid.js", {
       headers: { "If-None-Match": `W/${assetEtag}` },
     });

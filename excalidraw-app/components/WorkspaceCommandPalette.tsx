@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -281,6 +282,7 @@ export const WorkspaceCommandPalette: React.FC<
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [recentIds, setRecentIds] = useState<string[]>([]);
+  const listboxId = `${useId()}-command-listbox`;
   const inputRef = useRef<HTMLInputElement>(null);
   const commandListRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -794,10 +796,16 @@ export const WorkspaceCommandPalette: React.FC<
     return null;
   }
 
+  const activeOptionId =
+    flattenedItems.length > 0
+      ? `${listboxId}-option-${activeIndex}`
+      : undefined;
+
   return (
     <WorkspaceDialog
       className="workspace-command-palette-dialog"
       onClose={onClose}
+      ariaLabel="命令面板"
       closable
     >
       <div className="palette-dialog-inner">
@@ -809,13 +817,26 @@ export const WorkspaceCommandPalette: React.FC<
               value={query}
               placeholder="搜索菜单、命令或画板..."
               aria-label="搜索菜单、命令或画板"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-haspopup="listbox"
+              aria-controls={listboxId}
+              aria-expanded="true"
+              aria-activedescendant={activeOptionId}
+              autoComplete="off"
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
             />
           </div>
         </div>
 
-        <div className="commands" ref={commandListRef} role="listbox">
+        <div
+          id={listboxId}
+          className="commands"
+          ref={commandListRef}
+          role="listbox"
+          aria-label="可用命令和画板"
+        >
           {flattenedItems.length === 0 ? (
             <div className="no-match">
               <div className="icon">{searchIcon}</div>
@@ -828,11 +849,13 @@ export const WorkspaceCommandPalette: React.FC<
               return (
                 <button
                   key={item.id}
+                  id={`${listboxId}-option-${itemIndex}`}
                   ref={(el) => {
                     itemRefs.current[itemIndex] = el;
                   }}
                   type="button"
                   role="option"
+                  tabIndex={-1}
                   aria-selected={isSelected}
                   className={`command-item ${
                     isSelected ? "item-selected" : ""

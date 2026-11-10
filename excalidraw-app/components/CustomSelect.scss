@@ -5,7 +5,7 @@
   --custom-select-muted: var(--text-secondary, #5d6861);
   --custom-select-hover: var(--surface-hover, #eeeee8);
   --custom-select-selected: var(--brand-soft, #e7efe9);
-  --custom-select-primary: var(--brand-primary, #315f4c);
+  --custom-select-primary: var(--text-accent, #315f4c);
   position: relative;
   z-index: 0;
   display: inline-flex;
@@ -21,7 +21,7 @@ html.dark .custom-select {
   --custom-select-muted: var(--text-secondary, #9da8a0);
   --custom-select-hover: var(--surface-hover, #2d3530);
   --custom-select-selected: var(--brand-soft, #1d2d24);
-  --custom-select-primary: var(--brand-primary, #437b62);
+  --custom-select-primary: var(--text-accent, #82b59b);
 }
 
 .custom-select--open {
@@ -36,7 +36,7 @@ html.dark .custom-select {
   inline-size: 100%;
   min-inline-size: 0;
   min-block-size: 35px;
-  padding: 0 0.65rem 0 0.7rem;
+  padding: 0.35rem 0.65rem 0.35rem 0.7rem;
   border: 1px solid var(--custom-select-border);
   border-radius: 8px;
   outline: none;
@@ -45,6 +45,7 @@ html.dark .custom-select {
   cursor: pointer;
   font: inherit;
   font-size: 0.77rem;
+  line-height: 1.35;
   text-align: start;
   transition: border-color 140ms ease, background-color 140ms ease,
     box-shadow 140ms ease, color 140ms ease;
@@ -70,9 +71,8 @@ html.dark .custom-select {
 
 .custom-select__label {
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .custom-select__chevron,
@@ -103,7 +103,7 @@ html.dark .custom-select {
   --custom-select-text: var(--text-primary, #1f2622);
   --custom-select-hover: var(--surface-hover, #eeeee8);
   --custom-select-selected: var(--brand-soft, #e7efe9);
-  --custom-select-primary: var(--brand-primary, #315f4c);
+  --custom-select-primary: var(--text-accent, #315f4c);
   position: fixed;
   z-index: 1100;
   inset: auto;
@@ -130,7 +130,7 @@ html.dark .custom-select__menu {
   --custom-select-text: var(--text-primary, #e8ece9);
   --custom-select-hover: var(--surface-hover, #2d3530);
   --custom-select-selected: var(--brand-soft, #1d2d24);
-  --custom-select-primary: var(--brand-primary, #437b62);
+  --custom-select-primary: var(--text-accent, #82b59b);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4),
     0 2px 8px rgba(0, 0, 0, 0.25);
 }
@@ -219,7 +219,7 @@ html.dark .custom-select__menu {
   }
 
   .custom-select__option-label {
-    white-space: nowrap;
+    white-space: normal;
   }
 }
 

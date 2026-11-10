@@ -42,6 +42,14 @@ export const FolderIcon = () => (
   </svg>
 );
 
+export const MoreIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 export const FolderAppearanceIcon = ({ icon }: { icon: FolderIconName }) => {
   if (icon === "folder") {
     return <FolderIcon />;

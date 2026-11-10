@@ -196,8 +196,28 @@ export const WorkspaceContextMenu = ({
   onClose: () => void;
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const [position, setPosition] = useState({ x: state.x, y: state.y });
   const [activeItem, setActiveItem] = useState<string | null>(null);
+
+  useEffect(() => {
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    return () => {
+      const previousFocus = previousFocusRef.current;
+      const activeElement = document.activeElement;
+      if (
+        previousFocus?.isConnected &&
+        (!activeElement ||
+          activeElement === document.body ||
+          menuRef.current?.contains(activeElement))
+      ) {
+        previousFocus.focus({ preventScroll: true });
+      }
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const bounds = menuRef.current?.getBoundingClientRect();

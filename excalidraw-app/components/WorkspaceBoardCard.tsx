@@ -221,8 +221,12 @@ export const BoardCard = React.memo(
           isSelected ? "is-selected" : ""
         }`.trim()}
         tabIndex={0}
-        aria-label={`${sceneName}，${isSelected ? "已选择" : "未选择"}；空格键切换选择，回车打开画板`}
-        aria-keyshortcuts="Space Enter"
+        aria-label={
+          isTrash
+            ? `${sceneName}，${isSelected ? "已选择" : "未选择"}；空格键切换选择，使用操作按钮还原或彻底删除`
+            : `${sceneName}，${isSelected ? "已选择" : "未选择"}；空格键切换选择，回车打开画板`
+        }
+        aria-keyshortcuts={isTrash ? "Space" : "Space Enter"}
         onMouseEnter={onPreload}
         onFocusCapture={onPreload}
         onContextMenu={(event) => onOpenContextMenu(scene, event)}

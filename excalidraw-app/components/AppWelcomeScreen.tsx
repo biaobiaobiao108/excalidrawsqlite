@@ -9,7 +9,6 @@ export const AppWelcomeScreen: React.FC = React.memo(() => {
   const lines = [
     t("welcomeScreen.app.cloud_heading"),
     t("welcomeScreen.app.cloud_heading_line2"),
-    t("welcomeScreen.app.cloud_heading_line3"),
   ].filter(Boolean);
   const headingText = lines.join(String.fromCharCode(10));
 

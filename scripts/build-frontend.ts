@@ -1,6 +1,11 @@
 #!/usr/bin/env bun
 import path from "node:path";
 import fs from "node:fs";
+import {
+  brotliCompressSync,
+  constants as zlibConstants,
+  gzipSync,
+} from "node:zlib";
 import * as sass from "sass";
 
 import { getClientEnvVariables } from "../packages/excalidraw/env";
@@ -9,6 +14,51 @@ const projectRoot = path.resolve(__dirname, "..");
 const appDir = path.join(projectRoot, "excalidraw-app");
 const publicDir = path.join(projectRoot, "public");
 const outDir = path.join(appDir, "build");
+const compressibleExtensions = new Set([
+  ".css",
+  ".html",
+  ".js",
+  ".json",
+  ".mjs",
+  ".svg",
+  ".txt",
+  ".webmanifest",
+  ".xml",
+]);
+const compressionThresholdBytes = 1024;
+
+const precompressStaticAssets = (directory: string) => {
+  let compressedFileCount = 0;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const filePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      compressedFileCount += precompressStaticAssets(filePath);
+      continue;
+    }
+    if (
+      !entry.isFile() ||
+      !compressibleExtensions.has(path.extname(entry.name).toLowerCase())
+    ) {
+      continue;
+    }
+
+    const contents = fs.readFileSync(filePath);
+    if (contents.byteLength < compressionThresholdBytes) {
+      continue;
+    }
+    fs.writeFileSync(
+      `${filePath}.br`,
+      brotliCompressSync(contents, {
+        params: {
+          [zlibConstants.BROTLI_PARAM_QUALITY]: 5,
+        },
+      }),
+    );
+    fs.writeFileSync(`${filePath}.gz`, gzipSync(contents, { level: 9 }));
+    compressedFileCount += 1;
+  }
+  return compressedFileCount;
+};
 
 export interface BuildOptions {
   isDev?: boolean;
@@ -175,6 +225,11 @@ export async function buildFrontend(options: BuildOptions = {}) {
     finalHtml = finalHtml.replace(/\scrossorigin(="[^"]*")?/g, "");
 
     fs.writeFileSync(generatedHtmlPath, finalHtml, "utf8");
+  }
+
+  if (!isDev) {
+    const compressedFileCount = precompressStaticAssets(outDir);
+    console.log(`⚡ Precompressed ${compressedFileCount} static files`);
   }
 
   const durationMs = (performance.now() - startTime).toFixed(0);

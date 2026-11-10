@@ -93,6 +93,7 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
         onClose?.();
       }}
       className="auth-dialog"
+      ariaLabel="访问授权验证"
       closable={false}
     >
       <div className="auth-dialog-card">
@@ -136,7 +137,6 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
               aria-label={showPassword ? "隐藏密码" : "显示密码"}
               title={showPassword ? "隐藏密码" : "显示密码"}
               onClick={() => setShowPassword(!showPassword)}
-              tabIndex={-1}
             >
               {showPassword ? eyeClosedIcon : eyeIcon}
             </button>

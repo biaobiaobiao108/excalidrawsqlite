@@ -59,7 +59,9 @@ import {
   EmptyTrashIcon,
   ExcalidrawMark,
   FolderAppearanceIcon,
+  FolderIcon,
   GridIcon,
+  MoreIcon,
   RestoreIcon,
   SearchIcon,
   StarIcon,
@@ -327,6 +329,7 @@ export const WorkspaceHome = ({
     null,
   );
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [mobileFoldersOpen, setMobileFoldersOpen] = useState(false);
   const [contextMenu, setContextMenu] =
     useState<WorkspaceContextMenuState | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -2154,50 +2157,81 @@ export const WorkspaceHome = ({
               </button>
             </nav>
           </div>
-          <div className="folder-heading">
+          <button
+            type="button"
+            className="mobile-folder-toggle"
+            aria-expanded={mobileFoldersOpen}
+            aria-controls="workspace-folder-panel"
+            onClick={() => setMobileFoldersOpen((open) => !open)}
+          >
+            <FolderIcon />
             <span>文件夹</span>
-            <button
-              type="button"
-              aria-label="新建文件夹"
-              onClick={() => openFolderDialog()}
-            >
-              ＋
-            </button>
-          </div>
-          <div className="folder-list">
-            {folders.map((folder) => (
-              <div
-                className={`folder-row ${
-                  selectedFolderId === folder.id && view !== "trash"
-                    ? "is-selected"
-                    : ""
-                }`.trim()}
-                key={folder.id}
-                style={
-                  {
-                    "--folder-accent":
-                      folder.color || DEFAULT_FOLDER_APPEARANCE.color,
-                  } as React.CSSProperties
-                }
-                onContextMenu={(event) => openFolderContextMenu(folder, event)}
-              >
+            <small>{folders.length}</small>
+            <span className="mobile-folder-chevron" aria-hidden="true" />
+          </button>
+          <div
+            id="workspace-folder-panel"
+            className={`folder-panel${mobileFoldersOpen ? " is-open" : ""}`}
+          >
+            <div className="folder-panel-content">
+              <div className="folder-heading">
+                <span>文件夹</span>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedFolderId(folder.id);
-                    setView("all");
-                  }}
+                  aria-label="新建文件夹"
+                  onClick={() => openFolderDialog()}
                 >
-                  <span className="folder-row-icon" aria-hidden="true">
-                    <FolderAppearanceIcon
-                      icon={folder.icon || DEFAULT_FOLDER_APPEARANCE.icon}
-                    />
-                  </span>
-                  <span>{folder.name}</span>
-                  <small>{folderSceneCounts.get(folder.id) || 0}</small>
+                  ＋
                 </button>
               </div>
-            ))}
+              <div className="folder-list">
+                {folders.map((folder) => (
+                  <div
+                    className={`folder-row ${
+                      selectedFolderId === folder.id && view !== "trash"
+                        ? "is-selected"
+                        : ""
+                    }`.trim()}
+                    key={folder.id}
+                    style={
+                      {
+                        "--folder-accent":
+                          folder.color || DEFAULT_FOLDER_APPEARANCE.color,
+                      } as React.CSSProperties
+                    }
+                    onContextMenu={(event) =>
+                      openFolderContextMenu(folder, event)
+                    }
+                  >
+                    <button
+                      type="button"
+                      className="folder-row-select"
+                      onClick={() => {
+                        setSelectedFolderId(folder.id);
+                        setView("all");
+                      }}
+                    >
+                      <span className="folder-row-icon" aria-hidden="true">
+                        <FolderAppearanceIcon
+                          icon={folder.icon || DEFAULT_FOLDER_APPEARANCE.icon}
+                        />
+                      </span>
+                      <span>{folder.name}</span>
+                      <small>{folderSceneCounts.get(folder.id) || 0}</small>
+                    </button>
+                    <button
+                      type="button"
+                      className="folder-row-menu"
+                      aria-label={`管理文件夹“${folder.name}”`}
+                      title="文件夹操作"
+                      onClick={(event) => openFolderContextMenu(folder, event)}
+                    >
+                      <MoreIcon />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </aside>
 
