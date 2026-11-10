@@ -132,8 +132,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Check for an existing release
+        if: github.event_name != 'release' && startsWith(github.ref, 'refs/tags/')
+        id: existing_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          exists=$(gh api graphql \
+            -f query='query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id } } }' \
+            -f owner="${RELEASE_REPOSITORY%%/*}" \
+            -f name="${RELEASE_REPOSITORY#*/}" \
+            -f tag="$RELEASE_TAG" \
+            --jq '.data.repository.release != null')
+          echo "exists=$exists" >> "$GITHUB_OUTPUT"
+
       - name: Generate Release Body
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        if: steps.existing_release.outputs.exists == 'false'
         id: release_body
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -239,8 +255,8 @@ jobs:
           - `:Z` 用于 SELinux 主机；Docker Desktop 若不接受该后缀可删除它。公网部署必须使用 HTTPS，反向代理场景只有显式设置 `TRUST_PROXY=true` 才会信任 `X-Forwarded-Proto`。
           EOF
 
-      - name: Create or Update GitHub Release
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+      - name: Create GitHub Release
+        if: steps.existing_release.outputs.exists == 'false'
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           body_path: release_notes.md
