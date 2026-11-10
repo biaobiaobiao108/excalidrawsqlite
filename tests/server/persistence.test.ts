@@ -235,13 +235,15 @@ describe("cloud persistence server", () => {
     expect(await responseJson(moved)).toMatchObject({ folder_id: null });
   });
 
-  it("does not change the edited timestamp when only the favorite state changes", async () => {
+  it("keeps the edited timestamp and list order for board metadata changes", async () => {
     const { handler, runtime } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
+    const folder = await responseJson<{ id: string }>(
+      await jsonRequest(handler, "/api/folders", { name: "编辑时间测试" }),
+    );
     const board = await responseJson<{
       id: string;
       revision: number;
       updated_at: number;
-      favorite: boolean;
     }>(
       await jsonRequest(handler, "/api/scenes", {
         name: "收藏时间",
@@ -259,17 +261,20 @@ describe("cloud persistence server", () => {
       handler,
       `/api/scenes/${board.id}`,
       {
-        name: "收藏时间",
-        tags: [],
-        favorite: !board.favorite,
-        folder_id: null,
+        name: "更新后的名称",
+        tags: ["交付"],
+        favorite: true,
+        folder_id: folder.id,
         baseRevision: board.revision,
       },
       { method: "PATCH" },
     );
     expect(response.status).toBe(200);
     expect(await responseJson(response)).toMatchObject({
-      favorite: !board.favorite,
+      name: "更新后的名称",
+      tags: ["交付"],
+      favorite: true,
+      folder_id: folder.id,
       updated_at: board.updated_at,
       revision: board.revision + 1,
     });
@@ -287,19 +292,52 @@ describe("cloud persistence server", () => {
     expect(listing.items.map((item) => item.id)).toEqual([newer.id, board.id]);
 
     await Bun.sleep(10);
-    const renamed = await responseJson<{
+    const saved = await responseJson<{
       updated_at: number;
       revision: number;
     }>(
       await jsonRequest(
         handler,
         `/api/scenes/${board.id}`,
-        { name: "收藏后改名", baseRevision: board.revision + 1 },
-        { method: "PATCH" },
+        { name: "保存时改名", baseRevision: board.revision + 1 },
+        { method: "PUT" },
       ),
     );
-    expect(renamed.updated_at).toBeGreaterThan(board.updated_at);
-    expect(renamed.revision).toBe(board.revision + 2);
+    expect(saved.updated_at).toBe(board.updated_at);
+    expect(saved.revision).toBe(board.revision + 2);
+
+    const deletedFolder = await request(handler, `/api/folders/${folder.id}`, {
+      method: "DELETE",
+    });
+    expect(deletedFolder.status).toBe(200);
+    const afterFolderDelete = await responseJson<{
+      folder_id: string | null;
+      updated_at: number;
+      revision: number;
+    }>(await request(handler, `/api/scenes/${board.id}/summary`));
+    expect(afterFolderDelete).toMatchObject({
+      folder_id: null,
+      updated_at: board.updated_at,
+      revision: board.revision + 3,
+    });
+
+    await Bun.sleep(10);
+    const contentChanged = await responseJson<{
+      updated_at: number;
+      revision: number;
+    }>(
+      await jsonRequest(
+        handler,
+        `/api/scenes/${board.id}`,
+        {
+          elements: [{ id: "box", type: "rectangle" }],
+          baseRevision: board.revision + 3,
+        },
+        { method: "PUT" },
+      ),
+    );
+    expect(contentChanged.updated_at).toBeGreaterThan(board.updated_at);
+    expect(contentChanged.revision).toBe(board.revision + 4);
   });
 
   it("authorizes workspace statistics and returns an empty workspace", async () => {
@@ -2010,7 +2048,7 @@ describe("cloud persistence server", () => {
   });
 
   it("performs revision-checked scene batch trash, restore, and permanent deletion atomically", async () => {
-    const { handler } = createTestRuntime();
+    const { handler, runtime } = createTestRuntime();
     const cookie = await authenticate(handler);
     const ids = ["scene_batch_a", "scene_batch_b"];
     for (const id of ids) {
@@ -2023,6 +2061,17 @@ describe("cloud persistence server", () => {
       expect(created.status).toBe(201);
     }
     const entries = ids.map((id) => ({ id, revision: 1 }));
+    const editedTimes = new Map(
+      ids.map((id) => [
+        id,
+        (
+          runtime.db
+            .query("SELECT updated_at FROM scenes WHERE id = ?")
+            .get(id) as { updated_at: number }
+        ).updated_at,
+      ]),
+    );
+    await Bun.sleep(5);
 
     const staleBatch = await jsonRequest(
       handler,
@@ -2054,6 +2103,11 @@ describe("cloud persistence server", () => {
     expect(
       await responseJson<{ ids: string[]; deleted: boolean }>(trashed),
     ).toMatchObject({ ids, deleted: true });
+    for (const id of ids) {
+      expect(
+        runtime.db.query("SELECT updated_at FROM scenes WHERE id = ?").get(id),
+      ).toEqual({ updated_at: editedTimes.get(id) });
+    }
 
     const restored = await jsonRequest(
       handler,
@@ -2068,6 +2122,11 @@ describe("cloud persistence server", () => {
     expect(
       await responseJson<{ ids: string[]; deleted: boolean }>(restored),
     ).toMatchObject({ ids, deleted: false });
+    for (const id of ids) {
+      expect(
+        runtime.db.query("SELECT updated_at FROM scenes WHERE id = ?").get(id),
+      ).toEqual({ updated_at: editedTimes.get(id) });
+    }
 
     const invalidPermanentDelete = await jsonRequest(
       handler,

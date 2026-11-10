@@ -483,12 +483,15 @@ describe("route failure and realtime regressions", () => {
           "SELECT revision, updated_at, deleted_at FROM scenes WHERE id = ?",
         )
         .get("trash_lifecycle");
+    const created = state() as { revision: number; updated_at: number };
+    await Bun.sleep(5);
     expect(
       await (
         await request("/api/scenes/trash_lifecycle", { method: "DELETE" })
       ).json(),
     ).toMatchObject({ revision: 2 });
     const deleted = state();
+    expect(deleted).toMatchObject({ updated_at: created.updated_at });
     expect(
       await (
         await request("/api/scenes/trash_lifecycle", { method: "DELETE" })
@@ -512,6 +515,7 @@ describe("route failure and realtime regressions", () => {
       ).json(),
     ).toMatchObject({ revision: 3 });
     const restored = state();
+    expect(restored).toMatchObject({ updated_at: created.updated_at });
     expect(
       await (
         await request("/api/scenes/trash_lifecycle/restore", { method: "POST" })
@@ -529,6 +533,10 @@ describe("route failure and realtime regressions", () => {
     ).toMatchObject({ noop: true });
     expect(state()).toEqual(restored);
     expect(events.map((event) => event.revision)).toEqual([2, 3]);
+    expect(events.map((event) => event.updatedAt)).toEqual([
+      created.updated_at,
+      created.updated_at,
+    ]);
     expect(
       (
         await json(

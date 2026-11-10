@@ -304,14 +304,14 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
          WHERE id = ? AND deleted_at IS NULL`,
       ),
       getSceneStateById: runtime.db.query(
-        "SELECT id, deleted_at, revision FROM scenes WHERE id = ?",
+        "SELECT id, deleted_at, revision, updated_at FROM scenes WHERE id = ?",
       ),
       softDeleteScene: runtime.db.query(
-        `UPDATE scenes SET deleted_at = ?, updated_at = ?, revision = revision + 1
+        `UPDATE scenes SET deleted_at = ?, revision = revision + 1
          WHERE id = ? AND revision = ? AND deleted_at IS NULL`,
       ),
       restoreScene: runtime.db.query(
-        `UPDATE scenes SET deleted_at = NULL, updated_at = ?, revision = revision + 1
+        `UPDATE scenes SET deleted_at = NULL, revision = revision + 1
          WHERE id = ? AND revision = ? AND deleted_at IS NOT NULL`,
       ),
       deleteSceneFileReferences: runtime.db.query(
@@ -680,13 +680,17 @@ export const createRequestHandler = (
         const isPermanent = req.method === "DELETE";
         const isRestore = !isPermanent && body.deleted === false;
         const now = Date.now();
-        const changedEntries: typeof entries = [];
+        const changedEntries: Array<{
+          entry: (typeof entries)[number];
+          updatedAt: number;
+        }> = [];
         const transaction = runtime.db.transaction(() => {
           for (const entry of entries) {
             const existing = stmts.getSceneStateById.get(entry.id) as {
               id: string;
               deleted_at: number | null;
               revision: number;
+              updated_at: number;
             } | null;
             if (
               !existing ||
@@ -705,11 +709,14 @@ export const createRequestHandler = (
                 ? existing.deleted_at !== null
                 : existing.deleted_at === null)
             ) {
-              changedEntries.push(entry);
+              changedEntries.push({
+                entry,
+                updatedAt: Number(existing.updated_at),
+              });
             }
           }
 
-          for (const entry of changedEntries) {
+          for (const { entry } of changedEntries) {
             if (isPermanent) {
               stmts.deleteSceneFileReferences.run(entry.id);
               const result = stmts.deleteTrashedScene.run(
@@ -724,11 +731,7 @@ export const createRequestHandler = (
                 );
               }
             } else if (isRestore) {
-              const result = stmts.restoreScene.run(
-                now,
-                entry.id,
-                entry.revision,
-              );
+              const result = stmts.restoreScene.run(entry.id, entry.revision);
               if (result.changes !== 1) {
                 throw new HttpError(
                   409,
@@ -738,7 +741,6 @@ export const createRequestHandler = (
               }
             } else {
               const result = stmts.softDeleteScene.run(
-                now,
                 now,
                 entry.id,
                 entry.revision,
@@ -754,12 +756,12 @@ export const createRequestHandler = (
           }
         });
         transaction.immediate();
-        for (const entry of changedEntries) {
+        for (const { entry, updatedAt } of changedEntries) {
           publishSceneChanged(runtime, {
             type: "scene_changed",
             sceneId: entry.id,
             revision: entry.revision + (isPermanent ? 0 : 1),
-            updatedAt: now,
+            updatedAt,
             changeKind: isRestore ? "restored" : "deleted",
           });
         }
@@ -1105,19 +1107,15 @@ export const createRequestHandler = (
           revision: number;
           updated_at: number;
         }>;
-        const now = affectedScenes.reduce(
-          (latest, scene) => Math.max(latest, Number(scene.updated_at) + 1),
-          Date.now(),
-        );
+        const now = Date.now();
         const transaction = runtime.db.transaction(() => {
           const updateScene = runtime.db.query(
             `UPDATE scenes
-             SET folder_id = NULL, updated_at = ?, revision = ?
+             SET folder_id = NULL, revision = ?
              WHERE id = ? AND folder_id = ?`,
           );
           for (const scene of affectedScenes) {
             updateScene.run(
-              now,
               storedSceneRevision(scene.revision) + 1,
               scene.id,
               id,
@@ -1131,7 +1129,7 @@ export const createRequestHandler = (
             type: "scene_changed",
             sceneId: scene.id,
             revision: storedSceneRevision(scene.revision) + 1,
-            updatedAt: now,
+            updatedAt: Number(scene.updated_at),
             changeKind: "metadata",
           });
         }
@@ -1153,6 +1151,7 @@ export const createRequestHandler = (
           id: string;
           deleted_at: number | null;
           revision: number;
+          updated_at: number;
         } | null;
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
@@ -1166,9 +1165,9 @@ export const createRequestHandler = (
             noop: true,
           });
         }
-        const updatedAt = Date.now();
+        const updatedAt = Number(existing.updated_at);
         const revision = storedSceneRevision(existing.revision) + 1;
-        const result = stmts.restoreScene.run(updatedAt, id, revision - 1);
+        const result = stmts.restoreScene.run(id, revision - 1);
         if (result.changes !== 1) {
           throw new HttpError(
             409,
@@ -1545,12 +1544,7 @@ export const createRequestHandler = (
             noop: true,
           });
         }
-        const now = Date.now();
-        const updatesEditingTime =
-          name !== existing.name ||
-          folderId !== existing.folder_id ||
-          !tagsUnchanged;
-        const nextUpdatedAt = updatesEditingTime ? now : existing.updated_at;
+        const nextUpdatedAt = existing.updated_at;
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {
           assertSceneFolderExists(folderId);
@@ -1650,6 +1644,7 @@ export const createRequestHandler = (
           });
         }
         const now = Date.now();
+        const nextUpdatedAt = contentChanged ? now : existing.updated_at;
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {
           assertSceneFolderExists(folderId);
@@ -1667,7 +1662,7 @@ export const createRequestHandler = (
               tagsJson,
               favorite ? 1 : 0,
               folderId,
-              now,
+              nextUpdatedAt,
               revision,
               elementCount,
               contentBytes,
@@ -1697,13 +1692,13 @@ export const createRequestHandler = (
           type: "scene_changed",
           sceneId: id,
           revision,
-          updatedAt: now,
-          changeKind: "content",
+          updatedAt: nextUpdatedAt,
+          changeKind: contentChanged ? "content" : "metadata",
         });
         return jsonResponse(runtime, req, {
           success: true,
           id,
-          updated_at: now,
+          updated_at: nextUpdatedAt,
           revision,
         });
       }
@@ -1740,6 +1735,7 @@ export const createRequestHandler = (
           id: string;
           deleted_at: number | null;
           revision: number;
+          updated_at: number;
         } | null;
         if (!existing) {
           return jsonResponse(runtime, req, {
@@ -1791,7 +1787,7 @@ export const createRequestHandler = (
             type: "scene_changed",
             sceneId: id,
             revision: storedSceneRevision(existing.revision),
-            updatedAt: Date.now(),
+            updatedAt: Number(existing.updated_at),
             changeKind: "deleted",
           });
           return jsonResponse(runtime, req, {
@@ -1814,7 +1810,7 @@ export const createRequestHandler = (
         }
         const now = Date.now();
         const revision = storedSceneRevision(existing.revision) + 1;
-        const result = stmts.softDeleteScene.run(now, now, id, revision - 1);
+        const result = stmts.softDeleteScene.run(now, id, revision - 1);
         if (result.changes !== 1) {
           throw new HttpError(
             409,
@@ -1826,7 +1822,7 @@ export const createRequestHandler = (
           type: "scene_changed",
           sceneId: id,
           revision,
-          updatedAt: now,
+          updatedAt: Number(existing.updated_at),
           changeKind: "deleted",
         });
         return jsonResponse(runtime, req, {
