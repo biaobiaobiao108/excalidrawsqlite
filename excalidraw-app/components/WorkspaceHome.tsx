@@ -3043,10 +3043,11 @@ export const WorkspaceHome = ({
     [],
   );
 
-  const renderBoardCard = (scene: CloudSceneSummary) => (
+  const renderBoardCard = (scene: CloudSceneSummary, eager = false) => (
     <BoardCard
       key={scene.id}
       scene={scene}
+      eager={eager}
       isTrash={!!displayedPageOptions.trash}
       onOpen={navigateToScene}
       onPreload={onPreloadScene}
@@ -3396,6 +3397,12 @@ export const WorkspaceHome = ({
                 >
                   {boardGridVirtualizer.getVirtualItems().map((virtualRow) => {
                     const startIndex = virtualRow.index * boardGridColumns;
+                    const scrollElement = rootRef.current;
+                    const isRowVisible =
+                      scrollElement !== null &&
+                      virtualRow.start <
+                        scrollElement.scrollTop + scrollElement.clientHeight &&
+                      virtualRow.end > scrollElement.scrollTop;
                     return (
                       <div
                         key={virtualRow.key}
@@ -3411,14 +3418,16 @@ export const WorkspaceHome = ({
                       >
                         {filteredScenes
                           .slice(startIndex, startIndex + boardGridColumns)
-                          .map(renderBoardCard)}
+                          .map((scene) => renderBoardCard(scene, isRowVisible))}
                       </div>
                     );
                   })}
                 </div>
               ) : (
                 <div ref={boardGridRef} className="board-grid">
-                  {filteredScenes.map(renderBoardCard)}
+                  {filteredScenes.map((scene, index) =>
+                    renderBoardCard(scene, index < boardGridColumns * 2),
+                  )}
                 </div>
               )}
               {hasMoreScenes && (
