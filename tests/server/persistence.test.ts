@@ -235,6 +235,73 @@ describe("cloud persistence server", () => {
     expect(await responseJson(moved)).toMatchObject({ folder_id: null });
   });
 
+  it("does not change the edited timestamp when only the favorite state changes", async () => {
+    const { handler, runtime } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
+    const board = await responseJson<{
+      id: string;
+      revision: number;
+      updated_at: number;
+      favorite: boolean;
+    }>(
+      await jsonRequest(handler, "/api/scenes", {
+        name: "收藏时间",
+        elements: [],
+      }),
+    );
+    await Bun.sleep(10);
+    const newer = await responseJson<{ id: string }>(
+      await jsonRequest(handler, "/api/scenes", {
+        name: "较新画板",
+        elements: [],
+      }),
+    );
+    const response = await jsonRequest(
+      handler,
+      `/api/scenes/${board.id}`,
+      {
+        name: "收藏时间",
+        tags: [],
+        favorite: !board.favorite,
+        folder_id: null,
+        baseRevision: board.revision,
+      },
+      { method: "PATCH" },
+    );
+    expect(response.status).toBe(200);
+    expect(await responseJson(response)).toMatchObject({
+      favorite: !board.favorite,
+      updated_at: board.updated_at,
+      revision: board.revision + 1,
+    });
+    expect(
+      runtime.db
+        .query("SELECT updated_at, revision FROM scenes WHERE id = ?")
+        .get(board.id),
+    ).toEqual({
+      updated_at: board.updated_at,
+      revision: board.revision + 1,
+    });
+    const listing = await responseJson<{ items: Array<{ id: string }> }>(
+      await request(handler, "/api/scenes"),
+    );
+    expect(listing.items.map((item) => item.id)).toEqual([newer.id, board.id]);
+
+    await Bun.sleep(10);
+    const renamed = await responseJson<{
+      updated_at: number;
+      revision: number;
+    }>(
+      await jsonRequest(
+        handler,
+        `/api/scenes/${board.id}`,
+        { name: "收藏后改名", baseRevision: board.revision + 1 },
+        { method: "PATCH" },
+      ),
+    );
+    expect(renamed.updated_at).toBeGreaterThan(board.updated_at);
+    expect(renamed.revision).toBe(board.revision + 2);
+  });
+
   it("authorizes workspace statistics and returns an empty workspace", async () => {
     const { handler } = createTestRuntime();
     expect((await request(handler, "/api/workspace/stats")).status).toBe(401);

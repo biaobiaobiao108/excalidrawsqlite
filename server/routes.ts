@@ -299,7 +299,7 @@ const getPreparedStatements = (runtime: ServerRuntime) => {
          WHERE id = ? AND deleted_at IS NULL`,
       ),
       getSceneMetadataById: runtime.db.query(
-        `SELECT id, name, tags_json, is_favorite, folder_id, revision
+        `SELECT id, name, tags_json, is_favorite, folder_id, revision, updated_at
          FROM scenes
          WHERE id = ? AND deleted_at IS NULL`,
       ),
@@ -1502,6 +1502,7 @@ export const createRequestHandler = (
           is_favorite: number;
           folder_id: string | null;
           revision: number;
+          updated_at: number;
         } | null;
         if (!existing) {
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
@@ -1545,6 +1546,11 @@ export const createRequestHandler = (
           });
         }
         const now = Date.now();
+        const updatesEditingTime =
+          name !== existing.name ||
+          folderId !== existing.folder_id ||
+          !tagsUnchanged;
+        const nextUpdatedAt = updatesEditingTime ? now : existing.updated_at;
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {
           assertSceneFolderExists(folderId);
@@ -1558,7 +1564,7 @@ export const createRequestHandler = (
               JSON.stringify(tags),
               favorite ? 1 : 0,
               folderId,
-              now,
+              nextUpdatedAt,
               revision,
               id,
               currentRevision,
@@ -1578,7 +1584,7 @@ export const createRequestHandler = (
           type: "scene_changed",
           sceneId: id,
           revision,
-          updatedAt: now,
+          updatedAt: nextUpdatedAt,
           changeKind: "metadata",
         });
         return jsonResponse(runtime, req, getSceneSummary(updated));
