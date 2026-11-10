@@ -518,6 +518,7 @@ export type CloudRealtimeEvent =
       type: "workspace_changed";
       updatedAt: number;
       sceneId?: string;
+      revision?: number;
       changeKind?:
         | "created"
         | "content"

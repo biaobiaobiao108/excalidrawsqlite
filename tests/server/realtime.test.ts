@@ -220,6 +220,7 @@ describe("native websocket realtime", () => {
       await expect(workspaceEventPromise).resolves.toMatchObject({
         type: "workspace_changed",
         sceneId: "scene_realtime",
+        revision: 1,
         changeKind: "created",
       });
     } finally {

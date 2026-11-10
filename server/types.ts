@@ -137,6 +137,7 @@ export type WorkspaceRealtimeEvent = {
   type: "workspace_changed";
   updatedAt: number;
   sceneId?: string;
+  revision?: number;
   changeKind?: SceneRealtimeEvent["changeKind"];
 };
 

@@ -332,7 +332,80 @@ export const WorkspaceHome = ({
   const [mobileFoldersOpen, setMobileFoldersOpen] = useState(false);
   const [contextMenu, setContextMenu] =
     useState<WorkspaceContextMenuState | null>(null);
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [pendingActions, setPendingActions] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const pendingActionsRef = useRef<ReadonlySet<string>>(new Set());
+  const beginPendingAction = useCallback((action: string) => {
+    if (pendingActionsRef.current.has(action)) {
+      return false;
+    }
+    const next = new Set(pendingActionsRef.current);
+    next.add(action);
+    pendingActionsRef.current = next;
+    setPendingActions(next);
+    return true;
+  }, []);
+  const finishPendingAction = useCallback((action: string) => {
+    if (!pendingActionsRef.current.has(action)) {
+      return;
+    }
+    const next = new Set(pendingActionsRef.current);
+    next.delete(action);
+    pendingActionsRef.current = next;
+    setPendingActions(next);
+  }, []);
+  const beginSceneAction = useCallback(
+    (sceneId: string, action: string) => {
+      const prefix = `scene:${sceneId}:`;
+      if (
+        Array.from(pendingActionsRef.current).some((pending) =>
+          pending.startsWith(prefix),
+        )
+      ) {
+        return false;
+      }
+      return beginPendingAction(action);
+    },
+    [beginPendingAction],
+  );
+  const beginBatchAction = useCallback(
+    (sceneIds: string[], action: string) => {
+      const scenePrefixes = sceneIds.map((sceneId) => `scene:${sceneId}:`);
+      const blocked = Array.from(pendingActionsRef.current).some(
+        (pending) =>
+          pending.startsWith("batch:") ||
+          scenePrefixes.some((prefix) => pending.startsWith(prefix)),
+      );
+      return blocked ? false : beginPendingAction(action);
+    },
+    [beginPendingAction],
+  );
+  const isActionPending = useCallback(
+    (action: string) => pendingActions.has(action),
+    [pendingActions],
+  );
+  const isSceneActionPending = useCallback(
+    (sceneId: string) => {
+      const prefix = `scene:${sceneId}:`;
+      return Array.from(pendingActions).some((action) =>
+        action.startsWith(prefix),
+      );
+    },
+    [pendingActions],
+  );
+  const isFolderActionPending = useCallback(
+    (folderId: string) => {
+      const prefix = `folder:${folderId}:`;
+      return Array.from(pendingActions).some((action) =>
+        action.startsWith(prefix),
+      );
+    },
+    [pendingActions],
+  );
+  const hasBatchActionPending = Array.from(pendingActions).some((action) =>
+    action.startsWith("batch:"),
+  );
   const [sceneCursor, setSceneCursor] = useState<string | null>(null);
   const [trashSceneCursor, setTrashSceneCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -352,6 +425,7 @@ export const WorkspaceHome = ({
   const loadRequestRef = useRef(0);
   const pageRequestRef = useRef(0);
   const loadMoreRequestRef = useRef(0);
+  const workspaceMetadataRequestRef = useRef(0);
   const workspaceLoadedRef = useRef(false);
   const pageQueryKey = [
     view,
@@ -769,6 +843,15 @@ export const WorkspaceHome = ({
         return;
       }
       if (
+        event.changeKind !== "thumbnail" &&
+        typeof event.sceneId === "string" &&
+        Array.from(pendingActionsRef.current).some((action) =>
+          action.startsWith(`scene:${event.sceneId}:`),
+        )
+      ) {
+        return;
+      }
+      if (
         event.type === "workspace_changed" &&
         event.changeKind === "thumbnail" &&
         typeof event.sceneId === "string" &&
@@ -832,8 +915,22 @@ export const WorkspaceHome = ({
       if (refreshTimer) {
         clearTimeout(refreshTimer);
       }
+      const pendingEvent = event;
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
+        if (
+          pendingEvent.changeKind === "metadata" &&
+          typeof pendingEvent.sceneId === "string" &&
+          typeof pendingEvent.revision === "number"
+        ) {
+          const current = [
+            ...loadedScenesRef.current.scenes,
+            ...loadedScenesRef.current.trashScenes,
+          ].find((scene) => scene.id === pendingEvent.sceneId);
+          if (current && current.revision >= pendingEvent.revision) {
+            return;
+          }
+        }
         void loadWorkspace();
       }, 250);
     });
@@ -955,6 +1052,9 @@ export const WorkspaceHome = ({
     () => filteredScenes.filter((scene) => selectedSceneIds.has(scene.id)),
     [filteredScenes, selectedSceneIds],
   );
+  const batchActionsDisabled =
+    hasBatchActionPending ||
+    selectedScenes.some((scene) => isSceneActionPending(scene.id));
 
   const handleToggleSceneSelection = useCallback(
     (id: string, modifiers: Omit<BoardSelectionClick, "id"> = {}) => {
@@ -1176,43 +1276,70 @@ export const WorkspaceHome = ({
     }
   });
 
-  const navigateToScene = (scene: CloudSceneSummary, newTab = false) => {
-    const ownerWindow = getOwnerWindow(rootRef.current);
-    const url = new URL(ownerWindow.location.href);
-    url.search = `?id=${encodeURIComponent(scene.id)}`;
-    url.hash = "";
+  const navigateToScene = useCallback(
+    (scene: CloudSceneSummary, newTab = false) => {
+      const ownerWindow = getOwnerWindow(rootRef.current);
+      const url = new URL(ownerWindow.location.href);
+      url.search = `?id=${encodeURIComponent(scene.id)}`;
+      url.hash = "";
 
-    if (newTab) {
-      ownerWindow.open(
-        `${url.pathname}${url.search}`,
-        "_blank",
-        "noopener,noreferrer",
-      );
-      return;
+      if (newTab) {
+        ownerWindow.open(
+          `${url.pathname}${url.search}`,
+          "_blank",
+          "noopener,noreferrer",
+        );
+        return;
+      }
+
+      if (onSelectScene) {
+        onSelectScene(scene.id);
+        return;
+      }
+      ownerWindow.location.assign(`${url.pathname}${url.search}`);
+    },
+    [onSelectScene],
+  );
+
+  const refreshWorkspaceMetadata = useCallback(async () => {
+    const requestId = ++workspaceMetadataRequestRef.current;
+    try {
+      const [folderList, stats] = await Promise.all([
+        fetchCloudFolders(),
+        fetchCloudWorkspaceStats(),
+      ]);
+      if (workspaceMetadataRequestRef.current !== requestId) {
+        return;
+      }
+      setFolders(folderList);
+      setWorkspaceStats(stats);
+    } catch (requestError) {
+      console.warn("刷新工作区摘要失败", requestError);
     }
+  }, []);
 
-    if (onSelectScene) {
-      onSelectScene(scene.id);
-      return;
-    }
-    ownerWindow.location.assign(`${url.pathname}${url.search}`);
-  };
-
-  const notifyWorkspaceChanged = () => {
-    broadcastWorkspaceChanged();
-    void loadWorkspace();
-  };
+  const notifyWorkspaceChanged = useCallback(
+    (reloadPage = false) => {
+      broadcastWorkspaceChanged();
+      if (reloadPage) {
+        void loadWorkspace();
+      } else {
+        void refreshWorkspaceMetadata();
+      }
+    },
+    [loadWorkspace, refreshWorkspaceMetadata],
+  );
 
   const handleCreateScene = async (
     targetFolderId?: string | null,
     sceneName?: string,
   ) => {
-    if (pendingAction) {
+    const action = "scene:create";
+    if (!beginPendingAction(action)) {
       return;
     }
     const folderId =
       targetFolderId !== undefined ? targetFolderId : selectedFolderId;
-    setPendingAction("create-scene");
     setError("");
     try {
       const scene = await createCloudScene({
@@ -1225,31 +1352,53 @@ export const WorkspaceHome = ({
     } catch (requestError: any) {
       handleRequestError(requestError, "创建画板失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleToggleFavorite = async (scene: CloudSceneSummary) => {
-    if (pendingAction) {
+    const action = `scene:${scene.id}:favorite`;
+    if (!beginSceneAction(scene.id, action)) {
       return;
     }
     const nextFavorite = !scene.favorite;
+    const favoriteDelta = nextFavorite ? 1 : -1;
+    setWorkspaceStats((current) =>
+      current
+        ? {
+            ...current,
+            favoriteCount: Math.max(0, current.favoriteCount + favoriteDelta),
+          }
+        : current,
+    );
     setScenes((current) =>
       current.map((item) =>
         item.id === scene.id ? { ...item, favorite: nextFavorite } : item,
       ),
     );
-    setPendingAction(`favorite:${scene.id}`);
     try {
       const updated = await updateCloudSceneMetadata(scene.id, {
         favorite: nextFavorite,
         baseRevision: scene.revision,
       });
-      setScenes((current) =>
-        current.map((item) => (item.id === scene.id ? updated : item)),
-      );
+      if (view === "favorites" && !updated.favorite) {
+        setScenes((current) => current.filter((item) => item.id !== scene.id));
+        setPageTotalCount((current) => Math.max(0, current - 1));
+      } else {
+        setScenes((current) =>
+          current.map((item) => (item.id === scene.id ? updated : item)),
+        );
+      }
       notifyWorkspaceChanged();
     } catch (requestError: any) {
+      setWorkspaceStats((current) =>
+        current
+          ? {
+              ...current,
+              favoriteCount: Math.max(0, current.favoriteCount - favoriteDelta),
+            }
+          : current,
+      );
       setScenes((current) =>
         current.map((item) =>
           item.id === scene.id ? { ...item, favorite: scene.favorite } : item,
@@ -1257,12 +1406,16 @@ export const WorkspaceHome = ({
       );
       handleRequestError(requestError, "更新收藏状态失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleSaveMetadata = async () => {
-    if (!metadataDialog || pendingAction) {
+    if (!metadataDialog) {
+      return;
+    }
+    const action = `scene:${metadataDialog.scene.id}:metadata`;
+    if (!beginSceneAction(metadataDialog.scene.id, action)) {
       return;
     }
     const tags = metadataDialog.tags
@@ -1270,7 +1423,6 @@ export const WorkspaceHome = ({
       .map((tag) => tag.trim())
       .filter(Boolean)
       .filter((tag, index, list) => list.indexOf(tag) === index);
-    setPendingAction(`metadata:${metadataDialog.scene.id}`);
     setError("");
     try {
       const updated = await updateCloudSceneMetadata(metadataDialog.scene.id, {
@@ -1284,10 +1436,17 @@ export const WorkspaceHome = ({
       );
       setMetadataDialog(null);
       notifyWorkspaceChanged();
+      if (
+        displayedPageOptions.query ||
+        displayedPageOptions.tag ||
+        displayedPageOptions.folderId
+      ) {
+        void loadWorkspace();
+      }
     } catch (requestError: any) {
       handleRequestError(requestError, "保存画板信息失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
@@ -1299,7 +1458,10 @@ export const WorkspaceHome = ({
         confirmLabel: "彻底删除",
         confirmVariant: "danger",
         onConfirm: async () => {
-          setPendingAction(`delete:${scene.id}`);
+          const action = `scene:${scene.id}:delete`;
+          if (!beginSceneAction(scene.id, action)) {
+            return;
+          }
           try {
             await deleteCloudScene(scene.id, true, scene.revision);
             setTrashScenes((current) =>
@@ -1309,14 +1471,17 @@ export const WorkspaceHome = ({
           } catch (requestError: any) {
             handleRequestError(requestError, "彻底删除画板失败");
           } finally {
-            setPendingAction(null);
+            finishPendingAction(action);
           }
         },
       });
       return;
     }
 
-    setPendingAction(`delete:${scene.id}`);
+    const action = `scene:${scene.id}:delete`;
+    if (!beginSceneAction(scene.id, action)) {
+      return;
+    }
     try {
       await deleteCloudScene(scene.id, false);
       setScenes((current) => current.filter((item) => item.id !== scene.id));
@@ -1324,16 +1489,21 @@ export const WorkspaceHome = ({
         { ...scene, deleted_at: Date.now() },
         ...current,
       ]);
-      notifyWorkspaceChanged();
+      notifyWorkspaceChanged(true);
     } catch (requestError: any) {
       handleRequestError(requestError, "删除画板失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleEmptyTrash = () => {
-    if (!workspaceStats?.trashCount || pendingAction) {
+    const action = "trash:clear";
+    if (
+      !workspaceStats?.trashCount ||
+      hasBatchActionPending ||
+      isActionPending(action)
+    ) {
       return;
     }
     setConfirmDialog({
@@ -1342,7 +1512,9 @@ export const WorkspaceHome = ({
       confirmLabel: "清空回收站",
       confirmVariant: "danger",
       onConfirm: async () => {
-        setPendingAction("clear-trash");
+        if (!beginPendingAction(action)) {
+          return;
+        }
         try {
           await clearCloudTrash();
           setTrashScenes([]);
@@ -1350,14 +1522,17 @@ export const WorkspaceHome = ({
         } catch (requestError: any) {
           handleRequestError(requestError, "清空回收站失败");
         } finally {
-          setPendingAction(null);
+          finishPendingAction(action);
         }
       },
     });
   };
 
   const handleRestoreScene = async (scene: CloudSceneSummary) => {
-    setPendingAction(`restore:${scene.id}`);
+    const action = `scene:${scene.id}:restore`;
+    if (!beginSceneAction(scene.id, action)) {
+      return;
+    }
     setError("");
     try {
       await restoreCloudScene(scene.id);
@@ -1365,11 +1540,11 @@ export const WorkspaceHome = ({
         current.filter((item) => item.id !== scene.id),
       );
       setScenes((current) => [{ ...scene, deleted_at: null }, ...current]);
-      notifyWorkspaceChanged();
+      notifyWorkspaceChanged(true);
     } catch (requestError: any) {
       handleRequestError(requestError, "还原画板失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
@@ -1406,10 +1581,16 @@ export const WorkspaceHome = ({
   };
 
   const handleBatchMoveToTrash = async (targets: CloudSceneSummary[]) => {
-    if (!targets.length || pendingAction) {
+    const action = "batch:trash";
+    if (
+      !targets.length ||
+      !beginBatchAction(
+        targets.map((scene) => scene.id),
+        action,
+      )
+    ) {
       return;
     }
-    setPendingAction("batch-trash");
     setError("");
     try {
       const results = await runCloudSceneBatch(targets, trashCloudScenes);
@@ -1427,17 +1608,23 @@ export const WorkspaceHome = ({
         ...current.filter((scene) => !completedIds.has(scene.id)),
       ]);
       removeSceneIdsFromSelection([...completedIds]);
-      notifyWorkspaceChanged();
+      notifyWorkspaceChanged(true);
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleBatchRestore = async (targets: CloudSceneSummary[]) => {
-    if (!targets.length || pendingAction) {
+    const action = "batch:restore";
+    if (
+      !targets.length ||
+      !beginBatchAction(
+        targets.map((scene) => scene.id),
+        action,
+      )
+    ) {
       return;
     }
-    setPendingAction("batch-restore");
     setError("");
     try {
       const results = await runCloudSceneBatch(targets, restoreCloudScenes);
@@ -1454,14 +1641,21 @@ export const WorkspaceHome = ({
         ...current.filter((scene) => !completedIds.has(scene.id)),
       ]);
       removeSceneIdsFromSelection([...completedIds]);
-      notifyWorkspaceChanged();
+      notifyWorkspaceChanged(true);
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleBatchPermanentDelete = (targets: CloudSceneSummary[]) => {
-    if (!targets.length || pendingAction) {
+    if (
+      !targets.length ||
+      Array.from(pendingActionsRef.current).some(
+        (pending) =>
+          pending.startsWith("batch:") ||
+          targets.some((scene) => pending.startsWith(`scene:${scene.id}:`)),
+      )
+    ) {
       return;
     }
     setConfirmDialog({
@@ -1470,7 +1664,15 @@ export const WorkspaceHome = ({
       confirmLabel: "彻底删除",
       confirmVariant: "danger",
       onConfirm: async () => {
-        setPendingAction("batch-permanent-delete");
+        const action = "batch:permanent-delete";
+        if (
+          !beginBatchAction(
+            targets.map((scene) => scene.id),
+            action,
+          )
+        ) {
+          return;
+        }
         setError("");
         try {
           const results = await runCloudSceneBatch(
@@ -1488,17 +1690,20 @@ export const WorkspaceHome = ({
           removeSceneIdsFromSelection([...completedIds]);
           notifyWorkspaceChanged();
         } finally {
-          setPendingAction(null);
+          finishPendingAction(action);
         }
       },
     });
   };
 
   const handleSaveFolder = async () => {
-    if (!folderDialog || pendingAction || !folderDialog.name.trim()) {
+    if (!folderDialog || !folderDialog.name.trim()) {
       return;
     }
-    setPendingAction(`folder:${folderDialog.id || "new"}`);
+    const action = `folder:${folderDialog.id || "new"}:save`;
+    if (!beginPendingAction(action)) {
+      return;
+    }
     try {
       if (folderDialog.id) {
         const updated = await renameCloudFolder(
@@ -1531,7 +1736,7 @@ export const WorkspaceHome = ({
     } catch (requestError: any) {
       handleRequestError(requestError, "保存文件夹失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
@@ -1542,7 +1747,10 @@ export const WorkspaceHome = ({
       confirmLabel: "删除文件夹",
       confirmVariant: "danger",
       onConfirm: async () => {
-        setPendingAction(`delete-folder:${folder.id}`);
+        const action = `folder:${folder.id}:delete`;
+        if (!beginPendingAction(action)) {
+          return;
+        }
         try {
           await deleteCloudFolder(folder.id);
           setFolders((current) =>
@@ -1555,14 +1763,14 @@ export const WorkspaceHome = ({
                 : scene,
             ),
           );
-          notifyWorkspaceChanged();
+          notifyWorkspaceChanged(true);
           if (selectedFolderId === folder.id) {
             setSelectedFolderId(null);
           }
         } catch (requestError: any) {
           handleRequestError(requestError, "删除文件夹失败");
         } finally {
-          setPendingAction(null);
+          finishPendingAction(action);
         }
       },
     });
@@ -1602,7 +1810,7 @@ export const WorkspaceHome = ({
       {
         label: "在此文件夹中新建画板",
         icon: "plus",
-        disabled: !!pendingAction,
+        disabled: isActionPending("scene:create"),
         onSelect: () => void handleCreateScene(folder.id),
       },
       {
@@ -1616,7 +1824,7 @@ export const WorkspaceHome = ({
         icon: "trash",
         danger: true,
         separatorBefore: true,
-        disabled: !!pendingAction,
+        disabled: isFolderActionPending(folder.id),
         onSelect: () => handleDeleteFolder(folder),
       },
     ]);
@@ -1628,6 +1836,10 @@ export const WorkspaceHome = ({
   ) => {
     const isSelected = selectedSceneIds.has(scene.id);
     const selectedCount = selectedScenes.length;
+    const scenePending = isSceneActionPending(scene.id);
+    const batchPending =
+      hasBatchActionPending ||
+      selectedScenes.some((selected) => isSceneActionPending(selected.id));
     const items: WorkspaceContextMenuItem[] = [];
     if (view !== "trash") {
       items.push({
@@ -1642,7 +1854,6 @@ export const WorkspaceHome = ({
     items.push({
       label: isSelected ? "从多选中移除" : "加入多选",
       icon: isSelected ? "check" : "plus",
-      disabled: !!pendingAction,
       onSelect: () => handleToggleSceneSelection(scene.id, { ctrlKey: true }),
     });
     if (selectedCount) {
@@ -1659,14 +1870,14 @@ export const WorkspaceHome = ({
         label: "还原画板",
         icon: "restore",
         separatorBefore: selectedCount === 0,
-        disabled: !!pendingAction,
+        disabled: scenePending,
         onSelect: () => void handleRestoreScene(scene),
       });
       if (isSelected && selectedCount > 1) {
         items.push({
           label: `恢复所选 ${selectedCount} 个画板`,
           icon: "restore",
-          disabled: !!pendingAction,
+          disabled: batchPending,
           onSelect: () => void handleBatchRestore(selectedScenes),
         });
       }
@@ -1675,7 +1886,7 @@ export const WorkspaceHome = ({
         icon: "trash",
         danger: true,
         separatorBefore: true,
-        disabled: !!pendingAction,
+        disabled: scenePending,
         onSelect: () => handleDeleteScene(scene),
       });
       if (isSelected && selectedCount > 1) {
@@ -1683,7 +1894,7 @@ export const WorkspaceHome = ({
           label: `彻底删除所选 ${selectedCount} 个画板`,
           icon: "trash",
           danger: true,
-          disabled: !!pendingAction,
+          disabled: batchPending,
           onSelect: () => handleBatchPermanentDelete(selectedScenes),
         });
       }
@@ -1692,14 +1903,14 @@ export const WorkspaceHome = ({
         label: scene.favorite ? "取消收藏" : "收藏画板",
         icon: "star",
         separatorBefore: selectedCount === 0,
-        disabled: !!pendingAction,
+        disabled: scenePending,
         onSelect: () => void handleToggleFavorite(scene),
       });
       items.push({
         label: "编辑画板信息",
         icon: "edit",
         separatorBefore: true,
-        disabled: !!pendingAction,
+        disabled: scenePending,
         onSelect: () => openMetadataDialog(scene),
       });
       items.push({
@@ -1707,7 +1918,7 @@ export const WorkspaceHome = ({
         icon: "trash",
         danger: true,
         separatorBefore: true,
-        disabled: !!pendingAction,
+        disabled: scenePending,
         onSelect: () => handleDeleteScene(scene),
       });
       if (isSelected && selectedCount > 1) {
@@ -1715,7 +1926,7 @@ export const WorkspaceHome = ({
           label: `移入回收站所选 ${selectedCount} 个画板`,
           icon: "trash",
           danger: true,
-          disabled: !!pendingAction,
+          disabled: batchPending,
           onSelect: () => void handleBatchMoveToTrash(selectedScenes),
         });
       }
@@ -1823,7 +2034,10 @@ export const WorkspaceHome = ({
           icon: "trash",
           separatorBefore: true,
           danger: true,
-          disabled: !workspaceStats?.trashCount || !!pendingAction,
+          disabled:
+            !workspaceStats?.trashCount ||
+            isActionPending("trash:clear") ||
+            hasBatchActionPending,
           onSelect: handleEmptyTrash,
         });
       } else {
@@ -1831,7 +2045,7 @@ export const WorkspaceHome = ({
           label: "新建画板",
           icon: "plus",
           separatorBefore: true,
-          disabled: !!pendingAction,
+          disabled: isActionPending("scene:create"),
           onSelect: () => void handleCreateScene(null),
         });
       }
@@ -1884,14 +2098,13 @@ export const WorkspaceHome = ({
               ? "在此文件夹中新建画板"
               : "新建画板",
           icon: "plus",
-          disabled: !!pendingAction,
+          disabled: isActionPending("scene:create"),
           onSelect: () =>
             void handleCreateScene(inSidebar ? null : selectedFolderId),
         },
         {
           label: "新建文件夹",
           icon: "folder",
-          disabled: !!pendingAction,
           onSelect: () => openFolderDialog(),
         },
       );
@@ -1914,7 +2127,7 @@ export const WorkspaceHome = ({
       {
         label: inTrash ? "刷新回收站" : "刷新画板列表",
         icon: "refresh",
-        disabled: loading || !!pendingAction,
+        disabled: loading,
         onSelect: () => void loadWorkspace(),
       },
     );
@@ -1951,7 +2164,10 @@ export const WorkspaceHome = ({
           label: "清空回收站",
           icon: "trash",
           danger: true,
-          disabled: !workspaceStats?.trashCount || !!pendingAction,
+          disabled:
+            !workspaceStats?.trashCount ||
+            isActionPending("trash:clear") ||
+            hasBatchActionPending,
           onSelect: handleEmptyTrash,
         },
       );
@@ -2000,7 +2216,7 @@ export const WorkspaceHome = ({
             DEFAULT_FOLDER_APPEARANCE
           : DEFAULT_FOLDER_APPEARANCE
       }
-      actionPending={!!pendingAction}
+      actionPending={isSceneActionPending(scene.id)}
     />
   );
 
@@ -2049,7 +2265,7 @@ export const WorkspaceHome = ({
                 className="primary-button header-create-button"
                 type="button"
                 onClick={() => void handleCreateScene()}
-                disabled={!!pendingAction}
+                disabled={isActionPending("scene:create")}
                 title={
                   selectedFolderId
                     ? `在${
@@ -2238,7 +2454,11 @@ export const WorkspaceHome = ({
               <button
                 type="button"
                 className="empty-trash-button"
-                disabled={!workspaceStats?.trashCount || !!pendingAction}
+                disabled={
+                  !workspaceStats?.trashCount ||
+                  isActionPending("trash:clear") ||
+                  hasBatchActionPending
+                }
                 onClick={handleEmptyTrash}
                 aria-label="清空回收站"
                 title="清空回收站"
@@ -2417,7 +2637,7 @@ export const WorkspaceHome = ({
         <MetadataDialog
           state={metadataDialog}
           folders={folders}
-          pending={pendingAction === `metadata:${metadataDialog.scene.id}`}
+          pending={isActionPending(`scene:${metadataDialog.scene.id}:metadata`)}
           onChange={(next) =>
             setMetadataDialog((current) =>
               current ? { ...current, ...next } : current,
@@ -2430,7 +2650,7 @@ export const WorkspaceHome = ({
       {folderDialog && (
         <FolderDialog
           state={folderDialog}
-          pending={pendingAction === `folder:${folderDialog.id || "new"}`}
+          pending={isFolderActionPending(folderDialog.id || "new")}
           onChange={(name) =>
             setFolderDialog((current) =>
               current ? { ...current, name } : current,
@@ -2455,7 +2675,7 @@ export const WorkspaceHome = ({
       {confirmDialog && (
         <ConfirmDialog
           state={confirmDialog}
-          pending={!!pendingAction}
+          pending={pendingActions.size > 0}
           onClose={() => setConfirmDialog(null)}
           onConfirm={() => {
             const action = confirmDialog.onConfirm;
@@ -2518,7 +2738,7 @@ export const WorkspaceHome = ({
                   type="button"
                   className="batch-bar-button danger"
                   onClick={() => void handleBatchMoveToTrash(selectedScenes)}
-                  disabled={!!pendingAction}
+                  disabled={batchActionsDisabled}
                   title={
                     "将所选 " + selectedSceneIds.size + " 个画板移入回收站"
                   }
@@ -2532,7 +2752,7 @@ export const WorkspaceHome = ({
                     type="button"
                     className="batch-bar-button"
                     onClick={() => void handleBatchRestore(selectedScenes)}
-                    disabled={!!pendingAction}
+                    disabled={batchActionsDisabled}
                     title={"还原所选 " + selectedSceneIds.size + " 个画板"}
                   >
                     <RestoreIcon />
@@ -2542,7 +2762,7 @@ export const WorkspaceHome = ({
                     type="button"
                     className="batch-bar-button danger"
                     onClick={() => handleBatchPermanentDelete(selectedScenes)}
-                    disabled={!!pendingAction}
+                    disabled={batchActionsDisabled}
                     title={"彻底删除所选 " + selectedSceneIds.size + " 个画板"}
                   >
                     <TrashIcon />

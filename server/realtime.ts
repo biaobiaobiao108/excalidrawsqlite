@@ -92,6 +92,7 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
         type: "workspace_changed",
         updatedAt: event.updatedAt,
         sceneId: event.sceneId,
+        revision: event.revision,
         changeKind: event.changeKind,
       });
     },
