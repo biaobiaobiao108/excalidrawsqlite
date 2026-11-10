@@ -1117,19 +1117,21 @@ html.dark .workspace-dialog {
   align-items: center;
   gap: 0.15rem;
   block-size: 30px;
-  opacity: 0;
   pointer-events: none;
-  transform: translateY(-2px);
-  transition: opacity 140ms ease, transform 140ms ease;
   filter: drop-shadow(0 1px 1px rgba(255, 255, 255, 0.95))
     drop-shadow(0 0 2px rgba(255, 255, 255, 0.8));
 }
 
-.board-card:hover .board-card-actions,
-.board-card:focus-within .board-card-actions {
+.board-card-actions .icon-button {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.board-card-actions .favorite-button.is-favorite,
+.board-card:hover .board-card-actions .icon-button,
+.board-card:focus-within .board-card-actions .icon-button {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0);
 }
 
 .icon-button {
@@ -1156,10 +1158,6 @@ html.dark .board-card-selection-toggle,
 html.dark .board-card-actions {
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9))
     drop-shadow(0 0 2px rgba(0, 0, 0, 0.75));
-}
-
-.board-card:hover .icon-button {
-  opacity: 1;
 }
 
 .icon-button:hover {
@@ -1194,6 +1192,11 @@ html.dark .board-card-actions {
 
 .favorite-button.is-favorite {
   color: #e9a621;
+}
+
+.board-card-favorite-indicator,
+.board-card-mobile-menu-toggle {
+  display: none;
 }
 
 .board-card.is-trash-card {
@@ -2051,16 +2054,71 @@ html.dark .board-card-actions {
   }
 
   .board-grid .board-card-actions {
-    block-size: 36px;
-    gap: 0.2rem;
-    opacity: 1;
-    pointer-events: auto;
-    transform: none;
+    display: none;
   }
 
-  .board-grid .board-card-actions .icon-button {
+  .board-grid .board-card-mobile-menu-toggle {
+    position: absolute;
+    z-index: 3;
+    inset-block-start: 10px;
+    inset-inline-end: 10px;
+    display: grid;
+    place-items: center;
     inline-size: 36px;
     block-size: 36px;
+    padding: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    -webkit-tap-highlight-color: transparent;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--workspace-text);
+    cursor: pointer;
+    filter: drop-shadow(0 1px 1px rgba(255, 255, 255, 0.95))
+      drop-shadow(0 0 2px rgba(255, 255, 255, 0.8));
+  }
+
+  .board-grid .board-card-mobile-menu-toggle svg {
+    inline-size: 18px;
+    block-size: 18px;
+    fill: currentColor;
+    stroke: none;
+  }
+
+  .board-grid .board-card-mobile-menu-toggle:active {
+    transform: scale(0.95);
+  }
+
+  .board-grid .board-card-mobile-menu-toggle:focus-visible {
+    outline: 2px solid var(--workspace-accent-text);
+    outline-offset: 2px;
+  }
+
+  .board-grid .board-card-favorite-indicator {
+    position: absolute;
+    z-index: 3;
+    inset-block-start: 16px;
+    inset-inline-end: 52px;
+    display: grid;
+    place-items: center;
+    inline-size: 24px;
+    block-size: 24px;
+    color: #e9a621;
+    pointer-events: none;
+    filter: drop-shadow(0 1px 1px rgba(255, 255, 255, 0.95))
+      drop-shadow(0 0 2px rgba(255, 255, 255, 0.8));
+  }
+
+  .board-grid .board-card-favorite-indicator svg {
+    inline-size: 18px;
+    block-size: 18px;
+  }
+
+  html.dark .board-grid .board-card-mobile-menu-toggle,
+  html.dark .board-grid .board-card-favorite-indicator {
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9))
+      drop-shadow(0 0 2px rgba(0, 0, 0, 0.75));
   }
 
   .board-grid .board-card-meta-row {

@@ -202,9 +202,10 @@ export const WorkspaceContextMenu = ({
 
   useEffect(() => {
     previousFocusRef.current =
-      document.activeElement instanceof HTMLElement
+      state.returnFocusTo ||
+      (document.activeElement instanceof HTMLElement
         ? document.activeElement
-        : null;
+        : null);
     return () => {
       const previousFocus = previousFocusRef.current;
       const activeElement = document.activeElement;

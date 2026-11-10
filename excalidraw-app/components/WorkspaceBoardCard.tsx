@@ -11,6 +11,7 @@ import {
   BoardSelectionIcon,
   EditIcon,
   FolderAppearanceIcon,
+  MoreIcon,
   RestoreIcon,
   StarIcon,
   TrashIcon,
@@ -234,7 +235,7 @@ export const BoardCard = React.memo(
           if (
             event.target instanceof Element &&
             event.target.closest(
-              ".board-card-selection-toggle, .board-card-actions",
+              ".board-card-selection-toggle, .board-card-actions, .board-card-mobile-menu-toggle",
             )
           ) {
             return;
@@ -360,6 +361,29 @@ export const BoardCard = React.memo(
               )}
             </div>
           </div>
+          {scene.favorite && (
+            <span
+              className="board-card-favorite-indicator"
+              role="img"
+              aria-label="已收藏"
+              title="已收藏"
+            >
+              <StarIcon filled />
+            </span>
+          )}
+          <button
+            type="button"
+            className="board-card-mobile-menu-toggle"
+            aria-label={`打开画板操作“${sceneName}”`}
+            aria-haspopup="menu"
+            title="画板操作"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenContextMenu(scene, event);
+            }}
+          >
+            <MoreIcon />
+          </button>
           <div className="board-card-actions">
             {isTrash ? (
               <>

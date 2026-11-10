@@ -50,6 +50,7 @@ export type WorkspaceContextMenuState = {
   y: number;
   items: WorkspaceContextMenuItem[];
   portalTarget: HTMLElement;
+  returnFocusTo?: HTMLElement;
 };
 
 export type ConfirmDialogState = {

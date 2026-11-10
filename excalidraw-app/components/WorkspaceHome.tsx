@@ -422,10 +422,16 @@ export const WorkspaceHome = ({
       event.stopPropagation();
       const target =
         event.target instanceof Element ? event.target : event.currentTarget;
+      const keyboardTriggered = event.type === "click" && event.detail === 0;
+      const triggerBounds = event.currentTarget.getBoundingClientRect();
       setContextMenu({
-        x: event.clientX,
-        y: event.clientY,
+        x: keyboardTriggered ? triggerBounds.left : event.clientX,
+        y: keyboardTriggered ? triggerBounds.bottom : event.clientY,
         items,
+        returnFocusTo:
+          event.currentTarget instanceof HTMLElement
+            ? event.currentTarget
+            : undefined,
         portalTarget:
           target.closest<HTMLElement>('dialog, [role="dialog"]') ||
           event.currentTarget.ownerDocument.body,
