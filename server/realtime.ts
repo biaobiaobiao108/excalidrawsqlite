@@ -1,4 +1,4 @@
-import { isAuthorized } from "./auth";
+import { getSessionExpiration, getSessionToken } from "./auth";
 import { HttpError } from "./errors";
 import { isAllowedOrigin, jsonResponse } from "./http";
 import { validateId } from "./validation";
@@ -17,6 +17,8 @@ const MAX_CLIENT_MESSAGE_BYTES = 8 * 1024;
 
 export type RealtimeSocketData = {
   sceneId: string | null;
+  token?: string;
+  expiresAt?: number;
 };
 
 const sceneTopic = (sceneId: string) => `${SCENE_TOPIC_PREFIX}${sceneId}`;
@@ -79,6 +81,7 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
     if (!server) {
       return;
     }
+    if (scheduledExpiration <= Date.now()) expireSessions();
     const status = server.publish(topic, serializeEvent(event));
     if (status < 0) {
       console.info("[Realtime] WebSocket backpressure applied", { topic });
@@ -94,17 +97,58 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
         sceneId: event.sceneId,
         revision: event.revision,
         changeKind: event.changeKind,
+        metadataChanged: event.metadataChanged,
       });
     },
-    publishWorkspaceChanged: (updatedAt = Date.now()) => {
+    publishWorkspaceChanged: (updatedAt = Date.now(), changeKind) => {
       publish(WORKSPACE_TOPIC, {
         type: "workspace_changed",
         updatedAt,
+        changeKind,
       });
+    },
+    revokeSession: (token) => {
+      for (const ws of activeSockets) {
+        if (ws.data.token === token) disconnectSession(ws);
+      }
     },
   };
 
   const activeSockets = new Set<Bun.ServerWebSocket<RealtimeSocketData>>();
+  let expirationTimer: ReturnType<typeof setTimeout> | undefined;
+  let scheduledExpiration = Infinity;
+
+  const disconnectSession = (ws: Bun.ServerWebSocket<RealtimeSocketData>) => {
+    activeSockets.delete(ws);
+    ws.unsubscribe(WORKSPACE_TOPIC);
+    if (ws.data.sceneId) ws.unsubscribe(sceneTopic(ws.data.sceneId));
+    ws.close(1008, "Session expired or revoked");
+  };
+
+  const expireSessions = () => {
+    clearTimeout(expirationTimer);
+    scheduledExpiration = Infinity;
+    expirationTimer = undefined;
+    const now = Date.now();
+    let next = Infinity;
+    for (const ws of activeSockets) {
+      if (ws.data.expiresAt === undefined) continue;
+      if (ws.data.expiresAt <= now) disconnectSession(ws);
+      else next = Math.min(next, ws.data.expiresAt);
+    }
+    watchExpiration(next);
+  };
+
+  const watchExpiration = (expiresAt: number) => {
+    if (expiresAt >= scheduledExpiration) return;
+    clearTimeout(expirationTimer);
+    scheduledExpiration = expiresAt;
+    expirationTimer = setTimeout(
+      expireSessions,
+      Math.min(2_147_483_647, Math.max(0, expiresAt - Date.now())),
+    );
+    expirationTimer.unref?.();
+  };
 
   const websocket: Bun.WebSocketHandler<RealtimeSocketData> = {
     data: {} as RealtimeSocketData,
@@ -114,6 +158,15 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
     idleTimeout: 120,
     sendPings: true,
     open: (ws) => {
+      if (ws.data.token) {
+        const expiresAt = getSessionExpiration(runtime, ws.data.token);
+        if (expiresAt === null) {
+          disconnectSession(ws);
+          return;
+        }
+        ws.data.expiresAt = expiresAt;
+        watchExpiration(expiresAt);
+      }
       activeSockets.add(ws);
       ws.subscribe(WORKSPACE_TOPIC);
       if (ws.data.sceneId) {
@@ -151,8 +204,18 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
     },
     close: (ws) => {
       activeSockets.delete(ws);
+      if (!activeSockets.size) {
+        clearTimeout(expirationTimer);
+        expirationTimer = undefined;
+        scheduledExpiration = Infinity;
+      }
     },
     message: (ws, message) => {
+      if (!activeSockets.has(ws)) return;
+      if (ws.data.expiresAt !== undefined && ws.data.expiresAt <= Date.now()) {
+        disconnectSession(ws);
+        return;
+      }
       try {
         const nextSceneId = parseClientMessage(message);
         const previousSceneId = ws.data.sceneId;
@@ -183,6 +246,9 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
     publisher,
     websocket,
     closeSockets: () => {
+      clearTimeout(expirationTimer);
+      expirationTimer = undefined;
+      scheduledExpiration = Infinity;
       for (const ws of activeSockets) {
         try {
           ws.close(1001, "Server shutting down");
@@ -216,7 +282,13 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
           403,
         );
       }
-      if (!isAuthorized(runtime, req)) {
+      const requiresSession =
+        !runtime.config.allowAnonymous && Boolean(runtime.config.authPassword);
+      const token = requiresSession ? getSessionToken(runtime, req) : undefined;
+      if (
+        requiresSession &&
+        (!token || getSessionExpiration(runtime, token) === null)
+      ) {
         return jsonResponse(
           runtime,
           req,
@@ -241,7 +313,7 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
       }
       if (
         !nextServer.upgrade(req, {
-          data: { sceneId },
+          data: { sceneId, token },
         })
       ) {
         return jsonResponse(

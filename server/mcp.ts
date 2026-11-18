@@ -15,7 +15,10 @@ import {
 import { compactDrawingElements } from "./mcp-read";
 import { copyDrawingSelection } from "./mcp-copy";
 import { inspectDrawingOverlaps } from "./mcp-overlap";
-import { registerManagementTools, resolveFolder } from "./mcp-management";
+import {
+  getSceneFolderFields,
+  registerManagementTools,
+} from "./mcp-management";
 import { measureMcpPhase, traceMcpTool } from "./mcp-trace";
 import {
   cleanBoardRecord,
@@ -723,7 +726,7 @@ export const createMcpRequestHandler = (
                     };
                   },
                 );
-                const folder = await resolveFolder(args, runtime, api);
+                const folder = getSceneFolderFields(args, runtime);
                 const board = await api<{
                   id: string;
                   name: string;
@@ -733,7 +736,7 @@ export const createMcpRequestHandler = (
                   name: args.name,
                   elements: drawing.elements,
                   appState: { viewBackgroundColor: "#ffffff" },
-                  ...(folder === undefined ? {} : { folder_id: folder }),
+                  ...folder,
                   tags: args.tags,
                   favorite: args.favorite,
                   ...(args.idempotencyKey
@@ -812,10 +815,9 @@ export const createMcpRequestHandler = (
                 } = measureMcpPhase("transformMs", () =>
                   bindCreated(createDrawingBatch(elements), autoBind),
                 );
-                const resolvedFolder = await resolveFolder(
+                const folder = getSceneFolderFields(
                   { folderId, folderName },
                   runtime,
-                  api,
                 );
                 const board = await api<{
                   id: string;
@@ -828,9 +830,7 @@ export const createMcpRequestHandler = (
                   appState: {
                     viewBackgroundColor: backgroundColor || "#ffffff",
                   },
-                  ...(resolvedFolder === undefined
-                    ? {}
-                    : { folder_id: resolvedFolder }),
+                  ...folder,
                   tags,
                   favorite,
                   ...(idempotencyKey
@@ -883,7 +883,7 @@ export const createMcpRequestHandler = (
                     };
                   },
                 );
-                const folder = await resolveFolder(args, runtime, api);
+                const folder = getSceneFolderFields(args, runtime);
                 const board = await api<{
                   id: string;
                   name: string;
@@ -893,7 +893,7 @@ export const createMcpRequestHandler = (
                   name: args.name,
                   elements: drawing.elements,
                   appState: { viewBackgroundColor: "#ffffff" },
-                  ...(folder === undefined ? {} : { folder_id: folder }),
+                  ...folder,
                   tags: args.tags,
                   favorite: args.favorite,
                   ...(args.idempotencyKey
@@ -1318,10 +1318,9 @@ export const createMcpRequestHandler = (
                       url: boardUrl(boardId),
                     });
                   }
-                  const resolvedFolder = await resolveFolder(
+                  const folder = getSceneFolderFields(
                     { folderId, folderName },
                     runtime,
-                    api,
                   );
                   const changedIds = [
                     ...created.map((element) => element.id),
@@ -1347,9 +1346,7 @@ export const createMcpRequestHandler = (
                           ? {}
                           : { viewBackgroundColor: backgroundColor }),
                       },
-                      ...(resolvedFolder === undefined
-                        ? {}
-                        : { folder_id: resolvedFolder }),
+                      ...folder,
                       tags,
                       favorite,
                     },

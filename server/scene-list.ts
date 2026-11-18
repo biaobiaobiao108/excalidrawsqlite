@@ -172,10 +172,8 @@ export const listScenePage = (
   ) {
     throw new HttpError(400, "INVALID_INCLUDE_TOTAL", "include_total 参数无效");
   }
-  const totalCount =
-    includeTotal === "false"
-      ? null
-      : getScenePageCount(runtime, conditions, params);
+  const countConditions = conditions.slice();
+  const countParams = params.slice();
   if (cursor) {
     const column = trashed
       ? "scenes.deleted_at"
@@ -221,6 +219,12 @@ export const listScenePage = (
     cursor_value: number;
   }>;
   const hasMore = rows.length > limit;
+  const totalCount =
+    includeTotal === "false"
+      ? null
+      : !cursor && !hasMore
+        ? rows.length
+        : getScenePageCount(runtime, countConditions, countParams);
   const items = rows.slice(0, limit).map(getSceneSummary);
   return {
     items,

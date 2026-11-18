@@ -39,6 +39,7 @@ import {
 } from "../data/cloudStorage";
 import {
   broadcastWorkspaceChanged,
+  remapSceneFileIds,
   subscribeCloudRealtime,
   subscribeCloudTabSync,
 } from "../data/cloudSync";
@@ -243,13 +244,15 @@ const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
     }
     // Do not create or mark the scene as migrated unless every referenced file
     // has been accepted by the cloud. A later workspace load can retry safely.
-    await saveFilesToCloud(files);
   }
+  const replacements = await saveFilesToCloud(files, {
+    preserveExisting: true,
+  });
 
   const scene = await createCloudScene({
     ...migrationIdentity,
     name: "本地画板",
-    elements,
+    elements: remapSceneFileIds(elements, replacements),
     appState,
   });
   try {
@@ -423,6 +426,7 @@ export const WorkspaceHome = ({
     [],
   );
   const loadRequestRef = useRef(0);
+  const fullRefreshRef = useRef(0);
   const pageRequestRef = useRef(0);
   const loadMoreRequestRef = useRef(0);
   const workspaceMetadataRequestRef = useRef(0);
@@ -519,132 +523,163 @@ export const WorkspaceHome = ({
     closeContextMenu();
   }, [clearSceneSelection, closeContextMenu, pageQueryKey]);
 
-  const loadWorkspace = useCallback(async () => {
-    const requestId = ++loadRequestRef.current;
-    const { key: queryKey, options } = currentPageRef.current;
-    pageRequestRef.current += 1;
-    loadMoreRequestRef.current += 1;
-    setLoadingMore(false);
-    const isCurrent = () =>
-      loadRequestRef.current === requestId &&
-      currentPageRef.current.key === queryKey;
-    const loadedCount =
-      loadedPageQueryKeyRef.current === queryKey
-        ? (options.trash
-            ? loadedScenesRef.current.trashScenes
-            : loadedScenesRef.current.scenes
-          ).length
-        : 0;
-    if (!workspaceSnapshot) {
-      setLoading(true);
-    }
-    setError("");
-    try {
-      const auth = await checkAuthStatus();
-      if (!isCurrent()) {
-        return;
+  const loadWorkspace = useCallback(
+    async (pageOnly = false, preserveCount = false) => {
+      const requestId = ++loadRequestRef.current;
+      const { key: queryKey, options } = currentPageRef.current;
+      const refreshAll =
+        !pageOnly || !workspaceSnapshot || !!fullRefreshRef.current;
+      if (refreshAll) fullRefreshRef.current = requestId;
+      pageRequestRef.current += 1;
+      loadMoreRequestRef.current += 1;
+      setLoadingMore(false);
+      const isCurrent = () =>
+        loadRequestRef.current === requestId &&
+        currentPageRef.current.key === queryKey;
+      const loadedCount =
+        loadedPageQueryKeyRef.current === queryKey
+          ? (options.trash
+              ? loadedScenesRef.current.trashScenes
+              : loadedScenesRef.current.scenes
+            ).length
+          : 0;
+      if (!workspaceSnapshot) {
+        setLoading(true);
       }
-      if (auth.authRequired && !auth.authenticated) {
-        setAuthOpen(true);
-        return;
-      }
-      const [scenePage, folderList, trashPage, stats] = await Promise.all([
-        options.trash
-          ? fetchCloudScenePage({})
-          : refreshWorkspacePage(
-              options,
-              loadedCount,
-              fetchCloudScenePage,
-              isCurrent,
-            ),
-        fetchCloudFolders(),
-        options.trash
-          ? refreshWorkspacePage(
-              options,
-              loadedCount,
-              fetchCloudScenePage,
-              isCurrent,
-            )
-          : fetchCloudScenePage({ trash: true }),
-        fetchCloudWorkspaceStats(),
-      ]);
-      if (!isCurrent() || !scenePage || !trashPage) {
-        return;
-      }
-      let migratedScene: CloudSceneSummary | null = null;
-      if (stats.sceneCount === 0 && stats.trashCount === 0) {
-        try {
-          migratedScene = await migrateLocalScene();
-        } catch (migrationError) {
-          console.warn("迁移本地画板失败", migrationError);
+      setError("");
+      try {
+        if (!refreshAll) {
+          const page = await refreshWorkspacePage(
+            options,
+            loadedCount,
+            fetchCloudScenePage,
+            isCurrent,
+            preserveCount && workspaceSnapshot?.pageQueryKey === queryKey
+              ? workspaceSnapshot.pageTotalCount
+              : undefined,
+          );
+          if (page && isCurrent()) {
+            if (options.trash) {
+              setTrashScenes(page.items);
+              setTrashSceneCursor(page.nextCursor);
+            } else {
+              setScenes(page.items);
+              setSceneCursor(page.nextCursor);
+            }
+            setPageTotalCount(page.totalCount);
+            loadedPageQueryKeyRef.current = queryKey;
+            setDisplayedPageOptions(options);
+          }
+          return;
         }
-      }
-      const [nextScenePage, nextTrashPage, nextStats] = migratedScene
-        ? await Promise.all([
-            fetchCloudScenePage(options.trash ? {} : options),
-            fetchCloudScenePage(options.trash ? options : { trash: true }),
-            fetchCloudWorkspaceStats(),
-          ])
-        : [scenePage, trashPage, stats];
-      const nextSnapshot = {
-        scenes: nextScenePage.items,
-        folders: folderList,
-        trashScenes: nextTrashPage.items,
-        stats: nextStats,
-        pageQueryKey: queryKey,
-        pageTotalCount: options.trash
-          ? nextTrashPage.totalCount
-          : nextScenePage.totalCount,
-      };
-      if (!isCurrent()) {
-        return;
-      }
-      workspaceSnapshot = nextSnapshot;
-      setScenes(nextSnapshot.scenes);
-      setFolders(nextSnapshot.folders);
-      setTrashScenes(nextSnapshot.trashScenes);
-      setWorkspaceStats(nextSnapshot.stats);
-      setPageTotalCount(nextSnapshot.pageTotalCount);
-      loadedPageQueryKeyRef.current = queryKey;
-      setDisplayedPageOptions(options);
-      setSceneCursor(nextScenePage.nextCursor);
-      setTrashSceneCursor(nextTrashPage.nextCursor);
-    } catch (requestError: any) {
-      if (!isCurrent()) {
-        return;
-      }
-      if (
-        requestError?.status === 401 ||
-        requestError?.code === "AUTH_REQUIRED"
-      ) {
-        setAuthOpen(true);
-      } else {
-        setError(requestError?.message || "加载画板首页失败");
-      }
-      // The page never committed. Leaving the loaded key pointing at the
-      // previous filter keeps the grid permanently inert (no interaction, no
-      // "load more", no retry), while rendering the old boards under the new
-      // heading would be misleading. Settle the key with an empty list.
-      if (loadedPageQueryKeyRef.current !== queryKey) {
+        const auth = await checkAuthStatus();
+        if (!isCurrent()) {
+          return;
+        }
+        if (auth.authRequired && !auth.authenticated) {
+          setAuthOpen(true);
+          return;
+        }
+        const [scenePage, folderList, trashPage, stats] = await Promise.all([
+          options.trash
+            ? fetchCloudScenePage({})
+            : refreshWorkspacePage(
+                options,
+                loadedCount,
+                fetchCloudScenePage,
+                isCurrent,
+              ),
+          fetchCloudFolders(),
+          options.trash
+            ? refreshWorkspacePage(
+                options,
+                loadedCount,
+                fetchCloudScenePage,
+                isCurrent,
+              )
+            : fetchCloudScenePage({ trash: true }),
+          fetchCloudWorkspaceStats(),
+        ]);
+        if (!isCurrent() || !scenePage || !trashPage) {
+          return;
+        }
+        let migratedScene: CloudSceneSummary | null = null;
+        if (stats.sceneCount === 0 && stats.trashCount === 0) {
+          try {
+            migratedScene = await migrateLocalScene();
+          } catch (migrationError) {
+            console.warn("迁移本地画板失败", migrationError);
+          }
+        }
+        const [nextScenePage, nextTrashPage, nextStats] = migratedScene
+          ? await Promise.all([
+              fetchCloudScenePage(options.trash ? {} : options),
+              fetchCloudScenePage(options.trash ? options : { trash: true }),
+              fetchCloudWorkspaceStats(),
+            ])
+          : [scenePage, trashPage, stats];
+        const nextSnapshot = {
+          scenes: nextScenePage.items,
+          folders: folderList,
+          trashScenes: nextTrashPage.items,
+          stats: nextStats,
+          pageQueryKey: queryKey,
+          pageTotalCount: options.trash
+            ? nextTrashPage.totalCount
+            : nextScenePage.totalCount,
+        };
+        if (!isCurrent()) {
+          return;
+        }
+        workspaceSnapshot = nextSnapshot;
+        setScenes(nextSnapshot.scenes);
+        setFolders(nextSnapshot.folders);
+        setTrashScenes(nextSnapshot.trashScenes);
+        setWorkspaceStats(nextSnapshot.stats);
+        setPageTotalCount(nextSnapshot.pageTotalCount);
         loadedPageQueryKeyRef.current = queryKey;
-        if (options.trash) {
-          setTrashScenes([]);
-          setTrashSceneCursor(null);
-        } else {
-          setScenes([]);
-          setSceneCursor(null);
-        }
-        setPageTotalCount(0);
         setDisplayedPageOptions(options);
+        setSceneCursor(nextScenePage.nextCursor);
+        setTrashSceneCursor(nextTrashPage.nextCursor);
+      } catch (requestError: any) {
+        if (!isCurrent()) {
+          return;
+        }
+        if (
+          requestError?.status === 401 ||
+          requestError?.code === "AUTH_REQUIRED"
+        ) {
+          setAuthOpen(true);
+        } else {
+          setError(requestError?.message || "加载画板首页失败");
+        }
+        // The page never committed. Leaving the loaded key pointing at the
+        // previous filter keeps the grid permanently inert (no interaction, no
+        // "load more", no retry), while rendering the old boards under the new
+        // heading would be misleading. Settle the key with an empty list.
+        if (loadedPageQueryKeyRef.current !== queryKey) {
+          loadedPageQueryKeyRef.current = queryKey;
+          if (options.trash) {
+            setTrashScenes([]);
+            setTrashSceneCursor(null);
+          } else {
+            setScenes([]);
+            setSceneCursor(null);
+          }
+          setPageTotalCount(0);
+          setDisplayedPageOptions(options);
+        }
+      } finally {
+        if (fullRefreshRef.current === requestId) fullRefreshRef.current = 0;
+        if (!isCurrent()) {
+          return;
+        }
+        workspaceLoadedRef.current = true;
+        setLoading(false);
       }
-    } finally {
-      if (!isCurrent()) {
-        return;
-      }
-      workspaceLoadedRef.current = true;
-      setLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!workspaceStats) {
@@ -662,6 +697,7 @@ export const WorkspaceHome = ({
     (cursor: string | null = null) => ({
       ...currentPageRef.current.options,
       cursor,
+      includeTotal: cursor ? false : undefined,
     }),
     [],
   );
@@ -752,7 +788,6 @@ export const WorkspaceHome = ({
         setScenes(mergeScenes);
         setSceneCursor(page.nextCursor);
       }
-      setPageTotalCount(page.totalCount);
     } catch (requestError: any) {
       if (
         requestId === loadMoreRequestRef.current &&
@@ -825,22 +860,54 @@ export const WorkspaceHome = ({
     }
   }, [folders, loading, scenes, trashScenes, workspaceStats, pageTotalCount]);
 
-  useEffect(
-    () => subscribeCloudTabSync(() => void loadWorkspace()),
-    [loadWorkspace],
-  );
-
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let refreshMetadata = false;
+    let recountPage = false;
     const thumbnailRequests = new Map<string, object>();
     let closed = false;
     let thumbnailVersion = 0;
+    const scheduleRefresh = (metadata: boolean, recount: boolean) => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshMetadata ||= metadata;
+      recountPage ||= recount;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        const pageOnly = !refreshMetadata;
+        const preserveCount = !recountPage;
+        refreshMetadata = false;
+        recountPage = false;
+        void loadWorkspace(pageOnly, preserveCount);
+      }, 250);
+    };
+    const unsubscribeTab = subscribeCloudTabSync((event) => {
+      const contentOnly =
+        event.type === "scene_saved" && !event.metadataChanged;
+      scheduleRefresh(!contentOnly, !contentOnly);
+    });
     const unsubscribe = subscribeCloudRealtime(null, (event) => {
       if (
         event.type !== "scene_changed" &&
         event.type !== "workspace_changed"
       ) {
         return;
+      }
+      if (event.changeKind === "opened") {
+        const options = currentPageRef.current.options;
+        if (options.trash || options.sort !== "opened") return;
+      }
+      if (event.changeKind === "metadata" && event.sceneId && event.revision) {
+        const revision = event.revision;
+        if (
+          [
+            ...loadedScenesRef.current.scenes,
+            ...loadedScenesRef.current.trashScenes,
+          ].some(
+            (scene) => scene.id === event.sceneId && scene.revision >= revision,
+          )
+        ) {
+          return;
+        }
       }
       if (
         event.changeKind !== "thumbnail" &&
@@ -912,32 +979,16 @@ export const WorkspaceHome = ({
       )
         return;
       thumbnailRequests.clear();
-      if (refreshTimer) {
-        clearTimeout(refreshTimer);
-      }
-      const pendingEvent = event;
-      refreshTimer = setTimeout(() => {
-        refreshTimer = null;
-        if (
-          pendingEvent.changeKind === "metadata" &&
-          typeof pendingEvent.sceneId === "string" &&
-          typeof pendingEvent.revision === "number"
-        ) {
-          const current = [
-            ...loadedScenesRef.current.scenes,
-            ...loadedScenesRef.current.trashScenes,
-          ].find((scene) => scene.id === pendingEvent.sceneId);
-          if (current && current.revision >= pendingEvent.revision) {
-            return;
-          }
-        }
-        void loadWorkspace();
-      }, 250);
+      const pageOnly =
+        !(event.type === "workspace_changed" && event.metadataChanged) &&
+        ["opened", "content", "thumbnail"].includes(event.changeKind || "");
+      scheduleRefresh(!pageOnly, !pageOnly || event.changeKind === "opened");
     });
     return () => {
       closed = true;
       thumbnailRequests.clear();
       unsubscribe();
+      unsubscribeTab();
       if (refreshTimer) {
         clearTimeout(refreshTimer);
       }

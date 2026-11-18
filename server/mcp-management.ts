@@ -142,21 +142,25 @@ async function ensureNamedFolder(
   }
 }
 
-/** Creating or moving a board can ensure its named folder in the same tool call. */
-export async function resolveFolder(
+export function getSceneFolderFields(
   input: { folderId?: string | null; folderName?: string },
   runtime: ServerRuntime,
-  api: ManagementApi,
-): Promise<string | null | undefined> {
-  if (input.folderId === undefined && input.folderName === undefined)
-    return undefined;
-  if (input.folderId === null && input.folderName === undefined) return null;
-  const folder = findFolder(input, runtime);
-  if (folder) return folder.id;
-  if (input.folderName !== undefined)
-    return (await ensureNamedFolder({ name: input.folderName }, runtime, api))
-      .folder.id;
-  throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
+) {
+  if (input.folderName !== undefined) {
+    if (input.folderId !== undefined) {
+      throw new HttpError(
+        400,
+        "INVALID_FOLDER",
+        "folderId 与 folderName 不能同时传入",
+      );
+    }
+    return { folder_name: input.folderName };
+  }
+  if (input.folderId === undefined) return {};
+  if (input.folderId !== null && !findFolder(input, runtime)) {
+    throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
+  }
+  return { folder_id: input.folderId };
 }
 
 const metadataSchema = z.strictObject({
@@ -258,7 +262,6 @@ export function registerManagementTools(server: McpServer, context: Context) {
         "INVALID_METADATA",
         "至少提供一项改名、收藏、移动或标签操作",
       );
-    const folderId = await resolveFolder(input, runtime, api);
     const tagMode = input.tagMode ?? "replace";
     const tags =
       input.tags === undefined
@@ -270,16 +273,19 @@ export function registerManagementTools(server: McpServer, context: Context) {
                 ? [...new Set([...current.tags, ...input.tags])]
                 : current.tags.filter((tag) => !input.tags!.includes(tag)),
           );
+    const folder = getSceneFolderFields(input, runtime);
     const metadata = {
       name: input.name ?? current.name,
       favorite: input.favorite ?? current.favorite,
-      folder_id: folderId === undefined ? current.folder_id : folderId,
+      ...folder,
       tags,
     };
     const noop =
       metadata.name === current.name &&
       metadata.favorite === current.favorite &&
-      metadata.folder_id === current.folder_id &&
+      folder.folder_name === undefined &&
+      (folder.folder_id === undefined ||
+        folder.folder_id === current.folder_id) &&
       tags.length === current.tags.length &&
       tags.every((tag) => current.tags.includes(tag));
     const board = noop
@@ -292,7 +298,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
     return {
       ...board,
       boardId: input.boardId,
-      noop,
+      noop: noop || ("noop" in board && board.noop === true),
       url: boardUrl(input.boardId),
     };
   };

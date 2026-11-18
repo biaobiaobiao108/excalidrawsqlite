@@ -9,23 +9,36 @@ interface CloudSceneDeletedDialogProps {
   isRecovering: boolean;
   onRecover: () => void | Promise<void>;
   onDiscard: () => void;
+  onDismiss?: () => void;
+  draftPicker?: React.ReactNode;
 }
 
 export const CloudSceneDeletedDialog: React.FC<
   CloudSceneDeletedDialogProps
-> = ({ isOpen, sceneName, isRecovering, onRecover, onDiscard }) => {
+> = ({
+  isOpen,
+  sceneName,
+  isRecovering,
+  onRecover,
+  onDiscard,
+  onDismiss,
+  draftPicker,
+}) => {
   if (!isOpen) {
     return null;
   }
 
   return (
     <Dialog
-      title="画板已删除，本地更改仍可恢复"
+      title={onDismiss ? "恢复本地草稿" : "画板已删除，本地更改仍可恢复"}
       size="small"
-      onCloseRequest={() => undefined}
+      onCloseRequest={
+        isRecovering ? () => undefined : (onDismiss ?? (() => undefined))
+      }
       closeOnClickOutside={false}
     >
       <p>“{sceneName}”还有未同步的本地更改。</p>
+      {draftPicker}
       <div
         style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}
       >

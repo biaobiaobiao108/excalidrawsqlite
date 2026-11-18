@@ -270,10 +270,16 @@ describe("cloud save queue", () => {
         expect(init?.method).toBe("PUT");
         uploads++;
         attachmentExists = true;
-        return new Response(null, {
-          status: 204,
-          headers: { etag: `"${digest}"` },
-        });
+        expect(new Headers(init?.headers).get("x-preserve-file-id")).toBe(
+          "true",
+        );
+        return Response.json(
+          { file: { id: file.id } },
+          {
+            status: 201,
+            headers: { etag: `"${digest}"` },
+          },
+        );
       }) as typeof fetch;
       await queue.ready();
       const saved = {
@@ -297,6 +303,31 @@ describe("cloud save queue", () => {
     } finally {
       queue.dispose();
       globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("keeps drafts from other editor sessions available without applying them", async () => {
+    const { persistence, snapshots } = createPersistence();
+    snapshots.set("first", {
+      ...snapshot("first"),
+      draftOwner: "first",
+      persistenceId: "one",
+    });
+    snapshots.set("second", {
+      ...snapshot("second"),
+      draftOwner: "second",
+      persistenceId: "two",
+    });
+    const queue = new CloudSaveQueue(callbacks, { persistence });
+    try {
+      await queue.ready();
+      expect(queue.getPendingSnapshot("scene")).toBeNull();
+      expect(queue.getOtherDrafts("scene").map((draft) => draft.name)).toEqual([
+        "first",
+        "second",
+      ]);
+    } finally {
+      queue.dispose();
     }
   });
 

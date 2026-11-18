@@ -24,6 +24,7 @@ import {
   useState,
 } from "react";
 import { t } from "@excalidraw/excalidraw/i18n";
+import { Fonts } from "@excalidraw/excalidraw/fonts";
 
 import { isElementLink } from "@excalidraw/element";
 import {
@@ -103,6 +104,7 @@ import {
   getCloudPersistenceSignature,
   getCloudSceneLoadSignatures,
   getCloudSceneRecoveryData,
+  remapSceneFileIds,
   subscribeCloudRealtime,
   subscribeCloudTabSync,
   type CloudSaveStatus,
@@ -110,6 +112,7 @@ import {
 
 import type { CloudSaveSnapshot } from "./data/cloudSync";
 import { createCloudSceneRefreshGuard } from "./data/cloudSceneRefresh";
+import { loadEditorFontStyles } from "./data/editorFontStyles";
 
 const LazyCommandPalette = lazy(async () => {
   const { CommandPalette } =
@@ -238,6 +241,20 @@ const ExcalidrawWrapper = (props: {
 }) => {
   const { initialCloudScene, onNavigateHome } = props;
   const excalidrawAPI = useExcalidrawAPI();
+  useEffect(() => {
+    if (!excalidrawAPI) return;
+    let mounted = true;
+    void loadEditorFontStyles()
+      .then(async () => {
+        if (!mounted) return;
+        await Fonts.loadElementsFonts(excalidrawAPI.getSceneElements());
+        if (mounted) excalidrawAPI.refresh();
+      })
+      .catch((error) => console.warn("加载编辑器字体失败", error));
+    return () => {
+      mounted = false;
+    };
+  }, [excalidrawAPI]);
 
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -297,6 +314,8 @@ const ExcalidrawWrapper = (props: {
   const [deletedRecoveryVersion, setDeletedRecoveryVersion] = useState(0);
   const [isRecoveringDeletedScene, setIsRecoveringDeletedScene] =
     useState(false);
+  const [showOtherDrafts, setShowOtherDrafts] = useState(false);
+  const [selectedDraftId, setSelectedDraftId] = useState("");
   const [currentSceneId, setCurrentSceneId] = useState<string | null>(null);
   const [cloudSaveStatus, setCloudSaveStatus] =
     useState<CloudSaveStatus>("idle");
@@ -423,6 +442,10 @@ const ExcalidrawWrapper = (props: {
     () => cloudSaveQueue.getUnavailableScenes(),
     [cloudSaveQueue, deletedRecoveryVersion],
   );
+  const otherDrafts = currentSceneId ? cloudSaveQueue.getOtherDrafts() : [];
+  const otherDraft =
+    otherDrafts.find((draft) => draft.persistenceId === selectedDraftId) ??
+    otherDrafts[0];
 
   useEffect(() => {
     cloudSaveQueue.activate();
@@ -610,6 +633,7 @@ const ExcalidrawWrapper = (props: {
       prefetchedCloudScene?: CloudSceneData,
       recoveredSnapshot?: CloudSaveSnapshot | null,
     ) => {
+      const openingScene = currentSceneIdRef.current !== sceneId;
       const loadId = ++cloudSceneLoadIdRef.current;
       cloudFileLoadControllerRef.current?.abort();
       cloudFileLoadControllerRef.current = null;
@@ -748,9 +772,11 @@ const ExcalidrawWrapper = (props: {
       if (loadId !== cloudSceneLoadIdRef.current) {
         return cloudData;
       }
-      void markCloudSceneOpened(sceneId).catch((error) => {
-        console.warn("最近打开时间更新失败", error);
-      });
+      if (openingScene) {
+        void markCloudSceneOpened(sceneId).catch((error) => {
+          console.warn("最近打开时间更新失败", error);
+        });
+      }
       const currentElements = excalidrawAPI.getSceneElementsIncludingDeleted();
       const currentAppState = excalidrawAPI.getAppState();
       const currentFiles = excalidrawAPI.getFiles();
@@ -946,10 +972,12 @@ const ExcalidrawWrapper = (props: {
             files[fileId] = file;
           }
         }
-        await saveFilesToCloud(files);
+        const replacements = await saveFilesToCloud(files, {
+          preserveExisting: true,
+        });
         scene = await createCloudScene({
           name: excalidrawAPI.getName() || "我的画板",
-          elements,
+          elements: remapSceneFileIds(elements, replacements),
           appState: {
             viewBackgroundColor:
               excalidrawAPI.getAppState().viewBackgroundColor,
@@ -1064,54 +1092,48 @@ const ExcalidrawWrapper = (props: {
   );
 
   const recoverDeletedScene = useCallback(async () => {
-    const recovery = deletedRecoveries[0];
-    if (!recovery || isRecoveringDeletedScene) {
+    const deleted = deletedRecoveries[0];
+    const draft = deleted
+      ? cloudSaveQueue.getPendingSnapshot(deleted.sceneId)
+      : otherDraft;
+    if (!draft || isRecoveringDeletedScene) {
       return;
     }
     setIsRecoveringDeletedScene(true);
     try {
-      const snapshot = cloudSaveQueue.getPendingSnapshot(recovery.sceneId);
-      if (!snapshot) {
-        throw new Error("找不到待恢复的本地画板内容。");
-      }
-      const fileIdMap = new Map<string, FileId>();
-      const files: BinaryFiles = {};
-      for (const file of Object.values(snapshot.files)) {
-        const fileId = crypto.randomUUID() as FileId;
-        fileIdMap.set(file.id, fileId);
-        files[fileId] = { ...file, id: fileId };
-      }
-      const elements = snapshot.elements.map((element) => {
-        if (element.type !== "image" || !element.fileId) {
-          return element;
-        }
-        const fileId = fileIdMap.get(element.fileId);
-        if (!fileId) {
-          throw new Error(
-            "恢复画板时找不到图片文件，请保留草稿并检查浏览器存储。",
-          );
-        }
-        return { ...element, fileId };
+      const replacements = await saveFilesToCloud(draft.files, {
+        forceUpload: true,
+        preserveExisting: true,
       });
-      await saveFilesToCloud(files, { forceUpload: true });
       const scene = await createCloudScene({
-        name: `${snapshot.name}（恢复）`.slice(0, 120),
-        elements,
-        appState: snapshot.appState,
+        name: `${draft.name}（恢复）`.slice(0, 120),
+        elements: remapSceneFileIds(draft.elements, replacements),
+        appState: draft.appState,
+        ...(draft.persistenceId
+          ? { idempotencyKey: `draft-${draft.persistenceId}` }
+          : {}),
       });
-      cloudSaveQueue.cancel(recovery.sceneId);
-      setDeletedRecoveryVersion((version) => version + 1);
-      await loadSelectedCloudScene(scene.id);
+      if (deleted) {
+        cloudSaveQueue.cancel(deleted.sceneId);
+        setDeletedRecoveryVersion((version) => version + 1);
+        await loadSelectedCloudScene(scene.id);
+      } else {
+        await cloudSaveQueue.forgetOtherDraft(draft);
+        setShowOtherDrafts(false);
+        excalidrawAPI?.setToast({ message: "草稿已恢复为新画板" });
+      }
     } catch (error: any) {
-      setErrorMessage(error?.message || "恢复已删除画板失败");
+      setErrorMessage(error?.message || "恢复本地草稿失败");
     } finally {
       setIsRecoveringDeletedScene(false);
     }
   }, [
     cloudSaveQueue,
     deletedRecoveries,
+    excalidrawAPI,
     isRecoveringDeletedScene,
     loadSelectedCloudScene,
+    otherDraft,
   ]);
 
   const discardDeletedSceneRecovery = useCallback(() => {
@@ -1658,6 +1680,15 @@ const ExcalidrawWrapper = (props: {
                       : "保存到云端";
           return (
             <div className="excalidraw-ui-top-right">
+              {otherDraft && (
+                <button
+                  type="button"
+                  className="cloud-scenes-top-btn cloud-drafts-top-btn"
+                  onClick={() => setShowOtherDrafts(true)}
+                >
+                  草稿
+                </button>
+              )}
               <button
                 type="button"
                 className="cloud-save-top-btn"
@@ -1804,6 +1835,56 @@ const ExcalidrawWrapper = (props: {
             />
           </Suspense>
         )}
+        {otherDraft &&
+          showOtherDrafts &&
+          !isAuthOpen &&
+          !deletedRecoveries.length && (
+            <Suspense fallback={null}>
+              <LazyCloudSceneDeletedDialog
+                isOpen
+                sceneName={otherDraft.name}
+                isRecovering={isRecoveringDeletedScene}
+                onRecover={recoverDeletedScene}
+                onDismiss={() => setShowOtherDrafts(false)}
+                draftPicker={
+                  otherDrafts.length > 1 && (
+                    <select
+                      className="cloud-draft-picker"
+                      aria-label="选择本地草稿"
+                      value={otherDraft.persistenceId ?? ""}
+                      disabled={isRecoveringDeletedScene}
+                      onChange={(event) =>
+                        setSelectedDraftId(event.target.value)
+                      }
+                    >
+                      {otherDrafts.map((draft, index) => (
+                        <option
+                          key={draft.persistenceId ?? draft.sceneId}
+                          value={draft.persistenceId ?? ""}
+                        >
+                          {draft.name}
+                          {" · "}
+                          {draft.draftUpdatedAt
+                            ? new Date(draft.draftUpdatedAt).toLocaleString()
+                            : `草稿 ${index + 1}`}
+                          {" · "}
+                          {draft.elements.length} 个图元
+                        </option>
+                      ))}
+                    </select>
+                  )
+                }
+                onDiscard={() => {
+                  void cloudSaveQueue
+                    .forgetOtherDraft(otherDraft)
+                    .then(() => setShowOtherDrafts(false))
+                    .catch((error) =>
+                      setErrorMessage(error.message || "丢弃草稿失败"),
+                    );
+                }}
+              />
+            </Suspense>
+          )}
         <Suspense fallback={null}>
           <LazyCloudConflictDialog
             isOpen={

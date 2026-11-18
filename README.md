@@ -15,8 +15,8 @@
 | **多画板管理**     | 单画板模式，需手动导出/导入 `.excalidraw` 文件              | **内置画板工作台**：列表/网格浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达                               |
 | **图元统计**       | 无图元数量感知                                              | **内置图元数量统计**：保存时维护去 JSON 扫描的 `element_count` / `content_bytes` 摘要列并在卡片展示                |
 | **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存                        | **本地文件系统独立归档 + SHA-256 ETag / 304 + 隔离式分批垃圾回收**                                                 |
-| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据仍只访问本机/局域网服务，霞鹜文楷与思源黑体使用版本化 CDN                            |
-| **中文字体支持**   | 默认依赖外部在线 Google Fonts 或英文字体                    | **通过 jsDelivr 加载「霞鹜文楷」与「思源黑体」CJK 字体**（Unicode 子集化拆分按需加载）                             |
+| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据仍只访问本机/局域网服务，霞鹜文楷与小赖字体使用版本化 CDN                            |
+| **中文字体支持**   | 默认依赖外部在线 Google Fonts 或英文字体                    | **通过 jsDelivr 加载「霞鹜文楷」与「小赖字体」CJK 字体**（Unicode 子集化拆分按需加载）                             |
 | **身份认证安全**   | 无或 Token 明文保存在浏览器本地存储                         | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据                                                |
 | **浏览器与构建**   | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置            | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
 | **多端同步**       | 依赖手动刷新或高频轮询                                      | **Bun 原生 WebSocket topic 广播 + 自动重连 + revision 条件拉取**                                                   |
@@ -51,6 +51,7 @@ SQLite 以 schema 基线和 `PRAGMA user_version` 标记版本；启动时从当
 - **空闲页池化复用**：已删除画板释放的数据库页自动进入 SQLite 原生 Freelist，供后续新增或保存画板直接零开销池化复用，避免频繁申请分配与截断扩容导致的磁盘 IO 抖动与写放大。
 - **多端实时同步**：同源 `/api/realtime` 使用 Bun 原生 WebSocket；服务端只广播场景 ID、revision 和变更类型，客户端收到后按 ETag/revision 拉取内容，避免把大画板或附件推入 WebSocket。
 - **离开保护**：离开画板或返回工作台主页时，前端会主动等待队列保存完毕再跳转。
+- **本地草稿**：每个编辑标签页单独保存未同步的草稿。重新打开画板时从编辑器的「草稿」入口可把其他会话的草稿恢复为新画板。
 - **附件独立存储**：图片/媒体文件存储于本地 `data/files/`，SQLite 仅保存文件元数据与 SHA-256 哈希，避免大文件膨胀数据库。
 - **附件生命周期**：上传采用流式写临时文件、增量 SHA-256、原子替换与同内容幂等更新；未引用附件按批次回收，删除前先移动到 `.gc` 隔离文件，启动/维护任务会清理过期临时产物。
 
@@ -64,13 +65,13 @@ SQLite 以 schema 基线和 `PRAGMA user_version` 标记版本；启动时从当
 
 ### 4. 🧼 极致纯净私有化 (Privacy First)
 
-- 彻底剔除所有外部跟踪分析打点代码与 Sentry 上报；字体不直连 Google Fonts，霞鹜文楷与思源黑体使用版本化 jsDelivr CDN，默认 Excalifont 保持本地。
+- 彻底剔除所有外部跟踪分析打点代码与 Sentry 上报；字体不直连 Google Fonts，霞鹜文楷与小赖字体使用版本化 jsDelivr CDN，默认 Excalifont 保持本地。
 - 默认业务数据路径仅访问本机/局域网服务；字体 CDN、Mermaid 或外部嵌入属于明确的静态资源依赖。
 
 ### 5. ⚡ 现代浏览器性能基线
 
 - 生产构建面向现代浏览器（支持最新 Chrome、Edge、Firefox、Safari、iOS Safari），去除过时 polyfill。Bun 1.4 使用 `target: "browser"` 表达该目标。
-- **按需动态加载**：Mermaid 图表引擎、CodeMirror 代码编辑器与 CJK「霞鹜文楷」「思源黑体」（通过版本化 CDN 样式表）、pako 压缩回退均延迟至使用时加载；默认 Excalifont 保留本地，首屏极速秒开。
+- **按需动态加载**：Mermaid 图表引擎、CodeMirror 和 pako 压缩回退在使用时加载。进入编辑器或后台补生成中文预览时异步加载霞鹜文楷和小赖字体的 CDN 样式表，浏览器按字符下载字体分片。Excalifont 保留在本地。
 - **静态资源预压缩**：生产构建生成 Brotli 与 Gzip 副本，服务端按 `Accept-Encoding` 返回预压缩资源；浏览器数据处理优先使用原生 `CompressionStream` 与 `DecompressionStream`。
 
 ### 6. 🔐 企业级轻量鉴权与安全响应头
@@ -608,7 +609,7 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
 │   │   └── cloudSync.ts    # 30s 防抖保存队列、分页读取与 WebSocket 自动重连同步
 │   └── index.html          # 前端 HTML 入口 (直接由 Bun.build 解析打包)
 ├── packages/               # Excalidraw 核心内部包 (Monorepo)
-│   ├── excalidraw/         # 核心渲染与画布引擎 (Excalifont 本地，霞鹜文楷与思源黑体由 CDN 加载)
+│   ├── excalidraw/         # 核心渲染与画布引擎 (Excalifont 本地，霞鹜文楷与小赖字体由 CDN 加载)
 │   ├── element/            # 图元数据结构与计算
 │   └── ...
 ├── tests/

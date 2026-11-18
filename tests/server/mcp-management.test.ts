@@ -228,6 +228,33 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
         expectedRevision: board.revision,
       }),
     ).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
+    const unopenedFolder = "应回滚的文件夹";
+    const getFolder = runtime.db.query("SELECT id FROM folders WHERE name = ?");
+    expect(
+      await call("manage_board", {
+        boardId: board.boardId,
+        folderName: unopenedFolder,
+        tags: Array.from({ length: 12 }, (_, index) => `新标签 ${index}`),
+        tagMode: "add",
+      }),
+    ).toMatchObject({ ok: false, error: { code: "INVALID_TAGS" } });
+    expect(getFolder.get(unopenedFolder)).toBeNull();
+    runtime.db.run(`CREATE TEMP TRIGGER reject_board_move
+      BEFORE UPDATE OF folder_id ON scenes
+      WHEN NEW.name = '触发写入失败'
+      BEGIN SELECT RAISE(ABORT, 'injected board save error'); END`);
+    try {
+      expect(
+        await call("manage_board", {
+          boardId: board.boardId,
+          folderName: unopenedFolder,
+          name: "触发写入失败",
+        }),
+      ).toMatchObject({ ok: false });
+      expect(getFolder.get(unopenedFolder)).toBeNull();
+    } finally {
+      runtime.db.run("DROP TRIGGER reject_board_move");
+    }
     const invalidMetadata = await client.callTool({
       name: "manage_board",
       arguments: { boardId: board.boardId, favourit: true },

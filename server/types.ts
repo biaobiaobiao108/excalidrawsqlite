@@ -129,6 +129,7 @@ export type SceneRealtimeEvent = {
   sceneId: string;
   revision: number;
   updatedAt: number;
+  metadataChanged?: boolean;
   changeKind:
     "created" | "content" | "metadata" | "thumbnail" | "deleted" | "restored";
 };
@@ -138,12 +139,14 @@ export type WorkspaceRealtimeEvent = {
   updatedAt: number;
   sceneId?: string;
   revision?: number;
-  changeKind?: SceneRealtimeEvent["changeKind"];
+  metadataChanged?: boolean;
+  changeKind?: SceneRealtimeEvent["changeKind"] | "opened";
 };
 
 export type RealtimePublisher = {
   publishSceneChanged: (event: SceneRealtimeEvent) => void;
-  publishWorkspaceChanged: (updatedAt?: number) => void;
+  publishWorkspaceChanged: (updatedAt?: number, changeKind?: "opened") => void;
+  revokeSession?: (token: string) => void;
 };
 
 export type ServerRuntime = {

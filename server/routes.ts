@@ -376,6 +376,34 @@ export const createRequestHandler = (
       throw new HttpError(400, "FOLDER_NOT_FOUND", "文件夹不存在");
     }
   };
+  const parseMcpFolderName = (req: Request, body: Record<string, unknown>) => {
+    if (!hasOwn(body, "folder_name")) return undefined;
+    if (
+      hasOwn(body, "folder_id") ||
+      !isMcpCreateSession(runtime, getSessionToken(runtime, req))
+    ) {
+      throw new HttpError(400, "INVALID_FOLDER", "无效的文件夹选择");
+    }
+    return validateFolderName(body.folder_name);
+  };
+  // Call inside the board write transaction so a rejected commit leaves no folder.
+  const resolveSceneFolder = (folderId: string | null, name?: string) => {
+    if (name === undefined) {
+      assertSceneFolderExists(folderId);
+      return folderId;
+    }
+    const existing = stmts.getFolderNameConflict.get(name, "") as {
+      id: string;
+    } | null;
+    if (existing) return existing.id;
+    const now = Date.now();
+    const id = `folder_${now.toString(36)}_${randomHex(4)}`;
+    runtime.db.run(
+      "INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES (?, ?, 'folder', '#315f4c', ?, ?)",
+      [id, name, now, now],
+    );
+    return id;
+  };
   const handler = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const pathname = url.pathname;
@@ -393,7 +421,7 @@ export const createRequestHandler = (
         "Access-Control-Allow-Methods":
           "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers":
-          "Content-Type, Accept, X-Thumbnail-Version, If-None-Match",
+          "Content-Type, Accept, X-Thumbnail-Version, X-Preserve-File-Id, If-None-Match",
         "Access-Control-Max-Age": "600",
       });
       const origin = req.headers.get("origin");
@@ -610,6 +638,7 @@ export const createRequestHandler = (
             );
           }
           runtime.sessions.delete(token);
+          runtime.realtime?.revokeSession?.(token);
         }
         const headers = new Headers({
           "Clear-Site-Data": '"cookies"',
@@ -806,6 +835,8 @@ export const createRequestHandler = (
         const folderId = hasOwn(body, "folder_id")
           ? validateFolderId(body.folder_id)
           : null;
+        const folderName = parseMcpFolderName(req, body);
+        let storedFolderId = folderId;
         const fileIds = extractFileIds(elements);
         const elementsJson = JSON.stringify(elements);
         const appStateJson = JSON.stringify(appState);
@@ -891,7 +922,7 @@ export const createRequestHandler = (
                 // Attachment checks and the storage queue can yield after metadata
                 // validation. Recheck inside the synchronous commit so deletion
                 // cannot leave a board referencing a folder that no longer exists.
-                assertSceneFolderExists(folderId);
+                storedFolderId = resolveSceneFolder(folderId, folderName);
                 runtime.db.run(
                   `INSERT INTO scenes
                  (id, name, elements, app_state, created_at, updated_at, revision,
@@ -906,7 +937,7 @@ export const createRequestHandler = (
                     now,
                     tagsJson,
                     favorite ? 1 : 0,
-                    folderId,
+                    storedFolderId,
                     elements.length,
                     contentBytes,
                   ],
@@ -956,7 +987,7 @@ export const createRequestHandler = (
             element_count: elements.filter((el: any) => !el?.isDeleted).length,
             tags_json: tagsJson,
             is_favorite: favorite ? 1 : 0,
-            folder_id: folderId,
+            folder_id: storedFolderId,
             last_opened_at: null,
             thumbnail_file_id: null,
           }),
@@ -1273,6 +1304,7 @@ export const createRequestHandler = (
         }
         const lastOpenedAt = Date.now();
         stmts.touchSceneLastOpened.run(lastOpenedAt, id);
+        runtime.realtime?.publishWorkspaceChanged(lastOpenedAt, "opened");
         return jsonResponse(runtime, req, { success: true, id, lastOpenedAt });
       }
 
@@ -1488,12 +1520,13 @@ export const createRequestHandler = (
           await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
         );
         if (
-          !["name", "tags", "favorite", "folder_id"].some((key) =>
-            hasOwn(body, key),
+          !["name", "tags", "favorite", "folder_id", "folder_name"].some(
+            (key) => hasOwn(body, key),
           )
         ) {
           throw new HttpError(400, "INVALID_METADATA", "没有可更新的画板信息");
         }
+        const folderName = parseMcpFolderName(req, body);
         const baseRevision = requireRevision(body.baseRevision);
         const existing = stmts.getSceneMetadataById.get(id) as {
           name: string;
@@ -1534,6 +1567,7 @@ export const createRequestHandler = (
           tags.length === currentTags.length &&
           tags.every((tag) => currentTags.includes(tag));
         if (
+          folderName === undefined &&
           name === existing.name &&
           favorite === Boolean(existing.is_favorite) &&
           folderId === existing.folder_id &&
@@ -1547,7 +1581,27 @@ export const createRequestHandler = (
         const nextUpdatedAt = existing.updated_at;
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {
-          assertSceneFolderExists(folderId);
+          const targetFolderId = resolveSceneFolder(folderId, folderName);
+          if (folderName !== undefined) {
+            if (
+              targetFolderId === existing.folder_id &&
+              name === existing.name &&
+              favorite === Boolean(existing.is_favorite) &&
+              tagsUnchanged
+            ) {
+              if (
+                (stmts.getSceneRevision.get(id) as { revision: number } | null)
+                  ?.revision !== currentRevision
+              ) {
+                throw new HttpError(
+                  409,
+                  "REVISION_CONFLICT",
+                  "云端画板已被其他操作更新",
+                );
+              }
+              return false;
+            }
+          }
           const result = runtime.db.run(
             `UPDATE scenes
              SET name = ?, tags_json = ?, is_favorite = ?, folder_id = ?,
@@ -1557,7 +1611,7 @@ export const createRequestHandler = (
               name,
               JSON.stringify(tags),
               favorite ? 1 : 0,
-              folderId,
+              targetFolderId,
               nextUpdatedAt,
               revision,
               id,
@@ -1571,9 +1625,16 @@ export const createRequestHandler = (
               "云端画板已被其他操作更新",
             );
           }
+          return true;
         });
-        transaction.immediate();
+        const changed = transaction.immediate();
         const updated = stmts.getSceneSummaryById.get(id);
+        if (!changed) {
+          return jsonResponse(runtime, req, {
+            ...getSceneSummary(updated),
+            noop: true,
+          });
+        }
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
@@ -1598,6 +1659,7 @@ export const createRequestHandler = (
           throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
         }
         const baseRevision = requireRevision(body.baseRevision);
+        const folderName = parseMcpFolderName(req, body);
         const currentRevision = storedSceneRevision(existing.revision);
         if (baseRevision !== undefined && baseRevision !== currentRevision) {
           throw new HttpError(
@@ -1627,27 +1689,49 @@ export const createRequestHandler = (
         const contentChanged =
           existing.elements !== elementsJson ||
           existing.app_state !== appStateJson;
-        const isUnchanged =
+        const metadataUnchanged =
           existing.name === name &&
-          existing.elements === elementsJson &&
-          existing.app_state === appStateJson &&
           existing.tags_json === tagsJson &&
-          Boolean(existing.is_favorite) === favorite &&
-          (existing.folder_id || null) === folderId;
-        if (isUnchanged) {
-          return jsonResponse(runtime, req, {
+          Boolean(existing.is_favorite) === favorite;
+        const isContentAndMetadataUnchanged =
+          !contentChanged && metadataUnchanged;
+        const unchangedResponse = () =>
+          jsonResponse(runtime, req, {
             success: true,
             id,
             updated_at: existing.updated_at,
             revision: currentRevision,
             unchanged: true,
           });
+        if (
+          folderName === undefined &&
+          isContentAndMetadataUnchanged &&
+          (existing.folder_id || null) === folderId
+        ) {
+          return unchangedResponse();
         }
         const now = Date.now();
         const nextUpdatedAt = contentChanged ? now : existing.updated_at;
         const revision = currentRevision + 1;
         const transaction = runtime.db.transaction(() => {
-          assertSceneFolderExists(folderId);
+          const targetFolderId = resolveSceneFolder(folderId, folderName);
+          if (
+            folderName !== undefined &&
+            isContentAndMetadataUnchanged &&
+            (existing.folder_id || null) === targetFolderId
+          ) {
+            if (
+              (stmts.getSceneRevision.get(id) as { revision: number } | null)
+                ?.revision !== currentRevision
+            ) {
+              throw new HttpError(
+                409,
+                "REVISION_CONFLICT",
+                "云端画板已被其他设备更新",
+              );
+            }
+            return false;
+          }
           const result = runtime.db.run(
             `UPDATE scenes
              SET name = ?, elements = ?, app_state = ?, tags_json = ?,
@@ -1661,7 +1745,7 @@ export const createRequestHandler = (
               appStateJson,
               tagsJson,
               favorite ? 1 : 0,
-              folderId,
+              targetFolderId,
               nextUpdatedAt,
               revision,
               elementCount,
@@ -1679,27 +1763,35 @@ export const createRequestHandler = (
             );
           }
           syncSceneFileReferences(runtime, id, fileIds);
+          return true;
         });
-        await withStorageMutationLock(
+        const changed = await withStorageMutationLock(
           runtime,
           async () => {
             await assertReferencedFilesExist(runtime, fileIds);
-            transaction.immediate();
+            return transaction.immediate();
           },
           req.signal,
         );
+        if (!changed) return unchangedResponse();
+        const metadataChanged =
+          !metadataUnchanged ||
+          folderName !== undefined ||
+          (existing.folder_id || null) !== folderId;
         publishSceneChanged(runtime, {
           type: "scene_changed",
           sceneId: id,
           revision,
           updatedAt: nextUpdatedAt,
           changeKind: contentChanged ? "content" : "metadata",
+          ...(contentChanged && metadataChanged ? { metadataChanged } : {}),
         });
         return jsonResponse(runtime, req, {
           success: true,
           id,
           updated_at: nextUpdatedAt,
           revision,
+          ...(metadataChanged ? { metadataChanged } : {}),
         });
       }
 
@@ -1858,6 +1950,7 @@ export const createRequestHandler = (
           undefined,
           () =>
             sceneEvents.push(...updateScenesAfterFileReplacement(runtime, id)),
+          req.headers.get("x-preserve-file-id") === "true",
         );
         for (const event of sceneEvents) {
           publishSceneChanged(runtime, event);
