@@ -368,6 +368,36 @@ describe("cloud save queue", () => {
     }
   });
 
+  it("lists a draft left by a previous editor in the same document", async () => {
+    const { persistence, snapshots } = createPersistence();
+    const previous = new CloudSaveQueue(callbacks, { persistence });
+    const current = new CloudSaveQueue(callbacks, { persistence });
+    try {
+      previous.enqueue(snapshot("unsaved in this tab"));
+      expect(snapshots.size).toBe(1);
+      expect(await previous.listOtherDrafts()).toEqual([]);
+      previous.dispose();
+
+      await current.restoreScene("another-scene");
+      const drafts = await current.listOtherDrafts();
+      expect(drafts.map((draft) => draft.name)).toEqual([
+        "unsaved in this tab",
+      ]);
+      expect((await current.readOtherDraft(drafts[0].key)).name).toBe(
+        "unsaved in this tab",
+      );
+
+      await current.restoreScene("scene");
+      expect(await current.listOtherDrafts()).toEqual([]);
+      await expect(current.readOtherDraft(drafts[0].key)).rejects.toThrow(
+        "当前编辑器",
+      );
+    } finally {
+      previous.dispose();
+      current.dispose();
+    }
+  });
+
   it("bounds repeated missing attachment recovery and retains the latest edit", async () => {
     const { persistence } = createPersistence();
     const uploads: Array<boolean | undefined> = [];
@@ -911,6 +941,65 @@ describe("cloud save queue", () => {
       expect(queue.hasPending("scene")).toBe(false);
       expect(queue.getMemoryStats().snapshotCount).toBe(0);
       expect(callbacksSeen).toEqual({ auth: 0, conflict: 0, error: 0 });
+    }
+  });
+
+  it("saves new edits after reopening without accepting a cancelled save response", async () => {
+    const started = Promise.withResolvers<void>();
+    const oldReply = Promise.withResolvers<number>();
+    const writes: Array<{ name: string; baseRevision?: number }> = [];
+    const committed: string[] = [];
+    const queue = new CloudSaveQueue(
+      { ...callbacks, onSnapshotSaved: (saved) => committed.push(saved.name) },
+      {
+        persistence: createPersistence().persistence,
+        saveFilesToCloud: async () => {},
+        saveCloudScene: async (id, { name, baseRevision }) => {
+          writes.push({ name: name!, baseRevision });
+          started.resolve();
+          const revision = writes.length === 1 ? await oldReply.promise : 4;
+          return { success: true, id, updated_at: Date.now(), revision };
+        },
+      },
+    );
+    try {
+      queue.enqueue(snapshot("old edit"));
+      const flush = queue.flush("scene");
+      await started.promise;
+      queue.cancel("scene");
+      queue.reopenScene("scene");
+      queue.setRevision("scene", 3);
+      queue.enqueue({ ...snapshot("new edit"), baseRevision: undefined });
+      oldReply.resolve(2);
+
+      expect(await flush).toBe("saved");
+      expect(writes).toEqual([
+        { name: "old edit", baseRevision: 1 },
+        { name: "new edit", baseRevision: 3 },
+      ]);
+      expect(committed).toEqual(["new edit"]);
+      expect(queue.getRevision("scene")).toBe(4);
+    } finally {
+      queue.dispose();
+    }
+  });
+
+  it("offers conflict resolution when a restored board already has a local draft", async () => {
+    const conflicts: string[] = [];
+    const queue = new CloudSaveQueue(
+      { ...callbacks, onConflict: (_id, draft) => conflicts.push(draft.name) },
+      { persistence: createPersistence().persistence },
+    );
+    try {
+      queue.enqueue(snapshot("draft before deletion"));
+      expect(queue.preserveForRecovery("scene")).toBe(true);
+      expect(queue.reopenScene("scene")).toBe(true);
+      expect(await queue.flush("scene")).toBe("conflict");
+      expect(queue.getUnavailableScenes()).toEqual([]);
+      expect(queue.getPendingSnapshot("scene")?.baseRevision).toBe(1);
+      expect(conflicts).toEqual(["draft before deletion"]);
+    } finally {
+      queue.dispose();
     }
   });
 

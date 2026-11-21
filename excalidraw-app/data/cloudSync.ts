@@ -853,6 +853,18 @@ export class CloudSaveQueue {
     return load;
   }
 
+  /** Re-enable writes only after the server confirms that the board exists. */
+  reopenScene(sceneId: string) {
+    this.disposed.delete(sceneId);
+    if (this.blocked.get(sceneId) !== "deleted") return false;
+    const snapshot = this.pending.get(sceneId)!;
+    this.blocked.set(sceneId, "conflict");
+    this.conflicts.set(sceneId, snapshot);
+    this.setStatus(sceneId, "conflict");
+    this.callbacks.onConflict(sceneId, snapshot);
+    return true;
+  }
+
   /** Retry recovered or previously failed snapshots after connectivity/auth is available. */
   resumePending() {
     if (this.isDisposed) {
@@ -878,7 +890,7 @@ export class CloudSaveQueue {
     return (
       this.pending.has(sceneId) ||
       this.conflicts.has(sceneId) ||
-      (this.isSaving && this.activeSceneId === sceneId)
+      this.activeSnapshot?.sceneId === sceneId
     );
   }
 
@@ -897,14 +909,25 @@ export class CloudSaveQueue {
     ]);
     const held = new Set(locks?.held?.map(({ name }) => name));
     return drafts.filter(({ key }) => {
-      const sceneId = getDraftSceneId(key);
-      const recovered = this.recoveredDrafts.get(sceneId);
+      const lockName = getDraftLockName(key);
       return (
-        key !== getDraftKey(sceneId, CLOUD_SYNC_CLIENT_ID) &&
-        (!recovered || key !== getSnapshotKey(recovered)) &&
-        !held.has(getDraftLockName(key))
+        !this.isDraftInUse(key) &&
+        (!held.has(lockName) || heldDraftLocks.has(lockName))
       );
     });
+  }
+
+  private isDraftInUse(key: string) {
+    const sceneId = getDraftSceneId(key);
+    return (
+      this.restoring.has(sceneId) ||
+      [
+        this.pending.get(sceneId),
+        this.conflicts.get(sceneId),
+        this.recoveredDrafts.get(sceneId),
+        this.activeSnapshot,
+      ].some((snapshot) => snapshot && getSnapshotKey(snapshot) === key)
+    );
   }
 
   async readOtherDraft(key: string) {
@@ -935,21 +958,25 @@ export class CloudSaveQueue {
           throw new Error("这份草稿已更新，请重新打开草稿列表");
         }
         await this.dependencies.persistence.remove(snapshot.sceneId, snapshot);
+        removeSessionSnapshotRecovery(snapshot.sceneId, snapshot);
       }
     });
   }
 
   private async withOtherDraftLock<T>(key: string, run: () => Promise<T>) {
+    const useDraft = () => {
+      if (this.isDraftInUse(key)) {
+        throw new Error("这份草稿已在当前编辑器中打开");
+      }
+      return run();
+    };
     const locks = getDraftLocks();
-    if (!locks) return run();
-    return locks.request(
-      getDraftLockName(key),
-      { ifAvailable: true },
-      (lock) => {
-        if (!lock) throw new Error("这份草稿正在其他标签页中使用");
-        return run();
-      },
-    );
+    const lockName = getDraftLockName(key);
+    if (!locks || (await heldDraftLocks.get(lockName))) return useDraft();
+    return locks.request(lockName, { ifAvailable: true }, (lock) => {
+      if (!lock) throw new Error("这份草稿正在其他标签页中使用");
+      return useDraft();
+    });
   }
 
   getUnavailableScenes() {
@@ -1011,7 +1038,7 @@ export class CloudSaveQueue {
     this.pending.set(snapshot.sceneId, queuedSnapshot);
     void this.persistSnapshot(queuedSnapshot, true);
     if (
-      !(this.isSaving && this.activeSceneId === snapshot.sceneId) &&
+      this.activeSnapshot?.sceneId !== snapshot.sceneId &&
       !this.blocked.has(snapshot.sceneId)
     ) {
       // A blocked scene will not flush, so advertising "pending" would tell the
@@ -1036,6 +1063,7 @@ export class CloudSaveQueue {
     this.blocked.delete(sceneId);
     this.revisions.delete(sceneId);
     this.disposed.add(sceneId);
+    if (this.activeSceneId === sceneId) this.activeSnapshot = null;
     removeSessionSnapshotRecovery(sceneId);
     if (snapshot) {
       void this.removePersistedSnapshot(sceneId, snapshot);
@@ -1061,6 +1089,7 @@ export class CloudSaveQueue {
     this.pending.set(sceneId, snapshot);
     this.conflicts.delete(sceneId);
     this.blocked.set(sceneId, "deleted");
+    if (this.activeSceneId === sceneId) this.activeSnapshot = null;
     this.setStatus(sceneId, "error");
     void this.persistSnapshot(snapshot);
     return true;
@@ -1282,6 +1311,9 @@ export class CloudSaveQueue {
     this.activeSceneId = sceneId;
     this.activeSnapshot = snapshot;
     this.setStatus(sceneId, "saving");
+    // Reopening a restored board must not re-enable its cancelled request.
+    const isCurrentSave = () =>
+      !this.isDisposed && this.activeSnapshot === snapshot;
 
     try {
       await this.waitForPersistence(sceneId);
@@ -1289,7 +1321,7 @@ export class CloudSaveQueue {
       for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt++) {
         let sentSnapshot = snapshot;
         try {
-          if (this.isDisposed || this.disposed.has(sceneId)) {
+          if (!isCurrentSave()) {
             return;
           }
           const replacements = await this.dependencies.saveFilesToCloud(
@@ -1299,7 +1331,7 @@ export class CloudSaveQueue {
           if (replacements?.size) {
             sentSnapshot = remapCloudSnapshotFiles(snapshot, replacements);
           }
-          if (this.isDisposed || this.disposed.has(sceneId)) {
+          if (!isCurrentSave()) {
             return;
           }
           const saved = await this.dependencies.saveCloudScene(sceneId, {
@@ -1309,7 +1341,7 @@ export class CloudSaveQueue {
             appState: snapshot.appState,
             baseRevision: snapshot.baseRevision,
           });
-          if (this.isDisposed || this.disposed.has(sceneId)) {
+          if (!isCurrentSave()) {
             return;
           }
           await this.markSnapshotSaved(
@@ -1321,7 +1353,7 @@ export class CloudSaveQueue {
           );
           break;
         } catch (error) {
-          if (this.isDisposed || this.disposed.has(sceneId)) {
+          if (!isCurrentSave()) {
             return;
           }
           if (error instanceof CloudApiError && error.status === 401) {
@@ -1352,6 +1384,7 @@ export class CloudSaveQueue {
               const remote = await this.dependencies.fetchCloudScene(sceneId, {
                 forceRefresh: true,
               });
+              if (!isCurrentSave()) return;
               if (this.snapshotMatchesScene(sentSnapshot, remote)) {
                 await this.markSnapshotSaved(
                   sceneId,
@@ -1365,6 +1398,7 @@ export class CloudSaveQueue {
             } catch {
               // Leave the snapshot in the queue and use normal conflict handling.
             }
+            if (!isCurrentSave()) return;
             this.conflicts.set(sceneId, snapshot);
             this.blocked.set(sceneId, "conflict");
             this.setStatus(sceneId, "conflict");
@@ -1536,7 +1570,9 @@ export class CloudSaveQueue {
       removeSessionSnapshotRecovery(sceneId);
       await this.removePersistedSnapshot(sceneId, snapshot);
     }
+    if (this.activeSnapshot !== snapshot) return;
     await this.removeRecoveredDraft(sceneId, snapshot, true);
+    if (this.activeSnapshot !== snapshot) return;
     broadcastCloudSync({
       type: "scene_saved",
       sceneId,

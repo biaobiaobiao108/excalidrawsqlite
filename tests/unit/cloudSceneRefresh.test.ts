@@ -45,4 +45,16 @@ describe("cloud scene refresh ownership", () => {
     const state = { sceneId: "a", signature: "unchanged", hasPending: false };
     expect(createCloudSceneRefreshGuard(() => state)()).toBe(true);
   });
+
+  it("rejects an older refresh when the revision advanced with the same canvas", () => {
+    let state = {
+      sceneId: "a",
+      revision: 1,
+      signature: "same",
+      hasPending: false,
+    };
+    const canApply = createCloudSceneRefreshGuard(() => state);
+    state = { ...state, revision: 2 };
+    expect(canApply()).toBe(false);
+  });
 });

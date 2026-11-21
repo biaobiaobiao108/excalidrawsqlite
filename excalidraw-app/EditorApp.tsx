@@ -337,6 +337,7 @@ const ExcalidrawWrapper = (props: {
   } | null>(null);
   const cloudBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const cloudSceneLoadIdRef = useRef(0);
+  const cloudSceneRequestIdRef = useRef(0);
   const cloudFileLoadControllerRef = useRef<AbortController | null>(null);
   const cloudSceneViewportTimerRef = useRef<ReturnType<
     typeof setTimeout
@@ -668,9 +669,7 @@ const ExcalidrawWrapper = (props: {
       onConflictReload?: (revision: number) => void,
     ) => {
       const openingScene = currentSceneIdRef.current !== sceneId;
-      const loadId = ++cloudSceneLoadIdRef.current;
-      cloudFileLoadControllerRef.current?.abort();
-      cloudFileLoadControllerRef.current = null;
+      const requestId = ++cloudSceneRequestIdRef.current;
       const canApplyRefresh =
         excalidrawAPI &&
         currentSceneIdRef.current === sceneId &&
@@ -679,6 +678,8 @@ const ExcalidrawWrapper = (props: {
               const appState = excalidrawAPI.getAppState();
               return {
                 sceneId: currentSceneIdRef.current,
+                revision: cloudSaveQueue.getRevision(sceneId),
+                // Attachment hydration can change the file cache without editing the canvas.
                 signature: getCloudPersistenceSignature(
                   excalidrawAPI.getName() || "未命名白板",
                   excalidrawAPI
@@ -688,18 +689,15 @@ const ExcalidrawWrapper = (props: {
                     viewBackgroundColor: appState.viewBackgroundColor,
                     gridSize: appState.gridSize,
                   },
-                  excalidrawAPI.getFiles(),
+                  {},
+                  [],
                 ),
-                hasPending: cloudSaveQueue.hasPending(sceneId),
+                hasPending:
+                  cloudSaveQueue.hasPending(sceneId) ||
+                  Boolean(cloudSceneLoadingRef.current?.edited),
               };
             })
           : null;
-      cloudSceneLoadingRef.current = null;
-      isApplyingCloudSceneRef.current = false;
-      if (cloudSceneViewportTimerRef.current) {
-        clearTimeout(cloudSceneViewportTimerRef.current);
-        cloudSceneViewportTimerRef.current = null;
-      }
       if (openingScene) await cloudSaveQueue.restoreScene(sceneId);
       const recoveredSnapshot = openingScene
         ? cloudSaveQueue.getPendingSnapshot(sceneId)
@@ -718,7 +716,7 @@ const ExcalidrawWrapper = (props: {
       if (!excalidrawAPI || excalidrawAPI.isDestroyed) {
         throw new Error("编辑器尚未初始化");
       }
-      if (loadId !== cloudSceneLoadIdRef.current) {
+      if (requestId !== cloudSceneRequestIdRef.current) {
         return cloudData;
       }
       // An edit can start and even finish saving while the fetch is in flight.
@@ -736,11 +734,14 @@ const ExcalidrawWrapper = (props: {
         excalidrawAPI.getAppState(),
       );
 
+      // A failed or superseded fetch must leave the displayed scene hydrating.
+      const loadId = ++cloudSceneLoadIdRef.current;
+      if (cloudSceneViewportTimerRef.current) {
+        clearTimeout(cloudSceneViewportTimerRef.current);
+        cloudSceneViewportTimerRef.current = null;
+      }
       setCloudBootstrapError("");
       if (updateUrl) {
-        if (loadId !== cloudSceneLoadIdRef.current) {
-          return cloudData;
-        }
         window.history.replaceState(
           {},
           "",
@@ -754,6 +755,9 @@ const ExcalidrawWrapper = (props: {
         recoveredSnapshot?.baseRevision ?? cloudData.revision,
       );
       setActiveCloudScene(sceneId);
+      if (openingScene && cloudSaveQueue.reopenScene(sceneId)) {
+        setDeletedRecoveryVersion((version) => version + 1);
+      }
       cloudSceneLoadingRef.current = {
         loadId,
         sceneId,
@@ -761,9 +765,6 @@ const ExcalidrawWrapper = (props: {
       };
       let editedDuringLoad = false;
       try {
-        if (loadId !== cloudSceneLoadIdRef.current) {
-          return cloudData;
-        }
         excalidrawAPI.updateScene({
           elements,
           appState: restoredAppState,
@@ -786,7 +787,10 @@ const ExcalidrawWrapper = (props: {
           cloudSceneLoadingRef.current?.loadId === loadId &&
           cloudSceneLoadingRef.current.edited,
         );
-        if (cloudData.elements.length) {
+        if (
+          loadId === cloudSceneLoadIdRef.current &&
+          cloudData.elements.length
+        ) {
           cloudSceneViewportTimerRef.current = setTimeout(() => {
             cloudSceneViewportTimerRef.current = null;
             if (
@@ -1061,6 +1065,11 @@ const ExcalidrawWrapper = (props: {
       if (currentSceneIdRef.current !== sceneId) {
         return;
       }
+      cloudSceneRequestIdRef.current += 1;
+      cloudSceneLoadIdRef.current += 1;
+      cloudFileLoadControllerRef.current?.abort();
+      cloudSceneLoadingRef.current = null;
+      isApplyingCloudSceneRef.current = false;
       setActiveCloudScene(null);
       window.history.replaceState({}, "", window.location.pathname);
       try {
@@ -1184,7 +1193,15 @@ const ExcalidrawWrapper = (props: {
     }
     cloudSaveQueue.cancel(recovery.sceneId);
     setDeletedRecoveryVersion((version) => version + 1);
-  }, [cloudSaveQueue, deletedRecoveries, isRecoveringDeletedScene]);
+    if (currentSceneIdRef.current === recovery.sceneId) {
+      void handleSceneDeleted(recovery.sceneId);
+    }
+  }, [
+    cloudSaveQueue,
+    deletedRecoveries,
+    handleSceneDeleted,
+    isRecoveringDeletedScene,
+  ]);
 
   useEffect(() => {
     return subscribeCloudTabSync((message) => {
