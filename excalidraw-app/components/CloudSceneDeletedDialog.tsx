@@ -8,7 +8,7 @@ interface CloudSceneDeletedDialogProps {
   sceneName: string;
   isRecovering: boolean;
   onRecover: () => void | Promise<void>;
-  onDiscard: () => void;
+  onDiscard?: () => void;
   onDismiss?: () => void;
   draftPicker?: React.ReactNode;
 }
@@ -42,12 +42,14 @@ export const CloudSceneDeletedDialog: React.FC<
       <div
         style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}
       >
-        <FilledButton
-          label="丢弃本地更改"
-          onClick={onDiscard}
-          variant="outlined"
-          disabled={isRecovering}
-        />
+        {onDiscard && (
+          <FilledButton
+            label="丢弃本地更改"
+            onClick={onDiscard}
+            variant="outlined"
+            disabled={isRecovering}
+          />
+        )}
         <FilledButton
           label={isRecovering ? "正在恢复…" : "恢复为新画板"}
           onClick={onRecover}

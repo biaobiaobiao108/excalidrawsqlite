@@ -25,10 +25,19 @@ const callbacks = {
   onError: () => {},
 };
 
+const draftKey = (value: CloudSaveSnapshot) =>
+  value.draftOwner ? `${value.sceneId}:${value.draftOwner}` : value.sceneId;
+
 const createPersistence = () => {
   const snapshots = new Map<string, CloudSaveSnapshot>();
   const persistence: CloudSavePersistence = {
-    load: async () => [...snapshots.values()],
+    list: async () =>
+      [...snapshots.values()].map((value) => ({
+        key: draftKey(value),
+        name: value.name,
+      })),
+    load: async (key) =>
+      [...snapshots.values()].find((value) => draftKey(value) === key),
     save: async (value) => {
       snapshots.set(value.sceneId, value);
     },
@@ -109,7 +118,7 @@ describe("cloud save queue", () => {
       const queue = new CloudSaveQueue({
         onAuthRequired() {}, onConflict() {}, onError(error) { throw error; },
       }, {
-        persistence: { load: async () => [], save: async () => {}, remove: async () => {} },
+        persistence: { list: async () => [], load: async () => undefined, save: async () => {}, remove: async () => {} },
         saveFilesToCloud: async () => {},
         saveCloudScene: async (id) => {
           maxActiveWrites = Math.max(maxActiveWrites, ++activeWrites);
@@ -124,7 +133,7 @@ describe("cloud save queue", () => {
           return { success: true, id, updated_at: 1, revision: 2 };
         },
       });
-      await queue.ready();
+      await queue.restoreScene("scene");
       for (const sceneId of ["A", "B", "C"]) {
         queue.enqueue({ sceneId, name: sceneId, elements: [], files: {},
           appState: { viewBackgroundColor: "#ffffff", gridSize: 20 }, baseRevision: 1 });
@@ -184,7 +193,7 @@ describe("cloud save queue", () => {
       },
     );
     try {
-      await queue.ready();
+      await queue.restoreScene("scene");
       queue.enqueue(snapshot("first"));
       const saving = queue.flush("scene");
       await firstStarted;
@@ -221,7 +230,7 @@ describe("cloud save queue", () => {
       },
     );
     try {
-      await queue.ready();
+      await queue.restoreScene("scene");
       queue.enqueue(snapshot("unsaved"));
       expect(await queue.flush("scene")).toBe("auth");
       expect(previews).toBe(0);
@@ -281,7 +290,7 @@ describe("cloud save queue", () => {
           },
         );
       }) as typeof fetch;
-      await queue.ready();
+      await queue.restoreScene("scene");
       const saved = {
         ...snapshot("with image"),
         elements: [{ id: "image", type: "image", fileId: file.id, version: 1 }],
@@ -320,12 +329,40 @@ describe("cloud save queue", () => {
     });
     const queue = new CloudSaveQueue(callbacks, { persistence });
     try {
-      await queue.ready();
+      await queue.restoreScene("scene");
       expect(queue.getPendingSnapshot("scene")).toBeNull();
-      expect(queue.getOtherDrafts("scene").map((draft) => draft.name)).toEqual([
-        "first",
-        "second",
+      expect(
+        (await queue.listOtherDrafts()).map((draft) => draft.name),
+      ).toEqual(["first", "second"]);
+    } finally {
+      queue.dispose();
+    }
+  });
+
+  it("loads only the requested board and reads other draft contents on demand", async () => {
+    const { persistence, snapshots } = createPersistence();
+    snapshots.set("scene", snapshot("current draft"));
+    snapshots.set("other", { ...snapshot("other draft"), sceneId: "other" });
+    const reads: string[] = [];
+    const queue = new CloudSaveQueue(callbacks, {
+      persistence: {
+        ...persistence,
+        load: async (key) => {
+          reads.push(key);
+          return persistence.load(key);
+        },
+      },
+    });
+    try {
+      await queue.restoreScene("scene");
+      expect(queue.getPendingSnapshot("scene")?.name).toBe("current draft");
+      expect(queue.getPendingSnapshot("other")).toBeNull();
+      expect(await queue.listOtherDrafts()).toEqual([
+        { key: "other", name: "other draft" },
       ]);
+      expect(reads).not.toContain("other");
+      expect((await queue.readOtherDraft("other")).name).toBe("other draft");
+      expect(reads.at(-1)).toBe("other");
     } finally {
       queue.dispose();
     }
@@ -346,7 +383,7 @@ describe("cloud save queue", () => {
       },
     });
     try {
-      await queue.ready();
+      await queue.restoreScene("scene");
       queue.enqueue(snapshot("older"));
       expect(await queue.flush("scene")).toBe("error");
       expect(writes).toBe(3);
@@ -387,7 +424,7 @@ describe("cloud save queue", () => {
         },
       );
       try {
-        await queue.ready();
+        await queue.restoreScene("scene");
         queue.enqueue(snapshot("recover"));
         expect(await queue.flush("scene")).toBe(
           status === 401 ? "auth" : "conflict",
@@ -413,7 +450,7 @@ describe("cloud save queue", () => {
         return { success: true, id, updated_at: 1, revision: 2 };
       },
     });
-    await queue.ready();
+    await queue.restoreScene("scene");
     queue.setRevision("scene", 5);
     expect(await queue.flush("scene")).toBe("idle");
     expect(writes).toBe(0);
@@ -436,7 +473,7 @@ describe("cloud save queue", () => {
     queue.activate();
     queue.dispose();
     queue.activate();
-    await queue.ready();
+    await queue.restoreScene("scene");
     queue.enqueue(snapshot("edit after effect replay"));
     expect(await queue.flush("scene")).toBe("saved");
     expect(names).toEqual(["edit after effect replay"]);
@@ -459,7 +496,7 @@ describe("cloud save queue", () => {
         return { success: true, id, updated_at: 1, revision: 2 };
       },
     });
-    await queue.ready();
+    await queue.restoreScene("scene");
     const recovered = queue.getPendingSnapshot("scene")!;
     expect(recovered.name).toBe("offline content");
     queue.setRevision("scene", recovered.baseRevision!);
@@ -497,7 +534,7 @@ describe("cloud save queue", () => {
         return { success: true, id, updated_at: 1, revision: remote.revision };
       },
     });
-    await queue.ready();
+    await queue.restoreScene("scene");
     const recovered = queue.getPendingSnapshot("scene")!;
     const loaded = getCloudSceneRecoveryData(remote, recovered);
     let canvas = loaded.elements;
@@ -550,13 +587,13 @@ describe("cloud save queue", () => {
           },
         },
       );
-      await older.ready();
+      await older.restoreScene("scene");
       older.enqueue(snapshot("older"));
       const flushing = older.flush("scene");
       await saving;
       if (disposeOlder) older.dispose();
       const newer = new CloudSaveQueue(callbacks, { persistence });
-      await newer.ready();
+      await newer.restoreScene("scene");
       newer.enqueue(snapshot("newer offline edit"));
       await Promise.resolve();
       const statusCount = statuses.length;
@@ -740,7 +777,7 @@ describe("cloud save queue", () => {
       },
     });
     try {
-      await queue.ready();
+      await queue.restoreScene("scene");
       queue.enqueue(snapshot("unsynced edit"));
       expect(queue.preserveForRecovery("scene")).toBe(true);
       expect(queue.getPendingSnapshot("scene")?.name).toBe("unsynced edit");
@@ -776,7 +813,7 @@ describe("cloud save queue", () => {
       },
     );
     try {
-      await queue.ready();
+      await queue.restoreScene("scene");
       queue.enqueue(snapshot("edit before deletion"));
       expect(await queue.flush("scene")).toBe("error");
       expect(unavailable.map((item) => item.name)).toEqual([
@@ -900,7 +937,7 @@ describe("cloud save queue", () => {
         return { success: true, id, updated_at: Date.now(), revision: 2 };
       },
     });
-    await recoveredQueue.ready();
+    await recoveredQueue.restoreScene("scene");
     expect(recoveredQueue.hasPending("scene")).toBe(true);
     expect(await recoveredQueue.flush("scene")).toBe("saved");
     expect(recoveredNames).toEqual(["recover me"]);
@@ -949,7 +986,7 @@ describe("cloud save queue", () => {
           );
         },
       });
-      await queue.ready();
+      await queue.restoreScene("scene");
       queue.enqueue(original);
       expect(await queue.flush("scene")).toBe("auth");
       expect(queue.getPendingSnapshot("scene")?.name).toBe(original.name);
@@ -957,7 +994,8 @@ describe("cloud save queue", () => {
 
       const recoveredQueue = new CloudSaveQueue(callbacks, {
         persistence: {
-          load: async () => [],
+          list: async () => [],
+          load: async () => undefined,
           save: async () => {},
           remove: async () => {},
         },
@@ -969,7 +1007,7 @@ describe("cloud save queue", () => {
           revision: 2,
         }),
       });
-      await recoveredQueue.ready();
+      await recoveredQueue.restoreScene("scene");
       expect(recoveredQueue.getPendingSnapshot("scene")?.name).toBe(
         original.name,
       );
@@ -1064,7 +1102,7 @@ describe("cloud save queue", () => {
         thumbnail_file_id: null,
       }),
     });
-    await recoveredQueue.ready();
+    await recoveredQueue.restoreScene("scene");
     expect(await recoveredQueue.flush("scene")).toBe("saved");
     expect(recoveredQueue.hasPending("scene")).toBe(false);
     expect(snapshots.size).toBe(0);
@@ -1119,7 +1157,8 @@ describe("cloud save queue", () => {
       signalLatestWrite = resolve;
     });
     const persistence: CloudSavePersistence = {
-      load: async () => [],
+      list: async () => [],
+      load: async () => undefined,
       save: async (value) => {
         persistedNames.push(value.name);
         if (value.name === "first") {
