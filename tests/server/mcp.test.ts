@@ -24,13 +24,16 @@ afterEach(async () => {
   }
 });
 
-const toolResult = <T>(result: {
-  content: Array<{ type: string; text?: string }>;
-  structuredContent?: unknown;
-  isError?: boolean;
-}) => {
+const toolResult = <T>(
+  result: {
+    content: Array<{ type: string; text?: string }>;
+    structuredContent?: unknown;
+    isError?: boolean;
+  },
+  ok = true,
+) => {
   expect(result.isError).not.toBe(true);
-  expect(result.structuredContent).toMatchObject({ ok: true });
+  expect(result.structuredContent).toMatchObject({ ok });
   expect(result.content).toHaveLength(1);
   expect(result.content[0].type).toBe("text");
   const summary = result.content[0].text!;
@@ -884,7 +887,7 @@ describe("Excalidraw MCP endpoint", () => {
       });
       expect(missing.structuredContent).toMatchObject({
         ok: false,
-        error: { code: "SCENE_NOT_FOUND" },
+        error: { code: "NOT_FOUND", target: "board", recoverable: true },
       });
       const overlap = full.issues.find(
         (issue) =>
@@ -915,8 +918,21 @@ describe("Excalidraw MCP endpoint", () => {
     }
   });
 
-  it("supports trusted HTTPS proxy origins and does not trust forwarded hosts on direct connections", async () => {
-    for (const trustProxy of [false, true]) {
+  it("only returns web links from valid PUBLIC_URL, independently of proxy origin checks", async () => {
+    for (const { trustProxy, publicUrl, publicOrigin } of [
+      { trustProxy: false },
+      { trustProxy: true, publicUrl: "javascript:alert(1)" },
+      {
+        trustProxy: false,
+        publicUrl: " https://public.example.com:8443/prefix?old=yes#hash ",
+        publicOrigin: "https://public.example.com:8443",
+      },
+      {
+        trustProxy: true,
+        publicUrl: "http://public.example.com",
+        publicOrigin: "http://public.example.com",
+      },
+    ]) {
       const directory = path.join(
         os.tmpdir(),
         `excalidraw-mcp-proxy-${crypto.randomUUID()}`,
@@ -929,6 +945,7 @@ describe("Excalidraw MCP endpoint", () => {
           ALLOW_ANONYMOUS: "true",
           MCP_TOKEN: "proxy-test-token",
           TRUST_PROXY: String(trustProxy),
+          PUBLIC_URL: publicUrl,
         }),
       });
       resources.push({ runtime, directory });
@@ -981,23 +998,79 @@ describe("Excalidraw MCP endpoint", () => {
       );
       try {
         await client.connect(transport);
-        const created = toolResult<{ boardId: string; url: string }>(
+        const creation = await client.callTool({
+          name: "create_board",
+          arguments: { name: "反代画板", idempotencyKey: "proxy-board" },
+        });
+        const created = toolResult<{ boardId: string; webUrl?: string }>(
+          creation,
+        );
+        const webUrl = publicOrigin
+          ? `${publicOrigin}/?id=${created.boardId}`
+          : undefined;
+        if (webUrl)
+          expect(creation.content[0]).not.toHaveProperty(
+            "text",
+            expect.stringContaining(webUrl),
+          );
+        const replay = toolResult<Record<string, unknown>>(
           await client.callTool({
             name: "create_board",
-            arguments: { name: "反代画板" },
+            arguments: { name: "反代画板", idempotencyKey: "proxy-board" },
           }),
         );
-        const origin = trustProxy
-          ? "https://boards.example.com"
-          : "http://container:8080";
-        expect(created.url).toBe(`${origin}/?id=${created.boardId}`);
-        const read = toolResult<{ url: string }>(
+        const read = toolResult<{
+          createdAt: number;
+          createdAtISO: string;
+          isDeleted: boolean;
+        }>(
           await client.callTool({
             name: "get_board",
             arguments: { boardId: created.boardId, view: "summary" },
           }),
         );
-        expect(read.url).toBe(created.url);
+        expect(read.createdAtISO).toBe(new Date(read.createdAt).toISOString());
+        expect(read.isDeleted).toBe(false);
+        const list = toolResult<{ items: Array<Record<string, unknown>> }>(
+          await client.callTool({ name: "list_boards", arguments: {} }),
+        );
+        const batch = toolResult<{ boards: Array<Record<string, unknown>> }>(
+          await client.callTool({
+            name: "get_boards_batch",
+            arguments: {
+              boardIds: [created.boardId, "missing"],
+              view: "summary",
+              maxChars: 1_500,
+            },
+          }),
+          false,
+        );
+        for (const board of [
+          created,
+          replay,
+          read,
+          list.items[0],
+          batch.boards[0],
+        ]) {
+          expect(board).not.toHaveProperty("url");
+          if (webUrl) expect(board).toHaveProperty("webUrl", webUrl);
+          else expect(board).not.toHaveProperty("webUrl");
+        }
+        expect(batch.boards[1]).not.toHaveProperty("webUrl");
+        const deleted = toolResult<{
+          deletedAt: number;
+          deletedAtISO: string;
+          isDeleted: boolean;
+        }>(
+          await client.callTool({
+            name: "delete_board",
+            arguments: { boardId: created.boardId },
+          }),
+        );
+        expect(deleted.isDeleted).toBe(true);
+        expect(deleted.deletedAtISO).toBe(
+          new Date(deleted.deletedAt).toISOString(),
+        );
       } finally {
         await client.close();
         await handler.close();
@@ -1467,10 +1540,14 @@ describe("Excalidraw MCP endpoint", () => {
               : { elements: [{ type: "text", x: 0, y: 0, text: "不会写入" }] }),
           },
         });
-        expect(conflict.isError).toBe(true);
+        expect(conflict.isError).not.toBe(true);
         expect(conflict.structuredContent).toMatchObject({
           ok: false,
-          error: { code: "REVISION_CONFLICT" },
+          error: {
+            code: "REVISION_CONFLICT",
+            recoverable: true,
+            currentRevision: expect.any(Number),
+          },
         });
       }
       const emptyUpdate = await client.callTool({
@@ -1479,8 +1556,9 @@ describe("Excalidraw MCP endpoint", () => {
       });
       expect(emptyUpdate.structuredContent).toMatchObject({
         ok: false,
-        error: { code: "EMPTY_UPDATE" },
+        error: { code: "EMPTY_UPDATE", recoverable: false },
       });
+      expect(emptyUpdate.isError).toBe(true);
       const notFound = await client.callTool({
         name: "get_board",
         arguments: { boardId: "missing" },
@@ -1489,6 +1567,18 @@ describe("Excalidraw MCP endpoint", () => {
       expect(notFound.content[0]).toMatchObject({
         type: "text",
         text: "操作失败：画板不存在或已删除",
+      });
+      const missingElement = await client.callTool({
+        name: "update_element",
+        arguments: {
+          boardId: complete.boardId,
+          update: { id: "missing", dx: 1 },
+        },
+      });
+      expect(missingElement.isError).not.toBe(true);
+      expect(missingElement.structuredContent).toMatchObject({
+        ok: false,
+        error: { code: "NOT_FOUND", target: "element", recoverable: true },
       });
       const unchanged = toolResult<{ revision: number }>(
         await client.callTool({
@@ -1658,6 +1748,7 @@ describe("Excalidraw MCP endpoint", () => {
             maxChars: 10_000,
           },
         }),
+        false,
       );
       expect(batch.truncated).toBe(true);
       expect(JSON.stringify(batch).length).toBeLessThanOrEqual(10_000);
@@ -1703,7 +1794,7 @@ describe("Excalidraw MCP endpoint", () => {
       });
       expect(missingFolder.structuredContent).toMatchObject({
         ok: false,
-        error: { code: "FOLDER_NOT_FOUND" },
+        error: { code: "NOT_FOUND", target: "folder", recoverable: true },
       });
 
       const summaryBatch = toolResult<{
@@ -1718,19 +1809,21 @@ describe("Excalidraw MCP endpoint", () => {
             view: "summary",
           },
         }),
+        false,
       );
       expect(summaryBatch).toMatchObject({ partial: true, truncated: false });
       expect(summaryBatch.boards[0]).toMatchObject({ ok: true });
       expect(summaryBatch.boards[1]).toMatchObject({
         ok: false,
         boardId: "missing",
-        error: { code: "SCENE_NOT_FOUND" },
+        error: { code: "NOT_FOUND", target: "board", recoverable: true },
       });
       const allMissing = toolResult<{ partial: boolean; truncated: boolean }>(
         await client.callTool({
           name: "get_boards_batch",
           arguments: { boardIds: ["missing"], view: "summary" },
         }),
+        false,
       );
       expect(allMissing).toMatchObject({ partial: false, truncated: false });
       const smallSummary = toolResult<{
@@ -1762,6 +1855,7 @@ describe("Excalidraw MCP endpoint", () => {
             maxChars: 1_000,
           },
         }),
+        false,
       );
       expect(constrainedBatch.truncated).toBe(true);
       expect(JSON.stringify(constrainedBatch).length).toBeLessThanOrEqual(

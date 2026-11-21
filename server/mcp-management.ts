@@ -4,6 +4,7 @@ import { HttpError } from "./errors";
 import { getSceneSummary } from "./scenes";
 import { validateTags } from "./validation";
 import type { ServerRuntime } from "./types";
+import { mcpError } from "./mcp-response";
 import { colorSchema } from "./color";
 import { compactMcpSchema } from "./mcp-schema";
 
@@ -24,7 +25,6 @@ type Context = {
     handler: (args: T) => Promise<ToolResult>,
     operation: string,
   ) => (args: T) => Promise<ToolResult>;
-  boardUrl: (id: string) => string;
 };
 type Folder = {
   id: string;
@@ -228,11 +228,12 @@ function assertRevision(revision: number, expected?: number) {
       409,
       "REVISION_CONFLICT",
       `画板已更新，当前修订号为 ${revision}；请重新读取判断`,
+      { currentRevision: revision },
     );
 }
 
 export function registerManagementTools(server: McpServer, context: Context) {
-  const { runtime, api, result, safeTool, boardUrl } = context;
+  const { runtime, api, result, safeTool } = context;
   const manage = async (input: ManageInput) => {
     const current = readSummary(runtime, input.boardId);
     assertRevision(current.revision, input.expectedRevision);
@@ -299,7 +300,6 @@ export function registerManagementTools(server: McpServer, context: Context) {
       ...board,
       boardId: input.boardId,
       noop: noop || ("noop" in board && board.noop === true),
-      url: boardUrl(input.boardId),
     };
   };
   const setDeleted = async (
@@ -316,7 +316,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
         deleted,
       });
     const board = readSummary(runtime, boardId);
-    return { ...board, boardId, noop, deleted, url: boardUrl(boardId) };
+    return { ...board, boardId, noop, deleted };
   };
   server.registerTool(
     "list_folders",
@@ -681,7 +681,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
             boardId: item.boardId,
             action: item.action,
             ...(revision === undefined ? {} : { revision }),
-            error: { code: error.code, message: error.message },
+            error: mcpError(error),
           });
         }
       }

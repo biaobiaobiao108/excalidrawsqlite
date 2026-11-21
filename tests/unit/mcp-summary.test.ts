@@ -79,14 +79,14 @@ describe("MCP operation summaries", () => {
         addedCount: 222,
         boardId: "board-1",
         revision: 3,
-        url: "https://board.test/board-1",
+        webUrl: "https://board.test/board-1",
         elements: [{ text: "私人正文不要返回" }],
       };
       const summary = formatMcpSummary(operation, data);
       expect(summary).toContain("已创建「系统全景图」；新增 222 个图元");
       expect(summary).toContain("boardId=board-1；修订号 3");
-      expect(summary.split("\n")).toHaveLength(2);
-      expect(summary).toContain("直达链接：https://board.test/board-1");
+      expect(summary.split("\n")).toHaveLength(1);
+      expect(summary).not.toContain("https://board.test/board-1");
       expect(summary).not.toContain("私人正文");
       expect(summary).not.toContain("structuredContent");
       const replay = formatMcpSummary(operation, {
@@ -308,60 +308,19 @@ describe("MCP operation summaries", () => {
     ).toContain("folderId=deleted；已移动 2 个画板到根目录");
   });
 
-  it("names and URL controls cannot add lines, long names preserve locating fields", () => {
+  it("keeps links in structured content and cleans names in the text summary", () => {
     const summary = formatMcpSummary("create_board", {
       name: "\n" + "名称".repeat(1000) + "\r\n",
       boardId: "stable",
       revision: 8,
       addedCount: 2,
-      url: "https://test.example/board\nunsafe\u2028line",
+      webUrl: "https://test.example/" + "x".repeat(2000),
     });
     expect(summary.length).toBeLessThanOrEqual(1024);
-    expect(summary.split("\n")).toHaveLength(2);
+    expect(summary.split("\n")).toHaveLength(1);
     expect(summary).toContain("…」；新增 2 个图元；boardId=stable；修订号 8");
-    expect(summary).toContain(
-      "直达链接：https://test.example/board unsafe line",
-    );
-  });
-
-  it("preserves long valid links and drops optional details before shortening locating information", () => {
-    const url = "https://test.example/" + "x".repeat(800);
-    const summary = formatMcpSummary("create_board", {
-      name: "名称".repeat(1000),
-      boardId: "stable",
-      revision: 2,
-      addedCount: 1,
-      url,
-    });
-    expect(summary).toContain(`\n直达链接：${url}`);
-    expect(summary).toContain("boardId=stable");
-    expect(summary.length).toBeLessThanOrEqual(1024);
-    const tightUrl = "https://test.example/" + "x".repeat(970);
-    const compact = formatMcpSummary("create_board", {
-      name: "名称".repeat(1000),
-      boardId: "stable",
-      revision: 999,
-      addedCount: 12345,
-      url: tightUrl,
-    });
-    expect(compact).toContain(`\n直达链接：${tightUrl}`);
-    expect(compact).toContain("boardId=stable");
-    expect(compact).not.toContain("名称");
-    expect(compact.length).toBeLessThanOrEqual(1024);
-  });
-
-  it("omits oversized links explicitly instead of returning a broken URL", () => {
-    const summary = formatMcpSummary("create_board", {
-      boardId: "stable",
-      addedCount: 1,
-      url: "https://test.example/" + "x".repeat(2000),
-    });
-    expect(summary).toContain("boardId=stable");
-    expect(summary).toContain("直达链接过长，使用 boardId 定位");
     expect(summary).not.toContain("https://test.example/");
-    expect(summary.length).toBeLessThanOrEqual(1024);
   });
-
   it("errors retain their specific reason, and unknown operations are identified", () => {
     const reason = "修订号冲突：期望 2，实际 3\n请重新读取。";
     expect(

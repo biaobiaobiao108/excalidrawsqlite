@@ -57,6 +57,13 @@ const splitOrigins = (value: string | undefined) =>
       .filter(Boolean),
   );
 
+const parsePublicOrigin = (value: string | undefined) => {
+  const url = value?.trim() ? URL.parse(value.trim()) : null;
+  return url && (url.protocol === "http:" || url.protocol === "https:")
+    ? url.origin
+    : undefined;
+};
+
 export const createServerConfig = (
   env: Record<string, string | undefined> = process.env,
 ): ServerConfig => {
@@ -103,6 +110,7 @@ export const createServerConfig = (
   return {
     authPassword,
     mcpToken,
+    publicOrigin: parsePublicOrigin(env.PUBLIC_URL),
     mcpTrace: parseBooleanEnv(env.MCP_TRACE),
     allowAnonymous,
     nodeEnv,

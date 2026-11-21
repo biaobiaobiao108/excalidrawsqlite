@@ -21,11 +21,12 @@ import {
 } from "./mcp-management";
 import { measureMcpPhase, traceMcpTool } from "./mcp-trace";
 import {
-  cleanBoardRecord,
+  projectMcpRecord,
   drawingReceipt,
+  mcpError,
   positionReceipt,
   responseModeSchema,
-  result,
+  result as buildMcpResult,
 } from "./mcp-response";
 import {
   createInternalApi,
@@ -57,12 +58,7 @@ import {
 } from "./auth";
 import { AUTH_RATE_WINDOW_MS } from "./config";
 import { HttpError } from "./errors";
-import {
-  getRequestOrigin,
-  isAllowedOrigin,
-  jsonResponse,
-  response,
-} from "./http";
+import { isAllowedOrigin, jsonResponse, response } from "./http";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { RequestAddressResolver, ServerRuntime } from "./types";
@@ -76,7 +72,7 @@ const getMcpServerInstructions = (runtime: ServerRuntime) =>
     "修改用 update_board 批量原地更新，复制用 copy_elements；保留已有图元 ID 和连接。已读版本通过 expectedRevision 校验，冲突后重新读取判断，不盲目重试。",
     "常规读取用 get_board 的 compact，修改前用 input；仅 elements 可直接作为 updates，只读 elementGeometry 不可写回。分页、截断及 unsupportedElementIds/warnings 不代表完整场景，不能据此覆盖全板。",
     "文字 width 控制换行，height 自动计算。形状 text 为绑定标签，复杂卡片的独立文字与背景用 groupId 关联；需要随节点移动的连线用绑定 arrow，无箭头时 endArrowhead=null。MCP 移动/复制只处理指定 IDs，不自动扩展整个分组。",
-    "structuredContent 是完整结果，text 是简要摘要。单次失败检查 isError 和 ok/error；参数校验可能仅有 isError/text，批处理须逐项检查 ok/error。",
+    "完整结果在 structuredContent，text 仅提供摘要。先检查 ok 和 error.code；可恢复业务分支提供 error.recoverable 与 suggestedAction，参数校验可能仅有 isError/text。批量有失败时 ok=false，请逐项检查。配置 PUBLIC_URL 时画板结果提供 webUrl。",
     "创建后 inspect_layout 检查，再按图元 ID 修改并复查；complete=false 或容器跳过不等于通过。诊断和文字尺寸均为几何估算，建议需结合设计意图判断，工具不自动修复。",
     `delete_board 仅移入回收站，restore_board 还原，无永久删除工具。${runtime.config.trashRetentionDays === 0 ? "回收站自动清理已禁用。" : `回收站保留 ${runtime.config.trashRetentionDays} 天后自动清理。`}`,
   ].join(" ");
@@ -96,25 +92,22 @@ type SceneData = {
 
 const makeSafeTool =
   <T>(
-    handler: (args: T) => Promise<ReturnType<typeof result>>,
+    handler: (args: T) => Promise<ReturnType<typeof buildMcpResult>>,
     trace = false,
     operation = "tool",
   ) =>
   async (args: T) =>
     traceMcpTool(trace, operation, async () => {
-      let completed: ReturnType<typeof result>;
+      let completed: ReturnType<typeof buildMcpResult>;
       try {
         completed = await handler(args);
       } catch (error) {
         if (error instanceof HttpError) {
-          completed = result({
-            error: { code: error.code, message: error.message },
-          });
+          completed = buildMcpResult({ error: mcpError(error) });
         } else throw error;
       }
       return measureMcpPhase("responseBuildMs", () => ({
         ...completed,
-        ...(completed.structuredContent.ok === false ? { isError: true } : {}),
         content: [
           {
             type: "text" as const,
@@ -195,6 +188,7 @@ const assertRevision = (current: SceneData, expectedRevision?: number) => {
       409,
       "REVISION_CONFLICT",
       `画板已更新，当前修订号为 ${current.revision}；请重新读取后判断修改。`,
+      { currentRevision: current.revision },
     );
   }
 };
@@ -251,7 +245,7 @@ export const createMcpRequestHandler = (
   const mcp =
     expectedToken && api
       ? createMcpHandler(
-          ({ requestInfo }) => {
+          () => {
             const server = new McpServer(
               { name: "excalidrawsqlite", version: "1.0.0" },
               {
@@ -260,21 +254,17 @@ export const createMcpRequestHandler = (
               },
             );
             const safeTool = <T>(
-              handler: (args: T) => Promise<ReturnType<typeof result>>,
+              handler: (args: T) => Promise<ReturnType<typeof buildMcpResult>>,
               operation: string,
             ) => makeSafeTool(handler, runtime.config.mcpTrace, operation);
-            const boardUrl = (id: string) => {
-              const origin = requestInfo
-                ? getRequestOrigin(runtime, requestInfo)
-                : "";
-              return `${origin}/?id=${encodeURIComponent(id)}`;
-            };
+            const { publicOrigin } = runtime.config;
+            const result = (value: Record<string, unknown>) =>
+              buildMcpResult(value, publicOrigin);
             const replayReceipt = (board: Record<string, unknown>) =>
               result({
                 ...board,
                 addedCount: 0,
                 idempotentReplay: true,
-                url: boardUrl(String(board.id ?? board.boardId)),
               });
             const creationReplay = (key: string | undefined, intent: unknown) =>
               lookupMcpCreateReplay(runtime, key, intent);
@@ -310,10 +300,7 @@ export const createMcpRequestHandler = (
                   `/api/scenes/${encodeURIComponent(boardId)}/summary`,
                   "GET",
                 );
-                const value = {
-                  ...cleanBoardRecord(summary),
-                  url: boardUrl(boardId),
-                };
+                const value = projectMcpRecord(summary, publicOrigin);
                 if (JSON.stringify(value).length + 64 > maxChars) {
                   throw new HttpError(
                     400,
@@ -358,22 +345,20 @@ export const createMcpRequestHandler = (
                       typeof element.text === "string" &&
                       element.text.toLocaleLowerCase().includes(needle))),
               );
-              const base =
-                view === "full"
-                  ? {
-                      ...cleanBoardRecord(board),
-                      elements: [] as Record<string, unknown>[],
-                      elementCount: board.elements.length,
-                      url: boardUrl(board.id),
-                    }
-                  : {
-                      boardId: board.id,
-                      name: board.name,
-                      revision: board.revision,
-                      elementCount: board.elements.length,
-                      elements: [] as Record<string, unknown>[],
-                      url: boardUrl(board.id),
-                    };
+              const base = projectMcpRecord(
+                {
+                  ...(view === "full"
+                    ? board
+                    : {
+                        boardId: board.id,
+                        name: board.name,
+                        revision: board.revision,
+                      }),
+                  elementCount: board.elements.length,
+                  elements: [],
+                },
+                publicOrigin,
+              );
               const allIds = selected
                 ? new Set([
                     ...source.map((element) => element.id),
@@ -757,7 +742,6 @@ export const createMcpRequestHandler = (
                   bounds: layout.bounds,
                   estimated: layout.estimated,
                   note: layout.note,
-                  url: boardUrl(board.id),
                 });
               }, "create_layout"),
             );
@@ -845,7 +829,6 @@ export const createMcpRequestHandler = (
                   elementCount: drawing.length,
                   ...drawingReceipt(created, responseMode),
                   ...(autoBinding ? { autoBinding } : {}),
-                  url: boardUrl(board.id),
                 });
               }, "create_board"),
             );
@@ -923,7 +906,6 @@ export const createMcpRequestHandler = (
                       }
                     : {}),
                   ...drawingReceipt(drawing.created, args.responseMode),
-                  url: boardUrl(board.id),
                 });
               }, "create_diagram"),
             );
@@ -988,7 +970,6 @@ export const createMcpRequestHandler = (
                     ...drawingReceipt(created, responseMode),
                     revision: saved.revision,
                     ...(autoBinding ? { autoBinding } : {}),
-                    url: boardUrl(boardId),
                   });
                 },
                 "add_elements",
@@ -1120,7 +1101,6 @@ export const createMcpRequestHandler = (
                     groupIdMap: copied.groupIdMap,
                     ...overlaps,
                     warnings: [...copied.warnings, ...overlaps.warnings],
-                    url: boardUrl(targetBoardId),
                   });
                 },
                 "copy_elements",
@@ -1315,7 +1295,6 @@ export const createMcpRequestHandler = (
                       notFoundIds: remaining.notFoundIds,
                       updatedCount: 0,
                       noop: true,
-                      url: boardUrl(boardId),
                     });
                   }
                   const folder = getSceneFolderFields(
@@ -1363,7 +1342,6 @@ export const createMcpRequestHandler = (
                     updatedCount: updated.updatedCount,
                     ...(autoBinding ? { autoBinding } : {}),
                     ...overlaps,
-                    url: boardUrl(boardId),
                   });
                 },
                 "update_board",
@@ -1429,7 +1407,6 @@ export const createMcpRequestHandler = (
                   updatedCount: updated.updatedCount,
                   ...positionReceipt(updated.elements, update.id),
                   ...overlaps,
-                  url: boardUrl(boardId),
                 });
               }, "update_element"),
             );
@@ -1472,8 +1449,8 @@ export const createMcpRequestHandler = (
                   view = "compact",
                   maxChars = 1_000_000,
                 }) => {
-                  const boards: Record<string, unknown>[] = boardIds.map(
-                    (boardId) => ({
+                  const boards = boardIds.map((boardId) =>
+                    projectMcpRecord({
                       ok: false,
                       boardId,
                       truncated: true,
@@ -1485,7 +1462,7 @@ export const createMcpRequestHandler = (
                   );
                   const envelopeSize = () =>
                     JSON.stringify({
-                      ok: true,
+                      ok: false,
                       boards,
                       maxChars,
                       partial: false,
@@ -1517,14 +1494,14 @@ export const createMcpRequestHandler = (
                       };
                     } catch (error) {
                       if (!(error instanceof HttpError)) throw error;
-                      const outcome = {
+                      const outcome = projectMcpRecord({
                         ok: false,
                         boardId,
                         ...(error.code === "READ_BUDGET_TOO_SMALL"
                           ? { truncated: true }
                           : {}),
-                        error: { code: error.code, message: error.message },
-                      };
+                        error: mcpError(error),
+                      });
                       if (JSON.stringify(outcome).length <= available)
                         boards[index] = outcome;
                     }
@@ -1546,7 +1523,6 @@ export const createMcpRequestHandler = (
               api,
               result,
               safeTool,
-              boardUrl,
             });
 
             return server;

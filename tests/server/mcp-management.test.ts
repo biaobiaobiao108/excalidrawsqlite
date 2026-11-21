@@ -40,7 +40,7 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
   const call = async (name: string, args: Record<string, unknown>) => {
     const response = await client.callTool({ name, arguments: args });
     const data = response.structuredContent as Record<string, any>;
-    if (data.ok === false) expect(response.isError).toBe(true);
+    if (data.error?.recoverable === false) expect(response.isError).toBe(true);
     else expect(response.isError).not.toBe(true);
     expect(response.content).toHaveLength(1);
     const summary = response.content[0];
@@ -386,13 +386,16 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
       ],
     });
     expect(batch).toMatchObject({
-      ok: true,
+      ok: false,
       succeeded: 2,
       failed: 1,
       partial: true,
       results: [
         { ok: true, favorite: true },
-        { ok: false, error: { code: "SCENE_NOT_FOUND" } },
+        {
+          ok: false,
+          error: { code: "NOT_FOUND", target: "board", recoverable: true },
+        },
         { ok: true, noop: true },
       ],
     });
