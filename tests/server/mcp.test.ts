@@ -1207,10 +1207,10 @@ describe("Excalidraw MCP endpoint", () => {
           .some((name) => /clear_trash|purge|permanent/.test(name)),
       ).toBe(false);
       const instructions = client.getInstructions();
-      expect(instructions).toMatch(/list_boards.+get_board/);
-      expect(instructions).toContain(
-        "只有 view=input 返回的 elements 可传给 update_board.updates",
-      );
+      for (const { name } of tools.tools) {
+        expect(instructions).toMatch(new RegExp(`\\b${name}\\b`));
+      }
+      expect(instructions).toContain("回写只取 input 视图的 elements");
       expect(instructions).toContain("一次提交全部内容");
       expect(instructions).toContain("创建重试复用 idempotencyKey");
       expect(instructions).toContain("回收站保留 30 天后自动清理");

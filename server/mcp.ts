@@ -67,12 +67,17 @@ export const MCP_PATH = "/mcp";
 
 const getMcpServerInstructions = (runtime: ServerRuntime) =>
   [
-    "狐涂画板 MCP 使用简化绘图描述。用 list_boards 按名称找画板，再用 get_board 按 boardId 读取。常规查看用 view=compact，准备修改用 view=input。只有 view=input 返回的 elements 可传给 update_board.updates。遇到分页、截断或投影警告时，核对读取范围，再按已确认的图元做增量修改。",
-    "创建时一次提交全部内容。自由绘图用 create_board，流程、时间线、架构和泳道用 create_diagram，卡片网格用 create_layout。创建重试复用 idempotencyKey。",
-    "用 update_board 按 ID 原地修改，保留图元 ID 和连接。复制用 copy_elements。随节点移动的连线用绑定箭头，移动或复制整组时传齐图元 ID。修改时用读到的 revision 作为 expectedRevision，冲突后先重读再决定是否重试。",
-    "绘制后用 inspect_layout 检查，按图元 ID 修改后再复查。complete=false 或容器被跳过时，先确认哪些区域已检查。",
-    "从 structuredContent 读取结果，检查 ok、error.code 和 suggestedAction。批量操作逐项检查结果，参数校验可能只返回 isError 和文本。",
-    `用 delete_board 将画板移入回收站，用 restore_board 恢复。${runtime.config.trashRetentionDays === 0 ? "回收站自动清理已禁用。" : `回收站保留 ${runtime.config.trashRetentionDays} 天后自动清理。`}`,
+    "狐涂画板 MCP 使用简化绘图描述。",
+    "查找和读取画板。list_boards 按名称或分类找板，get_board 按 boardId 读单板，get_boards_batch 批读。常规查看用 view=compact，准备修改用 view=input。回写只取 input 视图的 elements。遇到分页、截断或投影警告时，核对读取范围再做增量修改。",
+    "创建时一次提交全部内容。create_board 自由绘图，create_diagram 绘制流程、时间线、架构或泳道，create_layout 生成卡片网格。创建重试复用 idempotencyKey。",
+    "编辑图元。update_board 一次合并多项修改，update_element 按 ID 改单个图元，add_elements 追加，remove_elements 按 ID 移除，copy_elements 同板或跨板复制。随节点移动的连线用绑定箭头，整组移动或复制需传齐图元 ID。",
+    "检查布局。measure_text 估算文字尺寸和换行，inspect_layout 检查重叠、溢出和连接。修改后复查，complete=false 时确认检查覆盖范围。",
+    "整理画板。manage_board 改名、收藏、移动或改标签，delete_board 移入回收站，restore_board 恢复，batch_manage_boards 批量管理、移入回收站或恢复。",
+    "文件夹与标签。list_folders 查文件夹，list_tags 查在用标签。ensure_folder 按名称获取或创建，create_folder 创建且重名时报错，update_folder 改名称、颜色或图标，delete_folder 删除文件夹并把画板移至根目录。",
+    "从 structuredContent 读取结果，检查 ok、error.code 和 suggestedAction，批量操作逐项检查结果。修改画板用读到的 revision 作为 expectedRevision，遇到冲突先重读再决定是否重试。",
+    runtime.config.trashRetentionDays === 0
+      ? "回收站自动清理已禁用。"
+      : `回收站保留 ${runtime.config.trashRetentionDays} 天后自动清理。`,
   ].join("\n\n");
 
 type McpRequestHandler = {
