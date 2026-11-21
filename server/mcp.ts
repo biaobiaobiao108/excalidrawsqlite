@@ -67,15 +67,13 @@ export const MCP_PATH = "/mcp";
 
 const getMcpServerInstructions = (runtime: ServerRuntime) =>
   [
-    "狐涂画板 MCP 使用简化绘图描述，参数以工具 schema 为准，不接受原生 Excalidraw JSON。",
-    "创建时一次提交全部内容：自由绘图用 create_board，流程/时间线/架构/泳道用 create_diagram，卡片网格用 create_layout；创建重试复用 idempotencyKey。",
-    "修改用 update_board 批量原地更新，复制用 copy_elements；保留已有图元 ID 和连接。已读版本通过 expectedRevision 校验，冲突后重新读取判断，不盲目重试。",
-    "常规读取用 get_board 的 compact，修改前用 input；仅 elements 可直接作为 updates，只读 elementGeometry 不可写回。分页、截断及 unsupportedElementIds/warnings 不代表完整场景，不能据此覆盖全板。",
-    "文字 width 控制换行，height 自动计算。形状 text 为绑定标签，复杂卡片的独立文字与背景用 groupId 关联；需要随节点移动的连线用绑定 arrow，无箭头时 endArrowhead=null。MCP 移动/复制只处理指定 IDs，不自动扩展整个分组。",
-    "完整结果在 structuredContent，text 仅提供摘要。先检查 ok 和 error.code；可恢复业务分支提供 error.recoverable 与 suggestedAction，参数校验可能仅有 isError/text。批量有失败时 ok=false，请逐项检查。配置 PUBLIC_URL 时画板结果提供 webUrl。",
-    "创建后 inspect_layout 检查，再按图元 ID 修改并复查；complete=false 或容器跳过不等于通过。诊断和文字尺寸均为几何估算，建议需结合设计意图判断，工具不自动修复。",
-    `delete_board 仅移入回收站，restore_board 还原，无永久删除工具。${runtime.config.trashRetentionDays === 0 ? "回收站自动清理已禁用。" : `回收站保留 ${runtime.config.trashRetentionDays} 天后自动清理。`}`,
-  ].join(" ");
+    "狐涂画板 MCP 使用简化绘图描述。用 list_boards 按名称找画板，再用 get_board 按 boardId 读取。常规查看用 view=compact，准备修改用 view=input。只有 view=input 返回的 elements 可传给 update_board.updates。遇到分页、截断或投影警告时，核对读取范围，再按已确认的图元做增量修改。",
+    "创建时一次提交全部内容。自由绘图用 create_board，流程、时间线、架构和泳道用 create_diagram，卡片网格用 create_layout。创建重试复用 idempotencyKey。",
+    "用 update_board 按 ID 原地修改，保留图元 ID 和连接。复制用 copy_elements。随节点移动的连线用绑定箭头，移动或复制整组时传齐图元 ID。修改时用读到的 revision 作为 expectedRevision，冲突后先重读再决定是否重试。",
+    "绘制后用 inspect_layout 检查，按图元 ID 修改后再复查。complete=false 或容器被跳过时，先确认哪些区域已检查。",
+    "从 structuredContent 读取结果，检查 ok、error.code 和 suggestedAction。批量操作逐项检查结果，参数校验可能只返回 isError 和文本。",
+    `用 delete_board 将画板移入回收站，用 restore_board 恢复。${runtime.config.trashRetentionDays === 0 ? "回收站自动清理已禁用。" : `回收站保留 ${runtime.config.trashRetentionDays} 天后自动清理。`}`,
+  ].join("\n\n");
 
 type McpRequestHandler = {
   fetch: (req: Request) => Promise<Response>;
