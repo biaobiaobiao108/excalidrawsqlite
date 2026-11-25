@@ -38,11 +38,7 @@ export const handleFolderRoute = async ({
   pathname,
   stmts,
 }: RouteContext): Promise<Response | null> => {
-  if (
-    pathname.startsWith("/api/folders") &&
-    pathname === "/api/folders" &&
-    req.method === "GET"
-  ) {
+  if (pathname === "/api/folders" && req.method === "GET") {
     const folders = stmts.listFolders.all();
     return jsonResponse(runtime, req, folders);
   }
@@ -162,40 +158,52 @@ export const handleFolderRoute = async ({
 
   if (pathname.startsWith("/api/folders/") && req.method === "DELETE") {
     const id = getPathId(pathname, "/api/folders/", "folder");
-    const existing = stmts.getFolderById.get(id);
-    if (!existing) {
+    const now = Date.now();
+    const transaction = runtime.db.transaction(() => {
+      const existing = stmts.getFolderById.get(id);
+      if (!existing) {
+        return null;
+      }
+      const affectedScenes = runtime.db
+        .query(
+          "SELECT id, revision, updated_at FROM scenes WHERE folder_id = ?",
+        )
+        .all(id) as Array<{
+        id: string;
+        revision: number;
+        updated_at: number;
+      }>;
+      const updateScene = runtime.db.query(
+        `UPDATE scenes
+         SET folder_id = NULL, revision = ?
+         WHERE id = ? AND folder_id = ?`,
+      );
+      const nextScenes = affectedScenes.map((scene) => {
+        const nextRevision = storedSceneRevision(scene.revision) + 1;
+        updateScene.run(nextRevision, scene.id, id);
+        return {
+          id: scene.id,
+          revision: nextRevision,
+          updatedAt: Number(scene.updated_at),
+        };
+      });
+      runtime.db.run("DELETE FROM folders WHERE id = ?", [id]);
+      return nextScenes;
+    });
+    const affectedScenes = transaction.immediate();
+    if (!affectedScenes) {
       return jsonResponse(runtime, req, {
         success: true,
         id,
         deleted: false,
       });
     }
-    const affectedScenes = runtime.db
-      .query("SELECT id, revision, updated_at FROM scenes WHERE folder_id = ?")
-      .all(id) as Array<{
-      id: string;
-      revision: number;
-      updated_at: number;
-    }>;
-    const now = Date.now();
-    const transaction = runtime.db.transaction(() => {
-      const updateScene = runtime.db.query(
-        `UPDATE scenes
-         SET folder_id = NULL, revision = ?
-         WHERE id = ? AND folder_id = ?`,
-      );
-      for (const scene of affectedScenes) {
-        updateScene.run(storedSceneRevision(scene.revision) + 1, scene.id, id);
-      }
-      runtime.db.run("DELETE FROM folders WHERE id = ?", [id]);
-    });
-    transaction.immediate();
     for (const scene of affectedScenes) {
       publishSceneChanged(runtime, {
         type: "scene_changed",
         sceneId: scene.id,
-        revision: storedSceneRevision(scene.revision) + 1,
-        updatedAt: Number(scene.updated_at),
+        revision: scene.revision,
+        updatedAt: scene.updatedAt,
         changeKind: "metadata",
       });
     }

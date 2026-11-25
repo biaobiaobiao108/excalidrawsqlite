@@ -5,7 +5,6 @@ import type { ServerRuntime } from "./types";
 
 const DEFAULT_SCENE_PAGE_SIZE = 50;
 const MAX_SCENE_PAGE_SIZE = 100;
-const MAX_SCENE_BATCH_SIZE = 500;
 const MAX_THUMBNAIL_VERSION_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const sceneCursorEncoder = new TextEncoder();
 const sceneCursorDecoder = new TextDecoder();

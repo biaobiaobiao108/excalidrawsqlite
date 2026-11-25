@@ -224,7 +224,7 @@ export const handleSceneRoute = async ({
         updated_at: now,
         revision: 1,
         size: contentBytes,
-        element_count: elements.filter((el: any) => !el?.isDeleted).length,
+        element_count: elements.length,
         tags_json: tagsJson,
         is_favorite: favorite ? 1 : 0,
         folder_id: storedFolderId,

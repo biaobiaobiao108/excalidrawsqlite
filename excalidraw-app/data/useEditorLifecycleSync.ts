@@ -130,6 +130,7 @@ export const useEditorLifecycleSync = ({
     document.addEventListener(EVENT.VISIBILITY_CHANGE, visibilityChange, false);
     window.addEventListener(EVENT.FOCUS, visibilityChange, false);
     return () => {
+      syncData.cancel();
       window.removeEventListener(EVENT.UNLOAD, onUnload, false);
       window.removeEventListener("pagehide", onUnload, false);
       window.removeEventListener(EVENT.BLUR, visibilityChange, false);

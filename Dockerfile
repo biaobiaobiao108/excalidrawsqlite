@@ -56,7 +56,6 @@ ENV STATIC_DIR=/app/excalidraw-app/build
 # The server creates the database and files directories on startup. Keeping the
 # runtime stage free of dependency installs and RUN steps avoids shipping
 # node_modules and target-platform emulation in Buildx.
-COPY server ./server
 COPY --from=builder /app/server-build ./server-build
 COPY --from=builder /app/excalidraw-app/build ./excalidraw-app/build
 
