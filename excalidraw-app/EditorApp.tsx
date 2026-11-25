@@ -34,7 +34,6 @@ import { newElementWith } from "@excalidraw/element";
 import { isInitializedImageElement } from "@excalidraw/element";
 import { useHandleLibrary } from "@excalidraw/excalidraw/data/library";
 
-import type { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type {
   FileId,
   NonDeletedExcalidrawElement,
@@ -96,8 +95,16 @@ import {
   type ThumbnailSnapshot,
 } from "./data/thumbnailSaveQueue";
 
+import { EditorTopRightUI } from "./components/EditorTopRightUI";
 import { AppSidebar } from "./components/AppSidebar";
 import { LazyOverwriteConfirmDialog } from "./components/LazyOverwriteConfirmDialog";
+import {
+  clearObsoleteLocalFiles,
+  getCloudFileIds,
+  initializeScene,
+  restoreCloudScene,
+  type InitializeSceneResult,
+} from "./data/editorSceneInit";
 import {
   CloudSaveQueue,
   getCloudPersistenceSignature,
@@ -136,19 +143,6 @@ const LazyCloudSceneDeletedDialog = lazy(async () => {
 
 window.EXCALIDRAW_THROTTLE_RENDER = true;
 
-/**
- * Cloud scenes still mirror their attachments into IndexedDB (undo and offline
- * recovery rely on it), but the local-mode cleanup pass is skipped for them.
- * Reclaim anything the loaded scene does not reference; `clearObsoleteFiles`
- * only removes entries unused for more than a day, so boards the user just
- * switched away from keep their cached files.
- */
-const clearObsoleteLocalFiles = (currentFileIds: FileId[]) => {
-  void LocalData.fileStorage
-    .clearObsoleteFiles({ currentFileIds })
-    .catch(() => {});
-};
-
 let isSelfEmbedding = false;
 
 if (window.self !== window.top) {
@@ -162,75 +156,6 @@ if (window.self !== window.top) {
     // ignore
   }
 }
-
-type InitializeSceneResult = {
-  scene: ExcalidrawInitialDataState | null;
-  cloudScene?: CloudSceneData;
-};
-
-const restoreCloudScene = (
-  cloudScene: CloudSceneData,
-): ExcalidrawInitialDataState => ({
-  elements: restoreElements(cloudScene.elements, null, {
-    repairBindings: true,
-    deleteInvisibleElements: true,
-  }),
-  appState: restoreAppState(
-    { ...cloudScene.appState, name: cloudScene.name },
-    null,
-  ),
-});
-
-const initializeScene = async (
-  prefetchedCloudScene?: CloudSceneData | null,
-): Promise<InitializeSceneResult> => {
-  const searchParams = new URLSearchParams(window.location.search);
-  const id = searchParams.get("id");
-
-  if (id) {
-    const cloudScene =
-      prefetchedCloudScene?.id === id
-        ? prefetchedCloudScene
-        : await fetchCloudScene(id);
-    return {
-      scene: restoreCloudScene(cloudScene),
-      cloudScene,
-    };
-  }
-
-  const localDataState = importFromLocalStorage();
-
-  const scene: Omit<
-    RestoredDataState,
-    // we're not storing files in the scene database/localStorage, and instead
-    // fetch them async from a different store
-    "files"
-  > & {
-    scrollToContent?: boolean;
-  } = {
-    elements: restoreElements(localDataState?.elements, null, {
-      repairBindings: true,
-      deleteInvisibleElements: true,
-    }),
-    appState: restoreAppState(localDataState?.appState, null),
-  };
-
-  return { scene };
-};
-
-const getCloudFileIds = (elements: readonly any[]) => {
-  const fileIds = new Set<FileId>();
-  for (const element of elements) {
-    if (
-      element?.type === "image" &&
-      element.isDeleted !== true &&
-      typeof element.fileId === "string"
-    ) {
-      fileIds.add(element.fileId);
-    }
-  }
-  return [...fileIds];
-};
 
 const ExcalidrawWrapper = (props: {
   onNavigateHome?: () => void;
@@ -1641,112 +1566,16 @@ const ExcalidrawWrapper = (props: {
         aiEnabled={false}
         theme={editorTheme}
         onThemeChange={setAppTheme}
-        renderTopRightUI={(isMobile) => {
-          const isCloudSaveBusy =
-            cloudSaveStatus === "saving" || cloudSaveStatus === "auth";
-          const cloudSaveLabel =
-            cloudSaveStatus === "conflict"
-              ? "处理冲突"
-              : cloudSaveStatus === "saving"
-                ? "保存中..."
-                : cloudSaveStatus === "error"
-                  ? "重试保存"
-                  : cloudSaveStatus === "saved"
-                    ? "已保存"
-                    : isMobile
-                      ? "保存"
-                      : "保存到云端";
-          return (
-            <div className="excalidraw-ui-top-right">
-              <button
-                type="button"
-                className="cloud-save-top-btn"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  background: "var(--color-primary, #6965db)",
-                  border: "1px solid var(--color-primary, #6965db)",
-                  borderRadius: "8px",
-                  padding: "6px 12px",
-                  fontSize: "0.85rem",
-                  fontWeight: 500,
-                  cursor:
-                    !currentSceneId || isCloudSaveBusy
-                      ? "not-allowed"
-                      : "pointer",
-                  color: "var(--color-primary-contrast, #fff)",
-                  height: "36px",
-                  opacity: !currentSceneId || isCloudSaveBusy ? 0.65 : 1,
-                }}
-                disabled={!currentSceneId || isCloudSaveBusy}
-                aria-busy={cloudSaveStatus === "saving"}
-                onClick={() => {
-                  if (cloudSaveStatus === "conflict") {
-                    setIsCloudConflictDismissed(false);
-                  } else {
-                    void saveCurrentCloudScene();
-                  }
-                }}
-                title={
-                  cloudSaveStatus === "conflict"
-                    ? "处理云端保存冲突"
-                    : "将当前白板保存到云端"
-                }
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="16"
-                  height="16"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 16V4" />
-                  <path d="m7 9 5-5 5 5" />
-                  <path d="M5 20h14" />
-                </svg>
-                {cloudSaveLabel}
-              </button>
-              <button
-                type="button"
-                className="cloud-scenes-top-btn"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  background: "var(--color-surface-low, #ececf4)",
-                  border: "1px solid var(--default-border-color, #dcdce6)",
-                  borderRadius: "8px",
-                  padding: "6px 12px",
-                  fontSize: "0.85rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  color: "var(--text-color-primary, #333)",
-                  height: "36px",
-                }}
-                onClick={() => void navigateHomeAfterSave()}
-                title="管理我的云端画板 (SQLite 持久化)"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="16"
-                  height="16"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
-                </svg>
-                我的画板
-              </button>
-            </div>
-          );
-        }}
+        renderTopRightUI={(isMobile) => (
+          <EditorTopRightUI
+            isMobile={isMobile}
+            currentSceneId={currentSceneId}
+            cloudSaveStatus={cloudSaveStatus}
+            onSave={() => void saveCurrentCloudScene()}
+            onOpenConflict={() => setIsCloudConflictDismissed(false)}
+            onNavigateHome={() => void navigateHomeAfterSave()}
+          />
+        )}
         onLinkOpen={(element, event) => {
           if (element.link && isElementLink(element.link)) {
             event.preventDefault();
