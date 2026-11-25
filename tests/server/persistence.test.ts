@@ -235,6 +235,111 @@ describe("cloud persistence server", () => {
     expect(await responseJson(moved)).toMatchObject({ folder_id: null });
   });
 
+  it("keeps the edited timestamp and list order for board metadata changes", async () => {
+    const { handler, runtime } = createTestRuntime({ ALLOW_ANONYMOUS: "true" });
+    const folder = await responseJson<{ id: string }>(
+      await jsonRequest(handler, "/api/folders", { name: "编辑时间测试" }),
+    );
+    const board = await responseJson<{
+      id: string;
+      revision: number;
+      updated_at: number;
+    }>(
+      await jsonRequest(handler, "/api/scenes", {
+        name: "收藏时间",
+        elements: [],
+      }),
+    );
+    await Bun.sleep(10);
+    const newer = await responseJson<{ id: string }>(
+      await jsonRequest(handler, "/api/scenes", {
+        name: "较新画板",
+        elements: [],
+      }),
+    );
+    const response = await jsonRequest(
+      handler,
+      `/api/scenes/${board.id}`,
+      {
+        name: "更新后的名称",
+        tags: ["交付"],
+        favorite: true,
+        folder_id: folder.id,
+        baseRevision: board.revision,
+      },
+      { method: "PATCH" },
+    );
+    expect(response.status).toBe(200);
+    expect(await responseJson(response)).toMatchObject({
+      name: "更新后的名称",
+      tags: ["交付"],
+      favorite: true,
+      folder_id: folder.id,
+      updated_at: board.updated_at,
+      revision: board.revision + 1,
+    });
+    expect(
+      runtime.db
+        .query("SELECT updated_at, revision FROM scenes WHERE id = ?")
+        .get(board.id),
+    ).toEqual({
+      updated_at: board.updated_at,
+      revision: board.revision + 1,
+    });
+    const listing = await responseJson<{ items: Array<{ id: string }> }>(
+      await request(handler, "/api/scenes"),
+    );
+    expect(listing.items.map((item) => item.id)).toEqual([newer.id, board.id]);
+
+    await Bun.sleep(10);
+    const saved = await responseJson<{
+      updated_at: number;
+      revision: number;
+    }>(
+      await jsonRequest(
+        handler,
+        `/api/scenes/${board.id}`,
+        { name: "保存时改名", baseRevision: board.revision + 1 },
+        { method: "PUT" },
+      ),
+    );
+    expect(saved.updated_at).toBe(board.updated_at);
+    expect(saved.revision).toBe(board.revision + 2);
+
+    const deletedFolder = await request(handler, `/api/folders/${folder.id}`, {
+      method: "DELETE",
+    });
+    expect(deletedFolder.status).toBe(200);
+    const afterFolderDelete = await responseJson<{
+      folder_id: string | null;
+      updated_at: number;
+      revision: number;
+    }>(await request(handler, `/api/scenes/${board.id}/summary`));
+    expect(afterFolderDelete).toMatchObject({
+      folder_id: null,
+      updated_at: board.updated_at,
+      revision: board.revision + 3,
+    });
+
+    await Bun.sleep(10);
+    const contentChanged = await responseJson<{
+      updated_at: number;
+      revision: number;
+    }>(
+      await jsonRequest(
+        handler,
+        `/api/scenes/${board.id}`,
+        {
+          elements: [{ id: "box", type: "rectangle" }],
+          baseRevision: board.revision + 3,
+        },
+        { method: "PUT" },
+      ),
+    );
+    expect(contentChanged.updated_at).toBeGreaterThan(board.updated_at);
+    expect(contentChanged.revision).toBe(board.revision + 4);
+  });
+
   it("authorizes workspace statistics and returns an empty workspace", async () => {
     const { handler } = createTestRuntime();
     expect((await request(handler, "/api/workspace/stats")).status).toBe(401);
@@ -1943,7 +2048,7 @@ describe("cloud persistence server", () => {
   });
 
   it("performs revision-checked scene batch trash, restore, and permanent deletion atomically", async () => {
-    const { handler } = createTestRuntime();
+    const { handler, runtime } = createTestRuntime();
     const cookie = await authenticate(handler);
     const ids = ["scene_batch_a", "scene_batch_b"];
     for (const id of ids) {
@@ -1956,6 +2061,17 @@ describe("cloud persistence server", () => {
       expect(created.status).toBe(201);
     }
     const entries = ids.map((id) => ({ id, revision: 1 }));
+    const editedTimes = new Map(
+      ids.map((id) => [
+        id,
+        (
+          runtime.db
+            .query("SELECT updated_at FROM scenes WHERE id = ?")
+            .get(id) as { updated_at: number }
+        ).updated_at,
+      ]),
+    );
+    await Bun.sleep(5);
 
     const staleBatch = await jsonRequest(
       handler,
@@ -1987,6 +2103,11 @@ describe("cloud persistence server", () => {
     expect(
       await responseJson<{ ids: string[]; deleted: boolean }>(trashed),
     ).toMatchObject({ ids, deleted: true });
+    for (const id of ids) {
+      expect(
+        runtime.db.query("SELECT updated_at FROM scenes WHERE id = ?").get(id),
+      ).toEqual({ updated_at: editedTimes.get(id) });
+    }
 
     const restored = await jsonRequest(
       handler,
@@ -2001,6 +2122,11 @@ describe("cloud persistence server", () => {
     expect(
       await responseJson<{ ids: string[]; deleted: boolean }>(restored),
     ).toMatchObject({ ids, deleted: false });
+    for (const id of ids) {
+      expect(
+        runtime.db.query("SELECT updated_at FROM scenes WHERE id = ?").get(id),
+      ).toEqual({ updated_at: editedTimes.get(id) });
+    }
 
     const invalidPermanentDelete = await jsonRequest(
       handler,
@@ -2807,6 +2933,36 @@ describe("cloud persistence server", () => {
     const expectedHasher = new Bun.CryptoHasher("sha256");
     expectedHasher.update("export {};");
     expect(assetEtag).toBe(`"${expectedHasher.digest("hex")}"`);
+    await fs.writeFile(
+      path.join(staticDir, "assets", "valid.js.br"),
+      "brotli-representation",
+    );
+    await fs.writeFile(
+      path.join(staticDir, "assets", "valid.js.gz"),
+      "gzip-representation",
+    );
+    const brotliAsset = await request(handler, "/assets/valid.js", {
+      headers: { "Accept-Encoding": "gzip;q=0.5, br;q=1" },
+    });
+    expect(brotliAsset.headers.get("content-encoding")).toBe("br");
+    expect(brotliAsset.headers.get("vary")).toContain("Accept-Encoding");
+    expect(await brotliAsset.text()).toBe("brotli-representation");
+    const brotliEtag = brotliAsset.headers.get("etag");
+    const revalidatedBrotliAsset = await request(handler, "/assets/valid.js", {
+      headers: {
+        "Accept-Encoding": "br",
+        "If-None-Match": brotliEtag || "",
+      },
+    });
+    expect(revalidatedBrotliAsset.status).toBe(304);
+    expect(revalidatedBrotliAsset.headers.get("content-encoding")).toBe("br");
+
+    const gzipAsset = await request(handler, "/assets/valid.js", {
+      headers: { "Accept-Encoding": "gzip" },
+    });
+    expect(gzipAsset.headers.get("content-encoding")).toBe("gzip");
+    expect(await gzipAsset.text()).toBe("gzip-representation");
+
     const revalidatedAsset = await request(handler, "/assets/valid.js", {
       headers: { "If-None-Match": `W/${assetEtag}` },
     });

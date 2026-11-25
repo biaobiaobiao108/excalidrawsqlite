@@ -234,7 +234,7 @@ it("reports unexecuted free-text overflow honestly and exposes bounded readonly 
       partial: boolean;
       boards: Array<InputPage & { ok: boolean; error?: Data }>;
     };
-    expect(batch).toMatchObject({ ok: true, partial: true });
+    expect(batch).toMatchObject({ ok: false, partial: true });
     expect(JSON.stringify(batch).length).toBeLessThanOrEqual(4000);
     expect(batch.boards[0].ok).toBe(true);
     expect(
@@ -246,7 +246,7 @@ it("reports unexecuted free-text overflow honestly and exposes bounded readonly 
     );
     expect(batch.boards[1]).toMatchObject({
       ok: false,
-      error: { code: "SCENE_NOT_FOUND" },
+      error: { code: "NOT_FOUND", target: "board", recoverable: true },
     });
   }));
 
@@ -314,7 +314,7 @@ it("returns native line heights, useful bounded diagnostic summaries and consist
       updates: [{ id: "overlap-0", dx: 200 }],
     });
     for (const [name, args, code] of [
-      ["get_board", { boardId: "missing-report-board" }, "SCENE_NOT_FOUND"],
+      ["get_board", { boardId: "missing-report-board" }, "NOT_FOUND"],
       [
         "update_board",
         {
@@ -326,10 +326,10 @@ it("returns native line heights, useful bounded diagnostic summaries and consist
       ],
     ] as const) {
       const failed = await client.callTool({ name, arguments: args });
-      expect(failed.isError).toBe(true);
+      expect(failed.isError).not.toBe(true);
       expect(failed.structuredContent).toMatchObject({
         ok: false,
-        error: { code },
+        error: { code, recoverable: true, suggestedAction: expect.any(String) },
       });
       expect(
         failed.content.some(

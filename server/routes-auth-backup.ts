@@ -17,59 +17,9 @@ import {
   createFullBackup,
 } from "./backup";
 import { jsonResponse, readJson, response } from "./http";
+import { streamBackupArchive } from "./stream-response";
 import { requireJsonObject } from "./validation";
 import { writeRateLimitResponse, type RouteContext } from "./routes-shared";
-
-const streamBackupArchive = (
-  archive: {
-    archivePath: string;
-    cleanup: () => Promise<void>;
-  },
-  releaseBackupLock: () => void,
-) => {
-  const source = Bun.file(archive.archivePath).stream();
-  const reader = source.getReader();
-  let cleanupTask: Promise<void> | undefined;
-  const cleanup = async () => {
-    cleanupTask ??= (async () => {
-      try {
-        await archive.cleanup().catch(() => {});
-      } finally {
-        releaseBackupLock();
-      }
-    })();
-    await cleanupTask;
-  };
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        const result = await reader.read();
-        if (result.done) {
-          reader.releaseLock();
-          await cleanup();
-          controller.close();
-          return;
-        }
-        // Read only when the consumer requests more data. The stream's default
-        // one-chunk queue bounds read-ahead when a client applies backpressure.
-        controller.enqueue(result.value);
-      } catch (error) {
-        controller.error(error);
-        await reader.cancel(error).catch(() => {});
-        reader.releaseLock();
-        await cleanup();
-      }
-    },
-    cancel: async (reason) => {
-      try {
-        await reader.cancel(reason);
-      } finally {
-        reader.releaseLock();
-        await cleanup();
-      }
-    },
-  });
-};
 
 export const handleBackupAndAuthRoute = async ({
   runtime,
@@ -255,6 +205,7 @@ export const handleBackupAndAuthRoute = async ({
         );
       }
       runtime.sessions.delete(token);
+      runtime.realtime?.revokeSession?.(token);
     }
     const headers = new Headers({
       "Clear-Site-Data": '"cookies"',

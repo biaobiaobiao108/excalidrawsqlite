@@ -49,7 +49,8 @@ describe("explicit cloud save snapshot", () => {
       },
       {
         persistence: {
-          load: async () => [],
+          list: async () => [],
+          load: async () => undefined,
           save: async () => {},
           remove: async () => {},
         },
@@ -61,7 +62,6 @@ describe("explicit cloud save snapshot", () => {
       },
     );
     try {
-      await queue.ready();
       queue.setRevision("scene", 1);
       const waiting = prepareCloudSaveSnapshot(
         () => current,

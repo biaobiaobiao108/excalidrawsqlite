@@ -1,5 +1,6 @@
 type CloudSceneRefreshState = {
   sceneId: string | null;
+  revision?: number;
   signature: string;
   hasPending: boolean;
 };
@@ -15,6 +16,7 @@ export const createCloudSceneRefreshGuard = (
       !initial.hasPending &&
       !current.hasPending &&
       initial.sceneId === current.sceneId &&
+      initial.revision === current.revision &&
       initial.signature === current.signature
     );
   };

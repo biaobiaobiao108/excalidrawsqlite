@@ -830,6 +830,7 @@ export async function saveCloudScene(
   id: string;
   updated_at: number;
   revision: number;
+  metadataChanged?: boolean;
 }> {
   return fetchJson(
     `/api/scenes/${encodeURIComponent(id)}`,
@@ -960,8 +961,9 @@ export async function clearCloudTrash(): Promise<{
 
 export async function saveFilesToCloud(
   files: BinaryFiles,
-  options: { forceUpload?: boolean } = {},
-): Promise<void> {
+  options: { forceUpload?: boolean; preserveExisting?: boolean } = {},
+): Promise<Map<FileId, FileId> | void> {
+  const replacements = new Map<FileId, FileId>();
   const entries = Object.values(files || {});
   const estimatedBytes = entries.reduce(
     (total, file) => total + Math.ceil(file.dataURL.length * 0.75),
@@ -992,6 +994,9 @@ export async function saveFilesToCloud(
           headers: {
             Accept: "application/json",
             "Content-Type": file.mimeType,
+            ...(options.preserveExisting
+              ? { "X-Preserve-File-Id": "true" }
+              : {}),
           },
           body: blob,
         },
@@ -1000,18 +1005,22 @@ export async function saveFilesToCloud(
       await assertResponse(res, "保存云端图片失败");
       // The acknowledgement is tiny, but leaving it unread keeps the request
       // timeout armed for the whole window and holds the keep-alive connection.
-      await res.arrayBuffer();
+      const storedId = options.preserveExisting
+        ? ((await res.json()) as { file: { id: FileId } }).file.id
+        : (await res.arrayBuffer(), file.id);
+      if (storedId !== file.id) replacements.set(file.id, storedId);
       const etag = res.headers.get("etag");
       if (etag) {
-        rememberCloudFileEtag(file.id, etag);
+        rememberCloudFileEtag(storedId, etag);
       }
-      if (digest) {
-        rememberCloudFileHash(file, digest);
+      if (storedId === file.id) {
+        if (digest) rememberCloudFileHash(file, digest);
+        uploadedCloudFileDataUrls.set(file, file.dataURL);
       }
-      uploadedCloudFileDataUrls.set(file, file.dataURL);
     },
     getCloudFileConcurrency(estimatedBytes),
   );
+  if (replacements.size) return replacements;
 }
 
 export async function fetchCloudFiles(

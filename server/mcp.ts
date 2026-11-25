@@ -11,8 +11,24 @@ import {
 } from "./mcp-drawing";
 import { compactDrawingElements } from "./mcp-read";
 import { registerElementTools } from "./mcp-tools-elements";
-import { registerManagementTools, resolveFolder } from "./mcp-management";
+import {
+  getSceneFolderFields,
+  registerManagementTools,
+} from "./mcp-management";
 import { measureMcpPhase } from "./mcp-trace";
+import {
+  drawingReceipt,
+  mcpError,
+  positionReceipt,
+  projectMcpRecord,
+  responseModeSchema,
+  result as buildMcpResult,
+} from "./mcp-response";
+import {
+  createInternalApi,
+  createRequestBodyLimiter,
+  type ApiHandler,
+} from "./mcp-internal-api";
 import { compactMcpSchema } from "./mcp-schema";
 import { buildDiagram, diagramSchema } from "./mcp-diagram";
 import {
@@ -36,30 +52,18 @@ import {
 } from "./auth";
 import { AUTH_RATE_WINDOW_MS } from "./config";
 import { HttpError } from "./errors";
-import {
-  getRequestOrigin,
-  isAllowedOrigin,
-  jsonResponse,
-  response,
-} from "./http";
+import { isAllowedOrigin, jsonResponse, response } from "./http";
 import {
   MCP_PATH,
   autoBindSchema,
   bindCreated,
   boardMetadataSchema,
-  cleanBoardRecord,
   createIntent,
-  createInternalApi,
-  createRequestBodyLimiter,
-  drawingReceipt,
   expectedRevisionSchema,
   getMcpServerInstructions,
   getPathToken,
   idempotencyKeySchema,
   makeSafeTool,
-  responseModeSchema,
-  result,
-  type ApiHandler,
   type McpRequestHandler,
   type SceneData,
 } from "./mcp-helpers";
@@ -104,7 +108,7 @@ export const createMcpRequestHandler = (
   const mcp =
     expectedToken && api
       ? createMcpHandler(
-          ({ requestInfo }) => {
+          () => {
             const server = new McpServer(
               { name: "excalidrawsqlite", version: "1.0.0" },
               {
@@ -113,21 +117,17 @@ export const createMcpRequestHandler = (
               },
             );
             const safeTool = <T>(
-              handler: (args: T) => Promise<ReturnType<typeof result>>,
+              handler: (args: T) => Promise<ReturnType<typeof buildMcpResult>>,
               operation: string,
             ) => makeSafeTool(handler, runtime.config.mcpTrace, operation);
-            const boardUrl = (id: string) => {
-              const origin = requestInfo
-                ? getRequestOrigin(runtime, requestInfo)
-                : "";
-              return `${origin}/?id=${encodeURIComponent(id)}`;
-            };
+            const { publicOrigin } = runtime.config;
+            const result = (value: Record<string, unknown>) =>
+              buildMcpResult(value, publicOrigin);
             const replayReceipt = (board: Record<string, unknown>) =>
               result({
                 ...board,
                 addedCount: 0,
                 idempotentReplay: true,
-                url: boardUrl(String(board.id ?? board.boardId)),
               });
             const creationReplay = (key: string | undefined, intent: unknown) =>
               lookupMcpCreateReplay(runtime, key, intent);
@@ -163,10 +163,7 @@ export const createMcpRequestHandler = (
                   `/api/scenes/${encodeURIComponent(boardId)}/summary`,
                   "GET",
                 );
-                const value = {
-                  ...cleanBoardRecord(summary),
-                  url: boardUrl(boardId),
-                };
+                const value = projectMcpRecord(summary, publicOrigin);
                 if (JSON.stringify(value).length + 64 > maxChars) {
                   throw new HttpError(
                     400,
@@ -211,22 +208,20 @@ export const createMcpRequestHandler = (
                       typeof element.text === "string" &&
                       element.text.toLocaleLowerCase().includes(needle))),
               );
-              const base =
-                view === "full"
-                  ? {
-                      ...cleanBoardRecord(board),
-                      elements: [] as Record<string, unknown>[],
-                      elementCount: board.elements.length,
-                      url: boardUrl(board.id),
-                    }
-                  : {
-                      boardId: board.id,
-                      name: board.name,
-                      revision: board.revision,
-                      elementCount: board.elements.length,
-                      elements: [] as Record<string, unknown>[],
-                      url: boardUrl(board.id),
-                    };
+              const base = projectMcpRecord(
+                {
+                  ...(view === "full"
+                    ? board
+                    : {
+                        boardId: board.id,
+                        name: board.name,
+                        revision: board.revision,
+                      }),
+                  elementCount: board.elements.length,
+                  elements: [],
+                },
+                publicOrigin,
+              );
               const allIds = selected
                 ? new Set([
                     ...source.map((element) => element.id),
@@ -579,7 +574,7 @@ export const createMcpRequestHandler = (
                     };
                   },
                 );
-                const folder = await resolveFolder(args, runtime, api);
+                const folder = getSceneFolderFields(args, runtime);
                 const board = await api<{
                   id: string;
                   name: string;
@@ -589,7 +584,7 @@ export const createMcpRequestHandler = (
                   name: args.name,
                   elements: drawing.elements,
                   appState: { viewBackgroundColor: "#ffffff" },
-                  ...(folder === undefined ? {} : { folder_id: folder }),
+                  ...folder,
                   tags: args.tags,
                   favorite: args.favorite,
                   ...(args.idempotencyKey
@@ -610,7 +605,6 @@ export const createMcpRequestHandler = (
                   bounds: layout.bounds,
                   estimated: layout.estimated,
                   note: layout.note,
-                  url: boardUrl(board.id),
                 });
               }, "create_layout"),
             );
@@ -668,10 +662,9 @@ export const createMcpRequestHandler = (
                 } = measureMcpPhase("transformMs", () =>
                   bindCreated(createDrawingBatch(elements), autoBind),
                 );
-                const resolvedFolder = await resolveFolder(
+                const folder = getSceneFolderFields(
                   { folderId, folderName },
                   runtime,
-                  api,
                 );
                 const board = await api<{
                   id: string;
@@ -684,9 +677,7 @@ export const createMcpRequestHandler = (
                   appState: {
                     viewBackgroundColor: backgroundColor || "#ffffff",
                   },
-                  ...(resolvedFolder === undefined
-                    ? {}
-                    : { folder_id: resolvedFolder }),
+                  ...folder,
                   tags,
                   favorite,
                   ...(idempotencyKey
@@ -701,7 +692,6 @@ export const createMcpRequestHandler = (
                   elementCount: drawing.length,
                   ...drawingReceipt(created, responseMode),
                   ...(autoBinding ? { autoBinding } : {}),
-                  url: boardUrl(board.id),
                 });
               }, "create_board"),
             );
@@ -739,7 +729,7 @@ export const createMcpRequestHandler = (
                     };
                   },
                 );
-                const folder = await resolveFolder(args, runtime, api);
+                const folder = getSceneFolderFields(args, runtime);
                 const board = await api<{
                   id: string;
                   name: string;
@@ -749,7 +739,7 @@ export const createMcpRequestHandler = (
                   name: args.name,
                   elements: drawing.elements,
                   appState: { viewBackgroundColor: "#ffffff" },
-                  ...(folder === undefined ? {} : { folder_id: folder }),
+                  ...folder,
                   tags: args.tags,
                   favorite: args.favorite,
                   ...(args.idempotencyKey
@@ -779,7 +769,6 @@ export const createMcpRequestHandler = (
                       }
                     : {}),
                   ...drawingReceipt(drawing.created, args.responseMode),
-                  url: boardUrl(board.id),
                 });
               }, "create_diagram"),
             );
@@ -789,7 +778,6 @@ export const createMcpRequestHandler = (
               api,
               result,
               safeTool,
-              boardUrl,
             });
 
             server.registerTool(
@@ -830,8 +818,8 @@ export const createMcpRequestHandler = (
                   view = "compact",
                   maxChars = 1_000_000,
                 }) => {
-                  const boards: Record<string, unknown>[] = boardIds.map(
-                    (boardId) => ({
+                  const boards = boardIds.map((boardId) =>
+                    projectMcpRecord({
                       ok: false,
                       boardId,
                       truncated: true,
@@ -843,7 +831,7 @@ export const createMcpRequestHandler = (
                   );
                   const envelopeSize = () =>
                     JSON.stringify({
-                      ok: true,
+                      ok: false,
                       boards,
                       maxChars,
                       partial: false,
@@ -875,14 +863,14 @@ export const createMcpRequestHandler = (
                       };
                     } catch (error) {
                       if (!(error instanceof HttpError)) throw error;
-                      const outcome = {
+                      const outcome = projectMcpRecord({
                         ok: false,
                         boardId,
                         ...(error.code === "READ_BUDGET_TOO_SMALL"
                           ? { truncated: true }
                           : {}),
-                        error: { code: error.code, message: error.message },
-                      };
+                        error: mcpError(error),
+                      });
                       if (JSON.stringify(outcome).length <= available)
                         boards[index] = outcome;
                     }
@@ -904,7 +892,6 @@ export const createMcpRequestHandler = (
               api,
               result,
               safeTool,
-              boardUrl,
             });
 
             return server;

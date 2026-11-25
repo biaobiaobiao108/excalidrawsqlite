@@ -1,8 +1,10 @@
 import { WRITE_RATE_WINDOW_MS, WRITE_REQUESTS_PER_WINDOW } from "./config";
+import { randomHex } from "./crypto";
 import { HttpError } from "./errors";
 import { isMcpCreateSession } from "./create-idempotency";
 import { consumeRateLimit, getClientKey, getSessionToken } from "./auth";
 import { jsonResponse } from "./http";
+import { hasOwn, validateFolderName } from "./validation";
 
 import type { RequestAddressResolver, ServerRuntime } from "./types";
 
@@ -64,19 +66,19 @@ export const getPreparedStatements = (
          WHERE id = ? AND deleted_at IS NULL`,
       ),
       getSceneMetadataById: runtime.db.query(
-        `SELECT id, name, tags_json, is_favorite, folder_id, revision
+        `SELECT id, name, tags_json, is_favorite, folder_id, revision, updated_at
          FROM scenes
          WHERE id = ? AND deleted_at IS NULL`,
       ),
       getSceneStateById: runtime.db.query(
-        "SELECT id, deleted_at, revision FROM scenes WHERE id = ?",
+        "SELECT id, deleted_at, revision, updated_at FROM scenes WHERE id = ?",
       ),
       softDeleteScene: runtime.db.query(
-        `UPDATE scenes SET deleted_at = ?, updated_at = ?, revision = revision + 1
+        `UPDATE scenes SET deleted_at = ?, revision = revision + 1
          WHERE id = ? AND revision = ? AND deleted_at IS NULL`,
       ),
       restoreScene: runtime.db.query(
-        `UPDATE scenes SET deleted_at = NULL, updated_at = ?, revision = revision + 1
+        `UPDATE scenes SET deleted_at = NULL, revision = revision + 1
          WHERE id = ? AND revision = ? AND deleted_at IS NOT NULL`,
       ),
       deleteSceneFileReferences: runtime.db.query(
@@ -140,6 +142,44 @@ export const assertSceneFolderExists = (
   }
 };
 
+export const parseMcpFolderName = (
+  runtime: ServerRuntime,
+  req: Request,
+  body: Record<string, unknown>,
+) => {
+  if (!hasOwn(body, "folder_name")) return undefined;
+  if (
+    hasOwn(body, "folder_id") ||
+    !isMcpCreateSession(runtime, getSessionToken(runtime, req))
+  ) {
+    throw new HttpError(400, "INVALID_FOLDER", "无效的文件夹选择");
+  }
+  return validateFolderName(body.folder_name);
+};
+
+export const resolveSceneFolder = (
+  runtime: ServerRuntime,
+  stmts: RouteStatements,
+  folderId: string | null,
+  name?: string,
+) => {
+  if (name === undefined) {
+    assertSceneFolderExists(stmts, folderId);
+    return folderId;
+  }
+  const existing = stmts.getFolderNameConflict.get(name, "") as {
+    id: string;
+  } | null;
+  if (existing) return existing.id;
+  const now = Date.now();
+  const id = `folder_${now.toString(36)}_${randomHex(4)}`;
+  runtime.db.run(
+    "INSERT INTO folders (id, name, icon, color, created_at, updated_at) VALUES (?, ?, 'folder', '#315f4c', ?, ?)",
+    [id, name, now, now],
+  );
+  return id;
+};
+
 export const publishSceneChanged = (
   runtime: ServerRuntime,
   event: Parameters<
@@ -150,7 +190,8 @@ export const publishSceneChanged = (
 export const publishWorkspaceChanged = (
   runtime: ServerRuntime,
   updatedAt?: number,
-) => runtime.realtime?.publishWorkspaceChanged(updatedAt);
+  changeKind?: "opened",
+) => runtime.realtime?.publishWorkspaceChanged(updatedAt, changeKind);
 
 export const writeRateLimitResponse = (
   runtime: ServerRuntime,

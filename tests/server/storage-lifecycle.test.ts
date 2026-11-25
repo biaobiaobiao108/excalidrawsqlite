@@ -12,6 +12,7 @@ import {
   upsertStagedFile,
 } from "../../server/files";
 import { createRuntime } from "../../server/runtime";
+import { createRequestHandler } from "../../server/routes";
 
 import type { ServerRuntime } from "../../server/types";
 
@@ -74,6 +75,11 @@ describe("storage lifecycle", () => {
     await backup.cleanup();
 
     runtime.config.maxBackupBytes -= 1;
+    // An oversized archive should be rejected before accessing attachments.
+    await fs.rename(
+      path.join(runtime.filesDir, "backup_image"),
+      path.join(runtime.filesDir, "backup_image.hidden"),
+    );
     await expect(createFullBackup(runtime, "over-limit")).rejects.toMatchObject(
       {
         status: 413,
@@ -88,6 +94,61 @@ describe("storage lifecycle", () => {
           name.startsWith("excalidraw-full-backup-"),
       ),
     ).toEqual([]);
+  });
+
+  it("allocates a separate attachment for a board save without changing shared content", async () => {
+    const runtime = await setup();
+    const handler = createRequestHandler(runtime);
+    const request = (pathname: string, init?: RequestInit) =>
+      handler(new Request(`http://localhost${pathname}`, init));
+    const json = (method: string, body: unknown) => ({
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    await upload(runtime, "shared", new Uint8Array([1]));
+    const image = { id: "image", type: "image", fileId: "shared", x: 1 };
+    for (const id of ["first", "second"]) {
+      expect(
+        (await request("/api/scenes", json("POST", { id, elements: [image] })))
+          .status,
+      ).toBe(201);
+    }
+    const uploadReplacement = () =>
+      request("/api/files/shared", {
+        method: "PUT",
+        headers: { "Content-Type": "image/png", "X-Preserve-File-Id": "true" },
+        body: new Uint8Array([2]),
+      });
+    const imgFile = (
+      (await (await uploadReplacement()).json()) as { file: { id: string } }
+    ).file;
+    expect(imgFile.id).not.toBe("shared");
+    expect(await (await uploadReplacement()).json()).toMatchObject({
+      file: { id: imgFile.id },
+    });
+    expect(
+      (
+        await request(
+          "/api/scenes/first",
+          json("PUT", {
+            baseRevision: 1,
+            elements: [{ ...image, fileId: imgFile.id, x: 25 }],
+          }),
+        )
+      ).status,
+    ).toBe(200);
+    expect(await (await request("/api/scenes/first")).json()).toMatchObject({
+      revision: 2,
+      elements: [{ fileId: imgFile.id, x: 25 }],
+    });
+    expect(await (await request("/api/scenes/second")).json()).toMatchObject({
+      revision: 1,
+      elements: [{ fileId: "shared", x: 1 }],
+    });
+    expect(
+      new Uint8Array(await (await request("/api/files/shared")).arrayBuffer()),
+    ).toEqual(new Uint8Array([1]));
   });
 
   it("protects a successfully reuploaded old orphan from immediate GC", async () => {

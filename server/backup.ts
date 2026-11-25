@@ -255,6 +255,9 @@ const stageAttachments = async (
           if (!(await fileExists(source))) {
             throw new Error(`附件文件缺失：${row.id}`);
           }
+          if (Bun.file(source).size !== row.byte_size) {
+            throw new Error(`附件大小与数据库记录不一致：${row.id}`);
+          }
           const target = path.join(stageDir, row.id);
           try {
             await fs.promises.link(source, target);
@@ -264,7 +267,11 @@ const stageAttachments = async (
               await fs.promises.copyFile(source, target);
             }
           }
-          staged.set(row.id, Bun.file(target).size);
+          const size = Bun.file(target).size;
+          if (size !== row.byte_size) {
+            throw new Error(`附件大小与数据库记录不一致：${row.id}`);
+          }
+          staged.set(row.id, size);
         })(),
       );
       if (batch.length >= 8) await finishBatch();
@@ -366,60 +373,53 @@ export const createFullBackup = async (
   let snapshot: Awaited<ReturnType<typeof createDatabaseSnapshot>> | undefined;
   let snapshotDb: Database | undefined;
   try {
-    let stagedFiles = new Map<string, number>();
+    const prefix = manifestPrefix(new Date().toISOString());
     // Freeze attachment mutations until the snapshot and its attachments agree.
     // The database copy runs in a worker, so unrelated requests remain responsive.
-    await withStorageMutationLock(runtime, async () => {
-      snapshot = await createDatabaseSnapshot(runtime, timestamp);
-      snapshotDb = new Database(snapshot.tempBackupFile, {
-        readonly: true,
+    const { stagedFiles, manifestSize, databaseSize } =
+      await withStorageMutationLock(runtime, async () => {
+        snapshot = await createDatabaseSnapshot(runtime, timestamp);
+        snapshotDb = new Database(snapshot.tempBackupFile, {
+          readonly: true,
+        });
+        const filesQuery = snapshotDb.query(BACKUP_FILES_QUERY);
+        const databaseSize = Bun.file(snapshot.tempBackupFile).size;
+        let archiveBytes =
+          TAR_BLOCK_SIZE * 2 + tarEntrySize("excalidraw.db", databaseSize);
+        let manifestSize = textEncoder.encode(
+          prefix + manifestSuffix,
+        ).byteLength;
+        let separatorBytes = 0;
+        for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
+          manifestSize +=
+            separatorBytes +
+            textEncoder.encode(serializeManifestFile(row)).byteLength;
+          separatorBytes = 1;
+          if (row.storage_path) {
+            archiveBytes += tarEntrySize(`files/${row.id}`, row.byte_size);
+          }
+          ensureBackupWithinLimit(
+            archiveBytes + tarEntrySize("manifest.json", manifestSize),
+            runtime.config.maxBackupBytes,
+          );
+        }
+        ensureBackupWithinLimit(
+          archiveBytes + tarEntrySize("manifest.json", manifestSize),
+          runtime.config.maxBackupBytes,
+        );
+        const stagedFiles = await stageAttachments(
+          runtime,
+          stagingDir,
+          filesQuery,
+        );
+        return { stagedFiles, manifestSize, databaseSize };
       });
-      stagedFiles = await stageAttachments(
-        runtime,
-        stagingDir,
-        snapshotDb.query(BACKUP_FILES_QUERY),
-      );
-    });
     if (!snapshot || !snapshotDb) {
       throw new Error("备份快照未准备完成");
     }
 
     // Phase 2 (unlocked): stream the archive from the staged attachments.
     const filesQuery = snapshotDb.query(BACKUP_FILES_QUERY);
-    const createdAt = new Date().toISOString();
-    const prefix = manifestPrefix(createdAt);
-    const databaseFile = Bun.file(snapshot.tempBackupFile);
-    const baseArchiveBytes =
-      TAR_BLOCK_SIZE * 2 + tarEntrySize("excalidraw.db", databaseFile.size);
-    let manifestBytes =
-      textEncoder.encode(prefix).byteLength +
-      textEncoder.encode(manifestSuffix).byteLength;
-    let rowCount = 0;
-
-    // Count and validate rows one at a time. The manifest remains bounded by
-    // MAX_BACKUP_BYTES without materializing either the row set or JSON text.
-    for (const row of filesQuery.iterate() as Iterable<BackupFileRow>) {
-      const serializedBytes = textEncoder.encode(
-        serializeManifestFile(row),
-      ).byteLength;
-      manifestBytes += serializedBytes + (rowCount > 0 ? 1 : 0);
-      rowCount += 1;
-      ensureBackupWithinLimit(
-        baseArchiveBytes + tarEntrySize("manifest.json", manifestBytes),
-        runtime.config.maxBackupBytes,
-      );
-    }
-
-    let archiveBytes =
-      baseArchiveBytes + tarEntrySize("manifest.json", manifestBytes);
-    ensureBackupWithinLimit(archiveBytes, runtime.config.maxBackupBytes);
-    for (const [id, stagedSize] of stagedFiles) {
-      archiveBytes += tarEntrySize(`files/${id}`, stagedSize);
-      ensureBackupWithinLimit(archiveBytes, runtime.config.maxBackupBytes);
-    }
-
-    const manifestSize = manifestBytes;
-
     const archivePath = path.join(
       path.dirname(runtime.dbPath),
       `excalidraw-full-backup-${timestamp}-${randomHex(4)}.tar`,
@@ -438,7 +438,7 @@ export const createFullBackup = async (
         writer,
         "excalidraw.db",
         snapshot.tempBackupFile,
-        databaseFile.size,
+        databaseSize,
       );
       await writeTarManifest(writer, filesQuery, prefix, manifestSize);
 

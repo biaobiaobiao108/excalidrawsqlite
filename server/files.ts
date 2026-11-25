@@ -239,6 +239,7 @@ const upsertPreparedFile = async (
   updatedAt?: number,
   assertCanWrite?: () => void,
   onReplacement?: () => void,
+  preserveExisting = false,
 ) => {
   return withStorageMutationLock(runtime, async () => {
     assertCanWrite?.();
@@ -249,19 +250,29 @@ const upsertPreparedFile = async (
       throw new Error("文件内容未准备完成");
     }
 
-    const filePath = getFilePath(runtime, id);
     const now = Number.isFinite(updatedAt) ? Number(updatedAt) : Date.now();
-    const previous = runtime.db
-      .query(
-        "SELECT created_at, updated_at, byte_size, sha256, mime_type FROM files WHERE id = ?",
-      )
-      .get(id) as {
+    const getExisting = runtime.db.query(
+      "SELECT created_at, updated_at, byte_size, sha256, mime_type FROM files WHERE id = ?",
+    );
+    type ExistingFile = {
       created_at: number;
       updated_at: number;
       byte_size: number;
       sha256: string;
       mime_type: string;
-    } | null;
+    };
+    const matches = (row: ExistingFile | null) =>
+      row?.sha256 === prepared.sha256 &&
+      row.mime_type.toLowerCase() === mimeType.toLowerCase();
+    let previous = getExisting.get(id) as ExistingFile | null;
+    if (preserveExisting && previous && !matches(previous)) {
+      id = `asset_${new Bun.CryptoHasher("sha256").update(mimeType.toLowerCase() + ":" + prepared.sha256).digest("hex")}`;
+      previous = getExisting.get(id) as ExistingFile | null;
+      if (previous && !matches(previous)) {
+        throw new HttpError(409, "FILE_ID_CONFLICT", "图片存储标识冲突");
+      }
+    }
+    const filePath = getFilePath(runtime, id);
 
     if (
       previous &&
@@ -317,7 +328,7 @@ const upsertPreparedFile = async (
               now,
             ],
           );
-          onReplacement?.();
+          if (!preserveExisting) onReplacement?.();
         })
         .immediate();
     } catch (error) {
@@ -433,6 +444,7 @@ export const upsertStagedFile = async (
   updatedAt?: number,
   assertCanWrite?: () => void,
   onReplacement?: () => void,
+  preserveExisting = false,
 ) => {
   try {
     return await upsertPreparedFile(
@@ -444,6 +456,7 @@ export const upsertStagedFile = async (
       updatedAt,
       assertCanWrite,
       onReplacement,
+      preserveExisting,
     );
   } finally {
     if (prepared.tempPath) {

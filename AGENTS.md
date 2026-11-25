@@ -1,6 +1,15 @@
 # Agent Guidelines
 
-本项目使用 Bun 1.4.4+、Bun HTML Bundler 和原生 SQLite。项目结构、配置与部署见 [README.md](README.md)。
+## 项目定位与架构
+
+本项目（狐涂画板）是基于 **Bun 1.4.4+** 与 **原生 SQLite** 驱动的纯净、自托管虚拟手绘白板服务与 MCP 服务器，消除对外部云端或微服务的依赖：
+
+- **前端 (`excalidraw-app/`)**：基于 React + Bun 原生 HTML Bundler 构建的现代画板应用（零 Webpack/Vite），支持多画板管理、文件夹分类、图元统计、离线缓存与中文字体（霞鹜文楷/思源黑体）按需加载。
+- **服务端 (`server/`)**：单进程一体化架构，入口为 `server/server.ts`。基于 Bun 原生 HTTP/WebSocket + `bun:sqlite`（WAL 模式、Prepared Statements、版本化迁移），提供画板 CRUD、历史版本、30s 防抖持久化、图片附件归档与 HttpOnly 密码鉴权。
+- **实时同步**：基于 Bun 原生 WebSocket topic 广播实现多端协作与变更推送。
+- **MCP 集成**：内置 MCP 协议服务，支持宿主 AI 智能体通过结构化绘图指令直接读取、生成和修改画板。
+
+项目详细设计、配置与部署参考 [README.md](README.md)。
 
 ## 目录导航
 

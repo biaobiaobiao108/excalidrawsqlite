@@ -15,8 +15,8 @@
 | **多画板管理**     | 单画板模式，需手动导出/导入 `.excalidraw` 文件              | **内置画板工作台**：列表/网格浏览、搜索、新建、重命名、文件夹分类、回收站与 URL 直达                               |
 | **图元统计**       | 无图元数量感知                                              | **内置图元数量统计**：保存时维护去 JSON 扫描的 `element_count` / `content_bytes` 摘要列并在卡片展示                |
 | **静态附件与缓存** | 外部 S3/第三方存储依赖，缺少协商缓存                        | **本地文件系统独立归档 + SHA-256 ETag / 304 + 隔离式分批垃圾回收**                                                 |
-| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据仍只访问本机/局域网服务，霞鹜文楷与思源黑体使用版本化 CDN                            |
-| **中文字体支持**   | 默认依赖外部在线 Google Fonts 或英文字体                    | **通过 jsDelivr 加载「霞鹜文楷」与「思源黑体」CJK 字体**（Unicode 子集化拆分按需加载）                             |
+| **数据隐私与遥测** | 包含 Google Analytics、Sentry 遥测、Google Fonts 与官方外链 | **无第三方外链打点**：业务数据仍只访问本机/局域网服务，霞鹜文楷与小赖字体使用版本化 CDN                            |
+| **中文字体支持**   | 默认依赖外部在线 Google Fonts 或英文字体                    | **通过 jsDelivr 加载「霞鹜文楷」与「小赖字体」CJK 字体**（Unicode 子集化拆分按需加载）                             |
 | **身份认证安全**   | 无或 Token 明文保存在浏览器本地存储                         | **轻量密码保护 + HttpOnly 服务端 Session Cookie**，绝不暴露明文凭据                                                |
 | **浏览器与构建**   | 包含大量旧版浏览器兼容层与 Webpack/Vite 复杂配置            | **原生 Bun HTML Bundler（现代浏览器目标）**，零 Vite/Rollup/Webpack，极速秒级打包，Mermaid/CodeMirror/字体按需加载 |
 | **多端同步**       | 依赖手动刷新或高频轮询                                      | **Bun 原生 WebSocket topic 广播 + 自动重连 + revision 条件拉取**                                                   |
@@ -51,27 +51,28 @@ SQLite 以 schema 基线和 `PRAGMA user_version` 标记版本；启动时从当
 - **空闲页池化复用**：已删除画板释放的数据库页自动进入 SQLite 原生 Freelist，供后续新增或保存画板直接零开销池化复用，避免频繁申请分配与截断扩容导致的磁盘 IO 抖动与写放大。
 - **多端实时同步**：同源 `/api/realtime` 使用 Bun 原生 WebSocket；服务端只广播场景 ID、revision 和变更类型，客户端收到后按 ETag/revision 拉取内容，避免把大画板或附件推入 WebSocket。
 - **离开保护**：离开画板或返回工作台主页时，前端会主动等待队列保存完毕再跳转。
+- **本地草稿**：每个编辑标签页单独保存未同步的草稿。重新打开画板时从编辑器的「草稿」入口可把其他会话的草稿恢复为新画板。
 - **附件独立存储**：图片/媒体文件存储于本地 `data/files/`，SQLite 仅保存文件元数据与 SHA-256 哈希，避免大文件膨胀数据库。
 - **附件生命周期**：上传采用流式写临时文件、增量 SHA-256、原子替换与同内容幂等更新；未引用附件按批次回收，删除前先移动到 `.gc` 隔离文件，启动/维护任务会清理过期临时产物。
 
 ### 3. 🗂️ 完善的多画板与工作台系统
 
-- **画板管理**：工作台支持网格与列表视图切换、实时搜索、画板重命名、一键复制画板。
-- **图元数量统计**：画板卡片直观显示 `🎨 10 个图元 • 更新于 今天 17:30`，方便掌握画板内容规模。
+- **画板管理**：工作台支持实时搜索、画板重命名、收藏、文件夹筛选和批量回收。
+- **图元数量统计**：画板卡片显示图元数量和更新时间，方便掌握画板内容规模。
 - **文件夹与分类**：支持创建文件夹、归类画板与收藏常用画板。
 - **回收站与生命周期保护**：支持画板软删除至回收站、一键还原与彻底清空；支持可配置的超期自动清理机制（默认 30 天 TTL），超期自动物理删除并级联触发孤立附件 GC。
 - **URL 直达与设备接力**：支持 `?id=xxx` 自动识别与加载指定画板，局域网多设备无缝接力。
 
 ### 4. 🧼 极致纯净私有化 (Privacy First)
 
-- 彻底剔除所有外部跟踪分析打点代码与 Sentry 上报；字体不直连 Google Fonts，霞鹜文楷与思源黑体使用版本化 jsDelivr CDN，默认 Excalifont 保持本地。
+- 彻底剔除所有外部跟踪分析打点代码与 Sentry 上报；字体不直连 Google Fonts，霞鹜文楷与小赖字体使用版本化 jsDelivr CDN，默认 Excalifont 保持本地。
 - 默认业务数据路径仅访问本机/局域网服务；字体 CDN、Mermaid 或外部嵌入属于明确的静态资源依赖。
 
 ### 5. ⚡ 现代浏览器性能基线
 
 - 生产构建面向现代浏览器（支持最新 Chrome、Edge、Firefox、Safari、iOS Safari），去除过时 polyfill。Bun 1.4 使用 `target: "browser"` 表达该目标。
-- **按需动态加载**：Mermaid 图表引擎、CodeMirror 代码编辑器与 CJK「霞鹜文楷」「思源黑体」（通过版本化 CDN 样式表）、pako 压缩回退均延迟至使用时加载；默认 Excalifont 保留本地，首屏极速秒开。
-- **原生压缩流**：优先使用现代浏览器原生 `CompressionStream` 与 `DecompressionStream`。
+- **按需动态加载**：Mermaid 图表引擎、CodeMirror 和 pako 压缩回退在使用时加载。进入编辑器或后台补生成中文预览时异步加载霞鹜文楷和小赖字体的 CDN 样式表，浏览器按字符下载字体分片。Excalifont 保留在本地。
+- **静态资源预压缩**：生产构建生成 Brotli 与 Gzip 副本，服务端按 `Accept-Encoding` 返回预压缩资源；浏览器数据处理优先使用原生 `CompressionStream` 与 `DecompressionStream`。
 
 ### 6. 🔐 企业级轻量鉴权与安全响应头
 
@@ -206,6 +207,7 @@ AUTH_PASSWORD=your-password bun run dev
 | :------------------------- | :------------------ | :--------: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AUTH_PASSWORD`            | _无_                | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。                                                                                                                                                                    |
 | `MCP_TOKEN`                | _无_                |     否     | 设置后启用 `/mcp/<URL 编码后的 MCP_TOKEN>` MCP 服务，无需认证请求头。未设置时 MCP 端点关闭。                                                                                                                                 |
+| `PUBLIC_URL`                | _无_                |     否     | 网页访问根地址，例如 `https://boards.example.com`。有效的 HTTP(S) 地址用于生成 MCP 的 `webUrl`。 |
 | `MCP_TRACE`                | `false`             |     否     | 临时启用 MCP 业务处理分段计时；记录内部 API 读写、图元转换、回执构建耗时与读写次数，不记录令牌、参数或画板正文。                                                                                                             |
 | `ALLOW_ANONYMOUS`          | `false`             | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。                                                                                                                                                   |
 | `TRUST_PROXY`              | `false`             |     否     | 仅在应用端口被可信反向代理隔离保护时设为 `true`，用于识别 HTTPS 并下发 Secure Cookie。代理需覆盖 `X-Forwarded-For` 为实际客户端 IP，且应用端口不得允许不可信客户端直连；直连部署应保持 `false`，以防伪造转发头绕过登录限流。 |
@@ -228,13 +230,14 @@ AUTH_PASSWORD=your-password bun run dev
 MCP 使用标准 Streamable HTTP 传输，端点为 `http://你的服务地址:8080/mcp/<URL 编码后的令牌>`。错误令牌会按客户端地址限流；生产环境的短令牌会触发启动警告。设置高强度随机令牌后重启服务：
 
 ```bash
-MCP_TOKEN=replace-with-a-long-random-secret bun run dev
+MCP_TOKEN=replace-with-a-long-random-secret PUBLIC_URL=http://127.0.0.1:8080 bun run dev
 ```
 
 Windows PowerShell：
 
 ```powershell
 $env:MCP_TOKEN = "replace-with-a-long-random-secret"
+$env:PUBLIC_URL = "http://127.0.0.1:8080"
 bun run dev
 ```
 
@@ -253,9 +256,9 @@ bun run dev
 
 只接受路径令牌，`Authorization: Bearer` 和 `?token=...` 均不生效。令牌使用 `encodeURIComponent` 编码后放在 `/mcp/` 后面；无需额外配置请求头。远程连接使用 HTTPS，并在反向代理访问日志中对 MCP 令牌路径脱敏。
 
-容器经 HTTPS 反代部署时，在 Compose 同目录的 `.env` 设置 `MCP_TOKEN` 和 `TRUST_PROXY=true`，然后执行 `docker compose up -d --build`。默认 Compose 已将这两个变量传给容器，并只把应用端口绑定到 `127.0.0.1`。MCP 客户端填写公网地址 `https://boards.example.com/mcp/<URL 编码后的令牌>`；无需登录网页，也无需 `Authorization` 请求头。建议用独立域名的根路径部署，当前应用不支持通过 `X-Forwarded-Prefix` 挂载到任意子路径。
+容器经 HTTPS 反代部署时，在 Compose 同目录的 `.env` 设置 `MCP_TOKEN`、`PUBLIC_URL=https://boards.example.com` 和 `TRUST_PROXY=true`，然后执行 `docker compose up -d --build`。默认 Compose 已将这三个变量传给容器，并只把应用端口绑定到 `127.0.0.1`。MCP 客户端填写公网地址 `https://boards.example.com/mcp/<URL 编码后的令牌>`；无需登录网页，也无需 `Authorization` 请求头。建议用独立域名的根路径部署，当前应用不支持通过 `X-Forwarded-Prefix` 挂载到任意子路径。
 
-下面的 Nginx 配置放在已有的 HTTPS `server` 块内，专门代理 MCP；网页仍沿用原有的 `location /` 配置。`proxy_pass` 不添加 URI，保留完整令牌路径；转发实际域名、协议及客户端 IP。启用 `TRUST_PROXY` 后，MCP 回执中的画板链接会使用这个公网 HTTPS 地址。
+下面的 Nginx 配置放在已有的 HTTPS `server` 块内，专门代理 MCP；网页仍沿用原有的 `location /` 配置。`proxy_pass` 不添加 URI，保留完整令牌路径；转发实际域名、协议及客户端 IP。MCP 画板链接只取 `PUBLIC_URL`，形如 `https://boards.example.com/?id=<画板ID>`。地址缺失或无效时省略 `webUrl`；请求域名及转发头不作为链接来源。链接指向普通网页，按站点的网页鉴权规则打开。
 
 ```nginx
 location ^~ /mcp/ {
@@ -463,7 +466,7 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 `measure_text` 现返回原生 `lineHeight` 倍率和 `lineHeightPx`，行数继续使用已有 `lineCount`，不增加重复的 `lines` 别名。估宽按中日韩宽字符、全角形式及组合 emoji 约 1em、拉丁及半角字符约 0.58em 计算，组合附加符号不重复计宽；常用模糊宽度标点在整行有中日韩语境时按 1em 估算，西文语境保留窄估算。此规则复用于创建与布局，仍属于估算，无法替代实际字体排版。
 
-单次工具业务失败现在同时标记 `isError:true` 和 `structuredContent.ok:false`，保留 `error.code/message` 与错误 text；参数校验也可仅有 `isError` 和 text。批处理执行完成时，某些或全部条目失败仍通过条目 `ok/error` 和汇总数量表达，不把正常执行的聚合调用标为顶层异常。
+成功返回 `{ok:true,...}`。修订号冲突、画板或文件夹不存在等可恢复业务分支返回 `{ok:false,error:{code,message,recoverable:true,suggestedAction,...}}`，不设置 `isError`。画板、文件夹和图元不存在统一返回 `NOT_FOUND`，由 `target` 区分为 `board`、`folder` 或 `element`。修订号冲突在已知时提供 `currentRevision`。参数或工具错误返回 `isError:true`，有结构化错误时包含 `recoverable:false`；SDK 参数校验也可能只返回文本。
 
 复制优先使用 `copy_elements`，例如 `{"boardId":"来源画板","elementIds":["start","decision","edge"],"dx":300,"dy":0}`。省略 `targetBoardId` 为同板复制，`dx/dy` 默认各为 20；跨板复制时传目标 ID，重叠原位置可设 `dx=dy=0`。形状及标签自动生成新 ID，选中标签会复制其所属形状；选择集内部箭头自动重连，外部绑定默认解绑，只有同板可设 `externalBindings=preserve` 保留。始终返回 `idMap`（含标签）和 `warnings`；省略原生元数据会给出警告，所选图元不能投影则整次拒绝。`expectedRevision` 校验目标修订号，`sourceExpectedRevision` 可校验来源修订号。
 
@@ -497,11 +500,11 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 软删除和还原的实际状态变化也递增 `revision` 并更新 `updated_at`；重复相同状态返回 `noop`，不递增。删除后还原会使旧的 `expectedRevision` 失效，调用方应使用最新回执版本。`list_tags.nextCursor` 是按标签名排序的边界，SQL 读取名称大于该边界的标签，不要求该标签仍存在；分页不是一致快照，期间改名或新增可能影响后续页，完整重新核对时从第一页读取。
 
-业务结果的完整机器数据仅在 `structuredContent`，成功文本 `content` 为按工具生成的极简中文摘要，不重复业务 JSON、图元或列表正文。通常一至两行，最长 1024 字符；单画板操作附 `boardId`，新建或幂等返回已有画板时再附完整直达链接。摘要显示实际数量、无变化、分页或截断、批量成功与失败、检查未完成等状态；文字测量明确标为估算。超长名称优先缩短，直达链接不会被截断成不可用 URL，无法容纳时提示按 `boardId` 定位。客户端仍应读取结构化结果并检查 `ok/error.code`，也须处理 SDK 参数校验产生的 `isError=true` 和文本错误，这类错误可能没有 `structuredContent`，客户端本地校验也可能在发请求前拒绝。业务错误的文本保留具体原因。绘图写入默认 `responseMode=minimal`，返回修订号、数量和画板 URL，无需再次读取全文确认成功；`copy_elements` 始终额外返回 `idMap/warnings`。`create_board/add_elements/update_board/create_diagram/copy_elements` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是本体数量，`elementCount` 是全画板当前图元数量。
+完整机器数据在 `structuredContent` 中，`content` 提供最长 1024 字符的中文摘要。客户端应透传 `structuredContent` 并检查 `ok` 和 `error.code`。配置有效的 `PUBLIC_URL` 后，结构化画板结果包含 `webUrl`，原 `url` 字段已替换。画板和文件夹返回的 Unix 毫秒时间字段同时提供 ISO 格式，例如 `updatedAtISO`；有 `deletedAt` 时同时提供 `isDeleted`。绘图写入默认 `responseMode=minimal`，返回修订号、数量及已配置的 `webUrl`。`copy_elements` 始终额外返回 `idMap/warnings`。`create_board/add_elements/update_board/create_diagram/copy_elements` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是本体数量，`elementCount` 是全画板当前图元数量。
 
 `remove_elements` 和 `update_board` 的删除反馈包含 `notFoundIds`（去重后的缺失请求 ID）、`removedCount`（含绑定文字的实际删除总数）、`requestedRemovedCount`（显式请求且存在的图元数）、`cascadeRemovedCount`（未显式请求的级联删除数）及 `elementCount`（操作后的全板图元数）。缺失 ID 不使整次操作失败，仍返回缺失清单；只删除不存在的 ID 时返回 `noop`，不递增修订号。删除标签 ID 只删除标签，删除形状才联动删除其标签。
 
-批量读取及管理的每项结果都有 `ok:true/false`，仍使用顶层 `partial/truncated` 表示混合结果及截断。`list_boards.view=recent` 只包含打开过的画板，默认按 `lastOpenedAt` 倒序；`view=all,sort=opened` 才包含从未打开的画板并把它们排最后。`create_diagram` 默认生成 `diagram_edge_<从0起序号>` 的边 ID，与用户节点 ID 冲突时会添加后缀；使用 `responseMode=ids` 获取准确的 `elementMap` 后可通过 `update_element` 改箭头样式。
+批量读取与管理只有各项都成功时顶层 `ok=true`；只要有一项失败便为 `false`。成功和失败混合时 `partial=true`，全成功或全失败时为 `false`。`truncated` 表示读取被截断。已完成的批量调用通过逐项 `ok/error` 报告结果，调用方按条目处理失败。`list_boards.view=recent` 只包含打开过的画板，默认按 `lastOpenedAt` 倒序；`view=all,sort=opened` 才包含从未打开的画板并把它们排最后。`create_diagram` 默认生成 `diagram_edge_<从0起序号>` 的边 ID，与用户节点 ID 冲突时会添加后缀；使用 `responseMode=ids` 获取准确的 `elementMap` 后可通过 `update_element` 改箭头样式。
 
 常规阅读使用 `compact`，`full` 仅用于调试或小批量检查原生内部字段。`maxChars` 限制业务结果的字符预算，不是整个 HTTP 报文大小。当前画板图元作为单行 JSON 存储，图元分页、筛选和投影仍需读取整个画板，字符预算不限制数据库读取与解析成本；只需画板概要时使用 `summary`，它不读取图元 JSON。
 
@@ -608,7 +611,7 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
 │   │   └── cloudSync.ts    # 30s 防抖保存队列、分页读取与 WebSocket 自动重连同步
 │   └── index.html          # 前端 HTML 入口 (直接由 Bun.build 解析打包)
 ├── packages/               # Excalidraw 核心内部包 (Monorepo)
-│   ├── excalidraw/         # 核心渲染与画布引擎 (Excalifont 本地，霞鹜文楷与思源黑体由 CDN 加载)
+│   ├── excalidraw/         # 核心渲染与画布引擎 (Excalifont 本地，霞鹜文楷与小赖字体由 CDN 加载)
 │   ├── element/            # 图元数据结构与计算
 │   └── ...
 ├── tests/
@@ -662,7 +665,7 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
 1. **数据目录组成**：
    - 挂载点 `./data` 包含 `excalidraw.db`、SQLite WAL 文件与 `files/` 实体图片目录。
 2. **完整备份**：
-   - 可在工作台右上角点击 **“导出完整备份”**，或请求 `/api/backup/full`，获取包含最新数据库快照和全部附件的 `.tar` 压缩包。
+   - 请求 `/api/backup/full`，获取包含最新数据库快照和全部附件的 `.tar` 压缩包。
 3. **数据恢复**：
    - 恢复前先停止容器服务：
      ```bash
@@ -681,7 +684,7 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
 # 运行带 TypeScript 检查的 Bun 原生单元测试
 bun test --check
 
-# 运行后端持久化测试 (基于 Bun 原生测试驱动，耗时 < 1.5s)
+# 运行后端持久化测试 (基于 Bun 原生测试驱动)
 bun run test:server
 
 # 全局类型检查（由 Bun 原生 bun check 执行）

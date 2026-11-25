@@ -52,7 +52,7 @@ export const createRequestHandler = (
         "Access-Control-Allow-Methods":
           "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers":
-          "Content-Type, Accept, X-Thumbnail-Version, If-None-Match",
+          "Content-Type, Accept, X-Thumbnail-Version, X-Preserve-File-Id, If-None-Match",
         "Access-Control-Max-Age": "600",
       });
       const origin = req.headers.get("origin");

@@ -40,7 +40,7 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
   const call = async (name: string, args: Record<string, unknown>) => {
     const response = await client.callTool({ name, arguments: args });
     const data = response.structuredContent as Record<string, any>;
-    if (data.ok === false) expect(response.isError).toBe(true);
+    if (data.error?.recoverable === false) expect(response.isError).toBe(true);
     else expect(response.isError).not.toBe(true);
     expect(response.content).toHaveLength(1);
     const summary = response.content[0];
@@ -228,6 +228,33 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
         expectedRevision: board.revision,
       }),
     ).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
+    const unopenedFolder = "应回滚的文件夹";
+    const getFolder = runtime.db.query("SELECT id FROM folders WHERE name = ?");
+    expect(
+      await call("manage_board", {
+        boardId: board.boardId,
+        folderName: unopenedFolder,
+        tags: Array.from({ length: 12 }, (_, index) => `新标签 ${index}`),
+        tagMode: "add",
+      }),
+    ).toMatchObject({ ok: false, error: { code: "INVALID_TAGS" } });
+    expect(getFolder.get(unopenedFolder)).toBeNull();
+    runtime.db.run(`CREATE TEMP TRIGGER reject_board_move
+      BEFORE UPDATE OF folder_id ON scenes
+      WHEN NEW.name = '触发写入失败'
+      BEGIN SELECT RAISE(ABORT, 'injected board save error'); END`);
+    try {
+      expect(
+        await call("manage_board", {
+          boardId: board.boardId,
+          folderName: unopenedFolder,
+          name: "触发写入失败",
+        }),
+      ).toMatchObject({ ok: false });
+      expect(getFolder.get(unopenedFolder)).toBeNull();
+    } finally {
+      runtime.db.run("DROP TRIGGER reject_board_move");
+    }
     const invalidMetadata = await client.callTool({
       name: "manage_board",
       arguments: { boardId: board.boardId, favourit: true },
@@ -359,13 +386,16 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
       ],
     });
     expect(batch).toMatchObject({
-      ok: true,
+      ok: false,
       succeeded: 2,
       failed: 1,
       partial: true,
       results: [
         { ok: true, favorite: true },
-        { ok: false, error: { code: "SCENE_NOT_FOUND" } },
+        {
+          ok: false,
+          error: { code: "NOT_FOUND", target: "board", recoverable: true },
+        },
         { ok: true, noop: true },
       ],
     });

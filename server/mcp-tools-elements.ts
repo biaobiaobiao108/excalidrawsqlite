@@ -10,21 +10,23 @@ import {
 } from "./mcp-drawing";
 import { copyDrawingSelection } from "./mcp-copy";
 import { inspectDrawingOverlaps } from "./mcp-overlap";
-import { resolveFolder } from "./mcp-management";
+import { getSceneFolderFields } from "./mcp-management";
 import { measureMcpPhase } from "./mcp-trace";
 import { compactMcpSchema } from "./mcp-schema";
 import { HttpError } from "./errors";
+import {
+  drawingReceipt,
+  positionReceipt,
+  responseModeSchema,
+  result as buildMcpResult,
+} from "./mcp-response";
 import {
   assertRevision,
   autoBindSchema,
   bindCreated,
   boardMetadataSchema,
-  drawingReceipt,
   expectedRevisionSchema,
-  positionReceipt,
-  responseModeSchema,
   type makeSafeTool,
-  type result,
   type SceneData,
 } from "./mcp-helpers";
 import type { ServerRuntime } from "./types";
@@ -36,17 +38,16 @@ type ElementToolDeps = {
     method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     body?: unknown,
   ) => Promise<T>;
-  result: typeof result;
+  result: typeof buildMcpResult;
   safeTool: <T>(
-    handler: (args: T) => Promise<ReturnType<typeof result>>,
+    handler: (args: T) => Promise<ReturnType<typeof buildMcpResult>>,
     operation: string,
   ) => ReturnType<typeof makeSafeTool<T>>;
-  boardUrl: (id: string) => string;
 };
 
 export const registerElementTools = (
   server: McpServer,
-  { runtime, api, result, safeTool, boardUrl }: ElementToolDeps,
+  { runtime, api, result, safeTool }: ElementToolDeps,
 ) => {
   server.registerTool(
     "add_elements",
@@ -105,7 +106,6 @@ export const registerElementTools = (
           ...drawingReceipt(created, responseMode),
           revision: saved.revision,
           ...(autoBinding ? { autoBinding } : {}),
-          url: boardUrl(boardId),
         });
       },
       "add_elements",
@@ -214,7 +214,6 @@ export const registerElementTools = (
           groupIdMap: copied.groupIdMap,
           ...overlaps,
           warnings: [...copied.warnings, ...overlaps.warnings],
-          url: boardUrl(targetBoardId),
         });
       },
       "copy_elements",
@@ -404,14 +403,9 @@ export const registerElementTools = (
             notFoundIds: remaining.notFoundIds,
             updatedCount: 0,
             noop: true,
-            url: boardUrl(boardId),
           });
         }
-        const resolvedFolder = await resolveFolder(
-          { folderId, folderName },
-          runtime,
-          api,
-        );
+        const folder = getSceneFolderFields({ folderId, folderName }, runtime);
         const changedIds = [
           ...created.map((element) => element.id),
           ...(updates || []).map((update) => update.id),
@@ -436,9 +430,7 @@ export const registerElementTools = (
                 ? {}
                 : { viewBackgroundColor: backgroundColor }),
             },
-            ...(resolvedFolder === undefined
-              ? {}
-              : { folder_id: resolvedFolder }),
+            ...folder,
             tags,
             favorite,
           },
@@ -455,7 +447,6 @@ export const registerElementTools = (
           updatedCount: updated.updatedCount,
           ...(autoBinding ? { autoBinding } : {}),
           ...overlaps,
-          url: boardUrl(boardId),
         });
       },
       "update_board",
@@ -521,7 +512,6 @@ export const registerElementTools = (
         updatedCount: updated.updatedCount,
         ...positionReceipt(updated.elements, update.id),
         ...overlaps,
-        url: boardUrl(boardId),
       });
     }, "update_element"),
   );

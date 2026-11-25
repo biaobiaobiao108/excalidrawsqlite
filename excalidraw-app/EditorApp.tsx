@@ -22,6 +22,7 @@ import {
   useState,
 } from "react";
 import { t } from "@excalidraw/excalidraw/i18n";
+import { Fonts } from "@excalidraw/excalidraw/fonts";
 
 import { isElementLink } from "@excalidraw/element";
 import {
@@ -104,16 +105,20 @@ import {
 } from "./data/editorSceneInit";
 import {
   CloudSaveQueue,
+  canDiscardOtherCloudDrafts,
   getCloudPersistenceSignature,
   getCloudSceneLoadSignatures,
   getCloudSceneRecoveryData,
+  remapSceneFileIds,
   subscribeCloudRealtime,
   subscribeCloudTabSync,
+  type CloudDraftSummary,
   type CloudSaveStatus,
 } from "./data/cloudSync";
 
 import type { CloudSaveSnapshot } from "./data/cloudSync";
 import { createCloudSceneRefreshGuard } from "./data/cloudSceneRefresh";
+import { loadEditorFontStyles } from "./data/editorFontStyles";
 
 const LazyAuthDialog = lazy(async () => {
   const { AuthDialog } = await import("./components/AuthDialog");
@@ -154,6 +159,20 @@ const ExcalidrawWrapper = (props: {
 }) => {
   const { initialCloudScene, onNavigateHome } = props;
   const excalidrawAPI = useExcalidrawAPI();
+  useEffect(() => {
+    if (!excalidrawAPI) return;
+    let mounted = true;
+    void loadEditorFontStyles()
+      .then(async () => {
+        if (!mounted) return;
+        await Fonts.loadElementsFonts(excalidrawAPI.getSceneElements());
+        if (mounted) excalidrawAPI.refresh();
+      })
+      .catch((error) => console.warn("加载编辑器字体失败", error));
+    return () => {
+      mounted = false;
+    };
+  }, [excalidrawAPI]);
 
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -210,9 +229,13 @@ const ExcalidrawWrapper = (props: {
   >([]);
   const [isCloudConflictDismissed, setIsCloudConflictDismissed] =
     useState(false);
+  const isResolvingCloudConflict = useRef(false);
   const [deletedRecoveryVersion, setDeletedRecoveryVersion] = useState(0);
   const [isRecoveringDeletedScene, setIsRecoveringDeletedScene] =
     useState(false);
+  const [showOtherDrafts, setShowOtherDrafts] = useState(false);
+  const [otherDrafts, setOtherDrafts] = useState<CloudDraftSummary[]>([]);
+  const [selectedDraftId, setSelectedDraftId] = useState("");
   const [currentSceneId, setCurrentSceneId] = useState<string | null>(null);
   const [cloudSaveStatus, setCloudSaveStatus] =
     useState<CloudSaveStatus>("idle");
@@ -230,6 +253,7 @@ const ExcalidrawWrapper = (props: {
   } | null>(null);
   const cloudBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const cloudSceneLoadIdRef = useRef(0);
+  const cloudSceneRequestIdRef = useRef(0);
   const cloudFileLoadControllerRef = useRef<AbortController | null>(null);
   const cloudSceneViewportTimerRef = useRef<ReturnType<
     typeof setTimeout
@@ -339,6 +363,40 @@ const ExcalidrawWrapper = (props: {
     () => cloudSaveQueue.getUnavailableScenes(),
     [cloudSaveQueue, deletedRecoveryVersion],
   );
+  const otherDraft =
+    otherDrafts.find((draft) => draft.key === selectedDraftId) ??
+    otherDrafts[0];
+
+  const refreshOtherDrafts = useCallback(async () => {
+    const drafts = await cloudSaveQueue.listOtherDrafts();
+    setOtherDrafts(drafts);
+    return drafts;
+  }, [cloudSaveQueue]);
+
+  useEffect(() => {
+    if (!currentSceneId) return;
+    const refresh = () => {
+      if (document.hidden) return;
+      void refreshOtherDrafts().catch((error) =>
+        console.warn("读取本地草稿列表失败", error),
+      );
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [currentSceneId, refreshOtherDrafts]);
+
+  const openOtherDrafts = useCallback(async () => {
+    try {
+      setShowOtherDrafts((await refreshOtherDrafts()).length > 0);
+    } catch (error: any) {
+      setErrorMessage(error?.message || "读取本地草稿列表失败");
+    }
+  }, [refreshOtherDrafts]);
 
   useEffect(() => {
     cloudSaveQueue.activate();
@@ -524,19 +582,20 @@ const ExcalidrawWrapper = (props: {
       sceneId: string,
       updateUrl = true,
       prefetchedCloudScene?: CloudSceneData,
-      recoveredSnapshot?: CloudSaveSnapshot | null,
+      onConflictReload?: (revision: number) => void,
     ) => {
-      const loadId = ++cloudSceneLoadIdRef.current;
-      cloudFileLoadControllerRef.current?.abort();
-      cloudFileLoadControllerRef.current = null;
+      const openingScene = currentSceneIdRef.current !== sceneId;
+      const requestId = ++cloudSceneRequestIdRef.current;
       const canApplyRefresh =
         excalidrawAPI &&
         currentSceneIdRef.current === sceneId &&
-        !recoveredSnapshot
+        !onConflictReload
           ? createCloudSceneRefreshGuard(() => {
               const appState = excalidrawAPI.getAppState();
               return {
                 sceneId: currentSceneIdRef.current,
+                revision: cloudSaveQueue.getRevision(sceneId),
+                // Attachment hydration can change the file cache without editing the canvas.
                 signature: getCloudPersistenceSignature(
                   excalidrawAPI.getName() || "未命名白板",
                   excalidrawAPI
@@ -546,18 +605,19 @@ const ExcalidrawWrapper = (props: {
                     viewBackgroundColor: appState.viewBackgroundColor,
                     gridSize: appState.gridSize,
                   },
-                  excalidrawAPI.getFiles(),
+                  {},
+                  [],
                 ),
-                hasPending: cloudSaveQueue.hasPending(sceneId),
+                hasPending:
+                  cloudSaveQueue.hasPending(sceneId) ||
+                  Boolean(cloudSceneLoadingRef.current?.edited),
               };
             })
           : null;
-      cloudSceneLoadingRef.current = null;
-      isApplyingCloudSceneRef.current = false;
-      if (cloudSceneViewportTimerRef.current) {
-        clearTimeout(cloudSceneViewportTimerRef.current);
-        cloudSceneViewportTimerRef.current = null;
-      }
+      if (openingScene) await cloudSaveQueue.restoreScene(sceneId);
+      const recoveredSnapshot = openingScene
+        ? cloudSaveQueue.getPendingSnapshot(sceneId)
+        : null;
       const remoteData =
         prefetchedCloudScene?.id === sceneId
           ? prefetchedCloudScene
@@ -572,7 +632,7 @@ const ExcalidrawWrapper = (props: {
       if (!excalidrawAPI || excalidrawAPI.isDestroyed) {
         throw new Error("编辑器尚未初始化");
       }
-      if (loadId !== cloudSceneLoadIdRef.current) {
+      if (requestId !== cloudSceneRequestIdRef.current) {
         return cloudData;
       }
       // An edit can start and even finish saving while the fetch is in flight.
@@ -590,11 +650,14 @@ const ExcalidrawWrapper = (props: {
         excalidrawAPI.getAppState(),
       );
 
+      // A failed or superseded fetch must leave the displayed scene hydrating.
+      const loadId = ++cloudSceneLoadIdRef.current;
+      if (cloudSceneViewportTimerRef.current) {
+        clearTimeout(cloudSceneViewportTimerRef.current);
+        cloudSceneViewportTimerRef.current = null;
+      }
       setCloudBootstrapError("");
       if (updateUrl) {
-        if (loadId !== cloudSceneLoadIdRef.current) {
-          return cloudData;
-        }
         window.history.replaceState(
           {},
           "",
@@ -608,6 +671,9 @@ const ExcalidrawWrapper = (props: {
         recoveredSnapshot?.baseRevision ?? cloudData.revision,
       );
       setActiveCloudScene(sceneId);
+      if (openingScene && cloudSaveQueue.reopenScene(sceneId)) {
+        setDeletedRecoveryVersion((version) => version + 1);
+      }
       cloudSceneLoadingRef.current = {
         loadId,
         sceneId,
@@ -615,14 +681,12 @@ const ExcalidrawWrapper = (props: {
       };
       let editedDuringLoad = false;
       try {
-        if (loadId !== cloudSceneLoadIdRef.current) {
-          return cloudData;
-        }
         excalidrawAPI.updateScene({
           elements,
           appState: restoredAppState,
           captureUpdate: CaptureUpdateAction.NEVER,
         });
+        onConflictReload?.(remoteData.revision);
         if (recoveredSnapshot) {
           excalidrawAPI.addFiles(Object.values(recoveredSnapshot.files), {
             replace: true,
@@ -639,7 +703,10 @@ const ExcalidrawWrapper = (props: {
           cloudSceneLoadingRef.current?.loadId === loadId &&
           cloudSceneLoadingRef.current.edited,
         );
-        if (cloudData.elements.length) {
+        if (
+          loadId === cloudSceneLoadIdRef.current &&
+          cloudData.elements.length
+        ) {
           cloudSceneViewportTimerRef.current = setTimeout(() => {
             cloudSceneViewportTimerRef.current = null;
             if (
@@ -664,9 +731,11 @@ const ExcalidrawWrapper = (props: {
       if (loadId !== cloudSceneLoadIdRef.current) {
         return cloudData;
       }
-      void markCloudSceneOpened(sceneId).catch((error) => {
-        console.warn("最近打开时间更新失败", error);
-      });
+      if (openingScene) {
+        void markCloudSceneOpened(sceneId).catch((error) => {
+          console.warn("最近打开时间更新失败", error);
+        });
+      }
       const currentElements = excalidrawAPI.getSceneElementsIncludingDeleted();
       const currentAppState = excalidrawAPI.getAppState();
       const currentFiles = excalidrawAPI.getFiles();
@@ -825,7 +894,6 @@ const ExcalidrawWrapper = (props: {
 
       setCloudBootstrapError("");
       await initialStatePromiseRef.current.promise;
-      await cloudSaveQueue.ready();
       const status = await checkAuthStatus();
       if (status.authRequired && !status.authenticated) {
         setIsAuthOpen(true);
@@ -839,7 +907,6 @@ const ExcalidrawWrapper = (props: {
             requestedId,
             false,
             initialSceneDataRef.current?.cloudScene,
-            cloudSaveQueue.getPendingSnapshot(requestedId),
           );
           cloudSaveQueue.resumePending();
           return;
@@ -862,10 +929,12 @@ const ExcalidrawWrapper = (props: {
             files[fileId] = file;
           }
         }
-        await saveFilesToCloud(files);
+        const replacements = await saveFilesToCloud(files, {
+          preserveExisting: true,
+        });
         scene = await createCloudScene({
           name: excalidrawAPI.getName() || "我的画板",
-          elements,
+          elements: remapSceneFileIds(elements, replacements),
           appState: {
             viewBackgroundColor:
               excalidrawAPI.getAppState().viewBackgroundColor,
@@ -873,12 +942,7 @@ const ExcalidrawWrapper = (props: {
           },
         });
       }
-      await loadSelectedCloudScene(
-        scene.id,
-        true,
-        undefined,
-        cloudSaveQueue.getPendingSnapshot(scene.id),
-      );
+      await loadSelectedCloudScene(scene.id);
       cloudSaveQueue.resumePending();
     })();
 
@@ -908,7 +972,6 @@ const ExcalidrawWrapper = (props: {
 
   const handleSceneDeleted = useCallback(
     async (sceneId: string) => {
-      await cloudSaveQueue.ready();
       const recovery = cloudSaveQueue.preserveForRecovery(sceneId);
       if (recovery) {
         setDeletedRecoveryVersion((version) => version + 1);
@@ -918,6 +981,11 @@ const ExcalidrawWrapper = (props: {
       if (currentSceneIdRef.current !== sceneId) {
         return;
       }
+      cloudSceneRequestIdRef.current += 1;
+      cloudSceneLoadIdRef.current += 1;
+      cloudFileLoadControllerRef.current?.abort();
+      cloudSceneLoadingRef.current = null;
+      isApplyingCloudSceneRef.current = false;
       setActiveCloudScene(null);
       window.history.replaceState({}, "", window.location.pathname);
       try {
@@ -925,6 +993,7 @@ const ExcalidrawWrapper = (props: {
         const nextScene =
           page.items[0] || (await createCloudScene({ name: "我的画板" }));
         await loadSelectedCloudScene(nextScene.id);
+        cloudSaveQueue.resumePending();
       } catch (error: any) {
         if (error?.status === 401) {
           setIsAuthOpen(true);
@@ -939,19 +1008,23 @@ const ExcalidrawWrapper = (props: {
   const resolveCloudConflict = useCallback(
     async (keepLocal: boolean) => {
       const cloudConflict = cloudConflicts[0];
-      if (!cloudConflict) {
+      if (!cloudConflict || isResolvingCloudConflict.current) {
         return;
       }
+      isResolvingCloudConflict.current = true;
       try {
-        const remote = await fetchCloudScene(cloudConflict.sceneId);
-        if (!keepLocal && currentSceneIdRef.current === cloudConflict.sceneId) {
-          await loadSelectedCloudScene(cloudConflict.sceneId, false);
+        const { sceneId } = cloudConflict;
+        const remote = await fetchCloudScene(sceneId, { forceRefresh: true });
+        if (!keepLocal && currentSceneIdRef.current === sceneId) {
+          let applied = false;
+          await loadSelectedCloudScene(sceneId, false, remote, (revision) => {
+            cloudSaveQueue.resolveConflict(sceneId, revision, false);
+            applied = true;
+          });
+          if (!applied) return;
+        } else {
+          cloudSaveQueue.resolveConflict(sceneId, remote.revision, keepLocal);
         }
-        cloudSaveQueue.resolveConflict(
-          cloudConflict.sceneId,
-          remote.revision,
-          keepLocal,
-        );
         setCloudConflicts((current) =>
           current.filter((item) => item.sceneId !== cloudConflict.sceneId),
         );
@@ -969,6 +1042,8 @@ const ExcalidrawWrapper = (props: {
         } else {
           setErrorMessage(error?.message || "处理云端冲突失败");
         }
+      } finally {
+        isResolvingCloudConflict.current = false;
       }
     },
     [
@@ -980,54 +1055,51 @@ const ExcalidrawWrapper = (props: {
   );
 
   const recoverDeletedScene = useCallback(async () => {
-    const recovery = deletedRecoveries[0];
-    if (!recovery || isRecoveringDeletedScene) {
+    const deleted = deletedRecoveries[0];
+    if ((!deleted && !otherDraft) || isRecoveringDeletedScene) {
       return;
     }
     setIsRecoveringDeletedScene(true);
     try {
-      const snapshot = cloudSaveQueue.getPendingSnapshot(recovery.sceneId);
-      if (!snapshot) {
-        throw new Error("找不到待恢复的本地画板内容。");
-      }
-      const fileIdMap = new Map<string, FileId>();
-      const files: BinaryFiles = {};
-      for (const file of Object.values(snapshot.files)) {
-        const fileId = crypto.randomUUID() as FileId;
-        fileIdMap.set(file.id, fileId);
-        files[fileId] = { ...file, id: fileId };
-      }
-      const elements = snapshot.elements.map((element) => {
-        if (element.type !== "image" || !element.fileId) {
-          return element;
-        }
-        const fileId = fileIdMap.get(element.fileId);
-        if (!fileId) {
-          throw new Error(
-            "恢复画板时找不到图片文件，请保留草稿并检查浏览器存储。",
-          );
-        }
-        return { ...element, fileId };
+      const draft = deleted
+        ? cloudSaveQueue.getPendingSnapshot(deleted.sceneId)
+        : await cloudSaveQueue.readOtherDraft(otherDraft!.key);
+      if (!draft) return;
+      const replacements = await saveFilesToCloud(draft.files, {
+        forceUpload: true,
+        preserveExisting: true,
       });
-      await saveFilesToCloud(files, { forceUpload: true });
       const scene = await createCloudScene({
-        name: `${snapshot.name}（恢复）`.slice(0, 120),
-        elements,
-        appState: snapshot.appState,
+        name: `${draft.name}（恢复）`.slice(0, 120),
+        elements: remapSceneFileIds(draft.elements, replacements),
+        appState: draft.appState,
+        ...(draft.persistenceId
+          ? { idempotencyKey: `draft-${draft.persistenceId}` }
+          : {}),
       });
-      cloudSaveQueue.cancel(recovery.sceneId);
-      setDeletedRecoveryVersion((version) => version + 1);
-      await loadSelectedCloudScene(scene.id);
+      if (deleted) {
+        cloudSaveQueue.cancel(deleted.sceneId);
+        setDeletedRecoveryVersion((version) => version + 1);
+        await loadSelectedCloudScene(scene.id);
+      } else {
+        setShowOtherDrafts(false);
+        excalidrawAPI?.setToast({ message: "草稿已恢复为新画板" });
+        await cloudSaveQueue.forgetOtherDraft(otherDraft!, draft);
+        await refreshOtherDrafts();
+      }
     } catch (error: any) {
-      setErrorMessage(error?.message || "恢复已删除画板失败");
+      setErrorMessage(error?.message || "恢复本地草稿失败");
     } finally {
       setIsRecoveringDeletedScene(false);
     }
   }, [
     cloudSaveQueue,
     deletedRecoveries,
+    excalidrawAPI,
     isRecoveringDeletedScene,
     loadSelectedCloudScene,
+    otherDraft,
+    refreshOtherDrafts,
   ]);
 
   const discardDeletedSceneRecovery = useCallback(() => {
@@ -1037,7 +1109,15 @@ const ExcalidrawWrapper = (props: {
     }
     cloudSaveQueue.cancel(recovery.sceneId);
     setDeletedRecoveryVersion((version) => version + 1);
-  }, [cloudSaveQueue, deletedRecoveries, isRecoveringDeletedScene]);
+    if (currentSceneIdRef.current === recovery.sceneId) {
+      void handleSceneDeleted(recovery.sceneId);
+    }
+  }, [
+    cloudSaveQueue,
+    deletedRecoveries,
+    handleSceneDeleted,
+    isRecoveringDeletedScene,
+  ]);
 
   useEffect(() => {
     return subscribeCloudTabSync((message) => {
@@ -1374,7 +1454,9 @@ const ExcalidrawWrapper = (props: {
             isMobile={isMobile}
             currentSceneId={currentSceneId}
             cloudSaveStatus={cloudSaveStatus}
+            hasOtherDraft={Boolean(otherDraft)}
             onSave={() => void saveCurrentCloudScene()}
+            onOpenDrafts={() => void openOtherDrafts()}
             onOpenConflict={() => setIsCloudConflictDismissed(false)}
             onNavigateHome={() => void navigateHomeAfterSave()}
           />
@@ -1436,6 +1518,59 @@ const ExcalidrawWrapper = (props: {
             />
           </Suspense>
         )}
+        {otherDraft &&
+          showOtherDrafts &&
+          !isAuthOpen &&
+          !deletedRecoveries.length && (
+            <Suspense fallback={null}>
+              <LazyCloudSceneDeletedDialog
+                isOpen
+                sceneName={otherDraft.name}
+                isRecovering={isRecoveringDeletedScene}
+                onRecover={recoverDeletedScene}
+                onDismiss={() => setShowOtherDrafts(false)}
+                draftPicker={
+                  otherDrafts.length > 1 && (
+                    <select
+                      className="cloud-draft-picker"
+                      aria-label="选择本地草稿"
+                      value={otherDraft.key}
+                      disabled={isRecoveringDeletedScene}
+                      onChange={(event) =>
+                        setSelectedDraftId(event.target.value)
+                      }
+                    >
+                      {otherDrafts.map((draft, index) => (
+                        <option key={draft.key} value={draft.key}>
+                          {draft.name}
+                          {" · "}
+                          {draft.updatedAt
+                            ? new Date(draft.updatedAt).toLocaleString()
+                            : `草稿 ${index + 1}`}
+                          {draft.elementCount === undefined
+                            ? ""
+                            : ` · ${draft.elementCount} 个图元`}
+                        </option>
+                      ))}
+                    </select>
+                  )
+                }
+                onDiscard={
+                  canDiscardOtherCloudDrafts()
+                    ? async () => {
+                        try {
+                          await cloudSaveQueue.forgetOtherDraft(otherDraft);
+                          setShowOtherDrafts(false);
+                          await refreshOtherDrafts();
+                        } catch (error: any) {
+                          setErrorMessage(error?.message || "丢弃草稿失败");
+                        }
+                      }
+                    : undefined
+                }
+              />
+            </Suspense>
+          )}
         <Suspense fallback={null}>
           <LazyCloudConflictDialog
             isOpen={

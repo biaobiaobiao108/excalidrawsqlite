@@ -177,23 +177,15 @@ export const handleFolderRoute = async ({
       revision: number;
       updated_at: number;
     }>;
-    const now = affectedScenes.reduce(
-      (latest, scene) => Math.max(latest, Number(scene.updated_at) + 1),
-      Date.now(),
-    );
+    const now = Date.now();
     const transaction = runtime.db.transaction(() => {
       const updateScene = runtime.db.query(
         `UPDATE scenes
-         SET folder_id = NULL, updated_at = ?, revision = ?
+         SET folder_id = NULL, revision = ?
          WHERE id = ? AND folder_id = ?`,
       );
       for (const scene of affectedScenes) {
-        updateScene.run(
-          now,
-          storedSceneRevision(scene.revision) + 1,
-          scene.id,
-          id,
-        );
+        updateScene.run(storedSceneRevision(scene.revision) + 1, scene.id, id);
       }
       runtime.db.run("DELETE FROM folders WHERE id = ?", [id]);
     });
@@ -203,7 +195,7 @@ export const handleFolderRoute = async ({
         type: "scene_changed",
         sceneId: scene.id,
         revision: storedSceneRevision(scene.revision) + 1,
-        updatedAt: now,
+        updatedAt: Number(scene.updated_at),
         changeKind: "metadata",
       });
     }

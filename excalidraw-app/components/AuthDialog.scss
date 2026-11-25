@@ -1,11 +1,11 @@
 .auth-dialog {
   .workspace-dialog-content-shell {
-    inline-size: min(440px, 100%);
-    padding: 2.25rem 2rem;
+    inline-size: min(400px, 100%);
+    padding: 2rem 1.75rem;
     border-radius: 16px;
-    border: 1px solid var(--workspace-border, #e8e8f0);
-    background: var(--workspace-bg, #ffffff);
-    box-shadow: 0 20px 60px rgba(36, 33, 85, 0.16);
+    border: 1px solid var(--border-subtle, #e7e5dd);
+    background: var(--surface-elevated, #ffffff);
+    box-shadow: 0 20px 48px rgba(32, 45, 37, 0.12);
     box-sizing: border-box;
   }
 
@@ -29,35 +29,35 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    background: var(--workspace-primary-soft, #f0efff);
-    color: var(--workspace-primary, #6965db);
-    margin-bottom: 1rem;
-    box-shadow: 0 4px 14px rgba(105, 101, 219, 0.15);
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--brand-soft, #e7efe9);
+    color: var(--brand-primary, #315f4c);
+    margin-bottom: 0.85rem;
+    box-shadow: 0 2px 8px rgba(49, 95, 76, 0.1);
 
     svg {
-      width: 26px;
-      height: 26px;
+      width: 22px;
+      height: 22px;
     }
   }
 
   .auth-dialog-title {
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: var(--workspace-text, #22212c);
-    margin: 0 0 0.5rem;
+    font-size: 1.2rem;
+    font-weight: 650;
+    color: var(--text-primary, #1f2622);
+    margin: 0 0 0.35rem;
     letter-spacing: -0.02em;
     line-height: 1.3;
   }
 
   .auth-dialog-desc {
-    font-size: 0.875rem;
-    color: var(--workspace-muted, #747487);
+    font-size: 0.85rem;
+    color: var(--text-secondary, #5d6861);
     line-height: 1.5;
     margin: 0;
-    max-width: 320px;
+    max-width: 300px;
   }
 
   .auth-dialog-form {
@@ -76,37 +76,37 @@
 
   .auth-dialog-input {
     width: 100%;
-    height: 44px;
+    height: 42px;
     box-sizing: border-box;
-    padding: 0 2.75rem 0 1rem;
-    border: 1.5px solid var(--workspace-border, #e8e8f0);
-    border-radius: 10px;
-    font-size: 0.95rem;
+    padding: 0 2.5rem 0 0.9rem;
+    border: 1px solid var(--border-subtle, #e7e5dd);
+    border-radius: 8px;
+    font-size: 0.92rem;
     outline: none;
-    background-color: var(--workspace-surface, #ffffff);
-    color: var(--workspace-text, #22212c);
-    transition: border-color 0.18s ease, box-shadow 0.18s ease,
-      background-color 0.18s ease;
+    background-color: var(--surface-panel, #f7f6f1);
+    color: var(--text-primary, #1f2622);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease,
+      background-color 0.15s ease;
 
     &::placeholder {
-      color: var(--workspace-muted, #9e9eb0);
+      color: var(--text-tertiary, #8c9790);
     }
 
     &:focus {
-      border-color: var(--workspace-primary, #6965db);
-      box-shadow: 0 0 0 3.5px rgba(105, 101, 219, 0.18);
-      background-color: #ffffff;
+      border-color: var(--brand-primary, #315f4c);
+      box-shadow: 0 0 0 3px rgba(49, 95, 76, 0.15);
+      background-color: var(--surface-elevated, #ffffff);
     }
 
     &.has-error {
-      border-color: #fa5252;
-      box-shadow: 0 0 0 3px rgba(250, 82, 82, 0.15);
+      border-color: var(--accent-danger, #a63e3b);
+      box-shadow: 0 0 0 3px rgba(166, 62, 59, 0.15);
     }
   }
 
   .auth-dialog-toggle-visibility {
     position: absolute;
-    right: 8px;
+    right: 6px;
     top: 50%;
     transform: translateY(-50%);
     display: inline-flex;
@@ -118,13 +118,13 @@
     border: none;
     border-radius: 6px;
     background: transparent;
-    color: var(--workspace-muted, #868598);
+    color: var(--text-secondary, #5d6861);
     cursor: pointer;
     transition: color 0.15s ease, background-color 0.15s ease;
 
     &:hover {
-      color: var(--workspace-primary, #6965db);
-      background-color: var(--workspace-primary-soft, #f0efff);
+      color: var(--brand-primary, #315f4c);
+      background-color: var(--brand-soft, #e7efe9);
     }
 
     svg {
@@ -138,17 +138,17 @@
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
-    padding: 0.55rem 0.85rem;
+    padding: 0.5rem 0.75rem;
     border-radius: 8px;
-    font-size: 0.84rem;
+    font-size: 0.82rem;
     line-height: 1.4;
-    color: #e03131;
-    background: #fff5f5;
-    border: 1px solid #ffc9c9;
+    color: var(--accent-danger, #a63e3b);
+    background: rgba(166, 62, 59, 0.08);
+    border: 1px solid rgba(166, 62, 59, 0.2);
   }
 
   .auth-dialog-error-icon {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
   }
 
   .auth-dialog-actions {
@@ -159,40 +159,40 @@
 
   .auth-submit-btn {
     width: 100%;
-    height: 44px;
+    height: 42px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
     border: none;
-    border-radius: 10px;
-    background-color: var(--workspace-primary, #6965db);
+    border-radius: 8px;
+    background-color: var(--brand-primary, #315f4c);
     color: #ffffff;
-    font-size: 0.95rem;
+    font-size: 0.92rem;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 4px 14px rgba(105, 101, 219, 0.28);
-    transition: background-color 0.18s ease, transform 0.1s ease,
-      box-shadow 0.18s ease;
+    box-shadow: 0 2px 8px rgba(49, 95, 76, 0.2);
+    transition: background-color 0.15s ease, transform 0.08s ease,
+      box-shadow 0.15s ease;
 
     &:hover:not(:disabled) {
-      background-color: var(--color-primary-darker, #5b57d1);
-      box-shadow: 0 6px 18px rgba(105, 101, 219, 0.38);
+      background-color: var(--brand-hover, #294f40);
+      box-shadow: 0 4px 12px rgba(49, 95, 76, 0.28);
     }
 
     &:active:not(:disabled) {
-      transform: scale(0.985);
+      transform: scale(0.98);
     }
 
     &:disabled {
-      opacity: 0.72;
+      opacity: 0.7;
       cursor: not-allowed;
     }
   }
 
   .auth-btn-spinner {
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
     border: 2px solid rgba(255, 255, 255, 0.35);
     border-top-color: #ffffff;
     border-radius: 50%;
@@ -230,62 +230,72 @@
 }
 
 /* Dark Mode Overrides */
+html.dark .auth-dialog,
 :root.theme--dark .auth-dialog,
 .theme--dark .auth-dialog,
 [data-theme="dark"] .auth-dialog {
   .workspace-dialog-content-shell {
-    background: #1e1e24;
-    border-color: #31303b;
+    background: var(--surface-elevated, #242a26);
+    border-color: var(--border-subtle, #2e3631);
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
   }
 
   .auth-dialog-badge {
-    background: rgba(105, 101, 219, 0.22);
-    color: #a5a2f5;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    background: var(--brand-soft, #1d2d24);
+    color: var(--brand-primary, #437b62);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .auth-dialog-title {
-    color: #f1f0f7;
+    color: var(--text-primary, #e8ece9);
   }
 
   .auth-dialog-desc {
-    color: #9e9db0;
+    color: var(--text-secondary, #9da8a0);
   }
 
   .auth-dialog-input {
-    background-color: #141418;
-    border-color: #383745;
-    color: #ececf3;
+    background-color: var(--surface-panel, #1f2421);
+    border-color: var(--border-subtle, #2e3631);
+    color: var(--text-primary, #e8ece9);
 
     &::placeholder {
-      color: #636272;
+      color: var(--text-tertiary, #69746c);
     }
 
     &:focus {
-      background-color: #18181e;
-      border-color: #8b87f0;
-      box-shadow: 0 0 0 3.5px rgba(139, 135, 240, 0.25);
+      background-color: var(--surface-elevated, #242a26);
+      border-color: var(--brand-primary, #437b62);
+      box-shadow: 0 0 0 3px rgba(67, 123, 98, 0.25);
     }
 
     &.has-error {
-      border-color: #fa5252;
-      box-shadow: 0 0 0 3px rgba(250, 82, 82, 0.25);
+      border-color: var(--accent-danger, #cf5d59);
+      box-shadow: 0 0 0 3px rgba(207, 93, 89, 0.25);
     }
   }
 
   .auth-dialog-toggle-visibility {
-    color: #8e8d9e;
+    color: var(--text-secondary, #9da8a0);
 
     &:hover {
-      color: #a5a2f5;
-      background-color: rgba(105, 101, 219, 0.18);
+      color: var(--brand-primary, #437b62);
+      background-color: var(--brand-soft, #1d2d24);
     }
   }
 
   .auth-dialog-error {
-    background: rgba(224, 49, 49, 0.15);
-    border-color: rgba(224, 49, 49, 0.32);
-    color: #ff8787;
+    background: rgba(207, 93, 89, 0.15);
+    border-color: rgba(207, 93, 89, 0.3);
+    color: var(--accent-danger, #cf5d59);
+  }
+
+  .auth-submit-btn {
+    background-color: var(--brand-primary, #437b62);
+
+    &:hover:not(:disabled) {
+      background-color: var(--brand-hover, #4f9173);
+    }
   }
 }
+

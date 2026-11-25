@@ -4,6 +4,7 @@ import { HttpError } from "./errors";
 import { getSceneSummary } from "./scenes";
 import { validateTags } from "./validation";
 import type { ServerRuntime } from "./types";
+import { mcpError } from "./mcp-response";
 import { colorSchema } from "./color";
 import { compactMcpSchema } from "./mcp-schema";
 
@@ -24,7 +25,6 @@ type Context = {
     handler: (args: T) => Promise<ToolResult>,
     operation: string,
   ) => (args: T) => Promise<ToolResult>;
-  boardUrl: (id: string) => string;
 };
 type Folder = {
   id: string;
@@ -142,21 +142,25 @@ async function ensureNamedFolder(
   }
 }
 
-/** Creating or moving a board can ensure its named folder in the same tool call. */
-export async function resolveFolder(
+export function getSceneFolderFields(
   input: { folderId?: string | null; folderName?: string },
   runtime: ServerRuntime,
-  api: ManagementApi,
-): Promise<string | null | undefined> {
-  if (input.folderId === undefined && input.folderName === undefined)
-    return undefined;
-  if (input.folderId === null && input.folderName === undefined) return null;
-  const folder = findFolder(input, runtime);
-  if (folder) return folder.id;
-  if (input.folderName !== undefined)
-    return (await ensureNamedFolder({ name: input.folderName }, runtime, api))
-      .folder.id;
-  throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
+) {
+  if (input.folderName !== undefined) {
+    if (input.folderId !== undefined) {
+      throw new HttpError(
+        400,
+        "INVALID_FOLDER",
+        "folderId 与 folderName 不能同时传入",
+      );
+    }
+    return { folder_name: input.folderName };
+  }
+  if (input.folderId === undefined) return {};
+  if (input.folderId !== null && !findFolder(input, runtime)) {
+    throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
+  }
+  return { folder_id: input.folderId };
 }
 
 const metadataSchema = z.strictObject({
@@ -224,11 +228,12 @@ function assertRevision(revision: number, expected?: number) {
       409,
       "REVISION_CONFLICT",
       `画板已更新，当前修订号为 ${revision}；请重新读取判断`,
+      { currentRevision: revision },
     );
 }
 
 export function registerManagementTools(server: McpServer, context: Context) {
-  const { runtime, api, result, safeTool, boardUrl } = context;
+  const { runtime, api, result, safeTool } = context;
   const manage = async (input: ManageInput) => {
     const current = readSummary(runtime, input.boardId);
     assertRevision(current.revision, input.expectedRevision);
@@ -258,7 +263,6 @@ export function registerManagementTools(server: McpServer, context: Context) {
         "INVALID_METADATA",
         "至少提供一项改名、收藏、移动或标签操作",
       );
-    const folderId = await resolveFolder(input, runtime, api);
     const tagMode = input.tagMode ?? "replace";
     const tags =
       input.tags === undefined
@@ -270,16 +274,19 @@ export function registerManagementTools(server: McpServer, context: Context) {
                 ? [...new Set([...current.tags, ...input.tags])]
                 : current.tags.filter((tag) => !input.tags!.includes(tag)),
           );
+    const folder = getSceneFolderFields(input, runtime);
     const metadata = {
       name: input.name ?? current.name,
       favorite: input.favorite ?? current.favorite,
-      folder_id: folderId === undefined ? current.folder_id : folderId,
+      ...folder,
       tags,
     };
     const noop =
       metadata.name === current.name &&
       metadata.favorite === current.favorite &&
-      metadata.folder_id === current.folder_id &&
+      folder.folder_name === undefined &&
+      (folder.folder_id === undefined ||
+        folder.folder_id === current.folder_id) &&
       tags.length === current.tags.length &&
       tags.every((tag) => current.tags.includes(tag));
     const board = noop
@@ -292,8 +299,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
     return {
       ...board,
       boardId: input.boardId,
-      noop,
-      url: boardUrl(input.boardId),
+      noop: noop || ("noop" in board && board.noop === true),
     };
   };
   const setDeleted = async (
@@ -310,7 +316,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
         deleted,
       });
     const board = readSummary(runtime, boardId);
-    return { ...board, boardId, noop, deleted, url: boardUrl(boardId) };
+    return { ...board, boardId, noop, deleted };
   };
   server.registerTool(
     "list_folders",
@@ -675,7 +681,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
             boardId: item.boardId,
             action: item.action,
             ...(revision === undefined ? {} : { revision }),
-            error: { code: error.code, message: error.message },
+            error: mcpError(error),
           });
         }
       }

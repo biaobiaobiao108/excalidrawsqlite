@@ -109,6 +109,7 @@ export class BodyMemoryBudget {
 export type ServerConfig = {
   authPassword: string;
   mcpToken: string;
+  publicOrigin?: string;
   mcpTrace: boolean;
   allowAnonymous: boolean;
   nodeEnv: string;
@@ -129,6 +130,7 @@ export type SceneRealtimeEvent = {
   sceneId: string;
   revision: number;
   updatedAt: number;
+  metadataChanged?: boolean;
   changeKind:
     "created" | "content" | "metadata" | "thumbnail" | "deleted" | "restored";
 };
@@ -137,12 +139,15 @@ export type WorkspaceRealtimeEvent = {
   type: "workspace_changed";
   updatedAt: number;
   sceneId?: string;
-  changeKind?: SceneRealtimeEvent["changeKind"];
+  revision?: number;
+  metadataChanged?: boolean;
+  changeKind?: SceneRealtimeEvent["changeKind"] | "opened";
 };
 
 export type RealtimePublisher = {
   publishSceneChanged: (event: SceneRealtimeEvent) => void;
-  publishWorkspaceChanged: (updatedAt?: number) => void;
+  publishWorkspaceChanged: (updatedAt?: number, changeKind?: "opened") => void;
+  revokeSession?: (token: string) => void;
 };
 
 export type ServerRuntime = {

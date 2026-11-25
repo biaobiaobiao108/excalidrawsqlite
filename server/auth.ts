@@ -167,6 +167,10 @@ export const isAuthorized = (runtime: ServerRuntime, req: Request) => {
   if (internalSessions.get(runtime)?.has(token)) {
     return true;
   }
+  return getSessionExpiration(runtime, token) !== null;
+};
+
+export const getSessionExpiration = (runtime: ServerRuntime, token: string) => {
   // The database is authoritative: another server process may revoke a
   // session, so an in-process cache cannot safely authorize requests.
   let expiresAt: number | undefined;
@@ -179,7 +183,7 @@ export const isAuthorized = (runtime: ServerRuntime, req: Request) => {
     if (row) expiresAt = row.expires_at;
   } catch (error) {
     console.info("[Sessions] query failed", error);
-    return false;
+    return null;
   }
   if (!expiresAt || expiresAt <= Date.now()) {
     runtime.sessions.delete(token);
@@ -190,9 +194,9 @@ export const isAuthorized = (runtime: ServerRuntime, req: Request) => {
     } catch {
       // ignore
     }
-    return false;
+    return null;
   }
-  return true;
+  return expiresAt;
 };
 
 export const consumeRateLimit = (

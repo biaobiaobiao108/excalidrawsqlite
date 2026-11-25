@@ -37,6 +37,7 @@ const withClient = async (
     invoke: <T>(
       name: string,
       args: Record<string, unknown>,
+      ok?: boolean,
     ) => Promise<{ data: T; text: string }>,
   ) => Promise<void>,
 ) => {
@@ -71,10 +72,10 @@ const withClient = async (
     await client.connect(transport);
     await run(
       client,
-      async <T>(name: string, args: Record<string, unknown>) => {
+      async <T>(name: string, args: Record<string, unknown>, ok = true) => {
         const response = await client.callTool({ name, arguments: args });
         expect(response.isError).not.toBe(true);
-        expect(response.structuredContent).toMatchObject({ ok: true });
+        expect(response.structuredContent).toMatchObject({ ok });
         expect(response.content).toHaveLength(1);
         const content = response.content[0];
         expect(content.type).toBe("text");
@@ -166,13 +167,12 @@ describe("advanced diagram MCP SDK regressions", () => {
         const created = await invoke<{
           boardId: string;
           revision: number;
-          url: string;
           regions: Region[];
           bounds: unknown;
         }>("create_diagram", args);
         expect(created.text).toContain(args.name);
         expect(created.text).toContain(created.data.boardId);
-        expect(created.text).toContain(created.data.url);
+        expect(created.data).not.toHaveProperty("webUrl");
         expect(created.data.regions).toHaveLength(scenario.regions.length);
         expect(created.data.bounds).toBeDefined();
         const inspected = await invoke<{
@@ -413,33 +413,45 @@ describe("advanced diagram MCP SDK regressions", () => {
       });
       expect(truncated.data.truncated).toBe(true);
       expect(truncated.text).toMatch(/截断|分页|更多|下一/);
-      const batch = await invoke("get_boards_batch", {
-        boardIds: [board.boardId, "missing-board"],
-        view: "summary",
-      });
+      const batch = await invoke(
+        "get_boards_batch",
+        {
+          boardIds: [board.boardId, "missing-board"],
+          view: "summary",
+        },
+        false,
+      );
       expect(batch.text).toMatch(/成功\s*1/);
       expect(batch.text).toMatch(/失败\s*1/);
-      const failedBatch = await invoke("get_boards_batch", {
-        boardIds: ["missing-board"],
-        view: "summary",
-      });
+      const failedBatch = await invoke(
+        "get_boards_batch",
+        {
+          boardIds: ["missing-board"],
+          view: "summary",
+        },
+        false,
+      );
       expect(failedBatch.text).toMatch(/失败\s*1/);
-      const managed = await invoke("batch_manage_boards", {
-        items: [
-          {
-            boardId: board.boardId,
-            expectedRevision: board.revision,
-            action: "manage",
-            favorite: true,
-          },
-          {
-            boardId: "missing-board",
-            expectedRevision: 1,
-            action: "manage",
-            favorite: true,
-          },
-        ],
-      });
+      const managed = await invoke(
+        "batch_manage_boards",
+        {
+          items: [
+            {
+              boardId: board.boardId,
+              expectedRevision: board.revision,
+              action: "manage",
+              favorite: true,
+            },
+            {
+              boardId: "missing-board",
+              expectedRevision: 1,
+              action: "manage",
+              favorite: true,
+            },
+          ],
+        },
+        false,
+      );
       expect(managed.text).toMatch(/成功\s*1/);
       expect(managed.text).toMatch(/失败\s*1/);
       const response = await client.callTool({

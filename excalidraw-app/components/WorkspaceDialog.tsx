@@ -8,6 +8,7 @@ const FOCUSABLE_SELECTOR =
 
 interface WorkspaceDialogProps {
   title?: string;
+  ariaLabel?: string;
   onClose?: () => void;
   children: React.ReactNode;
   className?: string;
@@ -16,6 +17,7 @@ interface WorkspaceDialogProps {
 
 export const WorkspaceDialog = ({
   title,
+  ariaLabel,
   onClose,
   children,
   className,
@@ -113,7 +115,7 @@ export const WorkspaceDialog = ({
       className={`workspace-dialog${className ? ` ${className}` : ""}`}
       aria-modal="true"
       aria-labelledby={title ? titleId : undefined}
-      aria-label={title ? undefined : "对话框"}
+      aria-label={title ? undefined : ariaLabel || "对话框"}
     >
       <div
         ref={contentRef}

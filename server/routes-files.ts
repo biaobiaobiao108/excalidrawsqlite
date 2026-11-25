@@ -7,56 +7,11 @@ import {
   withStorageMutationLock,
 } from "./files";
 import { jsonResponse, response } from "./http";
+import { openStableFileResponseStream } from "./stream-response";
 import { storedSceneRevision } from "./scenes";
 import { getPathId, validateMimeType } from "./validation";
 import { publishSceneChanged, type RouteContext } from "./routes-shared";
 import type { SceneRealtimeEvent, ServerRuntime } from "./types";
-
-const openStableFileResponseStream = async (filePath: string) => {
-  const reader = Bun.file(filePath).stream().getReader();
-  let firstChunk: Awaited<ReturnType<typeof reader.read>>;
-  try {
-    // Opening the stream and reading its first chunk pins the current file
-    // before the storage mutation lock is released. Atomic replacement can
-    // then proceed without changing the bytes served by this response.
-    firstChunk = await reader.read();
-  } catch (error) {
-    reader.releaseLock();
-    throw error;
-  }
-
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      if (firstChunk.done) {
-        reader.releaseLock();
-        controller.close();
-        return;
-      }
-      controller.enqueue(firstChunk.value);
-    },
-    async pull(controller) {
-      try {
-        const result = await reader.read();
-        if (result.done) {
-          reader.releaseLock();
-          controller.close();
-          return;
-        }
-        controller.enqueue(result.value);
-      } catch (error) {
-        reader.releaseLock();
-        controller.error(error);
-      }
-    },
-    async cancel(reason) {
-      try {
-        await reader.cancel(reason);
-      } finally {
-        reader.releaseLock();
-      }
-    },
-  });
-};
 
 const updateScenesAfterFileReplacement = (
   runtime: ServerRuntime,
@@ -153,6 +108,7 @@ export const handleFileRoute = async ({
       undefined,
       undefined,
       () => sceneEvents.push(...updateScenesAfterFileReplacement(runtime, id)),
+      req.headers.get("x-preserve-file-id") === "true",
     );
     for (const event of sceneEvents) {
       publishSceneChanged(runtime, event);

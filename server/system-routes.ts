@@ -15,6 +15,76 @@ import {
 import type { ServerRuntime } from "./types";
 
 type HealthCheck = { get: () => unknown };
+type StaticEncoding = "br" | "gzip";
+
+const compressibleStaticExtensions = new Set([
+  ".css",
+  ".html",
+  ".js",
+  ".json",
+  ".mjs",
+  ".svg",
+  ".txt",
+  ".webmanifest",
+  ".xml",
+]);
+
+const parseEncodingPreferences = (header: string | null) => {
+  const preferences = new Map<string, number>();
+  for (const part of (header || "").split(",")) {
+    const [rawName, ...parameters] = part.trim().toLowerCase().split(";");
+    if (!rawName) {
+      continue;
+    }
+    let quality = 1;
+    for (const parameter of parameters) {
+      const [rawKey, rawValue] = parameter.trim().split("=", 2);
+      if (rawKey !== "q") {
+        continue;
+      }
+      const parsed = Number(rawValue);
+      quality = Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed)) : 0;
+    }
+    preferences.set(rawName, quality);
+  }
+  return preferences;
+};
+
+const chooseStaticEncoding = async (
+  staticPath: string,
+  acceptEncoding: string | null,
+) => {
+  if (
+    !compressibleStaticExtensions.has(path.extname(staticPath).toLowerCase())
+  ) {
+    return null;
+  }
+
+  const preferences = parseEncodingPreferences(acceptEncoding);
+  const candidates = [
+    { encoding: "br" as const, extension: ".br" },
+    { encoding: "gzip" as const, extension: ".gz" },
+  ]
+    .map((candidate) => ({
+      ...candidate,
+      quality: preferences.get(candidate.encoding) ?? preferences.get("*") ?? 0,
+    }))
+    .filter((candidate) => candidate.quality > 0)
+    .sort((left, right) => right.quality - left.quality);
+
+  for (const candidate of candidates) {
+    const compressedPath = `${staticPath}${candidate.extension}`;
+    const compressedFile = Bun.file(compressedPath);
+    if (await compressedFile.exists()) {
+      return {
+        file: compressedFile,
+        encoding: candidate.encoding,
+        cacheKey: compressedPath,
+      };
+    }
+  }
+  return null;
+};
 
 const staticFileResponse = async (
   runtime: ServerRuntime,
@@ -24,17 +94,32 @@ const staticFileResponse = async (
   contentType?: string,
   cacheKey?: string,
 ) => {
-  const etag = await getStaticETag(file, cacheKey);
+  const compressed = cacheKey
+    ? await chooseStaticEncoding(
+        path.resolve(cacheKey),
+        req.headers.get("accept-encoding"),
+      )
+    : null;
+  const responseFile = compressed?.file || file;
+  const resolvedContentType = contentType || file.type;
+  const etag = await getStaticETag(
+    responseFile,
+    compressed?.cacheKey || cacheKey,
+  );
   const cacheControl = getStaticCacheControl(pathname);
   const headers = {
     "Cache-Control": cacheControl,
     ETag: etag,
-    ...(contentType ? { "Content-Type": contentType } : {}),
+    Vary: "Accept-Encoding, Origin",
+    ...(resolvedContentType ? { "Content-Type": resolvedContentType } : {}),
+    ...(compressed ? { "Content-Encoding": compressed.encoding } : {}),
   };
   if (staticIfNoneMatchMatches(req.headers.get("if-none-match"), etag)) {
     return response(runtime, req, null, { status: 304, headers });
   }
-  return response(runtime, req, file, { headers });
+  return response(runtime, req, req.method === "HEAD" ? null : responseFile, {
+    headers,
+  });
 };
 
 /** Handles process health and development reload endpoints. */

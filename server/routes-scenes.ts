@@ -38,8 +38,10 @@ import {
   validateTags,
 } from "./validation";
 import {
-  assertSceneFolderExists,
+  parseMcpFolderName,
   publishSceneChanged,
+  publishWorkspaceChanged,
+  resolveSceneFolder,
   type RouteContext,
 } from "./routes-shared";
 
@@ -76,6 +78,8 @@ export const handleSceneRoute = async ({
     const folderId = hasOwn(body, "folder_id")
       ? validateFolderId(body.folder_id)
       : null;
+    const folderName = parseMcpFolderName(runtime, req, body);
+    let storedFolderId = folderId;
     const fileIds = extractFileIds(elements);
     const elementsJson = JSON.stringify(elements);
     const appStateJson = JSON.stringify(appState);
@@ -153,7 +157,12 @@ export const handleSceneRoute = async ({
             // Attachment checks and the storage queue can yield after metadata
             // validation. Recheck inside the synchronous commit so deletion
             // cannot leave a board referencing a folder that no longer exists.
-            assertSceneFolderExists(stmts, folderId);
+            storedFolderId = resolveSceneFolder(
+              runtime,
+              stmts,
+              folderId,
+              folderName,
+            );
             runtime.db.run(
               `INSERT INTO scenes
              (id, name, elements, app_state, created_at, updated_at, revision,
@@ -168,7 +177,7 @@ export const handleSceneRoute = async ({
                 now,
                 tagsJson,
                 favorite ? 1 : 0,
-                folderId,
+                storedFolderId,
                 elements.length,
                 contentBytes,
               ],
@@ -218,7 +227,7 @@ export const handleSceneRoute = async ({
         element_count: elements.filter((el: any) => !el?.isDeleted).length,
         tags_json: tagsJson,
         is_favorite: favorite ? 1 : 0,
-        folder_id: folderId,
+        folder_id: storedFolderId,
         last_opened_at: null,
         thumbnail_file_id: null,
       }),
@@ -240,6 +249,7 @@ export const handleSceneRoute = async ({
       id: string;
       deleted_at: number | null;
       revision: number;
+      updated_at: number;
     } | null;
     if (!existing) {
       throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
@@ -253,9 +263,9 @@ export const handleSceneRoute = async ({
         noop: true,
       });
     }
-    const updatedAt = Date.now();
+    const updatedAt = Number(existing.updated_at);
     const revision = storedSceneRevision(existing.revision) + 1;
-    const result = stmts.restoreScene.run(updatedAt, id, revision - 1);
+    const result = stmts.restoreScene.run(id, revision - 1);
     if (result.changes !== 1) {
       throw new HttpError(409, "REVISION_CONFLICT", "画板版本冲突或状态已变更");
     }
@@ -357,6 +367,7 @@ export const handleSceneRoute = async ({
     }
     const lastOpenedAt = Date.now();
     stmts.touchSceneLastOpened.run(lastOpenedAt, id);
+    publishWorkspaceChanged(runtime, lastOpenedAt, "opened");
     return jsonResponse(runtime, req, { success: true, id, lastOpenedAt });
   }
 
@@ -366,12 +377,13 @@ export const handleSceneRoute = async ({
       await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
     );
     if (
-      !["name", "tags", "favorite", "folder_id"].some((key) =>
+      !["name", "tags", "favorite", "folder_id", "folder_name"].some((key) =>
         hasOwn(body, key),
       )
     ) {
       throw new HttpError(400, "INVALID_METADATA", "没有可更新的画板信息");
     }
+    const folderName = parseMcpFolderName(runtime, req, body);
     const baseRevision = requireRevision(body.baseRevision);
     const existing = stmts.getSceneMetadataById.get(id) as {
       name: string;
@@ -379,6 +391,7 @@ export const handleSceneRoute = async ({
       is_favorite: number;
       folder_id: string | null;
       revision: number;
+      updated_at: number;
     } | null;
     if (!existing) {
       throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
@@ -407,6 +420,7 @@ export const handleSceneRoute = async ({
       tags.length === currentTags.length &&
       tags.every((tag) => currentTags.includes(tag));
     if (
+      folderName === undefined &&
       name === existing.name &&
       favorite === Boolean(existing.is_favorite) &&
       folderId === existing.folder_id &&
@@ -417,10 +431,35 @@ export const handleSceneRoute = async ({
         noop: true,
       });
     }
-    const now = Date.now();
+    const nextUpdatedAt = existing.updated_at;
     const revision = currentRevision + 1;
     const transaction = runtime.db.transaction(() => {
-      assertSceneFolderExists(stmts, folderId);
+      const targetFolderId = resolveSceneFolder(
+        runtime,
+        stmts,
+        folderId,
+        folderName,
+      );
+      if (folderName !== undefined) {
+        if (
+          targetFolderId === existing.folder_id &&
+          name === existing.name &&
+          favorite === Boolean(existing.is_favorite) &&
+          tagsUnchanged
+        ) {
+          if (
+            (stmts.getSceneRevision.get(id) as { revision: number } | null)
+              ?.revision !== currentRevision
+          ) {
+            throw new HttpError(
+              409,
+              "REVISION_CONFLICT",
+              "云端画板已被其他操作更新",
+            );
+          }
+          return false;
+        }
+      }
       const result = runtime.db.run(
         `UPDATE scenes
          SET name = ?, tags_json = ?, is_favorite = ?, folder_id = ?,
@@ -430,8 +469,8 @@ export const handleSceneRoute = async ({
           name,
           JSON.stringify(tags),
           favorite ? 1 : 0,
-          folderId,
-          now,
+          targetFolderId,
+          nextUpdatedAt,
           revision,
           id,
           currentRevision,
@@ -444,14 +483,21 @@ export const handleSceneRoute = async ({
           "云端画板已被其他操作更新",
         );
       }
+      return true;
     });
-    transaction.immediate();
+    const changed = transaction.immediate();
     const updated = stmts.getSceneSummaryById.get(id);
+    if (!changed) {
+      return jsonResponse(runtime, req, {
+        ...getSceneSummary(updated),
+        noop: true,
+      });
+    }
     publishSceneChanged(runtime, {
       type: "scene_changed",
       sceneId: id,
       revision,
-      updatedAt: now,
+      updatedAt: nextUpdatedAt,
       changeKind: "metadata",
     });
     return jsonResponse(runtime, req, getSceneSummary(updated));
@@ -471,6 +517,7 @@ export const handleSceneRoute = async ({
       throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
     }
     const baseRevision = requireRevision(body.baseRevision);
+    const folderName = parseMcpFolderName(runtime, req, body);
     const currentRevision = storedSceneRevision(existing.revision);
     if (baseRevision !== undefined && baseRevision !== currentRevision) {
       throw new HttpError(409, "REVISION_CONFLICT", "云端画板已被其他设备更新");
@@ -495,26 +542,53 @@ export const handleSceneRoute = async ({
     const contentBytes = Buffer.byteLength(elementsJson, "utf8");
     const contentChanged =
       existing.elements !== elementsJson || existing.app_state !== appStateJson;
-    const isUnchanged =
+    const metadataUnchanged =
       existing.name === name &&
-      existing.elements === elementsJson &&
-      existing.app_state === appStateJson &&
       existing.tags_json === tagsJson &&
-      Boolean(existing.is_favorite) === favorite &&
-      (existing.folder_id || null) === folderId;
-    if (isUnchanged) {
-      return jsonResponse(runtime, req, {
+      Boolean(existing.is_favorite) === favorite;
+    const isContentAndMetadataUnchanged = !contentChanged && metadataUnchanged;
+    const unchangedResponse = () =>
+      jsonResponse(runtime, req, {
         success: true,
         id,
         updated_at: existing.updated_at,
         revision: currentRevision,
         unchanged: true,
       });
+    if (
+      folderName === undefined &&
+      isContentAndMetadataUnchanged &&
+      (existing.folder_id || null) === folderId
+    ) {
+      return unchangedResponse();
     }
     const now = Date.now();
+    const nextUpdatedAt = contentChanged ? now : existing.updated_at;
     const revision = currentRevision + 1;
     const transaction = runtime.db.transaction(() => {
-      assertSceneFolderExists(stmts, folderId);
+      const targetFolderId = resolveSceneFolder(
+        runtime,
+        stmts,
+        folderId,
+        folderName,
+      );
+      if (
+        folderName !== undefined &&
+        isContentAndMetadataUnchanged &&
+        (existing.folder_id || null) === targetFolderId
+      ) {
+        if (
+          (stmts.getSceneRevision.get(id) as { revision: number } | null)
+            ?.revision !== currentRevision
+        ) {
+          throw new HttpError(
+            409,
+            "REVISION_CONFLICT",
+            "云端画板已被其他设备更新",
+          );
+        }
+        return false;
+      }
       const result = runtime.db.run(
         `UPDATE scenes
          SET name = ?, elements = ?, app_state = ?, tags_json = ?,
@@ -528,8 +602,8 @@ export const handleSceneRoute = async ({
           appStateJson,
           tagsJson,
           favorite ? 1 : 0,
-          folderId,
-          now,
+          targetFolderId,
+          nextUpdatedAt,
           revision,
           elementCount,
           contentBytes,
@@ -546,27 +620,35 @@ export const handleSceneRoute = async ({
         );
       }
       syncSceneFileReferences(runtime, id, fileIds);
+      return true;
     });
-    await withStorageMutationLock(
+    const changed = await withStorageMutationLock(
       runtime,
       async () => {
         await assertReferencedFilesExist(runtime, fileIds);
-        transaction.immediate();
+        return transaction.immediate();
       },
       req.signal,
     );
+    if (!changed) return unchangedResponse();
+    const metadataChanged =
+      !metadataUnchanged ||
+      folderName !== undefined ||
+      (existing.folder_id || null) !== folderId;
     publishSceneChanged(runtime, {
       type: "scene_changed",
       sceneId: id,
       revision,
-      updatedAt: now,
-      changeKind: "content",
+      updatedAt: nextUpdatedAt,
+      changeKind: contentChanged ? "content" : "metadata",
+      ...(contentChanged && metadataChanged ? { metadataChanged } : {}),
     });
     return jsonResponse(runtime, req, {
       success: true,
       id,
-      updated_at: now,
+      updated_at: nextUpdatedAt,
       revision,
+      ...(metadataChanged ? { metadataChanged } : {}),
     });
   }
 
@@ -589,6 +671,7 @@ export const handleSceneRoute = async ({
       id: string;
       deleted_at: number | null;
       revision: number;
+      updated_at: number;
     } | null;
     if (!existing) {
       return jsonResponse(runtime, req, {
@@ -640,7 +723,7 @@ export const handleSceneRoute = async ({
         type: "scene_changed",
         sceneId: id,
         revision: storedSceneRevision(existing.revision),
-        updatedAt: Date.now(),
+        updatedAt: Number(existing.updated_at),
         changeKind: "deleted",
       });
       return jsonResponse(runtime, req, {
@@ -663,7 +746,7 @@ export const handleSceneRoute = async ({
     }
     const now = Date.now();
     const revision = storedSceneRevision(existing.revision) + 1;
-    const result = stmts.softDeleteScene.run(now, now, id, revision - 1);
+    const result = stmts.softDeleteScene.run(now, id, revision - 1);
     if (result.changes !== 1) {
       throw new HttpError(409, "REVISION_CONFLICT", "画板版本冲突或状态已变更");
     }
@@ -671,7 +754,7 @@ export const handleSceneRoute = async ({
       type: "scene_changed",
       sceneId: id,
       revision,
-      updatedAt: now,
+      updatedAt: Number(existing.updated_at),
       changeKind: "deleted",
     });
     return jsonResponse(runtime, req, {

@@ -39,18 +39,37 @@ import {
 } from "../data/cloudStorage";
 import {
   broadcastWorkspaceChanged,
+  remapSceneFileIds,
   subscribeCloudRealtime,
   subscribeCloudTabSync,
 } from "../data/cloudSync";
 import { getLocalSceneMigrationIdentity } from "../data/localSceneMigration";
 
 import { AuthDialog } from "./AuthDialog";
-import { WorkspaceDialog } from "./WorkspaceDialog";
 import { CustomSelect } from "./CustomSelect";
 import { WorkspaceCommandPalette } from "./WorkspaceCommandPalette";
+import { BoardCard } from "./WorkspaceBoardCard";
+import {
+  ConfirmDialog,
+  FolderDialog,
+  MetadataDialog,
+  WorkspaceContextMenu,
+} from "./WorkspaceDialogs";
+import {
+  ClockIcon,
+  EmptyTrashIcon,
+  ExcalidrawMark,
+  FolderAppearanceIcon,
+  FolderIcon,
+  GridIcon,
+  MoreIcon,
+  RestoreIcon,
+  SearchIcon,
+  StarIcon,
+  TrashIcon,
+} from "./WorkspaceIcons";
 import { refreshWorkspacePage } from "./workspace-page-refresh";
 import { parseWorkspaceSearchQuery } from "./workspace-search";
-import { ThumbnailRepairQueue } from "../data/thumbnailRepairQueue";
 import {
   applyBoardSelectionClick,
   isBoardSelectionModifierClick,
@@ -58,9 +77,16 @@ import {
   type BoardSelectionClick,
   type BoardSelectionState,
 } from "./board-list-selection";
+import {
+  DEFAULT_FOLDER_APPEARANCE,
+  type ConfirmDialogState,
+  type FolderDialogState,
+  type SceneMetadataDialogState,
+  type WorkspaceContextMenuItem,
+  type WorkspaceContextMenuState,
+} from "./workspace-types";
 
 import "./WorkspaceHome.scss";
-import { BoardCardBadges } from "./BoardCardBadges";
 
 type BoardView = "all" | "recent" | "favorites" | "trash";
 type SortMode = "updated" | "opened" | "created";
@@ -79,108 +105,11 @@ type WorkspaceSnapshot = {
 
 let workspaceSnapshot: WorkspaceSnapshot | null = null;
 
-type SceneMetadataDialogState = {
-  scene: CloudSceneSummary;
-  title: string;
-  tags: string;
-  folderId: string;
-};
-
-type FolderDialogState = {
-  id: string | null;
-  name: string;
-  icon: FolderIconName;
-  color: string;
-};
-
-type FolderIconName = CloudFolder["icon"];
-
-type FolderAppearance = {
-  icon: FolderIconName;
-  color: string;
-};
-
-type WorkspaceContextMenuItem = {
-  label: string;
-  icon:
-    | "open"
-    | "plus"
-    | "settings"
-    | "star"
-    | "edit"
-    | "restore"
-    | "folder"
-    | "search"
-    | "commands"
-    | "refresh"
-    | "trash"
-    | "check"
-    | "close";
-  onSelect: () => void;
-  danger?: boolean;
-  disabled?: boolean;
-  separatorBefore?: boolean;
-};
-
-type WorkspaceContextMenuState = {
-  x: number;
-  y: number;
-  items: WorkspaceContextMenuItem[];
-  portalTarget: HTMLElement;
-};
-
-const FOLDER_ICON_OPTIONS: Array<{ id: FolderIconName; label: string }> = [
-  { id: "folder", label: "文件夹" },
-  { id: "book", label: "笔记本" },
-  { id: "palette", label: "调色盘" },
-  { id: "lightbulb", label: "灵感" },
-  { id: "layers", label: "图层" },
-  { id: "star", label: "星标" },
-  { id: "image", label: "图片" },
-  { id: "code", label: "代码" },
-  { id: "bookmark", label: "书签" },
-  { id: "file", label: "文档" },
-  { id: "tag", label: "标签" },
-  { id: "heart", label: "收藏" },
-  { id: "compass", label: "导航" },
-  { id: "briefcase", label: "项目" },
-];
-
-const FOLDER_COLOR_OPTIONS = [
-  { color: "#315f4c", label: "松柏绿" },
-  { color: "#668f78", label: "鼠尾草绿" },
-  { color: "#4e8290", label: "湖水蓝" },
-  { color: "#bd8054", label: "陶土橙" },
-  { color: "#a65f65", label: "莓果红" },
-  { color: "#9675a6", label: "薰衣草紫" },
-  { color: "#aa8b37", label: "麦穗黄" },
-  { color: "#66717d", label: "石板灰" },
-];
-
-const DEFAULT_FOLDER_APPEARANCE: FolderAppearance = {
-  icon: "folder",
-  color: FOLDER_COLOR_OPTIONS[0].color,
-};
-
-type ConfirmDialogState = {
-  title: string;
-  message: string;
-  confirmLabel?: string;
-  confirmVariant?: "danger" | "primary";
-  onConfirm: () => Promise<void> | void;
-};
-
 const SORT_OPTIONS = [
   { value: "updated", label: "按最近修改" },
   { value: "opened", label: "按最近打开" },
   { value: "created", label: "按创建时间" },
 ] as const;
-
-const TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
 
 const BOARD_GRID_VIRTUALIZATION_THRESHOLD = 40;
 const BOARD_GRID_COLUMNS = 3;
@@ -228,29 +157,6 @@ const getBoardGridFocusableElements = (row: HTMLElement) =>
 
 const getOwnerWindow = (node: HTMLDivElement | null) =>
   node?.ownerDocument.defaultView || window;
-
-const formatDate = (timestamp: number | null) => {
-  if (!timestamp) {
-    return "尚未打开";
-  }
-  const date = new Date(timestamp);
-  const now = new Date();
-  const sameDay = date.toDateString() === now.toDateString();
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  const isYesterday = date.toDateString() === yesterday.toDateString();
-  const time = TIME_FORMATTER.format(date);
-  if (sameDay) {
-    return `今天 ${time}`;
-  }
-  if (isYesterday) {
-    return `昨天 ${time}`;
-  }
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-    2,
-    "0",
-  )}-${String(date.getDate()).padStart(2, "0")}`;
-};
 
 const sortScenes = (scenes: CloudSceneSummary[], sort: SortMode) =>
   [...scenes].sort((left, right) => {
@@ -338,13 +244,15 @@ const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
     }
     // Do not create or mark the scene as migrated unless every referenced file
     // has been accepted by the cloud. A later workspace load can retry safely.
-    await saveFilesToCloud(files);
   }
+  const replacements = await saveFilesToCloud(files, {
+    preserveExisting: true,
+  });
 
   const scene = await createCloudScene({
     ...migrationIdentity,
     name: "本地画板",
-    elements,
+    elements: remapSceneFileIds(elements, replacements),
     appState,
   });
   try {
@@ -354,970 +262,6 @@ const migrateLocalScene = async (): Promise<CloudSceneSummary | null> => {
   }
   return scene;
 };
-
-const SearchIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="11" cy="11" r="6.5" />
-    <path d="m16 16 4.5 4.5" />
-  </svg>
-);
-
-const GridIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <rect x="4" y="4" width="6" height="6" rx="1" />
-    <rect x="14" y="4" width="6" height="6" rx="1" />
-    <rect x="4" y="14" width="6" height="6" rx="1" />
-    <rect x="14" y="14" width="6" height="6" rx="1" />
-  </svg>
-);
-
-const ClockIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="12" cy="12" r="8" />
-    <path d="M12 7v5l3 2" />
-  </svg>
-);
-
-const StarIcon = ({ filled = false }: { filled?: boolean }) => (
-  <svg
-    viewBox="0 0 24 24"
-    aria-hidden="true"
-    className={filled ? "is-filled" : ""}
-  >
-    <path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" />
-  </svg>
-);
-
-const FolderIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M3.5 6.5h6l2 2H20.5v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5v-11Z" />
-  </svg>
-);
-
-const FolderAppearanceIcon = ({ icon }: { icon: FolderIconName }) => {
-  if (icon === "folder") {
-    return <FolderIcon />;
-  }
-
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      {icon === "book" && (
-        <>
-          <path d="M5 4.5h12a2 2 0 0 1 2 2v13H7a2 2 0 0 1-2-2v-13Z" />
-          <path d="M5 4.5v13a2 2 0 0 0 2 2M9 8h6M9 11h6" />
-        </>
-      )}
-      {icon === "palette" && (
-        <>
-          <path d="M12 3.5a8.5 8.5 0 1 0 0 17h1.2a2 2 0 0 0 1.1-3.7 1.2 1.2 0 0 1 .7-2.2h1.4a4.1 4.1 0 0 0 4.1-4.1A8.5 8.5 0 0 0 12 3.5Z" />
-          <circle cx="7.8" cy="10" r=".8" />
-          <circle cx="11" cy="7.4" r=".8" />
-          <circle cx="15" cy="8" r=".8" />
-        </>
-      )}
-      {icon === "lightbulb" && (
-        <>
-          <path d="M9 18h6M10 21h4M8.6 14.5A6 6 0 1 1 15.4 14.5c-.8.6-1.4 1.4-1.4 2.5h-4c0-1.1-.6-1.9-1.4-2.5Z" />
-          <path d="M12 2v1.5M4.9 4.9 6 6M19.1 4.9 18 6" />
-        </>
-      )}
-      {icon === "layers" && (
-        <>
-          <path d="m12 3 9 5-9 5-9-5 9-5Z" />
-          <path d="m3 12 9 5 9-5M3 16l9 5 9-5" />
-        </>
-      )}
-      {icon === "star" && (
-        <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z" />
-      )}
-      {icon === "image" && (
-        <>
-          <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
-          <circle cx="9" cy="10" r="1.5" />
-          <path d="m5 17 4.5-4 3.2 2.5 2.3-2 4 3.5" />
-        </>
-      )}
-      {icon === "code" && <path d="m8 7-5 5 5 5m8-10 5 5-5 5m-2-13-4 16" />}
-      {icon === "bookmark" && (
-        <path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-4-6 4V4.5Z" />
-      )}
-      {icon === "file" && (
-        <>
-          <path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3.5Z" />
-          <path d="M14 3.5V8h4M9 12h6M9 16h6" />
-        </>
-      )}
-      {icon === "tag" && (
-        <>
-          <path d="M20 13 13 20 3.5 10.5V4h6.5L20 13Z" />
-          <circle cx="7.5" cy="8" r="1" />
-        </>
-      )}
-      {icon === "heart" && (
-        <path d="M20.8 8.8c0 5.1-8.8 10.3-8.8 10.3S3.2 13.9 3.2 8.8a4.5 4.5 0 0 1 8.8-1.3 4.5 4.5 0 0 1 8.8 1.3Z" />
-      )}
-      {icon === "compass" && (
-        <>
-          <circle cx="12" cy="12" r="9" />
-          <path d="m15.8 8.2-2.3 5.3-5.3 2.3 2.3-5.3 5.3-2.3Z" />
-        </>
-      )}
-      {icon === "briefcase" && (
-        <>
-          <rect x="3.5" y="7" width="17" height="13" rx="2" />
-          <path d="M8.5 7V5a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v2M3.5 12h17M10 12v2h4v-2" />
-        </>
-      )}
-    </svg>
-  );
-};
-
-const TrashIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M3 6h18" />
-    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-  </svg>
-);
-
-const EmptyTrashIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M4 7h16" />
-    <path d="M10 3h4a2 2 0 0 1 2 2v2H8V5a2 2 0 0 1 2-2Z" />
-    <path d="M6 7v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7" />
-    <path d="M10 11v6M14 11v6" />
-  </svg>
-);
-
-const EditIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-  </svg>
-);
-
-const RestoreIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <polyline points="1 4 1 10 7 10" />
-    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-  </svg>
-);
-
-const BoardSelectionIcon = ({ selected = false }: { selected?: boolean }) => (
-  <svg
-    viewBox="0 0 24 24"
-    aria-hidden="true"
-    className={selected ? "is-selected" : ""}
-  >
-    <circle cx="12" cy="12" r="9" />
-    {selected && <path d="m8 12 2.5 2.5L16.5 9" />}
-  </svg>
-);
-
-const WorkspaceContextMenuIcon = ({
-  icon,
-}: {
-  icon: WorkspaceContextMenuItem["icon"];
-}) => {
-  if (icon === "star") {
-    return <StarIcon />;
-  }
-  if (icon === "edit") {
-    return <EditIcon />;
-  }
-  if (icon === "restore") {
-    return <RestoreIcon />;
-  }
-  if (icon === "trash") {
-    return <TrashIcon />;
-  }
-  if (icon === "check") {
-    return <BoardSelectionIcon selected />;
-  }
-  if (icon === "search") {
-    return <SearchIcon />;
-  }
-
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      {icon === "open" && <path d="M7 17 17 7M8 7h9v9" />}
-      {icon === "plus" && <path d="M12 5v14M5 12h14" />}
-      {icon === "close" && <path d="m6 6 12 12M18 6 6 18" />}
-      {icon === "folder" && (
-        <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" />
-      )}
-      {icon === "commands" && <path d="m5 7 5 5-5 5M13 17h6" />}
-      {icon === "refresh" && (
-        <>
-          <path d="M20 7v5h-5M4 17v-5h5" />
-          <path d="M5.5 7a7.5 7.5 0 0 1 12-1L20 12M4 12l2.5 6a7.5 7.5 0 0 0 12-1" />
-        </>
-      )}
-      {icon === "settings" && (
-        <>
-          <path d="M4 6h16M4 12h16M4 18h16" />
-          <circle cx="8" cy="6" r="2" fill="currentColor" />
-          <circle cx="16" cy="12" r="2" fill="currentColor" />
-          <circle cx="10" cy="18" r="2" fill="currentColor" />
-        </>
-      )}
-    </svg>
-  );
-};
-
-const ExcalidrawMark = () => (
-  <div className="workspace-mark" aria-hidden="true">
-    <img src="/brand-icon.jpg" alt="" width="512" height="512" />
-  </div>
-);
-
-const thumbnailRepairQueue = new ThumbnailRepairQueue();
-
-const EmptyThumbnail = ({
-  label = "空白画板",
-  containerRef,
-}: {
-  label?: string;
-  containerRef?: React.Ref<HTMLDivElement>;
-}) => (
-  <div ref={containerRef} className="board-thumbnail board-thumbnail-empty">
-    <div className="empty-thumbnail-mark">
-      <span />
-      <span />
-      <span />
-    </div>
-    <span>{label}</span>
-  </div>
-);
-
-const BoardThumbnail = ({
-  scene,
-  eager = false,
-}: {
-  scene: CloudSceneSummary;
-  eager?: boolean;
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [repaired, setRepaired] = useState<{
-    revision: number;
-    id: string;
-  } | null>(null);
-  const [failed, setFailed] = useState(false);
-  const thumbnailId =
-    scene.thumbnail_file_id ||
-    (repaired?.revision === scene.revision ? repaired.id : null);
-  const needsRepair =
-    !thumbnailId && (scene.element_count || 0) > 0 && !scene.deleted_at;
-
-  useEffect(() => {
-    setFailed(false);
-    if (!needsRepair || !containerRef.current) {
-      return;
-    }
-    let cancelled = false;
-    let cancelQueued: (() => void) | undefined;
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) {
-        return;
-      }
-      observer.disconnect();
-      cancelQueued = thumbnailRepairQueue.schedule(async () => {
-        if (cancelled) {
-          return;
-        }
-        try {
-          const { repairSceneThumbnail } =
-            await import("../data/repairSceneThumbnail");
-          const id = await repairSceneThumbnail(
-            scene.id,
-            scene.revision,
-            () => cancelled,
-          );
-          if (!cancelled) {
-            if (id) {
-              setRepaired({ revision: scene.revision, id });
-            } else {
-              setFailed(true);
-            }
-          }
-        } catch {
-          if (!cancelled) {
-            setFailed(true);
-          }
-        }
-      });
-    });
-    observer.observe(containerRef.current);
-    return () => {
-      cancelled = true;
-      observer.disconnect();
-      cancelQueued?.();
-    };
-  }, [scene.id, scene.revision, needsRepair]);
-
-  if (!thumbnailId) {
-    return (
-      <EmptyThumbnail
-        containerRef={containerRef}
-        label={
-          (scene.element_count || 0) > 0
-            ? failed || scene.deleted_at
-              ? "预览暂不可用"
-              : "正在生成预览…"
-            : "空白画板"
-        }
-      />
-    );
-  }
-  return (
-    <div ref={containerRef} className="board-thumbnail">
-      <img
-        src={`/api/files/${encodeURIComponent(thumbnailId)}?v=${scene.updated_at}${scene.thumbnailVersion ? `&t=${scene.thumbnailVersion}` : ""}`}
-        alt={`${scene.name} 预览`}
-        width={640}
-        height={400}
-        loading={eager ? "eager" : "lazy"}
-        fetchPriority={eager ? "high" : "low"}
-      />
-    </div>
-  );
-};
-
-const BoardCard = React.memo(
-  ({
-    scene,
-    onOpen,
-    onPreload,
-    onToggleFavorite,
-    onEdit,
-    onDelete,
-    onRestore,
-    onOpenContextMenu,
-    onToggleSelection,
-    hasSelectionActive,
-    folderAppearance = DEFAULT_FOLDER_APPEARANCE,
-    isTrash = false,
-    isSelected = false,
-    actionPending = false,
-    eager,
-  }: {
-    scene: CloudSceneSummary;
-    onOpen: (scene: CloudSceneSummary, newTab?: boolean) => void;
-    onPreload?: () => void;
-    onToggleFavorite: (scene: CloudSceneSummary) => void;
-    onEdit: (scene: CloudSceneSummary) => void;
-    onDelete: (scene: CloudSceneSummary) => void;
-    onRestore?: (scene: CloudSceneSummary) => void;
-    onOpenContextMenu: (
-      scene: CloudSceneSummary,
-      event: React.MouseEvent<HTMLElement>,
-    ) => void;
-    onToggleSelection: (
-      sceneId: string,
-      modifiers?: Omit<BoardSelectionClick, "id">,
-    ) => void;
-    hasSelectionActive: boolean;
-    folderAppearance?: FolderAppearance;
-    isTrash?: boolean;
-    isSelected?: boolean;
-    actionPending?: boolean;
-    eager?: boolean;
-  }) => {
-    const sceneName = scene.name || "未命名白板";
-    const hasBadges =
-      !isTrash && (Boolean(scene.folder_name) || scene.tags.length > 0);
-
-    const handleOpen = (event: React.MouseEvent) => {
-      const isNewTab = event.button === 1 || event.ctrlKey || event.metaKey;
-      if (isNewTab) {
-        event.preventDefault();
-        event.stopPropagation();
-        onOpen(scene, true);
-        return;
-      }
-      if (event.button === 0) {
-        event.preventDefault();
-        onOpen(scene, false);
-      }
-    };
-
-    return (
-      <article
-        className={`board-card ${isTrash ? "is-trash-card" : ""} ${
-          isSelected ? "is-selected" : ""
-        }`.trim()}
-        tabIndex={0}
-        aria-label={`${sceneName}，${isSelected ? "已选择" : "未选择"}；空格键切换选择，回车打开画板`}
-        aria-keyshortcuts="Space Enter"
-        onMouseEnter={onPreload}
-        onFocusCapture={onPreload}
-        onContextMenu={(event) => onOpenContextMenu(scene, event)}
-        onClickCapture={(event) => {
-          if (
-            event.target instanceof Element &&
-            event.target.closest(
-              ".board-card-selection-toggle, .board-card-actions",
-            )
-          ) {
-            return;
-          }
-          if (!isBoardSelectionModifierClick(event) && !hasSelectionActive) {
-            return;
-          }
-          event.preventDefault();
-          event.stopPropagation();
-          onToggleSelection(scene.id, {
-            metaKey: event.metaKey,
-            ctrlKey:
-              event.ctrlKey ||
-              (!event.shiftKey && !event.metaKey && hasSelectionActive),
-            shiftKey: event.shiftKey,
-          });
-        }}
-        onKeyDown={(event) => {
-          if (event.target !== event.currentTarget || actionPending) {
-            return;
-          }
-          if (event.key === " " || event.key === "Spacebar") {
-            event.preventDefault();
-            onToggleSelection(scene.id, {
-              metaKey: event.metaKey,
-              ctrlKey: event.ctrlKey || (!event.shiftKey && !event.metaKey),
-              shiftKey: event.shiftKey,
-            });
-          } else if (event.key === "Enter" && !isTrash) {
-            event.preventDefault();
-            onOpen(scene, false);
-          }
-        }}
-      >
-        <button
-          type="button"
-          className="board-card-selection-toggle"
-          aria-label={`${isSelected ? "取消选择" : "选择"}画板“${sceneName}”`}
-          aria-pressed={isSelected}
-          title={isSelected ? "取消选择" : "加入多选"}
-          onClick={() => onToggleSelection(scene.id, { ctrlKey: true })}
-          disabled={actionPending}
-        >
-          <BoardSelectionIcon selected={isSelected} />
-        </button>
-        {isTrash ? (
-          <div
-            className="board-card-open is-disabled"
-            title="已在回收站中，还原后可打开"
-          >
-            <BoardThumbnail scene={scene} eager={eager} />
-            <span className="board-card-title" title={sceneName}>
-              {sceneName}
-            </span>
-          </div>
-        ) : (
-          <div className="board-card-open">
-            <button
-              className="board-card-thumbnail-button"
-              onClick={handleOpen}
-              onAuxClick={handleOpen}
-              type="button"
-              aria-label={`打开画板“${sceneName}”`}
-            >
-              <BoardThumbnail scene={scene} eager={eager} />
-            </button>
-            <button
-              className="board-card-title"
-              onClick={handleOpen}
-              onAuxClick={handleOpen}
-              type="button"
-              aria-label={`打开画板“${sceneName}”`}
-              title={sceneName}
-            >
-              {sceneName}
-            </button>
-          </div>
-        )}
-        <div className="board-card-footer">
-          <div className="board-card-details">
-            {isTrash ? (
-              <span className="board-card-mobile-title" title={sceneName}>
-                {sceneName}
-              </span>
-            ) : (
-              <button
-                type="button"
-                className="board-card-mobile-title"
-                onClick={handleOpen}
-                onAuxClick={handleOpen}
-                aria-label={`打开画板“${sceneName}”`}
-                title={sceneName}
-              >
-                {sceneName}
-              </button>
-            )}
-            {hasBadges && (
-              <BoardCardBadges
-                tags={scene.tags}
-                folderName={scene.folder_name}
-                folderIcon={
-                  <FolderAppearanceIcon icon={folderAppearance.icon} />
-                }
-                folderColor={folderAppearance.color}
-              />
-            )}
-            <div className="board-card-meta-row">
-              <span
-                className="board-card-elements-count"
-                title={`包含 ${scene.element_count ?? 0} 个图元`}
-              >
-                {scene.element_count ?? 0} 个图元
-              </span>
-              <span className="meta-separator" aria-hidden="true">
-                •
-              </span>
-              {isTrash && scene.deleted_at ? (
-                <span className="board-card-updated">
-                  删除于 {formatDate(scene.deleted_at)}
-                </span>
-              ) : (
-                <span className="board-card-updated">
-                  更新于 {formatDate(scene.updated_at)}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="board-card-actions">
-            {isTrash ? (
-              <>
-                {onRestore && (
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={`还原画板“${sceneName}”`}
-                    title="还原画板"
-                    onClick={() => onRestore(scene)}
-                    disabled={actionPending}
-                  >
-                    <RestoreIcon />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="icon-button danger"
-                  aria-label={`彻底删除“${sceneName}”`}
-                  title="彻底删除"
-                  onClick={() => onDelete(scene)}
-                  disabled={actionPending}
-                >
-                  <TrashIcon />
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className={`icon-button favorite-button ${
-                    scene.favorite ? "is-favorite" : ""
-                  }`}
-                  aria-label={scene.favorite ? "取消收藏" : "收藏画板"}
-                  aria-pressed={scene.favorite}
-                  title={scene.favorite ? "取消收藏" : "收藏画板"}
-                  onClick={() => onToggleFavorite(scene)}
-                  disabled={actionPending}
-                >
-                  <StarIcon filled={scene.favorite} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button edit-button"
-                  aria-label={`编辑画板信息“${sceneName}”`}
-                  title="编辑画板信息"
-                  onClick={() => onEdit(scene)}
-                  disabled={actionPending}
-                >
-                  <EditIcon />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button danger delete-button"
-                  aria-label={`移至回收站“${sceneName}”`}
-                  title="移至回收站"
-                  onClick={() => onDelete(scene)}
-                  disabled={actionPending}
-                >
-                  <TrashIcon />
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </article>
-    );
-  },
-  (previous, next) =>
-    previous.scene === next.scene &&
-    previous.isTrash === next.isTrash &&
-    previous.isSelected === next.isSelected &&
-    previous.hasSelectionActive === next.hasSelectionActive &&
-    previous.actionPending === next.actionPending &&
-    previous.eager === next.eager &&
-    previous.folderAppearance === next.folderAppearance &&
-    previous.onOpen === next.onOpen &&
-    previous.onPreload === next.onPreload &&
-    previous.onToggleFavorite === next.onToggleFavorite &&
-    previous.onEdit === next.onEdit &&
-    previous.onDelete === next.onDelete &&
-    previous.onRestore === next.onRestore &&
-    previous.onOpenContextMenu === next.onOpenContextMenu &&
-    previous.onToggleSelection === next.onToggleSelection,
-);
-
-const WorkspaceModal = WorkspaceDialog;
-
-const MetadataDialog = ({
-  state,
-  folders,
-  pending,
-  onChange,
-  onClose,
-  onSave,
-}: {
-  state: SceneMetadataDialogState;
-  folders: CloudFolder[];
-  pending: boolean;
-  onChange: (next: Partial<SceneMetadataDialogState>) => void;
-  onClose: () => void;
-  onSave: () => void;
-}) => (
-  <WorkspaceModal title="编辑画板信息" onClose={onClose}>
-    <form
-      className="metadata-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSave();
-      }}
-    >
-      <label>
-        <span>标题</span>
-        <input
-          value={state.title}
-          maxLength={120}
-          onChange={(event) => onChange({ title: event.target.value })}
-        />
-      </label>
-      <label>
-        <span>标签</span>
-        <input
-          value={state.tags}
-          placeholder="用逗号分隔多个标签"
-          onChange={(event) => onChange({ tags: event.target.value })}
-        />
-      </label>
-      <label>
-        <span>文件夹</span>
-        <CustomSelect
-          value={state.folderId}
-          options={[
-            { value: "", label: "根目录" },
-            ...folders.map((folder) => ({
-              value: folder.id,
-              label: folder.name,
-            })),
-          ]}
-          onChange={(folderId) => onChange({ folderId })}
-          ariaLabel="文件夹"
-          size="field"
-        />
-      </label>
-      <div className="dialog-actions">
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={onClose}
-          disabled={pending}
-        >
-          取消
-        </button>
-        <button type="submit" className="primary-button" disabled={pending}>
-          {pending ? "保存中..." : "保存信息"}
-        </button>
-      </div>
-    </form>
-  </WorkspaceModal>
-);
-
-const FolderDialog = ({
-  state,
-  pending,
-  onChange,
-  onClose,
-  onSave,
-  onDelete,
-  onChangeAppearance,
-}: {
-  state: FolderDialogState;
-  pending: boolean;
-  onChange: (name: string) => void;
-  onClose: () => void;
-  onSave: () => void;
-  onDelete?: () => void;
-  onChangeAppearance: (
-    next: Partial<Pick<FolderDialogState, "icon" | "color">>,
-  ) => void;
-}) => (
-  <WorkspaceModal
-    className="folder-dialog"
-    title={state.id ? "编辑文件夹" : "新建文件夹"}
-    onClose={onClose}
-  >
-    <form
-      className="metadata-form folder-metadata-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSave();
-      }}
-    >
-      <label>
-        <span>名称</span>
-        <input
-          value={state.name}
-          maxLength={80}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      </label>
-      <fieldset className="folder-appearance-fieldset folder-icon-fieldset">
-        <legend>图标</legend>
-        <div className="folder-icon-options">
-          {FOLDER_ICON_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              className={state.icon === option.id ? "is-selected" : ""}
-              aria-label={option.label}
-              aria-pressed={state.icon === option.id}
-              title={option.label}
-              onClick={() => onChangeAppearance({ icon: option.id })}
-              disabled={pending}
-            >
-              <FolderAppearanceIcon icon={option.id} />
-            </button>
-          ))}
-        </div>
-      </fieldset>
-      <fieldset className="folder-appearance-fieldset folder-color-fieldset">
-        <legend>颜色</legend>
-        <div className="folder-color-options">
-          {FOLDER_COLOR_OPTIONS.map((option) => (
-            <button
-              key={option.color}
-              type="button"
-              className={
-                state.color.toLowerCase() === option.color ? "is-selected" : ""
-              }
-              style={{ "--swatch-color": option.color } as React.CSSProperties}
-              aria-label={option.label}
-              aria-pressed={state.color.toLowerCase() === option.color}
-              title={option.label}
-              onClick={() => onChangeAppearance({ color: option.color })}
-              disabled={pending}
-            />
-          ))}
-        </div>
-      </fieldset>
-      <div className="dialog-actions folder-dialog-actions">
-        {state.id && onDelete && (
-          <button
-            type="button"
-            className="danger-button folder-delete-button"
-            onClick={onDelete}
-            disabled={pending}
-          >
-            删除文件夹
-          </button>
-        )}
-        <button type="submit" className="primary-button" disabled={pending}>
-          {pending ? "保存中..." : state.id ? "保存修改" : "创建文件夹"}
-        </button>
-      </div>
-    </form>
-  </WorkspaceModal>
-);
-
-const WorkspaceContextMenu = ({
-  state,
-  onClose,
-}: {
-  state: WorkspaceContextMenuState;
-  onClose: () => void;
-}) => {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ x: state.x, y: state.y });
-  const [activeItem, setActiveItem] = useState<string | null>(null);
-
-  useLayoutEffect(() => {
-    const bounds = menuRef.current?.getBoundingClientRect();
-    if (!bounds) {
-      return;
-    }
-    const padding = 8;
-    setPosition({
-      x: Math.max(
-        padding,
-        Math.min(state.x, window.innerWidth - bounds.width - padding),
-      ),
-      y: Math.max(
-        padding,
-        Math.min(state.y, window.innerHeight - bounds.height - padding),
-      ),
-    });
-  }, [state.x, state.y, state.items.length]);
-
-  useEffect(() => {
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
-        return;
-      }
-      const buttons = Array.from(
-        menuRef.current?.querySelectorAll<HTMLButtonElement>(
-          "button:not(:disabled)",
-        ) || [],
-      );
-      if (!buttons.length) {
-        return;
-      }
-      event.preventDefault();
-      const currentIndex = buttons.indexOf(
-        document.activeElement as HTMLButtonElement,
-      );
-      const nextIndex =
-        event.key === "ArrowDown"
-          ? (currentIndex + 1) % buttons.length
-          : (currentIndex <= 0 ? buttons.length : currentIndex) - 1;
-      buttons[nextIndex]?.focus();
-    };
-    document.addEventListener("pointerdown", handlePointerDown, true);
-    document.addEventListener("keydown", handleKeyDown, true);
-    setActiveItem(null);
-    menuRef.current?.focus({ preventScroll: true });
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-      document.removeEventListener("keydown", handleKeyDown, true);
-    };
-  }, [onClose, state]);
-
-  return createPortal(
-    <div
-      ref={menuRef}
-      className="workspace-context-menu"
-      role="menu"
-      tabIndex={-1}
-      aria-label="操作菜单"
-      onContextMenu={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      }}
-      onPointerLeave={() => setActiveItem(null)}
-      onPointerMove={(event) => {
-        if (
-          !(event.target instanceof Element) ||
-          !event.target.closest("button:not(:disabled)")
-        ) {
-          setActiveItem(null);
-        }
-      }}
-      style={{ left: position.x, top: position.y }}
-    >
-      {state.items.map((item) => (
-        <React.Fragment key={item.label}>
-          {item.separatorBefore && (
-            <div
-              className="workspace-context-menu-separator"
-              role="separator"
-            />
-          )}
-          <button
-            type="button"
-            role="menuitem"
-            className={`${item.danger ? "is-danger" : ""} ${
-              activeItem === item.label ? "is-active" : ""
-            }`.trim()}
-            disabled={item.disabled}
-            onPointerMove={(event) => {
-              if (!item.disabled) {
-                if (document.activeElement !== event.currentTarget) {
-                  event.currentTarget.focus({ preventScroll: true });
-                }
-                setActiveItem(item.label);
-              } else {
-                setActiveItem(null);
-              }
-            }}
-            onFocus={() => setActiveItem(item.label)}
-            onClick={() => {
-              onClose();
-              item.onSelect();
-            }}
-          >
-            <WorkspaceContextMenuIcon icon={item.icon} />
-            {item.label}
-          </button>
-        </React.Fragment>
-      ))}
-    </div>,
-    state.portalTarget,
-  );
-};
-
-const ConfirmDialog = ({
-  state,
-  pending,
-  onClose,
-  onConfirm,
-}: {
-  state: ConfirmDialogState;
-  pending: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-}) => (
-  <WorkspaceModal
-    title={state.title}
-    onClose={onClose}
-    className="confirm-dialog"
-  >
-    <div className="confirm-dialog-content">
-      <p className="confirm-dialog-message">{state.message}</p>
-      <div className="dialog-actions">
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={onClose}
-          disabled={pending}
-        >
-          取消
-        </button>
-        <button
-          type="button"
-          className={`primary-button ${
-            state.confirmVariant === "danger" ? "danger" : ""
-          }`}
-          autoFocus
-          onClick={onConfirm}
-          disabled={pending}
-        >
-          {pending ? "处理中..." : state.confirmLabel || "确认"}
-        </button>
-      </div>
-    </div>
-  </WorkspaceModal>
-);
 
 export const WorkspaceHome = ({
   onSelectScene,
@@ -1388,9 +332,83 @@ export const WorkspaceHome = ({
     null,
   );
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [mobileFoldersOpen, setMobileFoldersOpen] = useState(false);
   const [contextMenu, setContextMenu] =
     useState<WorkspaceContextMenuState | null>(null);
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [pendingActions, setPendingActions] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const pendingActionsRef = useRef<ReadonlySet<string>>(new Set());
+  const beginPendingAction = useCallback((action: string) => {
+    if (pendingActionsRef.current.has(action)) {
+      return false;
+    }
+    const next = new Set(pendingActionsRef.current);
+    next.add(action);
+    pendingActionsRef.current = next;
+    setPendingActions(next);
+    return true;
+  }, []);
+  const finishPendingAction = useCallback((action: string) => {
+    if (!pendingActionsRef.current.has(action)) {
+      return;
+    }
+    const next = new Set(pendingActionsRef.current);
+    next.delete(action);
+    pendingActionsRef.current = next;
+    setPendingActions(next);
+  }, []);
+  const beginSceneAction = useCallback(
+    (sceneId: string, action: string) => {
+      const prefix = `scene:${sceneId}:`;
+      if (
+        Array.from(pendingActionsRef.current).some((pending) =>
+          pending.startsWith(prefix),
+        )
+      ) {
+        return false;
+      }
+      return beginPendingAction(action);
+    },
+    [beginPendingAction],
+  );
+  const beginBatchAction = useCallback(
+    (sceneIds: string[], action: string) => {
+      const scenePrefixes = sceneIds.map((sceneId) => `scene:${sceneId}:`);
+      const blocked = Array.from(pendingActionsRef.current).some(
+        (pending) =>
+          pending.startsWith("batch:") ||
+          scenePrefixes.some((prefix) => pending.startsWith(prefix)),
+      );
+      return blocked ? false : beginPendingAction(action);
+    },
+    [beginPendingAction],
+  );
+  const isActionPending = useCallback(
+    (action: string) => pendingActions.has(action),
+    [pendingActions],
+  );
+  const isSceneActionPending = useCallback(
+    (sceneId: string) => {
+      const prefix = `scene:${sceneId}:`;
+      return Array.from(pendingActions).some((action) =>
+        action.startsWith(prefix),
+      );
+    },
+    [pendingActions],
+  );
+  const isFolderActionPending = useCallback(
+    (folderId: string) => {
+      const prefix = `folder:${folderId}:`;
+      return Array.from(pendingActions).some((action) =>
+        action.startsWith(prefix),
+      );
+    },
+    [pendingActions],
+  );
+  const hasBatchActionPending = Array.from(pendingActions).some((action) =>
+    action.startsWith("batch:"),
+  );
   const [sceneCursor, setSceneCursor] = useState<string | null>(null);
   const [trashSceneCursor, setTrashSceneCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -1408,8 +426,10 @@ export const WorkspaceHome = ({
     [],
   );
   const loadRequestRef = useRef(0);
+  const fullRefreshRef = useRef(0);
   const pageRequestRef = useRef(0);
   const loadMoreRequestRef = useRef(0);
+  const workspaceMetadataRequestRef = useRef(0);
   const workspaceLoadedRef = useRef(false);
   const pageQueryKey = [
     view,
@@ -1480,10 +500,16 @@ export const WorkspaceHome = ({
       event.stopPropagation();
       const target =
         event.target instanceof Element ? event.target : event.currentTarget;
+      const keyboardTriggered = event.type === "click" && event.detail === 0;
+      const triggerBounds = event.currentTarget.getBoundingClientRect();
       setContextMenu({
-        x: event.clientX,
-        y: event.clientY,
+        x: keyboardTriggered ? triggerBounds.left : event.clientX,
+        y: keyboardTriggered ? triggerBounds.bottom : event.clientY,
         items,
+        returnFocusTo:
+          event.currentTarget instanceof HTMLElement
+            ? event.currentTarget
+            : undefined,
         portalTarget:
           target.closest<HTMLElement>('dialog, [role="dialog"]') ||
           event.currentTarget.ownerDocument.body,
@@ -1497,132 +523,163 @@ export const WorkspaceHome = ({
     closeContextMenu();
   }, [clearSceneSelection, closeContextMenu, pageQueryKey]);
 
-  const loadWorkspace = useCallback(async () => {
-    const requestId = ++loadRequestRef.current;
-    const { key: queryKey, options } = currentPageRef.current;
-    pageRequestRef.current += 1;
-    loadMoreRequestRef.current += 1;
-    setLoadingMore(false);
-    const isCurrent = () =>
-      loadRequestRef.current === requestId &&
-      currentPageRef.current.key === queryKey;
-    const loadedCount =
-      loadedPageQueryKeyRef.current === queryKey
-        ? (options.trash
-            ? loadedScenesRef.current.trashScenes
-            : loadedScenesRef.current.scenes
-          ).length
-        : 0;
-    if (!workspaceSnapshot) {
-      setLoading(true);
-    }
-    setError("");
-    try {
-      const auth = await checkAuthStatus();
-      if (!isCurrent()) {
-        return;
+  const loadWorkspace = useCallback(
+    async (pageOnly = false, preserveCount = false) => {
+      const requestId = ++loadRequestRef.current;
+      const { key: queryKey, options } = currentPageRef.current;
+      const refreshAll =
+        !pageOnly || !workspaceSnapshot || !!fullRefreshRef.current;
+      if (refreshAll) fullRefreshRef.current = requestId;
+      pageRequestRef.current += 1;
+      loadMoreRequestRef.current += 1;
+      setLoadingMore(false);
+      const isCurrent = () =>
+        loadRequestRef.current === requestId &&
+        currentPageRef.current.key === queryKey;
+      const loadedCount =
+        loadedPageQueryKeyRef.current === queryKey
+          ? (options.trash
+              ? loadedScenesRef.current.trashScenes
+              : loadedScenesRef.current.scenes
+            ).length
+          : 0;
+      if (!workspaceSnapshot) {
+        setLoading(true);
       }
-      if (auth.authRequired && !auth.authenticated) {
-        setAuthOpen(true);
-        return;
-      }
-      const [scenePage, folderList, trashPage, stats] = await Promise.all([
-        options.trash
-          ? fetchCloudScenePage({})
-          : refreshWorkspacePage(
-              options,
-              loadedCount,
-              fetchCloudScenePage,
-              isCurrent,
-            ),
-        fetchCloudFolders(),
-        options.trash
-          ? refreshWorkspacePage(
-              options,
-              loadedCount,
-              fetchCloudScenePage,
-              isCurrent,
-            )
-          : fetchCloudScenePage({ trash: true }),
-        fetchCloudWorkspaceStats(),
-      ]);
-      if (!isCurrent() || !scenePage || !trashPage) {
-        return;
-      }
-      let migratedScene: CloudSceneSummary | null = null;
-      if (stats.sceneCount === 0 && stats.trashCount === 0) {
-        try {
-          migratedScene = await migrateLocalScene();
-        } catch (migrationError) {
-          console.warn("迁移本地画板失败", migrationError);
+      setError("");
+      try {
+        if (!refreshAll) {
+          const page = await refreshWorkspacePage(
+            options,
+            loadedCount,
+            fetchCloudScenePage,
+            isCurrent,
+            preserveCount && workspaceSnapshot?.pageQueryKey === queryKey
+              ? workspaceSnapshot.pageTotalCount
+              : undefined,
+          );
+          if (page && isCurrent()) {
+            if (options.trash) {
+              setTrashScenes(page.items);
+              setTrashSceneCursor(page.nextCursor);
+            } else {
+              setScenes(page.items);
+              setSceneCursor(page.nextCursor);
+            }
+            setPageTotalCount(page.totalCount);
+            loadedPageQueryKeyRef.current = queryKey;
+            setDisplayedPageOptions(options);
+          }
+          return;
         }
-      }
-      const [nextScenePage, nextTrashPage, nextStats] = migratedScene
-        ? await Promise.all([
-            fetchCloudScenePage(options.trash ? {} : options),
-            fetchCloudScenePage(options.trash ? options : { trash: true }),
-            fetchCloudWorkspaceStats(),
-          ])
-        : [scenePage, trashPage, stats];
-      const nextSnapshot = {
-        scenes: nextScenePage.items,
-        folders: folderList,
-        trashScenes: nextTrashPage.items,
-        stats: nextStats,
-        pageQueryKey: queryKey,
-        pageTotalCount: options.trash
-          ? nextTrashPage.totalCount
-          : nextScenePage.totalCount,
-      };
-      if (!isCurrent()) {
-        return;
-      }
-      workspaceSnapshot = nextSnapshot;
-      setScenes(nextSnapshot.scenes);
-      setFolders(nextSnapshot.folders);
-      setTrashScenes(nextSnapshot.trashScenes);
-      setWorkspaceStats(nextSnapshot.stats);
-      setPageTotalCount(nextSnapshot.pageTotalCount);
-      loadedPageQueryKeyRef.current = queryKey;
-      setDisplayedPageOptions(options);
-      setSceneCursor(nextScenePage.nextCursor);
-      setTrashSceneCursor(nextTrashPage.nextCursor);
-    } catch (requestError: any) {
-      if (!isCurrent()) {
-        return;
-      }
-      if (
-        requestError?.status === 401 ||
-        requestError?.code === "AUTH_REQUIRED"
-      ) {
-        setAuthOpen(true);
-      } else {
-        setError(requestError?.message || "加载画板首页失败");
-      }
-      // The page never committed. Leaving the loaded key pointing at the
-      // previous filter keeps the grid permanently inert (no interaction, no
-      // "load more", no retry), while rendering the old boards under the new
-      // heading would be misleading. Settle the key with an empty list.
-      if (loadedPageQueryKeyRef.current !== queryKey) {
+        const auth = await checkAuthStatus();
+        if (!isCurrent()) {
+          return;
+        }
+        if (auth.authRequired && !auth.authenticated) {
+          setAuthOpen(true);
+          return;
+        }
+        const [scenePage, folderList, trashPage, stats] = await Promise.all([
+          options.trash
+            ? fetchCloudScenePage({})
+            : refreshWorkspacePage(
+                options,
+                loadedCount,
+                fetchCloudScenePage,
+                isCurrent,
+              ),
+          fetchCloudFolders(),
+          options.trash
+            ? refreshWorkspacePage(
+                options,
+                loadedCount,
+                fetchCloudScenePage,
+                isCurrent,
+              )
+            : fetchCloudScenePage({ trash: true }),
+          fetchCloudWorkspaceStats(),
+        ]);
+        if (!isCurrent() || !scenePage || !trashPage) {
+          return;
+        }
+        let migratedScene: CloudSceneSummary | null = null;
+        if (stats.sceneCount === 0 && stats.trashCount === 0) {
+          try {
+            migratedScene = await migrateLocalScene();
+          } catch (migrationError) {
+            console.warn("迁移本地画板失败", migrationError);
+          }
+        }
+        const [nextScenePage, nextTrashPage, nextStats] = migratedScene
+          ? await Promise.all([
+              fetchCloudScenePage(options.trash ? {} : options),
+              fetchCloudScenePage(options.trash ? options : { trash: true }),
+              fetchCloudWorkspaceStats(),
+            ])
+          : [scenePage, trashPage, stats];
+        const nextSnapshot = {
+          scenes: nextScenePage.items,
+          folders: folderList,
+          trashScenes: nextTrashPage.items,
+          stats: nextStats,
+          pageQueryKey: queryKey,
+          pageTotalCount: options.trash
+            ? nextTrashPage.totalCount
+            : nextScenePage.totalCount,
+        };
+        if (!isCurrent()) {
+          return;
+        }
+        workspaceSnapshot = nextSnapshot;
+        setScenes(nextSnapshot.scenes);
+        setFolders(nextSnapshot.folders);
+        setTrashScenes(nextSnapshot.trashScenes);
+        setWorkspaceStats(nextSnapshot.stats);
+        setPageTotalCount(nextSnapshot.pageTotalCount);
         loadedPageQueryKeyRef.current = queryKey;
-        if (options.trash) {
-          setTrashScenes([]);
-          setTrashSceneCursor(null);
-        } else {
-          setScenes([]);
-          setSceneCursor(null);
-        }
-        setPageTotalCount(0);
         setDisplayedPageOptions(options);
+        setSceneCursor(nextScenePage.nextCursor);
+        setTrashSceneCursor(nextTrashPage.nextCursor);
+      } catch (requestError: any) {
+        if (!isCurrent()) {
+          return;
+        }
+        if (
+          requestError?.status === 401 ||
+          requestError?.code === "AUTH_REQUIRED"
+        ) {
+          setAuthOpen(true);
+        } else {
+          setError(requestError?.message || "加载画板首页失败");
+        }
+        // The page never committed. Leaving the loaded key pointing at the
+        // previous filter keeps the grid permanently inert (no interaction, no
+        // "load more", no retry), while rendering the old boards under the new
+        // heading would be misleading. Settle the key with an empty list.
+        if (loadedPageQueryKeyRef.current !== queryKey) {
+          loadedPageQueryKeyRef.current = queryKey;
+          if (options.trash) {
+            setTrashScenes([]);
+            setTrashSceneCursor(null);
+          } else {
+            setScenes([]);
+            setSceneCursor(null);
+          }
+          setPageTotalCount(0);
+          setDisplayedPageOptions(options);
+        }
+      } finally {
+        if (fullRefreshRef.current === requestId) fullRefreshRef.current = 0;
+        if (!isCurrent()) {
+          return;
+        }
+        workspaceLoadedRef.current = true;
+        setLoading(false);
       }
-    } finally {
-      if (!isCurrent()) {
-        return;
-      }
-      workspaceLoadedRef.current = true;
-      setLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!workspaceStats) {
@@ -1640,6 +697,7 @@ export const WorkspaceHome = ({
     (cursor: string | null = null) => ({
       ...currentPageRef.current.options,
       cursor,
+      includeTotal: cursor ? false : undefined,
     }),
     [],
   );
@@ -1730,7 +788,6 @@ export const WorkspaceHome = ({
         setScenes(mergeScenes);
         setSceneCursor(page.nextCursor);
       }
-      setPageTotalCount(page.totalCount);
     } catch (requestError: any) {
       if (
         requestId === loadMoreRequestRef.current &&
@@ -1803,20 +860,61 @@ export const WorkspaceHome = ({
     }
   }, [folders, loading, scenes, trashScenes, workspaceStats, pageTotalCount]);
 
-  useEffect(
-    () => subscribeCloudTabSync(() => void loadWorkspace()),
-    [loadWorkspace],
-  );
-
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let refreshMetadata = false;
+    let recountPage = false;
     const thumbnailRequests = new Map<string, object>();
     let closed = false;
     let thumbnailVersion = 0;
+    const scheduleRefresh = (metadata: boolean, recount: boolean) => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshMetadata ||= metadata;
+      recountPage ||= recount;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        const pageOnly = !refreshMetadata;
+        const preserveCount = !recountPage;
+        refreshMetadata = false;
+        recountPage = false;
+        void loadWorkspace(pageOnly, preserveCount);
+      }, 250);
+    };
+    const unsubscribeTab = subscribeCloudTabSync((event) => {
+      const contentOnly =
+        event.type === "scene_saved" && !event.metadataChanged;
+      scheduleRefresh(!contentOnly, !contentOnly);
+    });
     const unsubscribe = subscribeCloudRealtime(null, (event) => {
       if (
         event.type !== "scene_changed" &&
         event.type !== "workspace_changed"
+      ) {
+        return;
+      }
+      if (event.changeKind === "opened") {
+        const options = currentPageRef.current.options;
+        if (options.trash || options.sort !== "opened") return;
+      }
+      if (event.changeKind === "metadata" && event.sceneId && event.revision) {
+        const revision = event.revision;
+        if (
+          [
+            ...loadedScenesRef.current.scenes,
+            ...loadedScenesRef.current.trashScenes,
+          ].some(
+            (scene) => scene.id === event.sceneId && scene.revision >= revision,
+          )
+        ) {
+          return;
+        }
+      }
+      if (
+        event.changeKind !== "thumbnail" &&
+        typeof event.sceneId === "string" &&
+        Array.from(pendingActionsRef.current).some((action) =>
+          action.startsWith(`scene:${event.sceneId}:`),
+        )
       ) {
         return;
       }
@@ -1881,18 +979,16 @@ export const WorkspaceHome = ({
       )
         return;
       thumbnailRequests.clear();
-      if (refreshTimer) {
-        clearTimeout(refreshTimer);
-      }
-      refreshTimer = setTimeout(() => {
-        refreshTimer = null;
-        void loadWorkspace();
-      }, 250);
+      const pageOnly =
+        !(event.type === "workspace_changed" && event.metadataChanged) &&
+        ["opened", "content", "thumbnail"].includes(event.changeKind || "");
+      scheduleRefresh(!pageOnly, !pageOnly || event.changeKind === "opened");
     });
     return () => {
       closed = true;
       thumbnailRequests.clear();
       unsubscribe();
+      unsubscribeTab();
       if (refreshTimer) {
         clearTimeout(refreshTimer);
       }
@@ -2007,6 +1103,9 @@ export const WorkspaceHome = ({
     () => filteredScenes.filter((scene) => selectedSceneIds.has(scene.id)),
     [filteredScenes, selectedSceneIds],
   );
+  const batchActionsDisabled =
+    hasBatchActionPending ||
+    selectedScenes.some((scene) => isSceneActionPending(scene.id));
 
   const handleToggleSceneSelection = useCallback(
     (id: string, modifiers: Omit<BoardSelectionClick, "id"> = {}) => {
@@ -2059,7 +1158,11 @@ export const WorkspaceHome = ({
     const columns = Math.max(
       1,
       templateColumns.length ||
-        (gridRect.width <= 640 ? 1 : BOARD_GRID_COLUMNS),
+        (gridRect.width <= 640
+          ? 1
+          : gridRect.width <= 1100
+            ? 2
+            : BOARD_GRID_COLUMNS),
     );
 
     setBoardGridMetrics((current) => {
@@ -2224,43 +1327,70 @@ export const WorkspaceHome = ({
     }
   });
 
-  const navigateToScene = (scene: CloudSceneSummary, newTab = false) => {
-    const ownerWindow = getOwnerWindow(rootRef.current);
-    const url = new URL(ownerWindow.location.href);
-    url.search = `?id=${encodeURIComponent(scene.id)}`;
-    url.hash = "";
+  const navigateToScene = useCallback(
+    (scene: CloudSceneSummary, newTab = false) => {
+      const ownerWindow = getOwnerWindow(rootRef.current);
+      const url = new URL(ownerWindow.location.href);
+      url.search = `?id=${encodeURIComponent(scene.id)}`;
+      url.hash = "";
 
-    if (newTab) {
-      ownerWindow.open(
-        `${url.pathname}${url.search}`,
-        "_blank",
-        "noopener,noreferrer",
-      );
-      return;
+      if (newTab) {
+        ownerWindow.open(
+          `${url.pathname}${url.search}`,
+          "_blank",
+          "noopener,noreferrer",
+        );
+        return;
+      }
+
+      if (onSelectScene) {
+        onSelectScene(scene.id);
+        return;
+      }
+      ownerWindow.location.assign(`${url.pathname}${url.search}`);
+    },
+    [onSelectScene],
+  );
+
+  const refreshWorkspaceMetadata = useCallback(async () => {
+    const requestId = ++workspaceMetadataRequestRef.current;
+    try {
+      const [folderList, stats] = await Promise.all([
+        fetchCloudFolders(),
+        fetchCloudWorkspaceStats(),
+      ]);
+      if (workspaceMetadataRequestRef.current !== requestId) {
+        return;
+      }
+      setFolders(folderList);
+      setWorkspaceStats(stats);
+    } catch (requestError) {
+      console.warn("刷新工作区摘要失败", requestError);
     }
+  }, []);
 
-    if (onSelectScene) {
-      onSelectScene(scene.id);
-      return;
-    }
-    ownerWindow.location.assign(`${url.pathname}${url.search}`);
-  };
-
-  const notifyWorkspaceChanged = () => {
-    broadcastWorkspaceChanged();
-    void loadWorkspace();
-  };
+  const notifyWorkspaceChanged = useCallback(
+    (reloadPage = false) => {
+      broadcastWorkspaceChanged();
+      if (reloadPage) {
+        void loadWorkspace();
+      } else {
+        void refreshWorkspaceMetadata();
+      }
+    },
+    [loadWorkspace, refreshWorkspaceMetadata],
+  );
 
   const handleCreateScene = async (
     targetFolderId?: string | null,
     sceneName?: string,
   ) => {
-    if (pendingAction) {
+    const action = "scene:create";
+    if (!beginPendingAction(action)) {
       return;
     }
     const folderId =
       targetFolderId !== undefined ? targetFolderId : selectedFolderId;
-    setPendingAction("create-scene");
     setError("");
     try {
       const scene = await createCloudScene({
@@ -2273,31 +1403,53 @@ export const WorkspaceHome = ({
     } catch (requestError: any) {
       handleRequestError(requestError, "创建画板失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleToggleFavorite = async (scene: CloudSceneSummary) => {
-    if (pendingAction) {
+    const action = `scene:${scene.id}:favorite`;
+    if (!beginSceneAction(scene.id, action)) {
       return;
     }
     const nextFavorite = !scene.favorite;
+    const favoriteDelta = nextFavorite ? 1 : -1;
+    setWorkspaceStats((current) =>
+      current
+        ? {
+            ...current,
+            favoriteCount: Math.max(0, current.favoriteCount + favoriteDelta),
+          }
+        : current,
+    );
     setScenes((current) =>
       current.map((item) =>
         item.id === scene.id ? { ...item, favorite: nextFavorite } : item,
       ),
     );
-    setPendingAction(`favorite:${scene.id}`);
     try {
       const updated = await updateCloudSceneMetadata(scene.id, {
         favorite: nextFavorite,
         baseRevision: scene.revision,
       });
-      setScenes((current) =>
-        current.map((item) => (item.id === scene.id ? updated : item)),
-      );
+      if (view === "favorites" && !updated.favorite) {
+        setScenes((current) => current.filter((item) => item.id !== scene.id));
+        setPageTotalCount((current) => Math.max(0, current - 1));
+      } else {
+        setScenes((current) =>
+          current.map((item) => (item.id === scene.id ? updated : item)),
+        );
+      }
       notifyWorkspaceChanged();
     } catch (requestError: any) {
+      setWorkspaceStats((current) =>
+        current
+          ? {
+              ...current,
+              favoriteCount: Math.max(0, current.favoriteCount - favoriteDelta),
+            }
+          : current,
+      );
       setScenes((current) =>
         current.map((item) =>
           item.id === scene.id ? { ...item, favorite: scene.favorite } : item,
@@ -2305,12 +1457,16 @@ export const WorkspaceHome = ({
       );
       handleRequestError(requestError, "更新收藏状态失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleSaveMetadata = async () => {
-    if (!metadataDialog || pendingAction) {
+    if (!metadataDialog) {
+      return;
+    }
+    const action = `scene:${metadataDialog.scene.id}:metadata`;
+    if (!beginSceneAction(metadataDialog.scene.id, action)) {
       return;
     }
     const tags = metadataDialog.tags
@@ -2318,7 +1474,6 @@ export const WorkspaceHome = ({
       .map((tag) => tag.trim())
       .filter(Boolean)
       .filter((tag, index, list) => list.indexOf(tag) === index);
-    setPendingAction(`metadata:${metadataDialog.scene.id}`);
     setError("");
     try {
       const updated = await updateCloudSceneMetadata(metadataDialog.scene.id, {
@@ -2332,10 +1487,17 @@ export const WorkspaceHome = ({
       );
       setMetadataDialog(null);
       notifyWorkspaceChanged();
+      if (
+        displayedPageOptions.query ||
+        displayedPageOptions.tag ||
+        displayedPageOptions.folderId
+      ) {
+        void loadWorkspace();
+      }
     } catch (requestError: any) {
       handleRequestError(requestError, "保存画板信息失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
@@ -2347,7 +1509,10 @@ export const WorkspaceHome = ({
         confirmLabel: "彻底删除",
         confirmVariant: "danger",
         onConfirm: async () => {
-          setPendingAction(`delete:${scene.id}`);
+          const action = `scene:${scene.id}:delete`;
+          if (!beginSceneAction(scene.id, action)) {
+            return;
+          }
           try {
             await deleteCloudScene(scene.id, true, scene.revision);
             setTrashScenes((current) =>
@@ -2357,14 +1522,17 @@ export const WorkspaceHome = ({
           } catch (requestError: any) {
             handleRequestError(requestError, "彻底删除画板失败");
           } finally {
-            setPendingAction(null);
+            finishPendingAction(action);
           }
         },
       });
       return;
     }
 
-    setPendingAction(`delete:${scene.id}`);
+    const action = `scene:${scene.id}:delete`;
+    if (!beginSceneAction(scene.id, action)) {
+      return;
+    }
     try {
       await deleteCloudScene(scene.id, false);
       setScenes((current) => current.filter((item) => item.id !== scene.id));
@@ -2372,16 +1540,21 @@ export const WorkspaceHome = ({
         { ...scene, deleted_at: Date.now() },
         ...current,
       ]);
-      notifyWorkspaceChanged();
+      notifyWorkspaceChanged(true);
     } catch (requestError: any) {
       handleRequestError(requestError, "删除画板失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleEmptyTrash = () => {
-    if (!workspaceStats?.trashCount || pendingAction) {
+    const action = "trash:clear";
+    if (
+      !workspaceStats?.trashCount ||
+      hasBatchActionPending ||
+      isActionPending(action)
+    ) {
       return;
     }
     setConfirmDialog({
@@ -2390,7 +1563,9 @@ export const WorkspaceHome = ({
       confirmLabel: "清空回收站",
       confirmVariant: "danger",
       onConfirm: async () => {
-        setPendingAction("clear-trash");
+        if (!beginPendingAction(action)) {
+          return;
+        }
         try {
           await clearCloudTrash();
           setTrashScenes([]);
@@ -2398,14 +1573,17 @@ export const WorkspaceHome = ({
         } catch (requestError: any) {
           handleRequestError(requestError, "清空回收站失败");
         } finally {
-          setPendingAction(null);
+          finishPendingAction(action);
         }
       },
     });
   };
 
   const handleRestoreScene = async (scene: CloudSceneSummary) => {
-    setPendingAction(`restore:${scene.id}`);
+    const action = `scene:${scene.id}:restore`;
+    if (!beginSceneAction(scene.id, action)) {
+      return;
+    }
     setError("");
     try {
       await restoreCloudScene(scene.id);
@@ -2413,11 +1591,11 @@ export const WorkspaceHome = ({
         current.filter((item) => item.id !== scene.id),
       );
       setScenes((current) => [{ ...scene, deleted_at: null }, ...current]);
-      notifyWorkspaceChanged();
+      notifyWorkspaceChanged(true);
     } catch (requestError: any) {
       handleRequestError(requestError, "还原画板失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
@@ -2454,10 +1632,16 @@ export const WorkspaceHome = ({
   };
 
   const handleBatchMoveToTrash = async (targets: CloudSceneSummary[]) => {
-    if (!targets.length || pendingAction) {
+    const action = "batch:trash";
+    if (
+      !targets.length ||
+      !beginBatchAction(
+        targets.map((scene) => scene.id),
+        action,
+      )
+    ) {
       return;
     }
-    setPendingAction("batch-trash");
     setError("");
     try {
       const results = await runCloudSceneBatch(targets, trashCloudScenes);
@@ -2475,17 +1659,23 @@ export const WorkspaceHome = ({
         ...current.filter((scene) => !completedIds.has(scene.id)),
       ]);
       removeSceneIdsFromSelection([...completedIds]);
-      notifyWorkspaceChanged();
+      notifyWorkspaceChanged(true);
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleBatchRestore = async (targets: CloudSceneSummary[]) => {
-    if (!targets.length || pendingAction) {
+    const action = "batch:restore";
+    if (
+      !targets.length ||
+      !beginBatchAction(
+        targets.map((scene) => scene.id),
+        action,
+      )
+    ) {
       return;
     }
-    setPendingAction("batch-restore");
     setError("");
     try {
       const results = await runCloudSceneBatch(targets, restoreCloudScenes);
@@ -2502,14 +1692,21 @@ export const WorkspaceHome = ({
         ...current.filter((scene) => !completedIds.has(scene.id)),
       ]);
       removeSceneIdsFromSelection([...completedIds]);
-      notifyWorkspaceChanged();
+      notifyWorkspaceChanged(true);
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
   const handleBatchPermanentDelete = (targets: CloudSceneSummary[]) => {
-    if (!targets.length || pendingAction) {
+    if (
+      !targets.length ||
+      Array.from(pendingActionsRef.current).some(
+        (pending) =>
+          pending.startsWith("batch:") ||
+          targets.some((scene) => pending.startsWith(`scene:${scene.id}:`)),
+      )
+    ) {
       return;
     }
     setConfirmDialog({
@@ -2518,7 +1715,15 @@ export const WorkspaceHome = ({
       confirmLabel: "彻底删除",
       confirmVariant: "danger",
       onConfirm: async () => {
-        setPendingAction("batch-permanent-delete");
+        const action = "batch:permanent-delete";
+        if (
+          !beginBatchAction(
+            targets.map((scene) => scene.id),
+            action,
+          )
+        ) {
+          return;
+        }
         setError("");
         try {
           const results = await runCloudSceneBatch(
@@ -2536,17 +1741,20 @@ export const WorkspaceHome = ({
           removeSceneIdsFromSelection([...completedIds]);
           notifyWorkspaceChanged();
         } finally {
-          setPendingAction(null);
+          finishPendingAction(action);
         }
       },
     });
   };
 
   const handleSaveFolder = async () => {
-    if (!folderDialog || pendingAction || !folderDialog.name.trim()) {
+    if (!folderDialog || !folderDialog.name.trim()) {
       return;
     }
-    setPendingAction(`folder:${folderDialog.id || "new"}`);
+    const action = `folder:${folderDialog.id || "new"}:save`;
+    if (!beginPendingAction(action)) {
+      return;
+    }
     try {
       if (folderDialog.id) {
         const updated = await renameCloudFolder(
@@ -2579,7 +1787,7 @@ export const WorkspaceHome = ({
     } catch (requestError: any) {
       handleRequestError(requestError, "保存文件夹失败");
     } finally {
-      setPendingAction(null);
+      finishPendingAction(action);
     }
   };
 
@@ -2590,7 +1798,10 @@ export const WorkspaceHome = ({
       confirmLabel: "删除文件夹",
       confirmVariant: "danger",
       onConfirm: async () => {
-        setPendingAction(`delete-folder:${folder.id}`);
+        const action = `folder:${folder.id}:delete`;
+        if (!beginPendingAction(action)) {
+          return;
+        }
         try {
           await deleteCloudFolder(folder.id);
           setFolders((current) =>
@@ -2603,14 +1814,14 @@ export const WorkspaceHome = ({
                 : scene,
             ),
           );
-          notifyWorkspaceChanged();
+          notifyWorkspaceChanged(true);
           if (selectedFolderId === folder.id) {
             setSelectedFolderId(null);
           }
         } catch (requestError: any) {
           handleRequestError(requestError, "删除文件夹失败");
         } finally {
-          setPendingAction(null);
+          finishPendingAction(action);
         }
       },
     });
@@ -2650,7 +1861,7 @@ export const WorkspaceHome = ({
       {
         label: "在此文件夹中新建画板",
         icon: "plus",
-        disabled: !!pendingAction,
+        disabled: isActionPending("scene:create"),
         onSelect: () => void handleCreateScene(folder.id),
       },
       {
@@ -2664,7 +1875,7 @@ export const WorkspaceHome = ({
         icon: "trash",
         danger: true,
         separatorBefore: true,
-        disabled: !!pendingAction,
+        disabled: isFolderActionPending(folder.id),
         onSelect: () => handleDeleteFolder(folder),
       },
     ]);
@@ -2676,6 +1887,10 @@ export const WorkspaceHome = ({
   ) => {
     const isSelected = selectedSceneIds.has(scene.id);
     const selectedCount = selectedScenes.length;
+    const scenePending = isSceneActionPending(scene.id);
+    const batchPending =
+      hasBatchActionPending ||
+      selectedScenes.some((selected) => isSceneActionPending(selected.id));
     const items: WorkspaceContextMenuItem[] = [];
     if (view !== "trash") {
       items.push({
@@ -2690,7 +1905,6 @@ export const WorkspaceHome = ({
     items.push({
       label: isSelected ? "从多选中移除" : "加入多选",
       icon: isSelected ? "check" : "plus",
-      disabled: !!pendingAction,
       onSelect: () => handleToggleSceneSelection(scene.id, { ctrlKey: true }),
     });
     if (selectedCount) {
@@ -2707,14 +1921,14 @@ export const WorkspaceHome = ({
         label: "还原画板",
         icon: "restore",
         separatorBefore: selectedCount === 0,
-        disabled: !!pendingAction,
+        disabled: scenePending,
         onSelect: () => void handleRestoreScene(scene),
       });
       if (isSelected && selectedCount > 1) {
         items.push({
           label: `恢复所选 ${selectedCount} 个画板`,
           icon: "restore",
-          disabled: !!pendingAction,
+          disabled: batchPending,
           onSelect: () => void handleBatchRestore(selectedScenes),
         });
       }
@@ -2723,7 +1937,7 @@ export const WorkspaceHome = ({
         icon: "trash",
         danger: true,
         separatorBefore: true,
-        disabled: !!pendingAction,
+        disabled: scenePending,
         onSelect: () => handleDeleteScene(scene),
       });
       if (isSelected && selectedCount > 1) {
@@ -2731,7 +1945,7 @@ export const WorkspaceHome = ({
           label: `彻底删除所选 ${selectedCount} 个画板`,
           icon: "trash",
           danger: true,
-          disabled: !!pendingAction,
+          disabled: batchPending,
           onSelect: () => handleBatchPermanentDelete(selectedScenes),
         });
       }
@@ -2740,14 +1954,14 @@ export const WorkspaceHome = ({
         label: scene.favorite ? "取消收藏" : "收藏画板",
         icon: "star",
         separatorBefore: selectedCount === 0,
-        disabled: !!pendingAction,
+        disabled: scenePending,
         onSelect: () => void handleToggleFavorite(scene),
       });
       items.push({
         label: "编辑画板信息",
         icon: "edit",
         separatorBefore: true,
-        disabled: !!pendingAction,
+        disabled: scenePending,
         onSelect: () => openMetadataDialog(scene),
       });
       items.push({
@@ -2755,7 +1969,7 @@ export const WorkspaceHome = ({
         icon: "trash",
         danger: true,
         separatorBefore: true,
-        disabled: !!pendingAction,
+        disabled: scenePending,
         onSelect: () => handleDeleteScene(scene),
       });
       if (isSelected && selectedCount > 1) {
@@ -2763,7 +1977,7 @@ export const WorkspaceHome = ({
           label: `移入回收站所选 ${selectedCount} 个画板`,
           icon: "trash",
           danger: true,
-          disabled: !!pendingAction,
+          disabled: batchPending,
           onSelect: () => void handleBatchMoveToTrash(selectedScenes),
         });
       }
@@ -2871,7 +2085,10 @@ export const WorkspaceHome = ({
           icon: "trash",
           separatorBefore: true,
           danger: true,
-          disabled: !workspaceStats?.trashCount || !!pendingAction,
+          disabled:
+            !workspaceStats?.trashCount ||
+            isActionPending("trash:clear") ||
+            hasBatchActionPending,
           onSelect: handleEmptyTrash,
         });
       } else {
@@ -2879,7 +2096,7 @@ export const WorkspaceHome = ({
           label: "新建画板",
           icon: "plus",
           separatorBefore: true,
-          disabled: !!pendingAction,
+          disabled: isActionPending("scene:create"),
           onSelect: () => void handleCreateScene(null),
         });
       }
@@ -2932,14 +2149,13 @@ export const WorkspaceHome = ({
               ? "在此文件夹中新建画板"
               : "新建画板",
           icon: "plus",
-          disabled: !!pendingAction,
+          disabled: isActionPending("scene:create"),
           onSelect: () =>
             void handleCreateScene(inSidebar ? null : selectedFolderId),
         },
         {
           label: "新建文件夹",
           icon: "folder",
-          disabled: !!pendingAction,
           onSelect: () => openFolderDialog(),
         },
       );
@@ -2962,7 +2178,7 @@ export const WorkspaceHome = ({
       {
         label: inTrash ? "刷新回收站" : "刷新画板列表",
         icon: "refresh",
-        disabled: loading || !!pendingAction,
+        disabled: loading,
         onSelect: () => void loadWorkspace(),
       },
     );
@@ -2999,7 +2215,10 @@ export const WorkspaceHome = ({
           label: "清空回收站",
           icon: "trash",
           danger: true,
-          disabled: !workspaceStats?.trashCount || !!pendingAction,
+          disabled:
+            !workspaceStats?.trashCount ||
+            isActionPending("trash:clear") ||
+            hasBatchActionPending,
           onSelect: handleEmptyTrash,
         },
       );
@@ -3009,17 +2228,11 @@ export const WorkspaceHome = ({
 
   const boardActionsRef = useRef({
     handleToggleFavorite,
-    openMetadataDialog,
-    handleDeleteScene,
-    handleRestoreScene,
     openBoardContextMenu,
   });
   useLayoutEffect(() => {
     boardActionsRef.current = {
       handleToggleFavorite,
-      openMetadataDialog,
-      handleDeleteScene,
-      handleRestoreScene,
       openBoardContextMenu,
     };
   });
@@ -3027,12 +2240,6 @@ export const WorkspaceHome = ({
     () => ({
       toggleFavorite: (scene: CloudSceneSummary) =>
         boardActionsRef.current.handleToggleFavorite(scene),
-      edit: (scene: CloudSceneSummary) =>
-        boardActionsRef.current.openMetadataDialog(scene),
-      delete: (scene: CloudSceneSummary) =>
-        boardActionsRef.current.handleDeleteScene(scene),
-      restore: (scene: CloudSceneSummary) =>
-        boardActionsRef.current.handleRestoreScene(scene),
       contextMenu: (
         scene: CloudSceneSummary,
         event: React.MouseEvent<HTMLElement>,
@@ -3041,17 +2248,15 @@ export const WorkspaceHome = ({
     [],
   );
 
-  const renderBoardCard = (scene: CloudSceneSummary) => (
+  const renderBoardCard = (scene: CloudSceneSummary, eager = false) => (
     <BoardCard
       key={scene.id}
       scene={scene}
+      eager={eager}
       isTrash={!!displayedPageOptions.trash}
       onOpen={navigateToScene}
       onPreload={onPreloadScene}
       onToggleFavorite={boardActions.toggleFavorite}
-      onEdit={boardActions.edit}
-      onDelete={boardActions.delete}
-      onRestore={boardActions.restore}
       onOpenContextMenu={boardActions.contextMenu}
       onToggleSelection={handleToggleSceneSelection}
       hasSelectionActive={selectedSceneIds.size > 0}
@@ -3062,7 +2267,7 @@ export const WorkspaceHome = ({
             DEFAULT_FOLDER_APPEARANCE
           : DEFAULT_FOLDER_APPEARANCE
       }
-      actionPending={!!pendingAction}
+      actionPending={isSceneActionPending(scene.id)}
     />
   );
 
@@ -3111,7 +2316,7 @@ export const WorkspaceHome = ({
                 className="primary-button header-create-button"
                 type="button"
                 onClick={() => void handleCreateScene()}
-                disabled={!!pendingAction}
+                disabled={isActionPending("scene:create")}
                 title={
                   selectedFolderId
                     ? `在${
@@ -3210,50 +2415,81 @@ export const WorkspaceHome = ({
               </button>
             </nav>
           </div>
-          <div className="folder-heading">
+          <button
+            type="button"
+            className="mobile-folder-toggle"
+            aria-expanded={mobileFoldersOpen}
+            aria-controls="workspace-folder-panel"
+            onClick={() => setMobileFoldersOpen((open) => !open)}
+          >
+            <FolderIcon />
             <span>文件夹</span>
-            <button
-              type="button"
-              aria-label="新建文件夹"
-              onClick={() => openFolderDialog()}
-            >
-              ＋
-            </button>
-          </div>
-          <div className="folder-list">
-            {folders.map((folder) => (
-              <div
-                className={`folder-row ${
-                  selectedFolderId === folder.id && view !== "trash"
-                    ? "is-selected"
-                    : ""
-                }`.trim()}
-                key={folder.id}
-                style={
-                  {
-                    "--folder-accent":
-                      folder.color || DEFAULT_FOLDER_APPEARANCE.color,
-                  } as React.CSSProperties
-                }
-                onContextMenu={(event) => openFolderContextMenu(folder, event)}
-              >
+            <small>{folders.length}</small>
+            <span className="mobile-folder-chevron" aria-hidden="true" />
+          </button>
+          <div
+            id="workspace-folder-panel"
+            className={`folder-panel${mobileFoldersOpen ? " is-open" : ""}`}
+          >
+            <div className="folder-panel-content">
+              <div className="folder-heading">
+                <span>文件夹</span>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedFolderId(folder.id);
-                    setView("all");
-                  }}
+                  aria-label="新建文件夹"
+                  onClick={() => openFolderDialog()}
                 >
-                  <span className="folder-row-icon" aria-hidden="true">
-                    <FolderAppearanceIcon
-                      icon={folder.icon || DEFAULT_FOLDER_APPEARANCE.icon}
-                    />
-                  </span>
-                  <span>{folder.name}</span>
-                  <small>{folderSceneCounts.get(folder.id) || 0}</small>
+                  ＋
                 </button>
               </div>
-            ))}
+              <div className="folder-list">
+                {folders.map((folder) => (
+                  <div
+                    className={`folder-row ${
+                      selectedFolderId === folder.id && view !== "trash"
+                        ? "is-selected"
+                        : ""
+                    }`.trim()}
+                    key={folder.id}
+                    style={
+                      {
+                        "--folder-accent":
+                          folder.color || DEFAULT_FOLDER_APPEARANCE.color,
+                      } as React.CSSProperties
+                    }
+                    onContextMenu={(event) =>
+                      openFolderContextMenu(folder, event)
+                    }
+                  >
+                    <button
+                      type="button"
+                      className="folder-row-select"
+                      onClick={() => {
+                        setSelectedFolderId(folder.id);
+                        setView("all");
+                      }}
+                    >
+                      <span className="folder-row-icon" aria-hidden="true">
+                        <FolderAppearanceIcon
+                          icon={folder.icon || DEFAULT_FOLDER_APPEARANCE.icon}
+                        />
+                      </span>
+                      <span>{folder.name}</span>
+                      <small>{folderSceneCounts.get(folder.id) || 0}</small>
+                    </button>
+                    <button
+                      type="button"
+                      className="folder-row-menu"
+                      aria-label={`管理文件夹“${folder.name}”`}
+                      title="文件夹操作"
+                      onClick={(event) => openFolderContextMenu(folder, event)}
+                    >
+                      <MoreIcon />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </aside>
 
@@ -3269,7 +2505,11 @@ export const WorkspaceHome = ({
               <button
                 type="button"
                 className="empty-trash-button"
-                disabled={!workspaceStats?.trashCount || !!pendingAction}
+                disabled={
+                  !workspaceStats?.trashCount ||
+                  isActionPending("trash:clear") ||
+                  hasBatchActionPending
+                }
                 onClick={handleEmptyTrash}
                 aria-label="清空回收站"
                 title="清空回收站"
@@ -3394,6 +2634,12 @@ export const WorkspaceHome = ({
                 >
                   {boardGridVirtualizer.getVirtualItems().map((virtualRow) => {
                     const startIndex = virtualRow.index * boardGridColumns;
+                    const scrollElement = rootRef.current;
+                    const isRowVisible =
+                      scrollElement !== null &&
+                      virtualRow.start <
+                        scrollElement.scrollTop + scrollElement.clientHeight &&
+                      virtualRow.end > scrollElement.scrollTop;
                     return (
                       <div
                         key={virtualRow.key}
@@ -3409,14 +2655,16 @@ export const WorkspaceHome = ({
                       >
                         {filteredScenes
                           .slice(startIndex, startIndex + boardGridColumns)
-                          .map(renderBoardCard)}
+                          .map((scene) => renderBoardCard(scene, isRowVisible))}
                       </div>
                     );
                   })}
                 </div>
               ) : (
                 <div ref={boardGridRef} className="board-grid">
-                  {filteredScenes.map(renderBoardCard)}
+                  {filteredScenes.map((scene, index) =>
+                    renderBoardCard(scene, index < boardGridColumns * 2),
+                  )}
                 </div>
               )}
               {hasMoreScenes && (
@@ -3440,7 +2688,7 @@ export const WorkspaceHome = ({
         <MetadataDialog
           state={metadataDialog}
           folders={folders}
-          pending={pendingAction === `metadata:${metadataDialog.scene.id}`}
+          pending={isActionPending(`scene:${metadataDialog.scene.id}:metadata`)}
           onChange={(next) =>
             setMetadataDialog((current) =>
               current ? { ...current, ...next } : current,
@@ -3453,7 +2701,7 @@ export const WorkspaceHome = ({
       {folderDialog && (
         <FolderDialog
           state={folderDialog}
-          pending={pendingAction === `folder:${folderDialog.id || "new"}`}
+          pending={isFolderActionPending(folderDialog.id || "new")}
           onChange={(name) =>
             setFolderDialog((current) =>
               current ? { ...current, name } : current,
@@ -3478,7 +2726,7 @@ export const WorkspaceHome = ({
       {confirmDialog && (
         <ConfirmDialog
           state={confirmDialog}
-          pending={!!pendingAction}
+          pending={pendingActions.size > 0}
           onClose={() => setConfirmDialog(null)}
           onConfirm={() => {
             const action = confirmDialog.onConfirm;
@@ -3523,6 +2771,69 @@ export const WorkspaceHome = ({
       {contextMenu && (
         <WorkspaceContextMenu state={contextMenu} onClose={closeContextMenu} />
       )}
+      {selectedSceneIds.size > 0 &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="workspace-batch-bar"
+            role="toolbar"
+            aria-label="批量操作"
+          >
+            <div className="workspace-batch-bar-count">
+              已选择 <strong>{selectedSceneIds.size}</strong> 项
+            </div>
+            <div className="workspace-batch-bar-divider" aria-hidden="true" />
+            <div className="workspace-batch-bar-actions">
+              {view !== "trash" ? (
+                <button
+                  type="button"
+                  className="batch-bar-button danger"
+                  onClick={() => void handleBatchMoveToTrash(selectedScenes)}
+                  disabled={batchActionsDisabled}
+                  title={
+                    "将所选 " + selectedSceneIds.size + " 个画板移入回收站"
+                  }
+                >
+                  <TrashIcon />
+                  <span>移入回收站</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="batch-bar-button"
+                    onClick={() => void handleBatchRestore(selectedScenes)}
+                    disabled={batchActionsDisabled}
+                    title={"还原所选 " + selectedSceneIds.size + " 个画板"}
+                  >
+                    <RestoreIcon />
+                    <span>还原</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="batch-bar-button danger"
+                    onClick={() => handleBatchPermanentDelete(selectedScenes)}
+                    disabled={batchActionsDisabled}
+                    title={"彻底删除所选 " + selectedSceneIds.size + " 个画板"}
+                  >
+                    <TrashIcon />
+                    <span>彻底删除</span>
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className="batch-bar-button close"
+                onClick={clearSceneSelection}
+                aria-label="退出多选"
+                title="退出多选 (Esc)"
+              >
+                取消
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

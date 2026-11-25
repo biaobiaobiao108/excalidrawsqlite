@@ -10,12 +10,13 @@ export const refreshWorkspacePage = async (
   loadedCount: number,
   fetchPage: (options: CloudScenePageOptions) => Promise<CloudScenePage>,
   isCurrent: () => boolean,
+  knownTotal?: number,
 ): Promise<CloudScenePage | null> => {
   const targetCount = Math.max(100, loadedCount);
   const items: CloudScenePage["items"] = [];
   const seenIds = new Set<string>();
   let cursor: string | null = null;
-  let totalCount = 0;
+  let totalCount = knownTotal ?? 0;
   do {
     if (!isCurrent()) {
       return null;
@@ -23,13 +24,14 @@ export const refreshWorkspacePage = async (
     const page = await fetchPage({
       ...options,
       cursor,
-      includeTotal: cursor === null,
+      includeTotal: cursor === null && knownTotal === undefined,
       limit: Math.min(100, targetCount - items.length),
     });
     if (!isCurrent()) {
       return null;
     }
-    if (cursor === null) totalCount = page.totalCount;
+    if (cursor === null && knownTotal === undefined)
+      totalCount = page.totalCount;
     for (const item of page.items) {
       if (!seenIds.has(item.id)) {
         seenIds.add(item.id);
