@@ -285,6 +285,22 @@ const ExcalidrawWrapper = (props: {
     setCurrentSceneId(sceneId);
   }, []);
 
+  const showSavedStatus = useCallback((sceneId: string) => {
+    if (currentSceneIdRef.current !== sceneId) {
+      return;
+    }
+    setCloudSaveStatus("saved");
+    if (savedStatusTimerRef.current) {
+      clearTimeout(savedStatusTimerRef.current);
+    }
+    savedStatusTimerRef.current = setTimeout(() => {
+      if (currentSceneIdRef.current === sceneId) {
+        setCloudSaveStatus("idle");
+      }
+      savedStatusTimerRef.current = null;
+    }, 2000);
+  }, []);
+
   const saveThumbnailDebounced = useMemo(
     () =>
       debounce(
@@ -344,20 +360,12 @@ const ExcalidrawWrapper = (props: {
           if (currentSceneIdRef.current === sceneId) {
             setCloudSaveStatus(status);
             if (status === "saved") {
-              if (savedStatusTimerRef.current) {
-                clearTimeout(savedStatusTimerRef.current);
-              }
-              savedStatusTimerRef.current = setTimeout(() => {
-                if (currentSceneIdRef.current === sceneId) {
-                  setCloudSaveStatus("idle");
-                }
-                savedStatusTimerRef.current = null;
-              }, 2000);
+              showSavedStatus(sceneId);
             }
           }
         },
       }),
-    [saveThumbnailDebounced],
+    [saveThumbnailDebounced, showSavedStatus],
   );
   const deletedRecoveries = useMemo(
     () => cloudSaveQueue.getUnavailableScenes(),
@@ -846,6 +854,7 @@ const ExcalidrawWrapper = (props: {
         (status === "idle" &&
           !cloudSaveQueue.hasPending(persistedSnapshot.sceneId))
       ) {
+        showSavedStatus(persistedSnapshot.sceneId);
         const currentSnapshot = createCurrentCloudSnapshot();
         // A later edit may have been queued while flush awaited the network.
         // Do not replace its baseline or clear its dirty flag with this save.
@@ -879,6 +888,7 @@ const ExcalidrawWrapper = (props: {
     createCurrentCloudSnapshot,
     excalidrawAPI,
     saveThumbnailDebounced,
+    showSavedStatus,
     thumbnailSaveQueue,
   ]);
 

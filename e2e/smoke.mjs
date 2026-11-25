@@ -21,12 +21,22 @@ const run = async () => {
 
   const pageErrors = [];
   const consoleErrors = [];
+  let authenticated = false;
   page.on("pageerror", (error) => {
     pageErrors.push(error?.message || String(error));
   });
   page.on("console", (message) => {
     if (message.type() === "error") {
-      consoleErrors.push(message.text());
+      const text = message.text();
+      // The workspace probes realtime before the login dialog is completed.
+      if (!authenticated && text.includes("HTTP Authentication failed")) {
+        return;
+      }
+      // Chromium 159 reports its own unload deprecation policy here.
+      if (text.includes("Permissions policy violation: unload")) {
+        return;
+      }
+      consoleErrors.push(text);
     }
   });
 
@@ -38,6 +48,7 @@ const run = async () => {
     await passwordInput.fill(password);
     await page.locator("button.auth-submit-btn").click();
     await passwordInput.waitFor({ state: "hidden", timeout: 15_000 });
+    authenticated = true;
 
     // 2. Create a new board from WorkspaceHome.
     const createBoardButton = page
@@ -51,7 +62,12 @@ const run = async () => {
     const canvas = page.locator(".excalidraw canvas").first();
     await canvas.waitFor({ state: "visible", timeout: 15_000 });
 
-    await page.keyboard.press("r");
+    const rectangleTool = page.locator('[data-testid="toolbar-rectangle"]');
+    await rectangleTool.waitFor({ state: "visible", timeout: 15_000 });
+    await rectangleTool.click();
+    await page
+      .locator('[data-testid="toolbar-rectangle"][aria-pressed="true"]')
+      .waitFor({ state: "visible", timeout: 5_000 });
     await page.mouse.move(420, 320);
     await page.mouse.down();
     await page.mouse.move(580, 440, { steps: 6 });
