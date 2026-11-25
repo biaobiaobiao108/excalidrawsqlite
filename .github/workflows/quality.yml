@@ -42,13 +42,14 @@ jobs:
       - name: Build Docker image for health smoke
         run: docker build --tag excalidraw:quality-smoke .
 
-      - name: Smoke test Docker health endpoint
+      - name: Smoke test Docker health & CI-only E2E
         shell: bash
         run: |
           set -euo pipefail
           container_name="excalidraw-quality-smoke"
           cleanup() {
             docker rm --force "$container_name" >/dev/null 2>&1 || true
+            rm -rf /tmp/pw-e2e
           }
           trap cleanup EXIT
 
@@ -58,14 +59,28 @@ jobs:
             --env AUTH_PASSWORD=quality-smoke-password \
             excalidraw:quality-smoke
 
+          healthy=false
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:18080/api/health; then
               echo "Container health check passed."
-              exit 0
+              healthy=true
+              break
             fi
             sleep 2
           done
 
-          docker logs "$container_name"
-          echo "Container did not become healthy at /api/health." >&2
-          exit 1
+          if [ "$healthy" != "true" ]; then
+            docker logs "$container_name"
+            echo "Container did not become healthy at /api/health." >&2
+            exit 1
+          fi
+
+          # Install Playwright strictly in an isolated temp directory so local
+          # package.json and bun.lock never carry browser test dependencies.
+          mkdir -p /tmp/pw-e2e
+          bun add --cwd /tmp/pw-e2e playwright
+          /tmp/pw-e2e/node_modules/.bin/playwright install chromium --with-deps
+          NODE_PATH=/tmp/pw-e2e/node_modules \
+            E2E_BASE_URL=http://127.0.0.1:18080 \
+            E2E_AUTH_PASSWORD=quality-smoke-password \
+            bun run e2e/smoke.mjs

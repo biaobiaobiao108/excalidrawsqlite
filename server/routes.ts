@@ -12,6 +12,7 @@ import { handleBackupAndAuthRoute } from "./routes-auth-backup";
 import { handleFileRoute } from "./routes-files";
 import { handleFolderRoute } from "./routes-folders";
 import { handleSceneThumbnailRoute } from "./routes-scene-thumbnails";
+import { handleSceneListRoute } from "./routes-scene-list";
 import { handleSceneRoute } from "./routes-scenes";
 import {
   getPreparedStatements,
@@ -27,6 +28,7 @@ export const createRequestHandler = (
 ) => {
   const stmts = getPreparedStatements(runtime);
   const routeHandlers = [
+    handleSceneListRoute,
     handleSceneThumbnailRoute,
     handleSceneRoute,
     handleFolderRoute,

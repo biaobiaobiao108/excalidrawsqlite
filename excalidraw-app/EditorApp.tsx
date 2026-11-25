@@ -5,12 +5,10 @@ import {
   useExcalidrawAPI,
 } from "@excalidraw/excalidraw";
 import { ErrorDialog } from "@excalidraw/excalidraw/components/ErrorDialog";
-import { DEFAULT_CATEGORIES } from "@excalidraw/excalidraw/components/CommandPalette/constants";
 import {
   EVENT,
   debounce,
   isTestEnv,
-  preventUnload,
   resolvablePromise,
   isDevEnv,
 } from "@excalidraw/common";
@@ -51,8 +49,7 @@ import type { ResolvablePromise } from "@excalidraw/common/utils";
 
 import CustomStats from "./CustomStats";
 import { useAtomValue } from "./app-jotai";
-import { clearPwaEvent, getPwaEvent } from "./app-pwa";
-import { STORAGE_KEYS, SYNC_BROWSER_TABS_TIMEOUT } from "./app_constants";
+import { STORAGE_KEYS } from "./app_constants";
 import { AppFooter } from "./components/AppFooter";
 import { AppMainMenu } from "./components/AppMainMenu";
 import { AppWelcomeScreen } from "./components/AppWelcomeScreen";
@@ -80,9 +77,7 @@ import {
   LocalData,
   localStorageQuotaExceededAtom,
 } from "./data/LocalData";
-import { isBrowserStorageStateNewer } from "./data/tabSync";
 import { useHandleAppTheme } from "./useHandleAppTheme";
-import { getPreferredLanguage } from "./app-language/language-detector";
 import { useAppLangCode } from "./app-language/language-state";
 import DebugCanvas, {
   debugRenderer,
@@ -96,8 +91,10 @@ import {
 } from "./data/thumbnailSaveQueue";
 
 import { EditorTopRightUI } from "./components/EditorTopRightUI";
+import { EditorCommandPalette } from "./components/EditorCommandPalette";
 import { AppSidebar } from "./components/AppSidebar";
 import { LazyOverwriteConfirmDialog } from "./components/LazyOverwriteConfirmDialog";
+import { useEditorLifecycleSync } from "./data/useEditorLifecycleSync";
 import {
   clearObsoleteLocalFiles,
   getCloudFileIds,
@@ -117,12 +114,6 @@ import {
 
 import type { CloudSaveSnapshot } from "./data/cloudSync";
 import { createCloudSceneRefreshGuard } from "./data/cloudSceneRefresh";
-
-const LazyCommandPalette = lazy(async () => {
-  const { CommandPalette } =
-    await import("@excalidraw/excalidraw/components/CommandPalette/CommandPalette");
-  return { default: CommandPalette };
-});
 
 const LazyAuthDialog = lazy(async () => {
   const { AuthDialog } = await import("./components/AuthDialog");
@@ -1219,150 +1210,12 @@ const ExcalidrawWrapper = (props: {
     loadImages(initialSceneDataRef.current, /* isInitialLoad */ true);
   }, [excalidrawAPI, loadImages]);
 
-  useEffect(() => {
-    if (!excalidrawAPI) {
-      return;
-    }
-
-    const syncData = debounce(() => {
-      if (isTestEnv()) {
-        return;
-      }
-      if (!document.hidden) {
-        // For cloud SQLite scenes, scene content sync across browser tabs is handled
-        // securely by subscribeCloudTabSync via BroadcastChannel per sceneId.
-        // We must NEVER overwrite currentSceneId with global localStorage.
-        if (
-          !currentSceneIdRef.current &&
-          isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_DATA_STATE)
-        ) {
-          const localDataState = importFromLocalStorage();
-          setLangCode(getPreferredLanguage());
-          excalidrawAPI.updateScene({
-            ...localDataState,
-            captureUpdate: CaptureUpdateAction.NEVER,
-          });
-        }
-
-        LibraryIndexedDBAdapter.load().then((data) => {
-          if (data) {
-            excalidrawAPI.updateLibrary({
-              libraryItems: data.libraryItems,
-            });
-          }
-        });
-
-        if (
-          !currentSceneIdRef.current &&
-          isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_FILES)
-        ) {
-          const elements = excalidrawAPI.getSceneElementsIncludingDeleted();
-          const currFiles = excalidrawAPI.getFiles();
-          const fileIds =
-            elements?.reduce((acc, element) => {
-              if (
-                isInitializedImageElement(element) &&
-                // only load and update images that aren't already loaded
-                !currFiles[element.fileId]
-              ) {
-                return acc.concat(element.fileId);
-              }
-              return acc;
-            }, [] as FileId[]) || [];
-          if (fileIds.length) {
-            LocalData.fileStorage
-              .getFiles(fileIds)
-              .then(({ loadedFiles, erroredFiles }) => {
-                if (loadedFiles.length) {
-                  excalidrawAPI.addFiles(loadedFiles);
-                }
-                updateStaleImageStatuses({
-                  excalidrawAPI,
-                  erroredFiles,
-                  elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
-                });
-              });
-          }
-        }
-      }
-    }, SYNC_BROWSER_TABS_TIMEOUT);
-
-    const flushCloudSave = () => {
-      LocalData.flushSave();
-      const sceneId = currentSceneIdRef.current;
-      if (sceneId) {
-        void cloudSaveQueue.flush(sceneId);
-      }
-    };
-
-    const onUnload = () => {
-      cloudSaveQueue.protectPendingSnapshotsForUnload(true);
-      flushCloudSave();
-    };
-
-    const visibilityChange = (event: FocusEvent | Event) => {
-      if (event.type === EVENT.BLUR || document.hidden) {
-        flushCloudSave();
-      }
-      if (
-        event.type === EVENT.VISIBILITY_CHANGE ||
-        event.type === EVENT.FOCUS
-      ) {
-        syncData();
-      }
-    };
-
-    window.addEventListener(EVENT.UNLOAD, onUnload, false);
-    window.addEventListener("pagehide", onUnload, false);
-    window.addEventListener(EVENT.BLUR, visibilityChange, false);
-    document.addEventListener(EVENT.VISIBILITY_CHANGE, visibilityChange, false);
-    window.addEventListener(EVENT.FOCUS, visibilityChange, false);
-    return () => {
-      window.removeEventListener(EVENT.UNLOAD, onUnload, false);
-      window.removeEventListener("pagehide", onUnload, false);
-      window.removeEventListener(EVENT.BLUR, visibilityChange, false);
-      window.removeEventListener(EVENT.FOCUS, visibilityChange, false);
-      document.removeEventListener(
-        EVENT.VISIBILITY_CHANGE,
-        visibilityChange,
-        false,
-      );
-    };
-  }, [excalidrawAPI, setLangCode, cloudSaveQueue]);
-
-  useEffect(() => {
-    const unloadHandler = (event: BeforeUnloadEvent) => {
-      LocalData.flushSave();
-      cloudSaveQueue.protectPendingSnapshotsForUnload(true);
-      const sceneId = currentSceneIdRef.current;
-      if (sceneId) {
-        void cloudSaveQueue.flush(sceneId);
-      }
-
-      if (sceneId && cloudSaveQueue.hasPending(sceneId)) {
-        preventUnload(event);
-      }
-
-      if (
-        excalidrawAPI &&
-        LocalData.fileStorage.shouldPreventUnload(
-          excalidrawAPI.getSceneElements(),
-        )
-      ) {
-        if (import.meta.env.VITE_APP_DISABLE_PREVENT_UNLOAD !== "true") {
-          preventUnload(event);
-        } else {
-          console.warn(
-            "preventing unload disabled (VITE_APP_DISABLE_PREVENT_UNLOAD)",
-          );
-        }
-      }
-    };
-    window.addEventListener(EVENT.BEFORE_UNLOAD, unloadHandler);
-    return () => {
-      window.removeEventListener(EVENT.BEFORE_UNLOAD, unloadHandler);
-    };
-  }, [excalidrawAPI, cloudSaveQueue]);
+  const { onExport } = useEditorLifecycleSync({
+    excalidrawAPI,
+    currentSceneIdRef,
+    cloudSaveQueue,
+    setLangCode,
+  });
 
   const onIncrement: ExcalidrawProps["onIncrement"] = useCallback((event) => {
     if (event.type === "durable") {
@@ -1453,56 +1306,6 @@ const ExcalidrawWrapper = (props: {
   };
 
   const localStorageQuotaExceeded = useAtomValue(localStorageQuotaExceededAtom);
-
-  // ---------------------------------------------------------------------------
-  // onExport — intercepts file save to wait for pending image loads
-  // ---------------------------------------------------------------------------
-  const onExport: Required<ExcalidrawProps>["onExport"] = useCallback(
-    async function* () {
-      let snapshot = FileStatusStore.getSnapshot();
-      const { pending, total } = FileStatusStore.getPendingCount(
-        snapshot.value,
-      );
-      if (pending === 0) {
-        return;
-      }
-
-      // Yield initial progress
-      yield {
-        type: "progress",
-        progress: (total - pending) / total,
-        message: `Loading images (${total - pending}/${total})...`,
-      };
-
-      // Wait for all pending images to finish
-      while (true) {
-        snapshot = await FileStatusStore.pull(snapshot.version);
-        const { pending: nowPending, total: nowTotal } =
-          FileStatusStore.getPendingCount(snapshot.value);
-
-        yield {
-          type: "progress",
-          progress: (nowTotal - nowPending) / nowTotal,
-          message: `Loading images (${nowTotal - nowPending}/${nowTotal})...`,
-        };
-
-        if (nowPending === 0) {
-          await new Promise((r) => setTimeout(r, 500));
-          yield {
-            type: "progress",
-            message: `Preparing export...`,
-          };
-          return;
-        }
-      }
-    },
-    [],
-  );
-
-  // const onExport = () => {
-  //   return new Promise((r) => setTimeout(r, 2500));
-  //   // console.log("onExport");
-  // };
 
   const navigateHomeAfterSave = useCallback(async () => {
     const sceneId = currentSceneIdRef.current;
@@ -1675,65 +1478,9 @@ const ExcalidrawWrapper = (props: {
           </ErrorDialog>
         )}
 
-        <Suspense fallback={null}>
-          <LazyCommandPalette
-            customCommandPaletteItems={[
-              {
-                label: "返回至主页",
-                category: DEFAULT_CATEGORIES.app,
-                predicate: true,
-                icon: (
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="18"
-                    height="18"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                    <polyline points="9 22 9 12 15 12 15 22" />
-                  </svg>
-                ),
-                keywords: [
-                  "home",
-                  "zhuye",
-                  "fanhuizhuye",
-                  "return",
-                  "cloud",
-                  "scene",
-                  "board",
-                  "sqlite",
-                  "画板",
-                  "主页",
-                  "云端",
-                  "返回",
-                ],
-                perform: () => {
-                  void navigateHomeAfterSave();
-                },
-              },
-              {
-                label: t("labels.installPWA"),
-                category: DEFAULT_CATEGORIES.app,
-                predicate: () => !!getPwaEvent(),
-                perform: () => {
-                  const event = getPwaEvent();
-                  if (event) {
-                    event.prompt();
-                    event.userChoice.then(() => {
-                      // event cannot be reused, but we’ll hopefully
-                      // grab new one as the event should be fired again
-                      clearPwaEvent();
-                    });
-                  }
-                },
-              },
-            ]}
-          />
-        </Suspense>
+        <EditorCommandPalette
+          onNavigateHome={() => void navigateHomeAfterSave()}
+        />
         {isVisualDebuggerEnabled() && excalidrawAPI && (
           <DebugCanvas
             appState={excalidrawAPI.getAppState()}
