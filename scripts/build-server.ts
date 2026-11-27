@@ -9,10 +9,7 @@ fs.rmSync(outputDirectory, { recursive: true, force: true });
 fs.mkdirSync(outputDirectory, { recursive: true });
 
 const result = await Bun.build({
-  entrypoints: [
-    path.join(projectRoot, "server", "server.ts"),
-    path.join(projectRoot, "server", "backup-worker.ts"),
-  ],
+  entrypoints: [path.join(projectRoot, "server", "server.ts")],
   outdir: outputDirectory,
   target: "bun",
   format: "esm",

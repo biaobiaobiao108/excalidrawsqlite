@@ -296,65 +296,43 @@ const removeBackupArtifact = async (
   }
 };
 
-const BACKUP_WORKER_TIMEOUT_MS = 120_000;
-
-const writeDatabaseSnapshot = (
+const writeDatabaseSnapshot = async (
   dbPath: string,
   destination: string,
   maxBytes: number,
-  timeoutMs = BACKUP_WORKER_TIMEOUT_MS,
-) =>
-  new Promise<void>((resolve, reject) => {
-    const workerFile = import.meta.path.endsWith(".ts")
-      ? "backup-worker.ts"
-      : "backup-worker.js";
-    const worker = new Worker(new URL(workerFile, import.meta.url));
-    let settled = false;
-    const timeoutHandle =
-      timeoutMs > 0
-        ? setTimeout(() => {
-            if (settled) {
-              return;
-            }
-            settled = true;
-            worker.terminate();
-            reject(new Error("数据库快照工作线程超时"));
-          }, timeoutMs)
-        : undefined;
-    const finish = (fn: () => void) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (timeoutHandle !== undefined) {
-        clearTimeout(timeoutHandle);
-      }
-      worker.terminate();
-      fn();
-    };
-    worker.onmessage = (
-      event: MessageEvent<{
-        ok: boolean;
-        tooLarge?: boolean;
-        message?: string;
-      }>,
-    ) => {
-      finish(() => {
-        if (event.data.ok) resolve();
-        else if (event.data.tooLarge)
-          reject(
-            new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制"),
-          );
-        else reject(new Error(event.data.message || "数据库快照失败"));
-      });
-    };
-    worker.onerror = (event) => {
-      finish(() => {
-        reject(new Error(`数据库快照工作线程失败: ${event.message}`));
-      });
-    };
-    worker.postMessage({ dbPath, destination, maxBytes });
-  });
+) => {
+  let db: Database | undefined;
+  try {
+    db = new Database(dbPath, { readonly: true });
+    db.run("PRAGMA busy_timeout = 10000;");
+    const pageSize = Number(
+      (db.query("PRAGMA page_size").get() as { page_size: number }).page_size,
+    );
+    const content = db
+      .query(
+        `SELECT COALESCE(SUM(bytes), 0) AS bytes FROM (
+      SELECT length(CAST(id AS BLOB)) + length(CAST(name AS BLOB)) +
+             length(CAST(elements AS BLOB)) + length(CAST(app_state AS BLOB)) +
+             length(CAST(tags_json AS BLOB)) AS bytes FROM scenes
+      UNION ALL SELECT length(CAST(id AS BLOB)) + length(CAST(name AS BLOB)) +
+             length(CAST(icon AS BLOB)) + length(CAST(color AS BLOB)) FROM folders
+      UNION ALL SELECT length(CAST(id AS BLOB)) + COALESCE(length(CAST(storage_path AS BLOB)), 0) +
+             length(CAST(mime_type AS BLOB)) + length(CAST(sha256 AS BLOB)) FROM files
+      UNION ALL SELECT length(CAST(scene_id AS BLOB)) + length(CAST(file_id AS BLOB)) FROM scene_files
+      UNION ALL SELECT length(CAST(token AS BLOB)) FROM sessions
+      UNION ALL SELECT length(CAST(key_sha256 AS BLOB)) + length(CAST(payload_sha256 AS BLOB)) +
+             length(CAST(scene_id AS BLOB)) FROM scene_create_requests
+    )`,
+      )
+      .get() as { bytes: number };
+    if (maxBytes < pageSize || Number(content.bytes) > maxBytes) {
+      throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
+    }
+    db.run(`VACUUM INTO '${destination.replace(/'/g, "''")}'`);
+  } finally {
+    db?.close();
+  }
+};
 
 export const createDatabaseSnapshot = async (
   runtime: ServerRuntime,
