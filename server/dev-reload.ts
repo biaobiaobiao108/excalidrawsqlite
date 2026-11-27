@@ -1,3 +1,5 @@
+export const DEV_RELOAD_PATH = "/__dev_reload";
+
 const subscribers = new Set<WritableStreamDefaultWriter>();
 
 export const closeDevReloadSubscribers = async () => {
@@ -18,12 +20,14 @@ export const handleDevReloadRequest = (req: Request): Response => {
   const writer = writable.getWriter();
   subscribers.add(writer);
 
-  req.signal.addEventListener("abort", () => {
-    subscribers.delete(writer);
-    try {
-      writer.close();
-    } catch {}
-  });
+  req.signal.addEventListener(
+    "abort",
+    () => {
+      subscribers.delete(writer);
+      void writer.abort().catch(() => {});
+    },
+    { once: true },
+  );
 
   // Initial handshake message
   writer

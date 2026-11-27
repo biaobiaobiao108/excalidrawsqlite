@@ -14,7 +14,7 @@ import { getPreferredLanguage } from "../app-language/language-detector";
 import { updateStaleImageStatuses } from "./FileManager";
 import { FileStatusStore } from "./fileStatusStore";
 import { importFromLocalStorage } from "./localStorage";
-import { LibraryIndexedDBAdapter, LocalData } from "./LocalData";
+import { LocalData } from "./LocalData";
 import { isBrowserStorageStateNewer } from "./tabSync";
 import type { CloudSaveQueue } from "./cloudSync";
 
@@ -55,17 +55,6 @@ export const useEditorLifecycleSync = ({
             captureUpdate: CaptureUpdateAction.NEVER,
           });
         }
-
-        LibraryIndexedDBAdapter.load().then((data) => {
-          if (excalidrawAPI.isDestroyed) {
-            return;
-          }
-          if (data) {
-            excalidrawAPI.updateLibrary({
-              libraryItems: data.libraryItems,
-            });
-          }
-        });
 
         if (
           !currentSceneIdRef.current &&

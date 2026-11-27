@@ -3,7 +3,6 @@ import { useEffect, useRef } from "react";
 import {
   URL_HASH_KEYS,
   URL_QUERY_KEYS,
-  APP_NAME,
   EVENT,
   DEFAULT_SIDEBAR,
   LIBRARY_SIDEBAR_TAB,
@@ -369,7 +368,9 @@ class Library {
   ): Promise<LibraryItems> => {
     const task = new Promise<LibraryItems>(async (resolve, reject) => {
       try {
-        await this.getLastUpdateTask();
+        // Each caller handles its own rejection. A failed import must not
+        // cancel the next queued library update.
+        await this.getLastUpdateTask()?.catch(() => {});
 
         if (typeof libraryItems === "function") {
           libraryItems = libraryItems(this.currLibraryItems);
@@ -623,9 +624,8 @@ const persistLibraryUpdate = async (
     librarySaveCounter++;
 
     return await AdapterTransaction.run(adapter, async (transaction) => {
-      const nextLibraryItemsMap = arrayToMap(
-        await transaction.getLibraryItems("save"),
-      );
+      const storedLibraryItems = await transaction.getLibraryItems("save");
+      const nextLibraryItemsMap = arrayToMap(storedLibraryItems);
 
       for (const [id] of update.deletedItems) {
         nextLibraryItemsMap.delete(id);
@@ -672,7 +672,8 @@ const persistLibraryUpdate = async (
 
       const version = getLibraryItemsHash(nextLibraryItems);
 
-      if (version !== lastSavedLibraryItemsHash) {
+      // Cross-tab refreshes can report changes that are already in storage.
+      if (version !== getLibraryItemsHash(storedLibraryItems)) {
         await adapter.save({ libraryItems: nextLibraryItems });
       }
 
@@ -733,22 +734,6 @@ export const useHandleLibrary = (
       libraryUrl: string;
       idToken: string | null;
     }) => {
-      const libraryPromise = new Promise<Blob>(async (resolve, reject) => {
-        try {
-          libraryUrl = decodeURIComponent(libraryUrl);
-
-          libraryUrl = toValidURL(libraryUrl);
-
-          validateLibraryUrl(libraryUrl, optsRef.current.validateLibraryUrl);
-
-          const request = await fetch(libraryUrl);
-          const blob = await request.blob();
-          resolve(blob);
-        } catch (error: any) {
-          reject(error);
-        }
-      });
-
       const shouldPrompt = idToken !== excalidrawAPI.id;
 
       // wait for the tab to be focused before continuing in case we'll prompt
@@ -761,9 +746,23 @@ export const useHandleLibrary = (
           })
         : null);
 
+      if (excalidrawAPI.isDestroyed) {
+        return;
+      }
+
       try {
         await excalidrawAPI.updateLibrary({
-          libraryItems: libraryPromise,
+          libraryItems: async () => {
+            const url = toValidURL(decodeURIComponent(libraryUrl));
+            validateLibraryUrl(url, optsRef.current.validateLibraryUrl);
+            const response = await fetch(url);
+            if (!response.ok) {
+              throw new Error(
+                `${t("errors.importLibraryError")} (${response.status})`,
+              );
+            }
+            return response.blob();
+          },
           prompt: shouldPrompt,
           merge: true,
           defaultStatus: "published",
@@ -775,17 +774,6 @@ export const useHandleLibrary = (
             errorMessage: error.message,
           },
         });
-        throw error;
-      } finally {
-        if (window.location.hash.includes(URL_HASH_KEYS.addLibrary)) {
-          const hash = new URLSearchParams(window.location.hash.slice(1));
-          hash.delete(URL_HASH_KEYS.addLibrary);
-          window.history.replaceState({}, APP_NAME, `#${hash.toString()}`);
-        } else if (window.location.search.includes(URL_QUERY_KEYS.addLibrary)) {
-          const query = new URLSearchParams(window.location.search);
-          query.delete(URL_QUERY_KEYS.addLibrary);
-          window.history.replaceState({}, APP_NAME, `?${query.toString()}`);
-        }
       }
     };
     const onHashChange = (event: HashChangeEvent) => {
@@ -797,7 +785,7 @@ export const useHandleLibrary = (
         // the url to its previous state (important in case of collaboration
         // and similar).
         // Using history API won't trigger another hashchange.
-        window.history.replaceState({}, "", event.oldURL);
+        window.history.replaceState(window.history.state, "", event.oldURL);
 
         importLibraryFromURL(libraryUrlTokens);
       }
@@ -810,6 +798,17 @@ export const useHandleLibrary = (
     const libraryUrlTokens = parseLibraryTokensFromUrl();
 
     if (libraryUrlTokens) {
+      // Consume the callback before fetching so a later import can use the URL.
+      const url = new URL(window.location.href);
+      const hash = new URLSearchParams(url.hash.slice(1));
+      if (hash.has(URL_HASH_KEYS.addLibrary)) {
+        hash.delete(URL_HASH_KEYS.addLibrary);
+        hash.delete("token");
+        url.hash = hash.toString();
+      } else {
+        url.searchParams.delete(URL_QUERY_KEYS.addLibrary);
+      }
+      window.history.replaceState(window.history.state, "", url);
       importLibraryFromURL(libraryUrlTokens);
     }
 

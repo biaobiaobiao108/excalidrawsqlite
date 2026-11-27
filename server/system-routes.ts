@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { handleDevReloadRequest } from "./dev-reload";
+import { DEV_RELOAD_PATH, handleDevReloadRequest } from "./dev-reload";
 import { HttpError } from "./errors";
 import { response, jsonResponse } from "./http";
 import {
@@ -129,7 +129,7 @@ export const handleEarlySystemRequest = (
   pathname: string,
   healthCheck: HealthCheck,
 ): Response | undefined => {
-  if (pathname === "/__dev_reload") {
+  if (pathname === DEV_RELOAD_PATH) {
     if (runtime.config.nodeEnv !== "development") {
       throw new HttpError(404, "NOT_FOUND", "接口不存在");
     }

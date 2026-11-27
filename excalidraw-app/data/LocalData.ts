@@ -220,6 +220,7 @@ export class LocalData {
   });
 }
 const LIBRARY_SYNC_CHANNEL_NAME = "excalidraw-library-sync";
+const librarySyncSender = Math.random().toString(36).slice(2);
 
 export const subscribeLibrarySync = (onUpdate: () => void) => {
   if (typeof BroadcastChannel === "undefined") {
@@ -227,8 +228,10 @@ export const subscribeLibrarySync = (onUpdate: () => void) => {
   }
   try {
     const channel = new BroadcastChannel(LIBRARY_SYNC_CHANNEL_NAME);
-    channel.onmessage = () => {
-      onUpdate();
+    channel.onmessage = (event) => {
+      if (event.data?.sender !== librarySyncSender) {
+        onUpdate();
+      }
     };
     return () => {
       channel.close();
@@ -244,7 +247,7 @@ const notifyLibrarySync = () => {
   }
   try {
     const channel = new BroadcastChannel(LIBRARY_SYNC_CHANNEL_NAME);
-    channel.postMessage({ updatedAt: Date.now() });
+    channel.postMessage({ sender: librarySyncSender });
     channel.close();
   } catch {
     // Ignore when BroadcastChannel is restricted.

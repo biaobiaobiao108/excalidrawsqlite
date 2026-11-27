@@ -202,7 +202,7 @@ const ExcalidrawWrapper = (props: {
   });
 
   useEffect(() => {
-    if (!window.name) {
+    if (!window.name || window.name === "_excalidraw") {
       window.name = `_excalidraw_${Math.random().toString(36).slice(2, 10)}`;
     }
   }, []);

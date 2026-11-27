@@ -9,7 +9,7 @@ import {
   cleanupUntrackedFiles,
   inspectStorageConsistency,
 } from "./files";
-import { closeDevReloadSubscribers } from "./dev-reload";
+import { DEV_RELOAD_PATH, closeDevReloadSubscribers } from "./dev-reload";
 import { createRequestHandler } from "./routes";
 import { createMcpRequestHandler, MCP_PATH } from "./mcp";
 import {
@@ -254,13 +254,21 @@ export const startServer = async () => {
   const server = Bun.serve<RealtimeSocketData>({
     hostname,
     port,
-    fetch: (req, websocketServer) => {
+    fetch: (req, httpServer) => {
       const pathname = new URL(req.url).pathname;
       if (pathname === REALTIME_PATH) {
-        return realtime.upgrade(req, websocketServer);
+        return realtime.upgrade(req, httpServer);
       }
       if (pathname === MCP_PATH || pathname.startsWith(`${MCP_PATH}/`)) {
         return mcpHandler.fetch(req);
+      }
+      if (pathname === DEV_RELOAD_PATH && req.method === "GET") {
+        return handler(req).then((result) => {
+          if (result.ok) {
+            httpServer.timeout(req, 0);
+          }
+          return result;
+        });
       }
       return handler(req);
     },

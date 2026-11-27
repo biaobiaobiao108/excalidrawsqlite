@@ -13,7 +13,6 @@
 
     setTheme(theme);
     window.EXCALIDRAW_ASSET_PATH = [`${window.location.origin}/`];
-    window.name = "_excalidraw";
   } catch (error) {
     console.error("Error setting initial application state", error);
   }
