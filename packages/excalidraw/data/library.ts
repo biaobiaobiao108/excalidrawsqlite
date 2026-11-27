@@ -58,9 +58,7 @@ const ALLOWED_LIBRARY_URLS = [
 ];
 
 type LibraryUpdate = {
-  /** deleted library items since last onLibraryChange event */
   deletedItems: Map<LibraryItem["id"], LibraryItem>;
-  /** newly added items in the library */
   addedItems: Map<LibraryItem["id"], LibraryItem>;
   updatedItems: Map<LibraryItem["id"], LibraryItem>;
 };
@@ -69,9 +67,7 @@ type LibraryUpdate = {
 // such as schema version
 export type LibraryPersistedData = { libraryItems: LibraryItems };
 
-const onLibraryUpdateEmitter = new Emitter<
-  [update: LibraryUpdate, libraryItems: LibraryItems]
->();
+const onLibraryUpdateEmitter = new Emitter<[update: LibraryUpdate]>();
 
 export type LibraryAdatapterSource = "load" | "save";
 
@@ -92,6 +88,11 @@ export interface LibraryPersistenceAdapter {
   }): MaybePromise<{ libraryItems: LibraryItems_anyVersion } | null>;
   /** Should persist to the database as is (do no change the data structure). */
   save(libraryData: LibraryPersistedData): MaybePromise<void>;
+  /** Apply a change atomically when the store is shared by multiple editors. */
+  update?(
+    apply: (previous: LibraryPersistedData | null) => LibraryPersistedData,
+  ): Promise<LibraryPersistedData>;
+  subscribe?(onChange: () => void): () => void;
 }
 
 export interface LibraryMigrationAdapter {
@@ -157,8 +158,7 @@ export const mergeLibraryItems = (
 };
 
 /**
- * Returns { deletedItems, addedItems } maps of all added and deleted items
- * since last onLibraryChange event.
+ * Returns changes between two library states.
  *
  * Host apps are recommended to diff with the latest state they have.
  */
@@ -198,9 +198,6 @@ class Library {
   /** latest libraryItems */
   private currLibraryItems: LibraryItems = [];
 
-  /** snapshot of library items since last onLibraryChange call */
-  private prevLibraryItems = cloneLibraryItems(this.currLibraryItems);
-
   private app: App;
 
   constructor(app: App) {
@@ -227,17 +224,8 @@ class Library {
         isInitialized: true,
       });
       try {
-        const prevLibraryItems = this.prevLibraryItems;
-        this.prevLibraryItems = cloneLibraryItems(this.currLibraryItems);
-
-        const nextLibraryItems = cloneLibraryItems(this.currLibraryItems);
-
-        this.app.props.onLibraryChange?.(nextLibraryItems);
-
-        // for internal use in `useHandleLibrary` hook
-        onLibraryUpdateEmitter.trigger(
-          createLibraryUpdate(prevLibraryItems, nextLibraryItems),
-          nextLibraryItems,
+        this.app.props.onLibraryChange?.(
+          cloneLibraryItems(this.currLibraryItems),
         );
       } catch (error) {
         console.error(error);
@@ -290,12 +278,14 @@ class Library {
     merge = false,
     openLibraryMenu = false,
     defaultStatus = "unpublished",
+    persist = true,
   }: {
     libraryItems: LibraryItemsSource;
     merge?: boolean;
     prompt?: boolean;
     openLibraryMenu?: boolean;
     defaultStatus?: "unpublished" | "published";
+    persist?: boolean;
   }): Promise<LibraryItems> => {
     if (openLibraryMenu) {
       this.app.setState({
@@ -345,7 +335,7 @@ class Library {
           reject(error);
         }
       });
-    });
+    }, persist);
   };
 
   setLibrary = (
@@ -365,18 +355,32 @@ class Library {
       | ((
           latestLibraryItems: LibraryItems,
         ) => LibraryItems | Promise<LibraryItems>),
+    persist = true,
   ): Promise<LibraryItems> => {
     const task = new Promise<LibraryItems>(async (resolve, reject) => {
       try {
         // Each caller handles its own rejection. A failed import must not
         // cancel the next queued library update.
         await this.getLastUpdateTask()?.catch(() => {});
+        if (this.app.unmounted) {
+          return resolve(this.currLibraryItems);
+        }
 
         if (typeof libraryItems === "function") {
           libraryItems = libraryItems(this.currLibraryItems);
         }
 
-        this.currLibraryItems = cloneLibraryItems(await libraryItems);
+        const previous = this.currLibraryItems;
+        const next = cloneLibraryItems(await libraryItems);
+        if (this.app.unmounted) {
+          return resolve(previous);
+        }
+        this.currLibraryItems = next;
+
+        // Queue persistence before a later storage refresh can read the library.
+        if (persist) {
+          onLibraryUpdateEmitter.trigger(createLibraryUpdate(previous, next));
+        }
 
         resolve(this.currLibraryItems);
       } catch (error: any) {
@@ -392,7 +396,9 @@ class Library {
       })
       .finally(() => {
         this.updateQueue = this.updateQueue.filter((_task) => _task !== task);
-        this.notifyListeners();
+        if (!this.app.unmounted) {
+          this.notifyListeners();
+        }
       });
 
     this.updateQueue.push(task);
@@ -600,7 +606,6 @@ class AdapterTransaction {
   }
 }
 
-let lastSavedLibraryItemsHash = 0;
 let librarySaveCounter = 0;
 
 const getLibraryItemHash = (item: LibraryItem) => {
@@ -623,8 +628,7 @@ const persistLibraryUpdate = async (
   try {
     librarySaveCounter++;
 
-    return await AdapterTransaction.run(adapter, async (transaction) => {
-      const storedLibraryItems = await transaction.getLibraryItems("save");
+    const apply = (storedLibraryItems: LibraryItems): LibraryItems => {
       const nextLibraryItemsMap = arrayToMap(storedLibraryItems);
 
       for (const [id] of update.deletedItems) {
@@ -666,20 +670,31 @@ const persistLibraryUpdate = async (
         }
       }
 
-      const nextLibraryItems = addedItems.concat(
-        Array.from(nextLibraryItemsMap.values()),
-      );
+      return addedItems.concat(Array.from(nextLibraryItemsMap.values()));
+    };
 
-      const version = getLibraryItemsHash(nextLibraryItems);
-
-      // Cross-tab refreshes can report changes that are already in storage.
-      if (version !== getLibraryItemsHash(storedLibraryItems)) {
-        await adapter.save({ libraryItems: nextLibraryItems });
+    return await AdapterTransaction.run(adapter, async (transaction) => {
+      if (adapter.update) {
+        const saved = await adapter.update((previous) => {
+          const stored = restoreLibraryItems(
+            previous?.libraryItems,
+            "published",
+          );
+          const libraryItems = apply(stored);
+          return previous &&
+            getLibraryItemsHash(libraryItems) === getLibraryItemsHash(stored)
+            ? previous
+            : { libraryItems };
+        });
+        return saved.libraryItems;
       }
 
-      lastSavedLibraryItemsHash = version;
-
-      return nextLibraryItems;
+      const stored = await transaction.getLibraryItems("save");
+      const libraryItems = apply(stored);
+      if (getLibraryItemsHash(libraryItems) !== getLibraryItemsHash(stored)) {
+        await adapter.save({ libraryItems });
+      }
+      return libraryItems;
     });
   } finally {
     librarySaveCounter--;
@@ -844,6 +859,7 @@ export const useHandleLibrary = (
 
     // ------ (B) data source adapter ------------------------------------------
 
+    let unsubscribeFromStorage: (() => void) | undefined;
     if ("adapter" in optsRef.current && optsRef.current.adapter) {
       const adapter = optsRef.current.adapter;
       const migrationAdapter = optsRef.current.migrationAdapter;
@@ -913,24 +929,37 @@ export const useHandleLibrary = (
       // load initial (or migrated) library
       excalidrawAPI
         .updateLibrary({
-          libraryItems: initDataPromise.then((libraryItems) => {
-            const _libraryItems = libraryItems || [];
-            lastSavedLibraryItemsHash = getLibraryItemsHash(_libraryItems);
-            return _libraryItems;
-          }),
+          libraryItems: initDataPromise.then(
+            (libraryItems) => libraryItems || [],
+          ),
           // merge with current library items because we may have already
           // populated it (e.g. by installing 3rd party library which can
           // happen before the DB data is loaded)
           merge: true,
+          persist: false,
         })
         .finally(() => {
           isLibraryLoadedRef.current = true;
         });
+
+      unsubscribeFromStorage = adapter.subscribe?.(() => {
+        void excalidrawAPI
+          .updateLibrary({
+            // Read when this operation reaches the editor queue, and after any
+            // preceding local edits have been written to storage.
+            libraryItems: () =>
+              AdapterTransaction.getLibraryItems(adapter, "load"),
+            defaultStatus: "published",
+            persist: false,
+          })
+          .catch((error) => console.error("Couldn't sync the library", error));
+      });
     }
     // ---------------------------------------------- data source datapter -----
 
     window.addEventListener(EVENT.HASHCHANGE, onHashChange);
     return () => {
+      unsubscribeFromStorage?.();
       window.removeEventListener(EVENT.HASHCHANGE, onHashChange);
     };
   }, [
@@ -950,44 +979,38 @@ export const useHandleLibrary = (
     () => {
       // on update, merge with current library items and persist
       // -----------------------------------------------------------------------
-      const unsubOnLibraryUpdate = onLibraryUpdateEmitter.on(
-        async (update, nextLibraryItems) => {
-          const isLoaded = isLibraryLoadedRef.current;
-          // we want to operate with the latest adapter, but we don't want this
-          // effect to rerun on every adapter change in case host apps' adapter
-          // isn't stable
-          const adapter =
-            ("adapter" in optsRef.current && optsRef.current.adapter) || null;
-          try {
-            if (adapter) {
-              if (
-                // if nextLibraryItems hash identical to previously saved hash,
-                // exit early, even if actual upstream state ends up being
-                // different (e.g. has more data than we have locally), as it'd
-                // be low-impact scenario.
-                lastSavedLibraryItemsHash !==
-                getLibraryItemsHash(nextLibraryItems)
-              ) {
-                await persistLibraryUpdate(adapter, update);
-              }
-            }
-          } catch (error: any) {
-            console.error(
-              `couldn't persist library update: ${error.message}`,
-              update,
-            );
-
-            // currently we only show error if an editor is loaded
-            if (isLoaded && optsRef.current.excalidrawAPI) {
-              optsRef.current.excalidrawAPI.updateScene({
-                appState: {
-                  errorMessage: t("errors.saveLibraryError"),
-                },
-              });
-            }
+      const unsubOnLibraryUpdate = onLibraryUpdateEmitter.on(async (update) => {
+        const isLoaded = isLibraryLoadedRef.current;
+        // we want to operate with the latest adapter, but we don't want this
+        // effect to rerun on every adapter change in case host apps' adapter
+        // isn't stable
+        const adapter =
+          ("adapter" in optsRef.current && optsRef.current.adapter) || null;
+        try {
+          if (
+            adapter &&
+            (update.addedItems.size ||
+              update.deletedItems.size ||
+              update.updatedItems.size)
+          ) {
+            await persistLibraryUpdate(adapter, update);
           }
-        },
-      );
+        } catch (error: any) {
+          console.error(
+            `couldn't persist library update: ${error.message}`,
+            update,
+          );
+
+          // currently we only show error if an editor is loaded
+          if (isLoaded && optsRef.current.excalidrawAPI) {
+            optsRef.current.excalidrawAPI.updateScene({
+              appState: {
+                errorMessage: t("errors.saveLibraryError"),
+              },
+            });
+          }
+        }
+      });
 
       const onUnload = (event: Event) => {
         if (librarySaveCounter) {
@@ -1000,8 +1023,6 @@ export const useHandleLibrary = (
       return () => {
         window.removeEventListener(EVENT.BEFORE_UNLOAD, onUnload);
         unsubOnLibraryUpdate();
-        lastSavedLibraryItemsHash = 0;
-        librarySaveCounter = 0;
       };
     },
     [

@@ -15,7 +15,15 @@ import {
   DEFAULT_SIDEBAR,
   debounce,
 } from "@excalidraw/common";
-import { createStore, del, getMany, set, setMany, get } from "idb-keyval";
+import {
+  createStore,
+  del,
+  getMany,
+  set,
+  setMany,
+  get,
+  update,
+} from "idb-keyval";
 
 import { getNonDeletedElements } from "@excalidraw/element";
 
@@ -222,7 +230,7 @@ export class LocalData {
 const LIBRARY_SYNC_CHANNEL_NAME = "excalidraw-library-sync";
 const librarySyncSender = Math.random().toString(36).slice(2);
 
-export const subscribeLibrarySync = (onUpdate: () => void) => {
+const subscribeLibrarySync = (onUpdate: () => void) => {
   if (typeof BroadcastChannel === "undefined") {
     return () => {};
   }
@@ -255,6 +263,8 @@ const notifyLibrarySync = () => {
 };
 
 export class LibraryIndexedDBAdapter {
+  static subscribe = subscribeLibrarySync;
+
   /** IndexedDB database and store name */
   private static idb_name = STORAGE_KEYS.IDB_LIBRARY;
   /** library data store key */
@@ -277,6 +287,26 @@ export class LibraryIndexedDBAdapter {
   static async save(data: LibraryPersistedData): Promise<void> {
     await set(LibraryIndexedDBAdapter.key, data, LibraryIndexedDBAdapter.store);
     notifyLibrarySync();
+  }
+
+  static async update(
+    apply: (previous: LibraryPersistedData | null) => LibraryPersistedData,
+  ): Promise<LibraryPersistedData> {
+    let saved!: LibraryPersistedData;
+    let changed = false;
+    await update<LibraryPersistedData>(
+      LibraryIndexedDBAdapter.key,
+      (previous) => {
+        saved = apply(previous ?? null);
+        changed = saved !== previous;
+        return saved;
+      },
+      LibraryIndexedDBAdapter.store,
+    );
+    if (changed) {
+      notifyLibrarySync();
+    }
+    return saved;
   }
 }
 

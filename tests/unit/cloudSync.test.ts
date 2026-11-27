@@ -172,12 +172,19 @@ describe("cloud save queue", () => {
       release = resolve;
     });
     const previews: Array<[string, number]> = [];
+    const drained: Array<{ pending: boolean; revision?: number }> = [];
     let writes = 0;
     const queue = new CloudSaveQueue(
       {
         ...callbacks,
         onSnapshotSaved: (saved, revision) => {
           previews.push([saved.name, revision]);
+        },
+        onDrained: (sceneId) => {
+          drained.push({
+            pending: queue.hasPending(sceneId),
+            revision: queue.getRevision(sceneId),
+          });
         },
       },
       {
@@ -199,12 +206,14 @@ describe("cloud save queue", () => {
       await firstStarted;
       queue.enqueue(snapshot("latest"));
       expect(previews).toEqual([]);
+      expect(drained).toEqual([]);
       release();
       expect(await saving).toBe("saved");
       expect(previews).toEqual([
         ["first", 2],
         ["latest", 3],
       ]);
+      expect(drained).toEqual([{ pending: false, revision: 3 }]);
     } finally {
       release();
       queue.dispose();

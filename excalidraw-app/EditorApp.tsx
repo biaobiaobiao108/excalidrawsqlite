@@ -77,7 +77,6 @@ import {
   LibraryLocalStorageMigrationAdapter,
   LocalData,
   localStorageQuotaExceededAtom,
-  subscribeLibrarySync,
 } from "./data/LocalData";
 import { useHandleAppTheme } from "./useHandleAppTheme";
 import { useAppLangCode } from "./app-language/language-state";
@@ -207,31 +206,6 @@ const ExcalidrawWrapper = (props: {
     }
   }, []);
 
-  useEffect(() => {
-    if (!excalidrawAPI) {
-      return;
-    }
-    let disposed = false;
-    const unsubscribe = subscribeLibrarySync(() => {
-      void LibraryIndexedDBAdapter.load()
-        .then((data) => {
-          if (disposed || excalidrawAPI.isDestroyed || !data?.libraryItems) {
-            return;
-          }
-          return excalidrawAPI.updateLibrary({
-            libraryItems: data.libraryItems,
-            merge: false,
-            defaultStatus: "published",
-          });
-        })
-        .catch(() => {});
-    });
-    return () => {
-      disposed = true;
-      unsubscribe();
-    };
-  }, [excalidrawAPI]);
-
   const [, forceRefresh] = useState(false);
 
   useEffect(() => {
@@ -286,6 +260,9 @@ const ExcalidrawWrapper = (props: {
   const cloudBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const cloudSceneLoadIdRef = useRef(0);
   const cloudSceneRequestIdRef = useRef(0);
+  const onCloudSaveDrainedRef = useRef<((sceneId: string) => void) | null>(
+    null,
+  );
   const cloudFileLoadControllerRef = useRef<AbortController | null>(null);
   const cloudSceneViewportTimerRef = useRef<ReturnType<
     typeof setTimeout
@@ -357,6 +334,7 @@ const ExcalidrawWrapper = (props: {
   const cloudSaveQueue = useMemo(
     () =>
       new CloudSaveQueue({
+        onDrained: (sceneId) => onCloudSaveDrainedRef.current?.(sceneId),
         onSnapshotSaved: (snapshot, revision) => {
           const thumbnailVersion = Math.max(
             Date.now(),
@@ -1163,81 +1141,95 @@ const ExcalidrawWrapper = (props: {
   ]);
 
   useEffect(() => {
-    return subscribeCloudTabSync((message) => {
-      if (message.type === "scene_saved") {
-        if (
-          currentSceneIdRef.current === message.sceneId &&
-          !cloudSaveQueue.hasPending(message.sceneId)
-        ) {
-          void loadSelectedCloudScene(message.sceneId, false);
-        } else if (!cloudSaveQueue.hasPending(message.sceneId)) {
-          cloudSaveQueue.setRevision(message.sceneId, message.revision);
-        }
-      } else if (message.type === "scene_renamed") {
-        if (
-          currentSceneIdRef.current === message.sceneId &&
-          excalidrawAPI &&
-          !cloudSaveQueue.hasPending(message.sceneId)
-        ) {
-          cloudSaveQueue.setRevision(message.sceneId, message.revision);
-          excalidrawAPI.updateScene({
-            appState: { name: message.name },
-            captureUpdate: CaptureUpdateAction.NEVER,
-          });
-          cloudPersistenceSignatureRef.current = getCloudPersistenceSignature(
-            message.name,
-            excalidrawAPI.getSceneElementsIncludingDeleted(),
-            excalidrawAPI.getAppState(),
-            excalidrawAPI.getFiles(),
-          );
-        } else if (!cloudSaveQueue.hasPending(message.sceneId)) {
-          cloudSaveQueue.setRevision(message.sceneId, message.revision);
-        }
-      } else if (message.type === "scene_deleted") {
-        if (currentSceneIdRef.current === message.sceneId) {
-          void handleSceneDeleted(message.sceneId);
-        }
-      }
-    });
-  }, [
-    cloudSaveQueue,
-    excalidrawAPI,
-    handleSceneDeleted,
-    loadSelectedCloudScene,
-  ]);
-
-  useEffect(() => {
     const sceneId = currentSceneId;
     if (!sceneId) {
       return;
     }
-    return subscribeCloudRealtime(sceneId, (event) => {
-      if (event.type !== "scene_changed" || event.sceneId !== sceneId) {
+
+    let latestRemoteRevision = 0;
+    let closed = false;
+    let refreshing = false;
+    let refreshAgain = false;
+    const isCurrent = () => !closed && currentSceneIdRef.current === sceneId;
+
+    const refreshIfNeeded = () => {
+      if (
+        !isCurrent() ||
+        cloudSaveQueue.hasPending(sceneId) ||
+        latestRemoteRevision <= (cloudSaveQueue.getRevision(sceneId) ?? 0)
+      ) {
         return;
       }
-      if (event.changeKind === "thumbnail") {
+      if (refreshing) {
+        refreshAgain = true;
+        return;
+      }
+      refreshing = true;
+      void loadSelectedCloudScene(sceneId, false)
+        .catch((error: any) => {
+          if (!isCurrent()) return;
+          if (error?.status === 401) {
+            authSceneIdsRef.current.add(sceneId);
+            setIsAuthOpen(true);
+          } else if (error?.status === 404) {
+            void handleSceneDeleted(sceneId);
+          } else {
+            setErrorMessage(error?.message || "同步远端画板失败");
+          }
+        })
+        .finally(() => {
+          refreshing = false;
+          if (refreshAgain) {
+            refreshAgain = false;
+            refreshIfNeeded();
+          }
+        });
+    };
+
+    const recordRemoteRevision = (revision: number) => {
+      if (!Number.isSafeInteger(revision)) return;
+      latestRemoteRevision = Math.max(latestRemoteRevision, revision);
+      refreshIfNeeded();
+    };
+
+    onCloudSaveDrainedRef.current = (savedSceneId) => {
+      if (savedSceneId === sceneId) refreshIfNeeded();
+    };
+    const unsubscribeTab = subscribeCloudTabSync((message) => {
+      if (
+        !isCurrent() ||
+        !("sceneId" in message) ||
+        message.sceneId !== sceneId
+      ) {
+        return;
+      }
+      if (message.type === "scene_saved" || message.type === "scene_renamed") {
+        recordRemoteRevision(message.revision);
+      } else if (message.type === "scene_deleted") {
+        void handleSceneDeleted(sceneId);
+      }
+    });
+    const unsubscribeRealtime = subscribeCloudRealtime(sceneId, (event) => {
+      if (
+        !isCurrent() ||
+        event.type !== "scene_changed" ||
+        event.sceneId !== sceneId
+      ) {
         return;
       }
       if (event.changeKind === "deleted") {
         void handleSceneDeleted(sceneId);
-        return;
+      } else if (event.changeKind !== "thumbnail") {
+        recordRemoteRevision(event.revision);
       }
-      if (cloudSaveQueue.hasPending(sceneId)) {
-        return;
-      }
-      const currentRevision = cloudSaveQueue.getRevision(sceneId) || 0;
-      if (event.revision <= currentRevision) {
-        return;
-      }
-      void loadSelectedCloudScene(sceneId, false).catch((error: any) => {
-        if (error?.status === 401) {
-          authSceneIdsRef.current.add(sceneId);
-          setIsAuthOpen(true);
-        } else {
-          setErrorMessage(error?.message || "同步远端画板失败");
-        }
-      });
     });
+
+    return () => {
+      closed = true;
+      onCloudSaveDrainedRef.current = null;
+      unsubscribeRealtime();
+      unsubscribeTab();
+    };
   }, [
     cloudSaveQueue,
     currentSceneId,

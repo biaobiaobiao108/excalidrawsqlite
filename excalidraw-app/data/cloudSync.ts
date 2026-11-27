@@ -151,6 +151,7 @@ type QueueCallbacks = {
   onSceneUnavailable?: (sceneId: string, snapshot: CloudSaveSnapshot) => void;
   onError: (error: Error) => void;
   onStatusChange?: (sceneId: string, status: CloudSaveStatus) => void;
+  onDrained?: (sceneId: string) => void;
   /** Receives only snapshots confirmed by the server, with their committed revision. */
   onSnapshotSaved?: (snapshot: CloudSaveSnapshot, revision: number) => void;
 };
@@ -1142,6 +1143,9 @@ export class CloudSaveQueue {
         void this.removeRecoveredDraft(sceneId, snapshot);
       }
       this.setStatus(sceneId, "idle");
+      if (!this.isDisposed && !this.hasPending(sceneId)) {
+        this.callbacks.onDrained?.(sceneId);
+      }
     }
   }
 
@@ -1440,6 +1444,13 @@ export class CloudSaveQueue {
       this.isSaving = false;
       this.activeSceneId = null;
       this.activeSnapshot = null;
+      if (
+        !this.isDisposed &&
+        !this.disposed.has(sceneId) &&
+        !this.hasPending(sceneId)
+      ) {
+        this.callbacks.onDrained?.(sceneId);
+      }
       for (const pendingSceneId of this.pending.keys()) {
         if (
           !this.isDisposed &&
