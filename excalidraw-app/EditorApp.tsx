@@ -77,6 +77,7 @@ import {
   LibraryLocalStorageMigrationAdapter,
   LocalData,
   localStorageQuotaExceededAtom,
+  subscribeLibrarySync,
 } from "./data/LocalData";
 import { useHandleAppTheme } from "./useHandleAppTheme";
 import { useAppLangCode } from "./app-language/language-state";
@@ -199,6 +200,31 @@ const ExcalidrawWrapper = (props: {
     // TODO maybe remove this in several months (shipped: 24-03-11)
     migrationAdapter: LibraryLocalStorageMigrationAdapter,
   });
+
+  useEffect(() => {
+    if (!window.name) {
+      window.name = `_excalidraw_${Math.random().toString(36).slice(2, 10)}`;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    return subscribeLibrarySync(() => {
+      void LibraryIndexedDBAdapter.load()
+        .then((data) => {
+          if (data?.libraryItems) {
+            return excalidrawAPI.updateLibrary({
+              libraryItems: data.libraryItems,
+              merge: false,
+              defaultStatus: "published",
+            });
+          }
+        })
+        .catch(() => {});
+    });
+  }, [excalidrawAPI]);
 
   const [, forceRefresh] = useState(false);
 

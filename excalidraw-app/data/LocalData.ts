@@ -219,6 +219,38 @@ export class LocalData {
     },
   });
 }
+const LIBRARY_SYNC_CHANNEL_NAME = "excalidraw-library-sync";
+
+export const subscribeLibrarySync = (onUpdate: () => void) => {
+  if (typeof BroadcastChannel === "undefined") {
+    return () => {};
+  }
+  try {
+    const channel = new BroadcastChannel(LIBRARY_SYNC_CHANNEL_NAME);
+    channel.onmessage = () => {
+      onUpdate();
+    };
+    return () => {
+      channel.close();
+    };
+  } catch {
+    return () => {};
+  }
+};
+
+const notifyLibrarySync = () => {
+  if (typeof BroadcastChannel === "undefined") {
+    return;
+  }
+  try {
+    const channel = new BroadcastChannel(LIBRARY_SYNC_CHANNEL_NAME);
+    channel.postMessage({ updatedAt: Date.now() });
+    channel.close();
+  } catch {
+    // Ignore when BroadcastChannel is restricted.
+  }
+};
+
 export class LibraryIndexedDBAdapter {
   /** IndexedDB database and store name */
   private static idb_name = STORAGE_KEYS.IDB_LIBRARY;
@@ -239,12 +271,9 @@ export class LibraryIndexedDBAdapter {
     return IDBData || null;
   }
 
-  static save(data: LibraryPersistedData): MaybePromise<void> {
-    return set(
-      LibraryIndexedDBAdapter.key,
-      data,
-      LibraryIndexedDBAdapter.store,
-    );
+  static async save(data: LibraryPersistedData): Promise<void> {
+    await set(LibraryIndexedDBAdapter.key, data, LibraryIndexedDBAdapter.store);
+    notifyLibrarySync();
   }
 }
 
