@@ -296,16 +296,42 @@ const removeBackupArtifact = async (
   }
 };
 
+const BACKUP_WORKER_TIMEOUT_MS = 120_000;
+
 const writeDatabaseSnapshot = (
   dbPath: string,
   destination: string,
   maxBytes: number,
+  timeoutMs = BACKUP_WORKER_TIMEOUT_MS,
 ) =>
   new Promise<void>((resolve, reject) => {
     const workerFile = import.meta.path.endsWith(".ts")
       ? "backup-worker.ts"
       : "backup-worker.js";
     const worker = new Worker(new URL(workerFile, import.meta.url));
+    let settled = false;
+    const timeoutHandle =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            worker.terminate();
+            reject(new Error("数据库快照工作线程超时"));
+          }, timeoutMs)
+        : undefined;
+    const finish = (fn: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutHandle !== undefined) {
+        clearTimeout(timeoutHandle);
+      }
+      worker.terminate();
+      fn();
+    };
     worker.onmessage = (
       event: MessageEvent<{
         ok: boolean;
@@ -313,15 +339,19 @@ const writeDatabaseSnapshot = (
         message?: string;
       }>,
     ) => {
-      worker.terminate();
-      if (event.data.ok) resolve();
-      else if (event.data.tooLarge)
-        reject(new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制"));
-      else reject(new Error(event.data.message || "数据库快照失败"));
+      finish(() => {
+        if (event.data.ok) resolve();
+        else if (event.data.tooLarge)
+          reject(
+            new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制"),
+          );
+        else reject(new Error(event.data.message || "数据库快照失败"));
+      });
     };
     worker.onerror = (event) => {
-      worker.terminate();
-      reject(new Error(`数据库快照工作线程失败: ${event.message}`));
+      finish(() => {
+        reject(new Error(`数据库快照工作线程失败: ${event.message}`));
+      });
     };
     worker.postMessage({ dbPath, destination, maxBytes });
   });

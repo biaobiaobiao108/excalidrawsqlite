@@ -511,6 +511,8 @@ export async function logoutCloudSession(): Promise<void> {
     "退出授权失败",
   );
   await assertResponse(res, "退出授权失败");
+  cloudSceneCache.clear();
+  cloudFileEtags.clear();
 }
 
 export type CloudScenePage = {

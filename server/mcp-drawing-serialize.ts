@@ -238,6 +238,21 @@ export const removeDrawingElements = (
   const requested = new Set(requestedIds);
   const currentIds = new Set(current.map((element) => element.id));
   const notFoundIds = [...requested].filter((id) => !currentIds.has(id));
+  const childrenByContainer = new Map<string, string[]>();
+  for (const element of current) {
+    const containerId = (
+      element as ExcalidrawElement & { containerId?: string | null }
+    ).containerId;
+    if (!containerId) {
+      continue;
+    }
+    const list = childrenByContainer.get(containerId);
+    if (list) {
+      list.push(element.id);
+    } else {
+      childrenByContainer.set(containerId, [element.id]);
+    }
+  }
   const idsToRemove = new Set(requested);
   for (const element of current) {
     if (!idsToRemove.has(element.id)) {
@@ -251,13 +266,8 @@ export const removeDrawingElements = (
         idsToRemove.add(bound.id);
       }
     }
-    for (const child of current) {
-      const childFields = child as ExcalidrawElement & {
-        containerId?: string | null;
-      };
-      if (childFields.containerId === element.id) {
-        idsToRemove.add(child.id);
-      }
+    for (const childId of childrenByContainer.get(element.id) || []) {
+      idsToRemove.add(childId);
     }
   }
 

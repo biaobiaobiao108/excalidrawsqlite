@@ -185,4 +185,17 @@ describe("MCP card layout and grouping", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("rejects layouts that exceed the canvas coordinate bounds with HttpError", () => {
+    const input = layoutSchema.parse({
+      y: 900_000,
+      columns: 1,
+      minCardHeight: 10_000,
+      gap: 1_000,
+      cards: Array.from({ length: 12 }, (_, index) => ({
+        title: `Card ${index + 1}`,
+      })),
+    });
+    expect(() => buildDrawingLayout(input)).toThrow("卡片网格超出画布坐标上限");
+  });
 });

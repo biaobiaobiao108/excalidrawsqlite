@@ -413,6 +413,7 @@ const ExcalidrawWrapper = (props: {
 
   useEffect(
     () => () => {
+      cloudBootstrapPromiseRef.current = null;
       cloudFileLoadControllerRef.current?.abort();
       cloudFileLoadControllerRef.current = null;
       if (savedStatusTimerRef.current) {
@@ -1151,6 +1152,12 @@ const ExcalidrawWrapper = (props: {
             appState: { name: message.name },
             captureUpdate: CaptureUpdateAction.NEVER,
           });
+          cloudPersistenceSignatureRef.current = getCloudPersistenceSignature(
+            message.name,
+            excalidrawAPI.getSceneElementsIncludingDeleted(),
+            excalidrawAPI.getAppState(),
+            excalidrawAPI.getFiles(),
+          );
         } else if (!cloudSaveQueue.hasPending(message.sceneId)) {
           cloudSaveQueue.setRevision(message.sceneId, message.revision);
         }
@@ -1251,6 +1258,9 @@ const ExcalidrawWrapper = (props: {
           LocalData.fileStorage
             .getFiles(fileIds)
             .then(async ({ loadedFiles, erroredFiles }) => {
+              if (excalidrawAPI.isDestroyed) {
+                return;
+              }
               if (loadedFiles.length) {
                 excalidrawAPI.addFiles(loadedFiles);
               }
@@ -1497,6 +1507,7 @@ const ExcalidrawWrapper = (props: {
         <Suspense fallback={null}>
           <LazyAuthDialog
             isOpen={isAuthOpen}
+            closable={true}
             onSuccess={() => {
               setIsAuthOpen(false);
               const authWaiters = authWaitersRef.current.splice(0);

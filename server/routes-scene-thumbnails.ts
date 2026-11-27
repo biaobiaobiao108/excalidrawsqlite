@@ -126,23 +126,27 @@ export const handleSceneThumbnailRoute = async ({
           undefined,
           thumbnailVersion,
           assertThumbnailRevision,
+          undefined,
+          false,
+          () => {
+            const linked = runtime.db.run(
+              `UPDATE scenes SET thumbnail_file_id = ? WHERE id = ? AND deleted_at IS NULL
+               AND revision = ?`,
+              [thumbnailId, id, expectedRevision],
+            );
+            if (linked.changes !== 1) {
+              throw new HttpError(
+                409,
+                "REVISION_CONFLICT",
+                "画板内容已更新，请重新生成预览",
+              );
+            }
+          },
         );
       } finally {
         if (prepared.tempPath) {
           await fs.promises.rm(prepared.tempPath, { force: true });
         }
-      }
-      const linked = runtime.db.run(
-        `UPDATE scenes SET thumbnail_file_id = ? WHERE id = ? AND deleted_at IS NULL
-         AND revision = ?`,
-        [thumbnailId, id, expectedRevision],
-      );
-      if (linked.changes !== 1) {
-        throw new HttpError(
-          409,
-          "REVISION_CONFLICT",
-          "画板内容已更新，请重新生成预览",
-        );
       }
       publishSceneChanged(runtime, {
         type: "scene_changed",
@@ -212,16 +216,27 @@ export const handleSceneThumbnailRoute = async ({
           stale: true,
         });
       }
-      runtime.db.run(
-        "UPDATE scenes SET thumbnail_file_id = NULL WHERE id = ?",
-        [id],
-      );
-      if (currentThumbnail && thumbnailVersion !== undefined) {
-        runtime.db.run("UPDATE files SET updated_at = ? WHERE id = ?", [
-          thumbnailVersion,
-          thumbnailId,
-        ]);
-      }
+      runtime.db
+        .transaction(() => {
+          const unlinked = runtime.db.run(
+            "UPDATE scenes SET thumbnail_file_id = NULL WHERE id = ? AND deleted_at IS NULL AND revision = ?",
+            [id, expectedRevision],
+          );
+          if (unlinked.changes !== 1) {
+            throw new HttpError(
+              409,
+              "REVISION_CONFLICT",
+              "画板内容已更新，请重新生成预览",
+            );
+          }
+          if (currentThumbnail && thumbnailVersion !== undefined) {
+            runtime.db.run("UPDATE files SET updated_at = ? WHERE id = ?", [
+              thumbnailVersion,
+              thumbnailId,
+            ]);
+          }
+        })
+        .immediate();
       publishSceneChanged(runtime, {
         type: "scene_changed",
         sceneId: id,

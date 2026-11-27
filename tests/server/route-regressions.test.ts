@@ -965,4 +965,67 @@ describe("route failure and realtime regressions", () => {
       ).status,
     ).toBe(200);
   });
+
+  it("supports partial folder updates, parameterized file Content-Type, and expectedBoardCount checks", async () => {
+    const { json, request } = setup();
+    const createdFolderRes = await json("/api/folders", {
+      name: "研发文档",
+    });
+    expect(createdFolderRes.status).toBe(201);
+    const createdFolder = (await createdFolderRes.json()) as {
+      id: string;
+      name: string;
+      icon: string;
+      color: string;
+    };
+    expect(createdFolder.name).toBe("研发文档");
+
+    const patchedRes = await request(`/api/folders/${createdFolder.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ icon: "code" }),
+    });
+    expect(patchedRes.status).toBe(200);
+    expect(await patchedRes.json()).toMatchObject({
+      id: createdFolder.id,
+      name: "研发文档",
+      icon: "code",
+    });
+
+    const uploadRes = await request("/api/files/param_ct_file", {
+      method: "PUT",
+      headers: { "Content-Type": "image/png; charset=utf-8" },
+      body: new Uint8Array([137, 80, 78, 71]),
+    });
+    expect(uploadRes.status).toBe(201);
+    expect(await uploadRes.json()).toMatchObject({
+      success: true,
+      file: { id: "param_ct_file", mimeType: "image/png" },
+    });
+
+    await json("/api/scenes", {
+      id: "folder_count_scene",
+      folder_id: createdFolder.id,
+      elements: [],
+    });
+    const staleDeleteRes = await request(
+      `/api/folders/${createdFolder.id}?expectedBoardCount=0`,
+      { method: "DELETE" },
+    );
+    expect(staleDeleteRes.status).toBe(409);
+    expect(await staleDeleteRes.json()).toMatchObject({
+      code: "FOLDER_CHANGED",
+    });
+
+    const okDeleteRes = await request(
+      `/api/folders/${createdFolder.id}?expectedBoardCount=1`,
+      { method: "DELETE" },
+    );
+    expect(okDeleteRes.status).toBe(200);
+    expect(await okDeleteRes.json()).toMatchObject({
+      success: true,
+      deleted: true,
+      movedBoards: 1,
+    });
+  });
 });

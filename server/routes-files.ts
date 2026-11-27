@@ -88,15 +88,16 @@ export const handleFileRoute = async ({
 }: RouteContext): Promise<Response | null> => {
   if (pathname.startsWith("/api/files/") && req.method === "PUT") {
     const id = getPathId(pathname, "/api/files/", "file");
-    const contentType = req.headers.get("content-type");
-    if (!contentType) {
+    const rawContentType = req.headers.get("content-type");
+    const normalizedContentType = rawContentType?.split(";")[0].trim();
+    if (!normalizedContentType) {
       throw new HttpError(
         415,
         "UNSUPPORTED_MEDIA_TYPE",
         "文件上传必须指定 MIME 类型",
       );
     }
-    const mimeType = validateMimeType(contentType);
+    const mimeType = validateMimeType(normalizedContentType);
     const prepared = await stageRequestBodyToFile(runtime, id, req);
     const sceneEvents: SceneRealtimeEvent[] = [];
     const file = await upsertStagedFile(

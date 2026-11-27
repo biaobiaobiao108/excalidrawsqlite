@@ -70,11 +70,8 @@ export const handleBackupAndAuthRoute = async ({
       if (error instanceof HttpError) {
         throw error;
       }
-      throw new HttpError(
-        500,
-        "BACKUP_FAILED",
-        `创建完整备份失败: ${error?.message || "未知错误"}`,
-      );
+      console.error("[Backup] 创建完整备份失败", error);
+      throw new HttpError(500, "BACKUP_FAILED", "创建完整备份失败，请稍后重试");
     }
   }
 
@@ -134,10 +131,11 @@ export const handleBackupAndAuthRoute = async ({
       if (error instanceof HttpError) {
         throw error;
       }
+      console.error("[Backup] 创建数据库热备失败", error);
       throw new HttpError(
         500,
         "BACKUP_FAILED",
-        `创建数据库热备失败: ${error?.message || "未知错误"}`,
+        "创建数据库热备失败，请稍后重试",
       );
     }
   }

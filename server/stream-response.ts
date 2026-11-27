@@ -1,14 +1,27 @@
+const BACKUP_STREAM_IDLE_TIMEOUT_MS = 60_000;
+
 export const streamBackupArchive = (
   archive: {
     archivePath: string;
     cleanup: () => Promise<void>;
   },
   releaseBackupLock: () => void,
+  idleTimeoutMs = BACKUP_STREAM_IDLE_TIMEOUT_MS,
 ) => {
   const source = Bun.file(archive.archivePath).stream();
   const reader = source.getReader();
   let cleanupTask: Promise<void> | undefined;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let closed = false;
+  const clearIdleTimer = () => {
+    if (idleTimer !== undefined) {
+      clearTimeout(idleTimer);
+      idleTimer = undefined;
+    }
+  };
   const cleanup = async () => {
+    closed = true;
+    clearIdleTimer();
     cleanupTask ??= (async () => {
       try {
         await archive.cleanup().catch(() => {});
@@ -20,6 +33,7 @@ export const streamBackupArchive = (
   };
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
+      clearIdleTimer();
       try {
         const result = await reader.read();
         if (result.done) {
@@ -31,6 +45,27 @@ export const streamBackupArchive = (
         // Read only when the consumer requests more data. The stream's default
         // one-chunk queue bounds read-ahead when a client applies backpressure.
         controller.enqueue(result.value);
+        if (!closed && idleTimeoutMs > 0) {
+          idleTimer = setTimeout(() => {
+            const timeoutError = new Error("备份下载空闲超时");
+            try {
+              controller.error(timeoutError);
+            } catch {
+              // Ignore if stream is already closed or errored.
+            }
+            void reader
+              .cancel(timeoutError)
+              .catch(() => {})
+              .finally(() => {
+                try {
+                  reader.releaseLock();
+                } catch {
+                  // Ignore if already released.
+                }
+                void cleanup();
+              });
+          }, idleTimeoutMs);
+        }
       } catch (error) {
         controller.error(error);
         await reader.cancel(error).catch(() => {});

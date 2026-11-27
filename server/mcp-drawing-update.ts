@@ -332,6 +332,9 @@ export const updateDrawingElements = (
       },
     );
     if (sameGeometry && sameText && sameBindings && sameLabelStyle) continue;
+    if (element.type === "text" && !isShapeLabel && patch.text === "") {
+      throw new HttpError(400, "INVALID_TEXT", "独立文本图元内容不能为空");
+    }
     applied.push(patch);
     let next = newElementWith(element, changes as never);
     if (element.type === "text") {

@@ -57,6 +57,9 @@ export const useEditorLifecycleSync = ({
         }
 
         LibraryIndexedDBAdapter.load().then((data) => {
+          if (excalidrawAPI.isDestroyed) {
+            return;
+          }
           if (data) {
             excalidrawAPI.updateLibrary({
               libraryItems: data.libraryItems,
@@ -85,6 +88,9 @@ export const useEditorLifecycleSync = ({
             LocalData.fileStorage
               .getFiles(fileIds)
               .then(({ loadedFiles, erroredFiles }) => {
+                if (excalidrawAPI.isDestroyed) {
+                  return;
+                }
                 if (loadedFiles.length) {
                   excalidrawAPI.addFiles(loadedFiles);
                 }

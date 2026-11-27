@@ -97,7 +97,16 @@ export const createDrawingElements = (spec: Spec): ExcalidrawElement[] => {
     width: spec.width,
     height: spec.height,
   });
-  if (!spec.text) return [shape];
+  if (!spec.text) {
+    if (spec.labelId) {
+      throw new HttpError(
+        400,
+        "MISSING_LABEL_TEXT",
+        "指定 labelId 时必须同时提供 text",
+      );
+    }
+    return [shape];
+  }
   const label = layoutLabel(
     shape,
     newTextElement({

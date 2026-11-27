@@ -15,12 +15,14 @@ interface AuthDialogProps {
   isOpen: boolean;
   onSuccess: () => void;
   onClose?: () => void;
+  closable?: boolean;
 }
 
 export const AuthDialog: React.FC<AuthDialogProps> = ({
   isOpen,
   onSuccess,
   onClose,
+  closable = false,
 }) => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -28,6 +30,7 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -37,7 +40,17 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
       const timer = setTimeout(() => {
         inputRef.current?.focus();
       }, 50);
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+        if (shakeTimerRef.current) {
+          clearTimeout(shakeTimerRef.current);
+          shakeTimerRef.current = null;
+        }
+      };
+    }
+    if (shakeTimerRef.current) {
+      clearTimeout(shakeTimerRef.current);
+      shakeTimerRef.current = null;
     }
   }, [isOpen]);
 
@@ -48,7 +61,11 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
   const triggerError = (msg: string) => {
     setError(msg);
     setIsShaking(true);
-    setTimeout(() => {
+    if (shakeTimerRef.current) {
+      clearTimeout(shakeTimerRef.current);
+    }
+    shakeTimerRef.current = setTimeout(() => {
+      shakeTimerRef.current = null;
       setIsShaking(false);
     }, 500);
   };
@@ -94,7 +111,7 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({
       }}
       className="auth-dialog"
       ariaLabel="访问授权验证"
-      closable={false}
+      closable={Boolean(closable && onClose)}
     >
       <div className="auth-dialog-card">
         <div className="auth-dialog-header">

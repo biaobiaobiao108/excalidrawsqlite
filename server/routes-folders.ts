@@ -102,7 +102,6 @@ export const handleFolderRoute = async ({
     const body = requireJsonObject(
       await readJson(req, 64 * 1024, runtime.bodyMemoryBudget),
     );
-    const name = validateFolderName(body.name);
     const existing = stmts.getFolderById.get(id) as {
       id: string;
       name: string;
@@ -112,6 +111,9 @@ export const handleFolderRoute = async ({
     if (!existing) {
       throw new HttpError(404, "FOLDER_NOT_FOUND", "文件夹不存在");
     }
+    const name = hasOwn(body, "name")
+      ? validateFolderName(body.name)
+      : existing.name;
     const icon = hasOwn(body, "icon")
       ? validateFolderIcon(body.icon)
       : existing.icon;
@@ -158,6 +160,21 @@ export const handleFolderRoute = async ({
 
   if (pathname.startsWith("/api/folders/") && req.method === "DELETE") {
     const id = getPathId(pathname, "/api/folders/", "folder");
+    const expectedBoardCountParam = new URL(req.url).searchParams.get(
+      "expectedBoardCount",
+    );
+    let expectedBoardCount: number | undefined;
+    if (expectedBoardCountParam !== null) {
+      const parsed = Number(expectedBoardCountParam);
+      if (!Number.isSafeInteger(parsed) || parsed < 0) {
+        throw new HttpError(
+          400,
+          "INVALID_EXPECTED_BOARD_COUNT",
+          "expectedBoardCount 必须是非负整数",
+        );
+      }
+      expectedBoardCount = parsed;
+    }
     const now = Date.now();
     const transaction = runtime.db.transaction(() => {
       const existing = stmts.getFolderById.get(id);
@@ -173,6 +190,16 @@ export const handleFolderRoute = async ({
         revision: number;
         updated_at: number;
       }>;
+      if (
+        expectedBoardCount !== undefined &&
+        affectedScenes.length !== expectedBoardCount
+      ) {
+        throw new HttpError(
+          409,
+          "FOLDER_CHANGED",
+          "文件夹画板数量发生变化，请重新预览",
+        );
+      }
       const updateScene = runtime.db.query(
         `UPDATE scenes
          SET folder_id = NULL, revision = ?
@@ -208,7 +235,12 @@ export const handleFolderRoute = async ({
       });
     }
     publishWorkspaceChanged(runtime, now);
-    return jsonResponse(runtime, req, { success: true, id, deleted: true });
+    return jsonResponse(runtime, req, {
+      success: true,
+      id,
+      deleted: true,
+      movedBoards: affectedScenes.length,
+    });
   }
 
   return null;

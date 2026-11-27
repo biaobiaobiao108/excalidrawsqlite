@@ -53,6 +53,16 @@ export const makeSafeTool =
       } catch (error) {
         if (error instanceof HttpError) {
           completed = buildMcpResult({ error: mcpError(error) });
+        } else if (error instanceof z.ZodError) {
+          completed = buildMcpResult({
+            error: mcpError(
+              new HttpError(
+                400,
+                "INVALID_INPUT",
+                error.issues[0]?.message || "工具参数或生成元素校验失败",
+              ),
+            ),
+          });
         } else throw error;
       }
       return measureMcpPhase("responseBuildMs", () => ({

@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { HttpError } from "./errors";
 import {
   colorSchema,
   drawingElementSchema,
@@ -139,6 +140,20 @@ export const buildDrawingLayout = (input: z.infer<typeof layoutSchema>) => {
       const backgroundId = `${id}:background`,
         elementIds = [backgroundId];
       const x = input.x + column * (input.cardWidth + input.gap);
+      if (
+        !Number.isFinite(x) ||
+        !Number.isFinite(y) ||
+        Math.abs(x) > 1_000_000 ||
+        Math.abs(y) > 1_000_000 ||
+        Math.abs(x + input.cardWidth) > 1_000_000 ||
+        Math.abs(y + height) > 1_000_000
+      ) {
+        throw new HttpError(
+          400,
+          "LAYOUT_TOO_LARGE",
+          "卡片网格超出画布坐标上限，请减少卡片数量或间距",
+        );
+      }
       elements.push(
         drawingElementSchema.parse({
           type: "rectangle",

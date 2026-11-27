@@ -1292,4 +1292,82 @@ describe("cloud save queue", () => {
     expect(cloudSaveCount).toBe(1);
     queue.cancel("scene");
   });
+
+  it("retains compact structural recovery snapshot when embedded files exceed sessionStorage limit", () => {
+    const storage = new Map<string, string>();
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "window",
+    );
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => {
+            storage.set(key, value);
+          },
+          removeItem: (key: string) => {
+            storage.delete(key);
+          },
+        },
+      },
+    });
+    try {
+      const queue = new CloudSaveQueue(
+        {
+          onStatusChange: () => {},
+          onAuthRequired: () => {},
+          onConflict: () => {},
+          onError: () => {},
+        },
+        {
+          persistence: {
+            list: async () => [],
+            load: async () => undefined,
+            save: async () => new Promise(() => {}),
+            remove: async () => {},
+          },
+        },
+      );
+      const largePayload = "x".repeat(2_100_000);
+      queue.enqueue({
+        sceneId: "large_scene",
+        name: "大图恢复测试",
+        elements: [{ id: "rect_1", type: "rectangle" }] as any,
+        appState: { viewBackgroundColor: "#ffffff", gridSize: 20 },
+        files: {
+          large_file: {
+            id: "large_file" as any,
+            dataURL: `data:image/png;base64,${largePayload}` as any,
+            mimeType: "image/png",
+            created: 1,
+          },
+        },
+        baseRevision: 1,
+      });
+      queue.protectPendingSnapshotsForUnload(true);
+      const recoveryEntry = [...storage.entries()].find(
+        ([key]) => key.includes("large_scene") && !key.includes("owner"),
+      );
+      expect(recoveryEntry).toBeTruthy();
+      const raw = recoveryEntry![1];
+      expect(raw).toBeTruthy();
+      const parsed = JSON.parse(raw!) as {
+        name: string;
+        elements: unknown[];
+        files: Record<string, unknown>;
+      };
+      expect(parsed.name).toBe("大图恢复测试");
+      expect(parsed.elements).toHaveLength(1);
+      expect(parsed.files).toEqual({});
+      queue.cancel("large_scene");
+    } finally {
+      if (originalDescriptor) {
+        Object.defineProperty(globalThis, "window", originalDescriptor);
+      } else {
+        delete (globalThis as { window?: unknown }).window;
+      }
+    }
+  });
 });

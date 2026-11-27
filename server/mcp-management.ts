@@ -315,8 +315,19 @@ export function registerManagementTools(server: McpServer, context: Context) {
         scenes: [{ id: boardId, revision: current.revision }],
         deleted,
       });
-    const board = readSummary(runtime, boardId);
-    return { ...board, boardId, noop, deleted };
+    try {
+      const board = readSummary(runtime, boardId);
+      return { ...board, boardId, noop, deleted };
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 404) {
+        throw new HttpError(
+          409,
+          "SCENE_CONCURRENTLY_DELETED",
+          "画板在操作期间已被并发永久删除",
+        );
+      }
+      throw error;
+    }
   };
   server.registerTool(
     "list_folders",
@@ -546,14 +557,22 @@ export function registerManagementTools(server: McpServer, context: Context) {
           "FOLDER_CHANGED",
           "文件夹画板数量发生变化，请重新预览",
         );
+      const query =
+        args.expectedBoardCount !== undefined
+          ? `?expectedBoardCount=${args.expectedBoardCount}`
+          : "";
+      const deleted = await api<Record<string, unknown>>(
+        `/api/folders/${encodeURIComponent(folder.id)}${query}`,
+        "DELETE",
+      );
       return result({
-        ...(await api<Record<string, unknown>>(
-          `/api/folders/${encodeURIComponent(folder.id)}`,
-          "DELETE",
-        )),
+        ...deleted,
         folderId: folder.id,
         name: folder.name,
-        movedBoards: boardCount,
+        movedBoards:
+          typeof deleted.movedBoards === "number"
+            ? deleted.movedBoards
+            : boardCount,
       });
     }, "delete_folder"),
   );

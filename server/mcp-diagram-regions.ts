@@ -244,6 +244,27 @@ export const buildRegionDiagram = (
       crossOrigin += (vertical ? box.width : box.height) + gap;
     }
   }
+  const assertWithinCanvasBounds = (values: number[]) => {
+    if (
+      !values.every(
+        (value) => Number.isFinite(value) && Math.abs(value) <= 1_000_000,
+      )
+    ) {
+      throw new HttpError(
+        400,
+        "DIAGRAM_TOO_LARGE",
+        "布局超出画布坐标上限，请减少节点数量或标签换行",
+      );
+    }
+  };
+  for (const box of [...regionBoxes.values(), ...nodeBoxes.values()]) {
+    assertWithinCanvasBounds([
+      box.x,
+      box.y,
+      box.x + box.width,
+      box.y + box.height,
+    ]);
+  }
   const elements: Spec[] = [];
   const receipts = [...regions]
     .sort(
@@ -356,6 +377,9 @@ export const buildRegionDiagram = (
       args.nodes.find((node) => node.id === edge.to)!.regionId ===
       fromRegion.id;
     const id = allocate(`diagram_edge_${index}`);
+    for (const point of points) {
+      assertWithinCanvasBounds([point[0], point[1]]);
+    }
     elements.push(
       drawingElementSchema.parse({
         type: "arrow",

@@ -240,6 +240,7 @@ const upsertPreparedFile = async (
   assertCanWrite?: () => void,
   onReplacement?: () => void,
   preserveExisting = false,
+  onCommit?: () => void,
 ) => {
   return withStorageMutationLock(runtime, async () => {
     assertCanWrite?.();
@@ -285,12 +286,17 @@ const upsertPreparedFile = async (
       // An identical upload still renews the orphan grace period; explicit
       // thumbnail versions retain their monotonic ordering instead.
       const nextUpdatedAt = Math.max(previous.updated_at, now);
-      if (nextUpdatedAt !== previous.updated_at) {
-        runtime.db.run("UPDATE files SET updated_at = ? WHERE id = ?", [
-          nextUpdatedAt,
-          id,
-        ]);
-      }
+      runtime.db
+        .transaction(() => {
+          if (nextUpdatedAt !== previous.updated_at) {
+            runtime.db.run("UPDATE files SET updated_at = ? WHERE id = ?", [
+              nextUpdatedAt,
+              id,
+            ]);
+          }
+          onCommit?.();
+        })
+        .immediate();
       return {
         id,
         mimeType,
@@ -329,6 +335,7 @@ const upsertPreparedFile = async (
             ],
           );
           if (!preserveExisting) onReplacement?.();
+          onCommit?.();
         })
         .immediate();
     } catch (error) {
@@ -445,6 +452,7 @@ export const upsertStagedFile = async (
   assertCanWrite?: () => void,
   onReplacement?: () => void,
   preserveExisting = false,
+  onCommit?: () => void,
 ) => {
   try {
     return await upsertPreparedFile(
@@ -457,6 +465,7 @@ export const upsertStagedFile = async (
       assertCanWrite,
       onReplacement,
       preserveExisting,
+      onCommit,
     );
   } finally {
     if (prepared.tempPath) {
@@ -633,6 +642,7 @@ export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
           [row.id, row.updated_at],
         );
         if (deleted.changes && quarantined) {
+          quarantined = false;
           await fs.promises.rm(quarantinePath, { force: true });
         } else if (quarantined) {
           await fs.promises.rename(quarantinePath, filePath);

@@ -2344,7 +2344,7 @@ export const WorkspaceHome = ({
                     }
                   }}
                 />
-                <kbd>Ctrl+K</kbd>
+                <kbd>{isDarwin ? "⌘K" : "Ctrl+K"}</kbd>
               </label>
             </div>
           </header>

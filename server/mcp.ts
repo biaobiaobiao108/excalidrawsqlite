@@ -95,7 +95,6 @@ export const createMcpRequestHandler = (
     // network requests or persisted to SQLite.
     registerMcpCreateSession(runtime, internalSessionToken);
     registerInternalSession(runtime, internalSessionToken);
-    runtime.sessions.set(internalSessionToken, Number.MAX_SAFE_INTEGER);
   }
 
   const api = internalSessionToken

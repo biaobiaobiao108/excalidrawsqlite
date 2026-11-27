@@ -444,12 +444,16 @@ const writeSessionSnapshotRecovery = (snapshot: CloudSaveSnapshot) => {
         // Replace malformed recovery data with the latest known snapshot.
       }
     }
-    const serialized = JSON.stringify(snapshot);
+    let serialized = JSON.stringify(snapshot);
     if (serialized.length > MAX_SESSION_RECOVERY_SNAPSHOT_CHARS) {
-      // Do not let an older, smaller recovery snapshot replace newer content
-      // after reload when this snapshot cannot fit the bounded fallback.
-      storage.removeItem(key);
-      return false;
+      // Images are persisted separately in IndexedDB/cloud storage; strip
+      // embedded file payloads first so structure and text edits survive reload.
+      const compactSnapshot: CloudSaveSnapshot = { ...snapshot, files: {} };
+      serialized = JSON.stringify(compactSnapshot);
+      if (serialized.length > MAX_SESSION_RECOVERY_SNAPSHOT_CHARS) {
+        storage.removeItem(key);
+        return false;
+      }
     }
     storage.setItem(key, serialized);
     return true;
