@@ -211,19 +211,25 @@ const ExcalidrawWrapper = (props: {
     if (!excalidrawAPI) {
       return;
     }
-    return subscribeLibrarySync(() => {
+    let disposed = false;
+    const unsubscribe = subscribeLibrarySync(() => {
       void LibraryIndexedDBAdapter.load()
         .then((data) => {
-          if (data?.libraryItems) {
-            return excalidrawAPI.updateLibrary({
-              libraryItems: data.libraryItems,
-              merge: false,
-              defaultStatus: "published",
-            });
+          if (disposed || excalidrawAPI.isDestroyed || !data?.libraryItems) {
+            return;
           }
+          return excalidrawAPI.updateLibrary({
+            libraryItems: data.libraryItems,
+            merge: false,
+            defaultStatus: "published",
+          });
         })
         .catch(() => {});
     });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
   }, [excalidrawAPI]);
 
   const [, forceRefresh] = useState(false);
