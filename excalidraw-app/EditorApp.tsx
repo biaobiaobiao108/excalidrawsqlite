@@ -1439,6 +1439,10 @@ const ExcalidrawWrapper = (props: {
     );
   }
 
+  const libraryReturnUrl = currentSceneId
+    ? `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(currentSceneId)}`
+    : `${window.location.origin}${window.location.pathname}${window.location.search}`;
+
   return (
     <div style={{ height: "100%" }} className="excalidraw-app">
       <Excalidraw
@@ -1446,6 +1450,7 @@ const ExcalidrawWrapper = (props: {
         onIncrement={onIncrement}
         onExport={onExport}
         initialData={initialStatePromiseRef.current.promise}
+        libraryReturnUrl={libraryReturnUrl}
         UIOptions={{
           canvasActions: {
             toggleTheme: true,

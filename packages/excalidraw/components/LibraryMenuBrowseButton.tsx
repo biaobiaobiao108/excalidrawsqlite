@@ -32,7 +32,7 @@ const LibraryMenuBrowseButton = ({
       className="library-menu-browse-button"
       href={`${libraryUrl}?target=${
         window.name || "_blank"
-      }&referrer=${referrer}&useHash=true&token=${id}&theme=${theme}&version=${
+      }&referrer=${encodeURIComponent(referrer)}&useHash=true&token=${id}&theme=${theme}&version=${
         VERSIONS.excalidrawLibrary
       }`}
       target="_excalidraw_libraries"
