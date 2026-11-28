@@ -22,7 +22,6 @@ import {
   useState,
 } from "react";
 import { t } from "@excalidraw/excalidraw/i18n";
-import { Fonts } from "@excalidraw/excalidraw/fonts";
 
 import { isElementLink } from "@excalidraw/element";
 import {
@@ -159,20 +158,6 @@ const ExcalidrawWrapper = (props: {
 }) => {
   const { initialCloudScene, onNavigateHome } = props;
   const excalidrawAPI = useExcalidrawAPI();
-  useEffect(() => {
-    if (!excalidrawAPI) return;
-    let mounted = true;
-    void loadEditorFontStyles()
-      .then(async () => {
-        if (!mounted) return;
-        await Fonts.loadElementsFonts(excalidrawAPI.getSceneElements());
-        if (mounted) excalidrawAPI.refresh();
-      })
-      .catch((error) => console.warn("加载编辑器字体失败", error));
-    return () => {
-      mounted = false;
-    };
-  }, [excalidrawAPI]);
 
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -278,6 +263,31 @@ const ExcalidrawWrapper = (props: {
   > | null>(null);
   const initialSceneInitializedRef = useRef(false);
   const initialSceneImagesLoadedRef = useRef(false);
+
+  const reloadSceneFonts = useCallback(
+    (loadId?: number) => {
+      const api = excalidrawAPI;
+      if (!api || api.isDestroyed) {
+        return;
+      }
+      void loadEditorFontStyles()
+        .then(() => {
+          if (
+            api.isDestroyed ||
+            (loadId !== undefined && loadId !== cloudSceneLoadIdRef.current)
+          ) {
+            return;
+          }
+          return api.reloadSceneFonts();
+        })
+        .catch((error) => console.warn("加载编辑器字体失败", error));
+    },
+    [excalidrawAPI],
+  );
+
+  useEffect(() => {
+    reloadSceneFonts();
+  }, [reloadSceneFonts]);
 
   const setActiveCloudScene = useCallback((sceneId: string | null) => {
     const changed = currentSceneIdRef.current !== sceneId;
@@ -711,6 +721,7 @@ const ExcalidrawWrapper = (props: {
           appState: restoredAppState,
           captureUpdate: CaptureUpdateAction.NEVER,
         });
+        reloadSceneFonts(loadId);
         onConflictReload?.(remoteData.revision);
         if (recoveredSnapshot) {
           excalidrawAPI.addFiles(Object.values(recoveredSnapshot.files), {
@@ -810,6 +821,7 @@ const ExcalidrawWrapper = (props: {
       excalidrawAPI,
       enqueueCloudSceneSnapshot,
       loadCloudFilesIntoScene,
+      reloadSceneFonts,
       setActiveCloudScene,
     ],
   );

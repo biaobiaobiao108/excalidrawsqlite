@@ -898,6 +898,7 @@ class App extends React.Component<AppProps, AppState> {
         this.actionManager.registerAction(action);
       },
       refresh: this.refresh,
+      reloadSceneFonts: this.reloadSceneFonts,
       setToast: this.setToast,
       id: this.id,
       setActiveTool: this.setActiveTool,
@@ -14477,6 +14478,11 @@ class App extends React.Component<AppProps, AppState> {
 
   public refresh = () => {
     this.setState({ ...this.getCanvasOffsets() });
+  };
+
+  public reloadSceneFonts = async () => {
+    const fontFaces = await this.fonts.loadSceneFonts();
+    this.fonts.onLoaded(fontFaces);
   };
 
   private getCanvasOffsets(): Pick<AppState, "offsetTop" | "offsetLeft"> {
