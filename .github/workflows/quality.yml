@@ -79,8 +79,11 @@ jobs:
           # package.json and bun.lock never carry browser test dependencies.
           mkdir -p /tmp/pw-e2e
           bun add --cwd /tmp/pw-e2e playwright
-          /tmp/pw-e2e/node_modules/.bin/playwright install chromium --with-deps
-          NODE_PATH=/tmp/pw-e2e/node_modules \
-            E2E_BASE_URL=http://127.0.0.1:18080 \
-            E2E_AUTH_PASSWORD=quality-smoke-password \
-            bun run e2e/smoke.mjs
+          /tmp/pw-e2e/node_modules/.bin/playwright install chromium webkit --with-deps
+          for browser in chromium webkit; do
+            NODE_PATH=/tmp/pw-e2e/node_modules \
+              E2E_BASE_URL=http://127.0.0.1:18080 \
+              E2E_AUTH_PASSWORD=quality-smoke-password \
+              E2E_BROWSER="$browser" \
+              bun run e2e/smoke.mjs
+          done
