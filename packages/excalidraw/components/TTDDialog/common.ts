@@ -14,6 +14,7 @@ import type {
 } from "@excalidraw/element/types";
 
 import { EditorLocalStorage } from "../../data/EditorLocalStorage";
+import { MERMAID_TO_EXCALIDRAW_CONFIG } from "../../mermaid";
 
 import type { MermaidToExcalidrawLibProps } from "./types";
 
@@ -80,7 +81,10 @@ export const convertMermaidToExcalidraw = async ({
     const api = await mermaidToExcalidrawLib.api;
 
     try {
-      ret = await api.parseMermaidToExcalidraw(mermaidDefinition);
+      ret = await api.parseMermaidToExcalidraw(
+        mermaidDefinition,
+        MERMAID_TO_EXCALIDRAW_CONFIG,
+      );
     } catch (err: unknown) {
       const originalParseError = err as Error;
 
@@ -91,6 +95,7 @@ export const convertMermaidToExcalidraw = async ({
       try {
         ret = await api.parseMermaidToExcalidraw(
           mermaidDefinition.replace(/"/g, "'"),
+          MERMAID_TO_EXCALIDRAW_CONFIG,
         );
       } catch {
         // Keep the original error so line/column references stay aligned with

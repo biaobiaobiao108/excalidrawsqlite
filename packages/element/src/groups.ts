@@ -259,6 +259,9 @@ export const selectGroupsFromGivenElements = (
     }
     if (groupIds.length > 0) {
       const groupId = groupIds[groupIds.length - 1];
+      if (nextAppState.selectedGroupIds[groupId] === true) {
+        continue;
+      }
       nextAppState = {
         ...nextAppState,
         ...selectGroup(groupId, nextAppState, elements),

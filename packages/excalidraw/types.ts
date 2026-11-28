@@ -480,7 +480,10 @@ export interface AppState {
     message: React.ReactNode;
     closable?: boolean;
     duration?: number;
+    action?: { label: string; onClick: () => void };
   } | null;
+  /** multiline text is pasted split into lines (as chosen from its toast) */
+  splitOnPaste: boolean;
   zenModeEnabled: boolean;
   theme: Theme;
   /** grid cell px size */

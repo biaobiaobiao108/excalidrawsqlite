@@ -571,7 +571,10 @@
     "fileSavedToFilename": "保存到 {filename}",
     "canvas": "画布",
     "selection": "所选项",
-    "pasteAsSingleElement": "使用 {{shortcut}} 粘贴为单个元素，\n或粘贴到现有的文本编辑器里",
+    "pastedAsSingleText": "已粘贴为单个文本元素。",
+    "splitIntoTextElements": "拆分为多个文本元素",
+    "pastedAsTextElements": "已粘贴为多个文本元素。",
+    "pasteAsSingleText": "合并为单个文本元素",
     "unableToEmbed": "目前不允许嵌入此网址。请在 GitHub 上提 issue 请求将此网址加入白名单",
     "unrecognizedLinkFormat": "您嵌入的链接不符合格式要求。请尝试粘贴源网站提供的“嵌入 (embed)”字符串",
     "elementLinkCopied": "链接已复制到剪贴板"
@@ -657,7 +660,7 @@
   "mermaid": {
     "title": "Mermaid 至 Excalidraw",
     "button": "插入",
-    "description": "目前仅支持<flowchartLink>流程图</flowchartLink>、<sequenceLink>序列图</sequenceLink>、<classLink>类图</classLink>和<erdLink>实体关系（ER）图</erdLink>。其他类型在 Excalidraw 中将以图像呈现。",
+    "description": "<flowchartLink>流程图</flowchartLink>、<sequenceLink>序列图</sequenceLink>、<classLink>类图</classLink>、<stateLink>状态图</stateLink>、<erdLink>实体关系（ER）图</erdLink>、<ganttLink>甘特图</ganttLink>、<quadrantLink>象限图</quadrantLink>和<timelineLink>时间线</timelineLink>将转换为 Excalidraw 图元。其他类型将以图像呈现。",
     "syntax": "Mermaid 语法",
     "preview": "预览",
     "label": "Mermaid",

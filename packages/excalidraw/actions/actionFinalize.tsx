@@ -5,6 +5,7 @@ import {
   isValidPolygon,
   LinearElementEditor,
   newElementWith,
+  removeArrowsWithoutEndInFrame,
 } from "@excalidraw/element";
 
 import {
@@ -141,6 +142,10 @@ export const actionFinalize = register<FormData>({
             polygon: false,
           });
         }
+      }
+      // with its ends where they ended up
+      if (element) {
+        removeArrowsWithoutEndInFrame([element], elementsMap);
       }
 
       if (linearElementEditor !== appState.selectedLinearElement) {

@@ -74,6 +74,7 @@ export const getDefaultAppState = (): Omit<
     isBindingEnabled: true,
     bindingPreference: "enabled",
     isMidpointSnappingEnabled: true,
+    splitOnPaste: false,
     defaultSidebarDockedPreference: false,
     isLoading: false,
     isResizing: false,
@@ -208,6 +209,7 @@ const APP_STATE_STORAGE_CONF = (<
   boxSelectionMode: { browser: true, export: false, server: false },
   bindingPreference: { browser: true, export: false, server: false },
   isMidpointSnappingEnabled: { browser: true, export: false, server: false },
+  splitOnPaste: { browser: true, export: false, server: false },
   defaultSidebarDockedPreference: {
     browser: true,
     export: false,

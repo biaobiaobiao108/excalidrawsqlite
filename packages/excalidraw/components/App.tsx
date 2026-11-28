@@ -121,6 +121,9 @@ import {
   getHoveredElementForBinding,
   isBindingEnabled,
   updateBoundElements,
+  getFrameArrowIdsToReattach,
+  isBoundToElementNotIn,
+  moveFrameArrows,
   LinearElementEditor,
   newElementWith,
   newFrameElement,
@@ -178,8 +181,10 @@ import {
   getFrameChildren,
   getFrameChildrenInsertionIndex,
   isCursorInFrame,
+  isFrameClippable,
   addElementsToFrame,
   replaceAllElementsInFrame,
+  removeArrowsWithoutEndInFrame,
   removeElementsFromFrame,
   getElementsInResizingFrame,
   getElementsInNewFrame,
@@ -199,6 +204,7 @@ import {
   isElementLink,
   isMeasureTextSupported,
   normalizeText,
+  getTextAnchorRatios,
   measureText,
   getLineHeightInPx,
   getApproxMinLineWidth,
@@ -420,7 +426,10 @@ import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
 import { textWysiwyg } from "../wysiwyg/textWysiwyg";
 import { isOverScrollBars } from "../scene/scrollbars";
-import { isMaybeMermaidDefinition } from "../mermaid";
+import {
+  isMaybeMermaidDefinition,
+  MERMAID_TO_EXCALIDRAW_CONFIG,
+} from "../mermaid";
 import { LassoTrail } from "../lasso";
 import { EraserTrail } from "../eraser";
 import { getShortcutKey } from "../shortcut";
@@ -609,7 +618,6 @@ const MAX_EMBEDDABLE_VIEWPORT_SCALE = 4;
 
 let IS_PLAIN_PASTE = false;
 let IS_PLAIN_PASTE_TIMER = 0;
-let PLAIN_PASTE_TOAST_SHOWN = false;
 
 let lastPointerUp: (() => void) | null = null;
 const gesture: Gesture = {
@@ -802,6 +810,11 @@ class App extends React.Component<AppProps, AppState> {
   bindModeHandler: ReturnType<typeof setTimeout> | null = null;
   private textWysiwygSubmitHandler: ReturnType<typeof textWysiwyg> | null =
     null;
+  /**
+   * The toast offering to have the text pasted last the other way (split
+   * into lines, or as one element), while it's offered.
+   */
+  private pasteToast: AppState["toast"] = null;
 
   hitLinkElement?: NonDeletedExcalidrawElement;
   lastPointerDownEvent: React.PointerEvent<HTMLElement> | null = null;
@@ -4050,6 +4063,8 @@ class App extends React.Component<AppProps, AppState> {
     this.pendingImageFileIds.clear();
     this.resizeObserver?.disconnect();
     this.unmounted = true;
+    this.textWysiwygSubmitHandler?.();
+    this.textWysiwygSubmitHandler = null;
     this.viewport.destroy();
     this.removeEventListeners();
     this.library.destroy();
@@ -4793,7 +4808,10 @@ class App extends React.Component<AppProps, AppState> {
       const api = await import("@excalidraw/mermaid-to-excalidraw");
       try {
         const { elements: skeletonElements, files = {} } =
-          await api.parseMermaidToExcalidraw(data.text);
+          await api.parseMermaidToExcalidraw(
+            data.text,
+            MERMAID_TO_EXCALIDRAW_CONFIG,
+          );
 
         const elements = convertToExcalidrawElements(skeletonElements, {
           regenerateIds: true,
@@ -4899,6 +4917,12 @@ class App extends React.Component<AppProps, AppState> {
       const filesList = dataTransferList.getFiles();
 
       const data = await parseClipboard(dataTransferList, isPlainPaste);
+
+      // the offer for the text pasted before is for the last paste only
+      if (this.pasteToast && this.state.toast === this.pasteToast) {
+        this.setToast(null);
+      }
+      this.pasteToast = null;
 
       if (this.props.onPaste) {
         try {
@@ -5153,7 +5177,7 @@ class App extends React.Component<AppProps, AppState> {
       text,
       fontSize: this.state.currentItemFontSize,
       fontFamily: this.state.currentItemFontFamily,
-      textAlign: DEFAULT_TEXT_ALIGN,
+      textAlign: this.state.currentItemTextAlign,
       verticalAlign: DEFAULT_VERTICAL_ALIGN,
       locked: false,
     };
@@ -5165,60 +5189,47 @@ class App extends React.Component<AppProps, AppState> {
     const [x1, , x2] = getVisibleSceneBounds(this.state);
     // long texts should not go beyond 800 pixels in width nor should it go below 200 px
     const maxTextWidth = Math.max(Math.min((x2 - x1) * 0.5, 800), 200);
-    const LINE_GAP = 10;
-    let currentY = y;
 
-    const lines = isPlainPaste ? [text] : text.split("\n");
-    const textElements = lines.reduce(
-      (acc: ExcalidrawTextElement[], line, idx) => {
-        const originalText = normalizeText(line).trim();
-        if (originalText.length) {
-          const topLayerFrame = this.getTopLayerFrameAtSceneCoords({
-            x,
-            y: currentY,
-          });
+    const originalText = normalizeText(text).trim();
+    if (!originalText.length) {
+      return;
+    }
+    const isPhone = this.editorInterface.formFactor === "phone";
+    const asLines = !isPlainPaste && !isPhone && this.state.splitOnPaste;
 
-          let metrics = measureText(originalText, fontString, lineHeight);
-          const isTextUnwrapped = metrics.width > maxTextWidth;
+    const wraps =
+      measureText(originalText, fontString, lineHeight).width > maxTextWidth;
+    const wrappedText = wraps
+      ? wrapText(originalText, fontString, maxTextWidth)
+      : originalText;
+    const metrics = measureText(wrappedText, fontString, lineHeight);
+    const topLayerFrame = this.getTopLayerFrameAtSceneCoords({ x, y });
+    const { x: anchorRatio } = getTextAnchorRatios(textElementProps);
+    const singleTextElement = newTextElement({
+      ...textElementProps,
+      x: x + metrics.width * (anchorRatio - 0.5),
+      y: y - metrics.height / 2,
+      text: wrappedText,
+      originalText,
+      lineHeight,
+      autoResize: !wraps,
+      frameId: topLayerFrame ? topLayerFrame.id : null,
+    });
 
-          const text = isTextUnwrapped
-            ? wrapText(originalText, fontString, maxTextWidth)
-            : originalText;
-
-          metrics = isTextUnwrapped
-            ? measureText(text, fontString, lineHeight)
-            : metrics;
-
-          const startX = x - metrics.width / 2;
-          const startY = currentY - metrics.height / 2;
-
-          const element = newTextElement({
-            ...textElementProps,
-            x: startX,
-            y: startY,
-            text,
-            originalText,
-            lineHeight,
-            autoResize: !isTextUnwrapped,
-            frameId: topLayerFrame ? topLayerFrame.id : null,
-          });
-          acc.push(element);
-          currentY += element.height + LINE_GAP;
-        } else {
-          const prevLine = lines[idx - 1]?.trim();
-          // add paragraph only if previous line was not empty, IOW don't add
-          // more than one empty line
-          if (prevLine) {
-            currentY +=
-              getLineHeightInPx(textElementProps.fontSize, lineHeight) +
-              LINE_GAP;
-          }
-        }
-
-        return acc;
-      },
-      [],
-    );
+    let textElements: ExcalidrawTextElement[] = [singleTextElement];
+    if (asLines) {
+      const lines = this.layoutTextLines(singleTextElement);
+      if (lines) {
+        const [bx1, by1, bx2, by2] = getCommonBounds(lines);
+        textElements =
+          this.layoutTextLines(
+            newElementWith(singleTextElement, {
+              x: singleTextElement.x + x - (bx1 + bx2) / 2,
+              y: singleTextElement.y + y - (by1 + by2) / 2,
+            }),
+          ) ?? lines;
+      }
+    }
 
     if (textElements.length === 0) {
       return;
@@ -5233,20 +5244,168 @@ class App extends React.Component<AppProps, AppState> {
       ),
     });
 
-    if (
-      !isPlainPaste &&
-      textElements.length > 1 &&
-      PLAIN_PASTE_TOAST_SHOWN === false &&
-      this.editorInterface.formFactor !== "phone"
-    ) {
-      this.setToast({
-        message: t("toast.pasteAsSingleElement", {
-          shortcut: getShortcutKey("CtrlOrCmd+Shift+V"),
-        }),
-        duration: 5000,
-      });
-      PLAIN_PASTE_TOAST_SHOWN = true;
+    if (isPlainPaste || isPhone) {
+      return;
     }
+    if (textElements.length > 1) {
+      const lineIds = textElements.map((element) => element.id);
+      this.showPasteToast(
+        t("toast.pastedAsTextElements"),
+        t("toast.pasteAsSingleText"),
+        () => {
+          this.setState({ splitOnPaste: false });
+          this.replaceTextLines(lineIds, singleTextElement);
+        },
+      );
+    } else if (getTextLines(textElements[0]).length > 1) {
+      const [{ id }] = textElements;
+      this.showPasteToast(
+        t("toast.pastedAsSingleText"),
+        t("toast.splitIntoTextElements"),
+        () => {
+          this.setState({ splitOnPaste: true });
+          this.splitTextIntoLines(id);
+        },
+      );
+    }
+  }
+
+  private showPasteToast(message: string, label: string, onClick: () => void) {
+    this.pasteToast = {
+      message,
+      action: {
+        label,
+        onClick: () => {
+          onClick();
+          this.focusContainer();
+        },
+      },
+      duration: 8000,
+    };
+    this.setToast(this.pasteToast);
+  }
+
+  private splitTextIntoLines(elementId: ExcalidrawTextElement["id"]) {
+    const element = this.scene.getElement(elementId);
+    if (
+      !element ||
+      element.isDeleted ||
+      !isTextElement(element) ||
+      element.containerId
+    ) {
+      return;
+    }
+    const lines = this.layoutTextLines(element);
+    if (lines) {
+      this.replaceTextElements([element], lines);
+    }
+  }
+
+  private layoutTextLines(element: ExcalidrawTextElement) {
+    const lines = getTextLines(element);
+    if (lines.length < 2) {
+      return null;
+    }
+
+    const fontString = getFontString(element);
+    const { lineHeight } = element;
+    const lineGap = getLineHeightInPx(element.fontSize, lineHeight) / 2;
+    const anchorRatios = getTextAnchorRatios(element);
+    const anchorX = element.x + element.width * anchorRatios.x;
+    let currentY = element.y;
+    return lines.map(({ originalText, text }) => {
+      const { width, height } = measureText(text, fontString, lineHeight);
+      const topLayerFrame = this.getTopLayerFrameAtSceneCoords({
+        x: anchorX + width * (0.5 - anchorRatios.x),
+        y: currentY + height / 2,
+      });
+      const textElement = newTextElement({
+        x: anchorX,
+        y: currentY + height * anchorRatios.y,
+        text,
+        originalText,
+        autoResize: !text.includes("\n"),
+        fontSize: element.fontSize,
+        fontFamily: element.fontFamily,
+        textAlign: element.textAlign,
+        verticalAlign: element.verticalAlign,
+        lineHeight,
+        strokeColor: element.strokeColor,
+        backgroundColor: element.backgroundColor,
+        fillStyle: element.fillStyle,
+        strokeWidth: element.strokeWidth,
+        strokeStyle: element.strokeStyle,
+        roughness: element.roughness,
+        roundness: element.roundness,
+        opacity: element.opacity,
+        groupIds: element.groupIds,
+        frameId: topLayerFrame ? topLayerFrame.id : null,
+        locked: element.locked,
+      });
+      currentY += height + lineGap;
+      return textElement;
+    });
+  }
+
+  private replaceTextLines(
+    lineIds: readonly ExcalidrawTextElement["id"][],
+    single: ExcalidrawTextElement,
+  ) {
+    const lines: ExcalidrawTextElement[] = [];
+    for (const id of lineIds) {
+      const line = this.scene.getElement(id);
+      if (!line || line.isDeleted || !isTextElement(line) || line.containerId) {
+        return;
+      }
+      lines.push(line);
+    }
+
+    const [first] = lines;
+    const { x: anchorRatio } = getTextAnchorRatios(first);
+    const x = first.x + (first.width - single.width) * anchorRatio;
+    const topLayerFrame = this.getTopLayerFrameAtSceneCoords({
+      x: x + single.width / 2,
+      y: first.y + single.height / 2,
+    });
+    this.replaceTextElements(lines, [
+      newElementWith(single, {
+        x,
+        y: first.y,
+        frameId: topLayerFrame ? topLayerFrame.id : null,
+      }),
+    ]);
+  }
+
+  private replaceTextElements(
+    previous: readonly ExcalidrawTextElement[],
+    next: readonly ExcalidrawTextElement[],
+  ) {
+    const [first] = previous;
+    fixBindingsAfterDeletion(this.scene.getNonDeletedElements(), previous);
+    for (const element of previous) {
+      this.scene.mutateElement(element, { isDeleted: true });
+    }
+    const [inPlace, inOtherFrame] = next.reduce(
+      (acc: [ExcalidrawTextElement[], ExcalidrawTextElement[]], element) => {
+        acc[
+          element.frameId === null || element.frameId === first.frameId ? 0 : 1
+        ].push(element);
+        return acc;
+      },
+      [[], []],
+    );
+    this.scene.insertElementsAtIndex(
+      inPlace,
+      this.scene.getElementIndex(first.id),
+    );
+    this.insertNewElements(inOtherFrame);
+    this.store.scheduleCapture();
+    this.setState({
+      selectedElementIds: makeNextSelectedElementIds(
+        Object.fromEntries(next.map((el) => [el.id, true])),
+        this.state,
+      ),
+    });
   }
 
   setAppState: React.Component<any, AppState>["setState"] = (
@@ -5927,35 +6086,22 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       if (isArrowKey(event.key)) {
-        let selectedElements = this.scene.getSelectedElements({
+        const selectedElements = this.scene.getSelectedElements({
           selectedElementIds: this.state.selectedElementIds,
           includeBoundTextElement: true,
           includeElementsInFrames: true,
         });
-
-        const arrowIdsToRemove = new Set<string>();
-
-        selectedElements
-          .filter((el): el is NonDeleted<ExcalidrawArrowElement> =>
-            isBindingElement(el),
-          )
-          .filter((arrow) => {
-            const startElementNotInSelection =
-              arrow.startBinding &&
-              !selectedElements.some(
-                (el) => el.id === arrow.startBinding?.elementId,
-              );
-            const endElementNotInSelection =
-              arrow.endBinding &&
-              !selectedElements.some(
-                (el) => el.id === arrow.endBinding?.elementId,
-              );
-            return startElementNotInSelection || endElementNotInSelection;
-          })
-          .forEach((arrow) => arrowIdsToRemove.add(arrow.id));
-
-        selectedElements = selectedElements.filter(
-          (el) => !arrowIdsToRemove.has(el.id),
+        const selectedElementIds = new Set(
+          selectedElements.map((element) => element.id),
+        );
+        const frameArrowIds = getFrameArrowIdsToReattach(selectedElements);
+        // arrows bound to unselected elements are moved only by the selected
+        // ones they're bound to (if any), unless their frame moves them
+        const movedElements = selectedElements.filter(
+          (element) =>
+            !isBindingElement(element) ||
+            frameArrowIds.has(element.id) ||
+            !isBoundToElementNotIn(element, selectedElementIds),
         );
 
         const step =
@@ -5980,7 +6126,11 @@ class App extends React.Component<AppProps, AppState> {
           offsetY = step;
         }
 
-        selectedElements.forEach((element) => {
+        movedElements.forEach((element) => {
+          if (frameArrowIds.has(element.id)) {
+            // moved with their frame once the rest has (below)
+            return;
+          }
           this.scene.mutateElement(
             element,
             {
@@ -5991,9 +6141,15 @@ class App extends React.Component<AppProps, AppState> {
           );
 
           updateBoundElements(element, this.scene, {
-            simultaneouslyUpdated: selectedElements,
+            simultaneouslyUpdated: movedElements,
           });
         });
+        moveFrameArrows(frameArrowIds, { x: offsetX, y: offsetY }, this.scene);
+        // a moved arrow's ends may have left its frame
+        removeArrowsWithoutEndInFrame(
+          movedElements,
+          this.scene.getNonDeletedElementsMap(),
+        );
 
         this.scene.triggerUpdate();
 
@@ -6515,6 +6671,18 @@ class App extends React.Component<AppProps, AppState> {
     const elementsMap = this.scene.getElementsMapIncludingDeleted();
 
     const updateElement = (nextOriginalText: string, isDeleted: boolean) => {
+      const latestTextElement = this.scene.getElement<ExcalidrawTextElement>(
+        element.id,
+      );
+      if (
+        !latestTextElement ||
+        !isTextElement(latestTextElement) ||
+        // deleted from under the edit: the submit doesn't bring it back
+        latestTextElement.isDeleted
+      ) {
+        return;
+      }
+
       this.scene.replaceAllElements([
         // Not sure why we include deleted elements as well hence using deleted elements map
         ...this.scene.getElementsIncludingDeleted().map((_element) => {
@@ -6868,7 +7036,8 @@ class App extends React.Component<AppProps, AppState> {
           this.state.frameRendering.clip &&
           // iframe-like elements are rendered as DOM overlays and are not
           // visually clipped by their containing frames
-          !isIframeLikeElement(element)
+          !isIframeLikeElement(element) &&
+          isFrameClippable(element, elementsMap)
           ? isCursorInFrame(
               { x, y },
               containingFrame as NonDeleted<ExcalidrawFrameLikeElement>,
@@ -12287,7 +12456,11 @@ class App extends React.Component<AppProps, AppState> {
             );
 
             if (this.state.editingGroupId) {
-              updateGroupIdsAfterEditingGroup(elementsToAdd);
+              updateGroupIdsAfterEditingGroup(
+                elementsToAdd.filter(
+                  (element) => element.frameId !== topLayerFrame.id,
+                ),
+              );
             }
 
             nextElements = addElementsToFrame(
@@ -12311,6 +12484,11 @@ class App extends React.Component<AppProps, AppState> {
             nextElements,
             this.state,
             this,
+          );
+          // the dragged arrows, and those bound to the dragged elements
+          removeArrowsWithoutEndInFrame(
+            selectedElements,
+            arrayToMap(nextElements),
           );
 
           this.scene.replaceAllElements(nextElements);
@@ -14372,4 +14550,21 @@ export const createTestHook = () => {
 };
 
 createTestHook();
+const getTextLines = (element: ExcalidrawTextElement) => {
+  const getLength = (text: string) =>
+    text.replace(/\s/g, "").normalize("NFC").length;
+  const rows = element.text.split("\n");
+  let rowIndex = 0;
+  return element.originalText.split("\n").flatMap((line) => {
+    const length = getLength(line);
+    let text = rows[rowIndex++] ?? "";
+    while (rowIndex < rows.length && getLength(text) < length) {
+      text += `\n${rows[rowIndex++]}`;
+    }
+    return length
+      ? [{ originalText: line.trimEnd(), text: text.trimEnd() }]
+      : [];
+  });
+};
+
 export default App;

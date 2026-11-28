@@ -1260,31 +1260,56 @@ export const updateBoundElements = (
       return;
     }
 
-    const updates = bindableElementsVisitor(
+    const updates = getBoundPointUpdates(element, elementsMap, changedElement);
+
+    LinearElementEditor.movePoints(element, scene, updates, {
+      moveMidPointsWithElement:
+        !!startBindingElement &&
+        startBindingElement?.id === endBindingElement?.id,
+    });
+
+    updateArrowLabel(element, scene, elementsMap);
+  };
+
+  boundElementsVisitor(elementsMap, changedElement, visitor);
+};
+
+/**
+ * Where `arrow`'s bindings put its bound ends on the elements in `elementsMap`
+ * they're bound to.
+ */
+const getBoundPointUpdates = (
+  arrow: NonDeleted<ExcalidrawArrowElement>,
+  elementsMap: ElementsMap,
+  changedElement?: NonDeletedExcalidrawElement,
+): PointsPositionUpdates =>
+  new Map(
+    bindableElementsVisitor(
       elementsMap,
-      element,
+      arrow,
       (bindableElement, bindingProp) => {
         if (
           bindableElement &&
           isBindableElement(bindableElement) &&
           (bindingProp === "startBinding" || bindingProp === "endBinding") &&
-          (changedElement.id === element[bindingProp]?.elementId ||
+          (!changedElement ||
+            changedElement.id === arrow[bindingProp]?.elementId ||
             changedElement.id ===
-              element[
+              arrow[
                 bindingProp === "startBinding" ? "endBinding" : "startBinding"
               ]?.elementId)
         ) {
           const point = updateBoundPoint(
-            element,
+            arrow,
             bindingProp,
-            element[bindingProp],
+            arrow[bindingProp],
             bindableElement,
             elementsMap,
           );
 
           if (point) {
             return [
-              bindingProp === "startBinding" ? 0 : element.points.length - 1,
+              bindingProp === "startBinding" ? 0 : arrow.points.length - 1,
               { point },
             ] as MapEntry<PointsPositionUpdates>;
           }
@@ -1294,21 +1319,130 @@ export const updateBoundElements = (
       },
     ).filter(
       (update): update is MapEntry<PointsPositionUpdates> => update !== null,
-    );
+    ),
+  );
 
-    LinearElementEditor.movePoints(element, scene, new Map(updates), {
-      moveMidPointsWithElement:
-        !!startBindingElement &&
-        startBindingElement?.id === endBindingElement?.id,
-    });
+/** Rewraps `arrow`'s label (if any) along it as placed. */
+const updateArrowLabel = (
+  arrow: NonDeleted<ExcalidrawArrowElement>,
+  scene: Scene,
+  elementsMap: ElementsMap,
+) => {
+  const boundText = getBoundTextElement(arrow, elementsMap);
+  if (boundText && !boundText.isDeleted) {
+    handleBindTextResize(arrow, scene, false);
+  }
+};
 
-    const boundText = getBoundTextElement(element, elementsMap);
-    if (boundText && !boundText.isDeleted) {
-      handleBindTextResize(element, scene, false);
+/** Whether `arrow` is bound to an element not in `elementIds`. */
+export const isBoundToElementNotIn = (
+  arrow: ExcalidrawArrowElement,
+  elementIds: ReadonlySet<ExcalidrawElement["id"]>,
+) =>
+  (!!arrow.startBinding && !elementIds.has(arrow.startBinding.elementId)) ||
+  (!!arrow.endBinding && !elementIds.has(arrow.endBinding.elementId));
+
+/**
+ * The arrows that move with a frame being moved (with `movedElements`) but are
+ * bound to elements that don't (e.g. in other frames). They must neither be
+ * unbound, nor be left for what they're bound to to move: move everything
+ * else without them, and then them, with `moveFrameArrows()`.
+ *
+ * @param movedElements all the elements moving, frames included
+ */
+export const getFrameArrowIdsToReattach = (
+  movedElements: readonly ExcalidrawElement[],
+): ReadonlySet<ExcalidrawElement["id"]> => {
+  const movedElementIds = getSimultaneouslyUpdatedElementIds(movedElements);
+  const ids = new Set<ExcalidrawElement["id"]>();
+  for (const element of movedElements) {
+    if (
+      isArrowElement(element) &&
+      element.frameId &&
+      movedElementIds.has(element.frameId) &&
+      isBoundToElementNotIn(element, movedElementIds)
+    ) {
+      ids.add(element.id);
     }
-  };
+  }
+  return ids;
+};
 
-  boundElementsVisitor(elementsMap, changedElement, visitor);
+/**
+ * Moves the arrows (see `getFrameArrowIdsToReattach()`) by `offset` from where
+ * they were in `originalElements` (from where they are, without it), and puts
+ * their bound ends on what they're bound to: an end bound to a moved element
+ * thus follows it, and one bound to an unmoved element stays. Call it once
+ * everything else has moved.
+ */
+export const moveFrameArrows = (
+  arrowIds: ReadonlySet<ExcalidrawElement["id"]>,
+  offset: { x: number; y: number },
+  scene: Scene,
+  opts?: {
+    originalElements?: ElementsMap;
+  },
+) => {
+  const elementsMap = scene.getNonDeletedElementsMap();
+  for (const id of arrowIds) {
+    const arrow = elementsMap.get(id);
+    if (!isArrowElement(arrow)) {
+      continue;
+    }
+    const original =
+      (opts?.originalElements?.get(id) as typeof arrow | undefined) ?? arrow;
+    // its points too, as putting its ends on what they're bound to (which
+    // moving it from where it was undoes) changes them
+    const moved = {
+      x: original.x + offset.x,
+      y: original.y + offset.y,
+      points: original.points,
+    };
+    if (isElbowArrow(arrow)) {
+      if (isElbowArrow(original) && original.fixedSegments?.length) {
+        // routing it keeps its fixed segments, as placed relative to its
+        // route where it is, so first put its route where it was, moved (which
+        // doesn't route it, its fixed segments being given)
+        scene.mutateElement(arrow, {
+          ...moved,
+          fixedSegments: original.fixedSegments,
+          startIsSpecial: original.startIsSpecial,
+          endIsSpecial: original.endIsSpecial,
+        });
+      }
+      // updating its points routes it, so route it once, with its bound ends
+      // already on what they're bound to (where its route heads off)
+      const points = moved.points.slice();
+      getBoundPointUpdates({ ...arrow, ...moved }, elementsMap).forEach(
+        ({ point }, index) => {
+          points[index] = point;
+        },
+      );
+      scene.mutateElement(arrow, { ...moved, points });
+      updateArrowLabel(arrow, scene, elementsMap);
+    } else {
+      scene.mutateElement(arrow, moved);
+      const startBindingElement = arrow.startBinding
+        ? elementsMap.get(arrow.startBinding.elementId)
+        : null;
+      const endBindingElement = arrow.endBinding
+        ? startBindingElement?.id === arrow.endBinding.elementId
+          ? startBindingElement
+          : elementsMap.get(arrow.endBinding.elementId)
+        : null;
+      LinearElementEditor.movePoints(
+        arrow,
+        scene,
+        getBoundPointUpdates(arrow, elementsMap),
+        {
+          // it moved, not what it's bound to: an arrow bound to one element at
+          // both ends thus keeps its midpoints moved with the frame too
+          moveMidPointsWithElement: false,
+        },
+      );
+      updateArrowLabel(arrow, scene, elementsMap);
+    }
+  }
 };
 
 const updateArrowBindings = (

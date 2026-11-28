@@ -15,7 +15,12 @@ import type {
 
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 
-import { unbindBindingElement, updateBoundElements } from "./binding";
+import {
+  getFrameArrowIdsToReattach,
+  moveFrameArrows,
+  unbindBindingElement,
+  updateBoundElements,
+} from "./binding";
 import { getCommonBounds } from "./bounds";
 import { getPerfectElementSize } from "./sizeHelpers";
 import { getBoundTextElement } from "./textElement";
@@ -106,8 +111,15 @@ export const dragSelectedElements = (
   const elementsToUpdateIds = new Set(
     Array.from(elementsToUpdate, (el) => el.id),
   );
+  const frameArrowIds = getFrameArrowIdsToReattach(
+    Array.from(elementsToUpdate),
+  );
 
   elementsToUpdate.forEach((element) => {
+    if (frameArrowIds.has(element.id)) {
+      // moved with their frame once the rest has (below)
+      return;
+    }
     const isArrow = !isArrowElement(element);
     const isStartBoundElementSelected =
       isArrow ||
@@ -167,6 +179,10 @@ export const dragSelectedElements = (
         }
       }
     }
+  });
+
+  moveFrameArrows(frameArrowIds, adjustedOffset, scene, {
+    originalElements: pointerDownState.originalElements,
   });
 };
 
