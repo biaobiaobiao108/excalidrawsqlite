@@ -26,7 +26,7 @@ import {
 import { ORPHAN_FILE_CLEANUP_BATCH_SIZE } from "../../server/config";
 import { BodyMemoryBudget } from "../../server/types";
 import { cleanupExpiredTrashScenes } from "../../server/scenes";
-import { consumeRateLimit } from "../../server/auth";
+import { cleanupExpiredSessions, consumeRateLimit } from "../../server/auth";
 import { STALE_FILE_ARTIFACT_MS } from "../../server/config";
 
 const runtimes: ServerRuntime[] = [];
@@ -1088,11 +1088,28 @@ describe("cloud persistence server", () => {
   });
 
   it("uses the configured session TTL for the browser cookie", async () => {
-    const { handler } = createTestRuntime({ AUTH_SESSION_TTL_MS: "1234" });
+    const { handler, runtime } = createTestRuntime({
+      AUTH_SESSION_TTL_MS: "1234",
+    });
     const response = await jsonRequest(handler, "/api/auth/verify", {
       password: "test-password",
     });
     expect(response.headers.get("set-cookie")).toContain("Max-Age=2");
+    const token = response.headers
+      .get("set-cookie")!
+      .split(";", 1)[0]
+      .slice("excalidraw_session=".length);
+    expect(runtime.sessions.has(token)).toBe(true);
+
+    cleanupExpiredSessions(runtime, Date.now() + 2_000);
+    expect(runtime.sessions.has(token)).toBe(false);
+    expect(
+      (
+        runtime.db.query("SELECT COUNT(*) AS count FROM sessions").get() as {
+          count: number;
+        }
+      ).count,
+    ).toBe(0);
   });
 
   it("accepts same-origin API writes behind a trusted HTTPS proxy", async () => {

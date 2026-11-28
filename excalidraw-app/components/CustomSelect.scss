@@ -72,7 +72,9 @@ html.dark .custom-select {
 .custom-select__label {
   min-inline-size: 0;
   line-height: 1.35;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .custom-select__chevron,

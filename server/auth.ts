@@ -112,6 +112,7 @@ export const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
       "无法创建登录会话，请重试",
     );
   }
+  runtime.sessions.set(token, expiresAt);
   const secure = isSecureRequest(runtime, req);
   const name =
     runtime.config.nodeEnv === "production" && secure

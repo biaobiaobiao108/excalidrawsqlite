@@ -124,6 +124,7 @@ html.dark .workspace-dialog {
   align-items: center;
   gap: 0.65rem;
   inline-size: 100%;
+  container-type: inline-size;
   min-block-size: 46px;
   box-sizing: border-box;
   padding: 0 0.8rem;
@@ -173,6 +174,12 @@ html.dark .workspace-dialog {
   color: var(--workspace-muted);
   font-size: 0.7rem;
   white-space: nowrap;
+}
+
+@container (max-width: 14rem) {
+  .workspace-search kbd {
+    display: none;
+  }
 }
 
 .primary-button,
@@ -315,7 +322,10 @@ html.dark .workspace-dialog {
 
 .workspace-layout {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: clamp(300px, calc(16rem + 44px), 440px) minmax(
+      0,
+      1fr
+    );
   min-block-size: 100dvh;
 }
 
@@ -359,16 +369,12 @@ html.dark .workspace-dialog {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: #4f5e55;
+  color: var(--workspace-muted);
   cursor: pointer;
   font-size: 1rem;
   text-align: start;
   transition: background-color 160ms ease, color 160ms ease,
     box-shadow 160ms ease, transform 160ms ease;
-}
-
-.workspace-nav button {
-  white-space: nowrap;
 }
 
 .folder-row > button:first-child {
@@ -379,6 +385,11 @@ html.dark .workspace-dialog {
 .folder-row:hover {
   background: rgba(255, 255, 255, 0.58);
   color: var(--workspace-text);
+}
+
+html.dark .workspace-nav button:hover,
+html.dark .folder-row:hover {
+  background: var(--workspace-surface-hover);
 }
 
 .workspace-nav button.is-selected {
@@ -901,7 +912,7 @@ html.dark .workspace-dialog {
   place-items: center;
   align-content: center;
   gap: 0.65rem;
-  color: #8a968e;
+  color: var(--workspace-muted);
   font-family: var(--font-family, system-ui, sans-serif);
   font-size: 0.82rem;
 }
@@ -1217,7 +1228,7 @@ html.dark .board-card-actions {
 
 .section-tools .custom-select {
   min-inline-size: 120px;
-  max-inline-size: 220px;
+  max-inline-size: 260px;
 }
 
 .section-tools .custom-select__trigger {
@@ -1653,7 +1664,10 @@ html.dark .board-card-actions {
 
 @media (max-width: 980px) {
   .workspace-layout {
-    grid-template-columns: 210px minmax(0, 1fr);
+    grid-template-columns: clamp(210px, calc(11rem + 34px), 360px) minmax(
+        0,
+        1fr
+      );
   }
 
   .workspace-sidebar {
@@ -1763,6 +1777,7 @@ html.dark .board-card-actions {
   .workspace-nav-shell {
     position: relative;
     display: block;
+    container-type: inline-size;
     min-inline-size: 0;
     overflow: hidden;
   }
@@ -1805,10 +1820,23 @@ html.dark .board-card-actions {
   .workspace-nav button {
     flex: 0 0 auto;
     inline-size: auto;
-    min-block-size: 37px;
-    padding-inline: 0.8rem;
+    justify-content: center;
+    min-block-size: 44px;
+    padding-inline: 0.5rem;
     font-size: 0.78rem;
     white-space: nowrap;
+  }
+
+  @container (max-width: 19rem) {
+    .workspace-nav {
+      flex-wrap: wrap;
+      overflow-x: visible;
+    }
+
+    .workspace-nav button {
+      flex: 1 1 auto;
+      min-inline-size: max-content;
+    }
   }
 
   .workspace-nav button.is-selected {
