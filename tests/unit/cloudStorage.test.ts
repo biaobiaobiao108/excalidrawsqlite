@@ -1,7 +1,7 @@
 import { describe, expect, it, spyOn } from "bun:test";
 
 import type { FileId } from "@excalidraw/element/types";
-import type { BinaryFiles } from "@excalidraw/excalidraw/types";
+import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 import {
   downloadCloudBackup,
   downloadCloudFullBackup,
@@ -313,6 +313,65 @@ describe("cloud attachment revalidation", () => {
       await fetchCloudFiles([id], { existingFiles: { [id]: old } });
       expect(uploads).toBe(1);
       expect(validators.at(-1)).toBe('"remote"');
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (previousFileReader)
+        Object.defineProperty(globalThis, "FileReader", previousFileReader);
+      else Reflect.deleteProperty(globalThis, "FileReader");
+    }
+  });
+
+  it("revalidates the exact bytes uploaded in the current session", async () => {
+    const originalFetch = globalThis.fetch;
+    const previousFileReader = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "FileReader",
+    );
+    Object.defineProperty(globalThis, "FileReader", {
+      configurable: true,
+      value: TestFileReader,
+    });
+    const id = "revalidated-current-upload" as FileId;
+    const validators: Array<string | null> = [];
+    let uploads = 0;
+    globalThis.fetch = (async (_input, init) => {
+      if (init?.method === "PUT") {
+        uploads++;
+        return new Response(null, {
+          status: 204,
+          headers: { ETag: '"current-upload"' },
+        });
+      }
+      const validator = new Headers(init?.headers).get("If-None-Match");
+      validators.push(validator);
+      return validator === '"current-upload"'
+        ? new Response(null, {
+            status: 304,
+            headers: { ETag: '"current-upload"' },
+          })
+        : new Response("unexpected download", {
+            headers: {
+              ETag: '"remote"',
+              "Content-Type": "image/png",
+            },
+          });
+    }) as typeof fetch;
+    try {
+      const uploaded: BinaryFileData = {
+        id,
+        mimeType: "image/png",
+        dataURL:
+          "data:image/png;base64,Y3VycmVudA==" as BinaryFileData["dataURL"],
+        created: 1,
+      };
+      await saveFilesToCloud({ [id]: uploaded });
+      const loaded = await fetchCloudFiles([id], {
+        existingFiles: { [id]: uploaded },
+      });
+
+      expect(uploads).toBe(1);
+      expect(validators).toEqual(['"current-upload"']);
+      expect(loaded.loadedFiles[0]).toBe(uploaded);
     } finally {
       globalThis.fetch = originalFetch;
       if (previousFileReader)

@@ -1014,6 +1014,12 @@ export async function saveFilesToCloud(
       const etag = res.headers.get("etag");
       if (etag) {
         rememberCloudFileEtag(storedId, etag);
+        if (storedId === file.id) {
+          downloadedCloudFileEtags.set(file, {
+            dataURL: file.dataURL,
+            etag,
+          });
+        }
       }
       if (storedId === file.id) {
         if (digest) rememberCloudFileHash(file, digest);
