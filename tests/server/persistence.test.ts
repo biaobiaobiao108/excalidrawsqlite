@@ -1146,6 +1146,25 @@ describe("cloud persistence server", () => {
     ).toBe(0);
   });
 
+  it("checks authentication status without mutating session storage", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const originalRun = runtime.db.run.bind(runtime.db);
+    let sessionCleanupRuns = 0;
+    runtime.db.run = ((sql: string, bindings?: any) => {
+      if (sql === "DELETE FROM sessions WHERE expires_at <= ?") {
+        sessionCleanupRuns += 1;
+      }
+      return originalRun(sql, bindings);
+    }) as typeof runtime.db.run;
+
+    const status = await request(handler, "/api/auth/status", {
+      headers: { Cookie: cookie },
+    });
+    expect(status.status).toBe(200);
+    expect(sessionCleanupRuns).toBe(0);
+  });
+
   it("accepts same-origin API writes behind a trusted HTTPS proxy", async () => {
     const { handler } = createTestRuntime({
       NODE_ENV: "production",

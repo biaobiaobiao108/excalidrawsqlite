@@ -331,6 +331,7 @@ export const WorkspaceHome = ({
   );
   const [error, setError] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
+  const [realtimeAuthorized, setRealtimeAuthorized] = useState(false);
   const [metadataDialog, setMetadataDialog] =
     useState<SceneMetadataDialogState | null>(null);
   const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(
@@ -420,18 +421,22 @@ export const WorkspaceHome = ({
   const [sceneCursor, setSceneCursor] = useState<string | null>(null);
   const [trashSceneCursor, setTrashSceneCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const requireAuthentication = useCallback(() => {
+    setRealtimeAuthorized(false);
+    setAuthOpen(true);
+  }, []);
   const handleRequestError = useCallback(
     (requestError: any, fallback: string) => {
       if (
         requestError?.status === 401 ||
         requestError?.code === "AUTH_REQUIRED"
       ) {
-        setAuthOpen(true);
+        requireAuthentication();
       } else {
         setError(requestError?.message || fallback);
       }
     },
-    [],
+    [requireAuthentication],
   );
   const loadRequestRef = useRef(0);
   const fullRefreshRef = useRef(0);
@@ -585,7 +590,7 @@ export const WorkspaceHome = ({
           return;
         }
         if (auth.authRequired && !auth.authenticated) {
-          setAuthOpen(true);
+          requireAuthentication();
           return;
         }
         const [scenePage, folderList, trashPage, stats] = await Promise.all([
@@ -611,6 +616,7 @@ export const WorkspaceHome = ({
         if (!isCurrent() || !scenePage || !trashPage) {
           return;
         }
+        setRealtimeAuthorized(true);
         let migratedScene: CloudSceneSummary | null = null;
         if (stats.sceneCount === 0 && stats.trashCount === 0) {
           try {
@@ -657,7 +663,7 @@ export const WorkspaceHome = ({
           requestError?.status === 401 ||
           requestError?.code === "AUTH_REQUIRED"
         ) {
-          setAuthOpen(true);
+          requireAuthentication();
         } else {
           setError(requestError?.message || "加载画板首页失败");
         }
@@ -686,7 +692,7 @@ export const WorkspaceHome = ({
         setLoading(false);
       }
     },
-    [],
+    [requireAuthentication],
   );
 
   useEffect(() => {
@@ -727,6 +733,7 @@ export const WorkspaceHome = ({
       ) {
         return;
       }
+      setRealtimeAuthorized(true);
       if (options.trash) {
         setTrashScenes(page.items);
         setTrashSceneCursor(page.nextCursor);
@@ -748,7 +755,7 @@ export const WorkspaceHome = ({
         requestError?.status === 401 ||
         requestError?.code === "AUTH_REQUIRED"
       ) {
-        setAuthOpen(true);
+        requireAuthentication();
       } else {
         setError(requestError?.message || "加载画板列表失败");
       }
@@ -757,7 +764,7 @@ export const WorkspaceHome = ({
         setLoading(false);
       }
     }
-  }, []);
+  }, [requireAuthentication]);
 
   const loadMoreScenes = useCallback(async () => {
     const isTrash = view === "trash";
@@ -782,6 +789,7 @@ export const WorkspaceHome = ({
       ) {
         return;
       }
+      setRealtimeAuthorized(true);
       const mergeScenes = (current: CloudSceneSummary[]) => {
         const existingIds = new Set(current.map((scene) => scene.id));
         return [
@@ -893,6 +901,14 @@ export const WorkspaceHome = ({
         event.type === "scene_saved" && !event.metadataChanged;
       scheduleRefresh(!contentOnly, !contentOnly);
     });
+    if (!realtimeAuthorized) {
+      return () => {
+        unsubscribeTab();
+        if (refreshTimer) {
+          clearTimeout(refreshTimer);
+        }
+      };
+    }
     const unsubscribe = subscribeCloudRealtime(null, (event) => {
       if (
         event.type !== "scene_changed" &&
@@ -1001,7 +1017,7 @@ export const WorkspaceHome = ({
         clearTimeout(refreshTimer);
       }
     };
-  }, [loadWorkspace]);
+  }, [loadWorkspace, realtimeAuthorized]);
 
   useEffect(() => {
     const ownerWindow = getOwnerWindow(rootRef.current);
@@ -1646,7 +1662,7 @@ export const WorkspaceHome = ({
         );
       })
     ) {
-      setAuthOpen(true);
+      requireAuthentication();
       setError("");
       return completed.map((result) => result.scene);
     }

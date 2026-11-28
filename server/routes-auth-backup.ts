@@ -1,7 +1,6 @@
 import { AUTH_RATE_WINDOW_MS } from "./config";
 import { HttpError } from "./errors";
 import {
-  cleanupExpiredSessions,
   clearSessionCookies,
   consumeRateLimit,
   getClientKey,
@@ -141,7 +140,6 @@ export const handleBackupAndAuthRoute = async ({
   }
 
   if (pathname === "/api/auth/status" && req.method === "GET") {
-    cleanupExpiredSessions(runtime, Date.now());
     return jsonResponse(runtime, req, {
       authRequired:
         Boolean(runtime.config.authPassword) && !runtime.config.allowAnonymous,
