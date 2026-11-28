@@ -58,6 +58,8 @@ export const formatMcpSummary = (operation: string, data: Data): string => {
   switch (operation) {
     case "create_board":
     case "create_diagram":
+    case "create_from_mermaid":
+    case "create_from_markdown":
     case "create_layout":
       parts = [
         data.idempotentReplay === true

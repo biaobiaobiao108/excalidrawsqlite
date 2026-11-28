@@ -42,6 +42,10 @@ import {
   lookupMcpCreateReplay,
 } from "./create-idempotency";
 import { inspectLayout, inspectLayoutSchema } from "./mcp-inspect";
+import {
+  buildMarkdownMindmapScene,
+  buildMermaidScene,
+} from "./mcp-text-diagrams";
 
 import { randomBase64Url, timingSafeEqual } from "./crypto";
 import {
@@ -770,6 +774,159 @@ export const createMcpRequestHandler = (
                   ...drawingReceipt(drawing.created, args.responseMode),
                 });
               }, "create_diagram"),
+            );
+
+            server.registerTool(
+              "create_from_mermaid",
+              {
+                title: "通过 Mermaid 语法创建画板",
+                description:
+                  '将 Mermaid 语法直接转换为原生可编辑 Excalidraw 图元并创建画板。支持流程图(flowchart/graph)、时序图(sequenceDiagram)、类图(classDiagram)、状态图(stateDiagram)、ER图(erDiagram)、甘特图(gantt)、象限图(quadrantChart)与时间线(timeline)。节点含中文、空格或括号等特殊字符时请用双引号包裹（如 A["用户登录 (OAuth)"]）。',
+                inputSchema: compactMcpSchema(
+                  z.object({
+                    name: z
+                      .string()
+                      .trim()
+                      .min(1)
+                      .max(120)
+                      .describe("画板名称"),
+                    mermaid: z
+                      .string()
+                      .min(1)
+                      .max(50_000)
+                      .describe(
+                        "Mermaid 图表定义文本；含中文/特殊字符的节点标签请加双引号",
+                      ),
+                    ...boardMetadataSchema,
+                    responseMode: responseModeSchema,
+                    idempotencyKey: idempotencyKeySchema,
+                  }),
+                ),
+                annotations: {
+                  destructiveHint: false,
+                  idempotentHint: false,
+                  openWorldHint: false,
+                },
+              },
+              safeTool(async (args) => {
+                const intent = createIntent("create_from_mermaid", args);
+                const replay = creationReplay(args.idempotencyKey, intent);
+                if (replay) return replayReceipt(replay);
+                const { elements } = await measureMcpPhase("transformMs", () =>
+                  buildMermaidScene(args.mermaid),
+                );
+                const folder = getSceneFolderFields(args, runtime);
+                const board = await api<{
+                  id: string;
+                  name: string;
+                  revision: number;
+                  idempotentReplay?: boolean;
+                }>("/api/scenes", "POST", {
+                  name: args.name,
+                  elements,
+                  appState: { viewBackgroundColor: "#ffffff" },
+                  ...folder,
+                  tags: args.tags,
+                  favorite: args.favorite,
+                  ...(args.idempotencyKey
+                    ? {
+                        idempotencyKey: args.idempotencyKey,
+                        idempotencyPayload: intent,
+                      }
+                    : {}),
+                });
+                if (board.idempotentReplay) return replayReceipt(board);
+                return result({
+                  boardId: board.id,
+                  name: board.name,
+                  revision: board.revision,
+                  elementCount: elements.length,
+                  ...drawingReceipt(elements, args.responseMode),
+                });
+              }, "create_from_mermaid"),
+            );
+
+            server.registerTool(
+              "create_from_markdown",
+              {
+                title: "通过 Markdown 大纲创建思维导图",
+                description:
+                  "将 Markdown 层级大纲（# 标题与 - 无序列表）直接转换为手绘风格思维导图画板。适合知识结构、脑暴大纲、目录树等树形层级图，无需提供任何坐标或样式。",
+                inputSchema: compactMcpSchema(
+                  z.object({
+                    name: z
+                      .string()
+                      .trim()
+                      .min(1)
+                      .max(120)
+                      .describe("画板名称"),
+                    markdown: z
+                      .string()
+                      .min(1)
+                      .max(50_000)
+                      .describe(
+                        "Markdown 层级大纲文本，使用 # 标题与 - 缩进列表表达父子层级",
+                      ),
+                    theme: z
+                      .enum(["light", "dark"])
+                      .optional()
+                      .describe("导图配色主题，默认 light"),
+                    ...boardMetadataSchema,
+                    responseMode: responseModeSchema,
+                    idempotencyKey: idempotencyKeySchema,
+                  }),
+                ),
+                annotations: {
+                  destructiveHint: false,
+                  idempotentHint: false,
+                  openWorldHint: false,
+                },
+              },
+              safeTool(async (args) => {
+                const intent = createIntent("create_from_markdown", args);
+                const replay = creationReplay(args.idempotencyKey, intent);
+                if (replay) return replayReceipt(replay);
+                const { elements, nodeCount } = measureMcpPhase(
+                  "transformMs",
+                  () =>
+                    buildMarkdownMindmapScene(
+                      args.markdown,
+                      args.theme ?? "light",
+                    ),
+                );
+                const folder = getSceneFolderFields(args, runtime);
+                const board = await api<{
+                  id: string;
+                  name: string;
+                  revision: number;
+                  idempotentReplay?: boolean;
+                }>("/api/scenes", "POST", {
+                  name: args.name,
+                  elements,
+                  appState: {
+                    viewBackgroundColor:
+                      args.theme === "dark" ? "#121212" : "#ffffff",
+                  },
+                  ...folder,
+                  tags: args.tags,
+                  favorite: args.favorite,
+                  ...(args.idempotencyKey
+                    ? {
+                        idempotencyKey: args.idempotencyKey,
+                        idempotencyPayload: intent,
+                      }
+                    : {}),
+                });
+                if (board.idempotentReplay) return replayReceipt(board);
+                return result({
+                  boardId: board.id,
+                  name: board.name,
+                  revision: board.revision,
+                  nodeCount,
+                  elementCount: elements.length,
+                  ...drawingReceipt(elements, args.responseMode),
+                });
+              }, "create_from_markdown"),
             );
 
             registerElementTools(server, {

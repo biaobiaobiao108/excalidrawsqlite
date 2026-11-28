@@ -52,6 +52,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.4.0",
+    "linkedom": "^0.18.15",
     "zod": "^4.6.7"
   }
 }
