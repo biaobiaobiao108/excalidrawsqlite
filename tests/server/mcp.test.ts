@@ -687,27 +687,30 @@ describe("Excalidraw MCP endpoint", () => {
         endBinding: { elementId: "b" },
       });
 
-      const diagramArgs = {
+      const mermaidArgs = {
         name: "流程图重试",
-        idempotencyKey: "diagram-retry",
-        nodes: [{ id: "node", title: "节点" }],
+        idempotencyKey: "mermaid-retry",
+        mermaid: "flowchart TD\n  A[节点] --> B[完成]",
       };
-      const diagram = await invoke<{ boardId: string }>(
-        "create_diagram",
-        diagramArgs,
+      const mermaidBoard = await invoke<{ boardId: string }>(
+        "create_from_mermaid",
+        mermaidArgs,
       );
       expect(
-        await invoke("create_diagram", { ...diagramArgs, responseMode: "ids" }),
+        await invoke("create_from_mermaid", {
+          ...mermaidArgs,
+          responseMode: "ids",
+        }),
       ).toMatchObject({
-        boardId: diagram.boardId,
+        boardId: mermaidBoard.boardId,
         addedCount: 0,
         idempotentReplay: true,
       });
       const crossToolConflict = await client.callTool({
         name: "create_board",
         arguments: {
-          name: diagramArgs.name,
-          idempotencyKey: diagramArgs.idempotencyKey,
+          name: mermaidArgs.name,
+          idempotencyKey: mermaidArgs.idempotencyKey,
         },
       });
       expect(crossToolConflict.structuredContent).toMatchObject({

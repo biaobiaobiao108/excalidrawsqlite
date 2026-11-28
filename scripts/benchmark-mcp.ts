@@ -109,7 +109,8 @@ try {
           "create_board",
           "add_elements",
           "update_board",
-          "create_diagram",
+          "create_from_mermaid",
+          "create_from_markdown",
         ].includes(tool.name),
       )
       .map((tool) => [tool.name, JSON.stringify(tool.inputSchema).length]),
@@ -153,15 +154,11 @@ try {
       responseMode: "ids",
     }),
   );
-  await measure("create_diagram 8", (i) =>
-    call("create_diagram", {
-      name: `时间线 ${i}`,
-      layout: "timeline",
-      nodes: Array.from({ length: 8 }, (_, n) => ({
-        id: `step${n}`,
-        title: `阶段 ${n}`,
-        body: "阶段说明",
-      })),
+  await measure("create_from_mermaid", (i) =>
+    call("create_from_mermaid", {
+      name: `流程图 ${i}`,
+      mermaid:
+        "flowchart TD\n  A[开始] --> B[步骤一]\n  B --> C[步骤二]\n  C --> D[结束]",
     }),
   );
   // Each add sample starts with the same size scene, so scene growth does not distort latency.

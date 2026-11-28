@@ -117,34 +117,23 @@ it("keeps normal receipts small, exposes IDs on demand and persists semantic dia
     expect(noop.noop).toBe(true);
     expect(noop.revision).toBe(updated.revision);
     expect(writes).toEqual([]);
-    const diagram = await call("create_diagram", {
+    const mermaidBoard = await call("create_from_mermaid", {
       name: "流程",
-      layout: "flowchart",
       favorite: true,
-      nodes: [
-        { id: "a", title: "开始" },
-        { id: "b", title: "步骤" },
-        { id: "c", title: "结束" },
-      ],
+      mermaid: "flowchart TD\n  A[开始] --> B[步骤]\n  B --> C[结束]",
     });
-    expect(diagram.nodeCount).toBe(3);
-    expect(diagram.edgeCount).toBe(2);
-    expect(diagram.addedCount).toBe(8);
-    expect(diagram).not.toHaveProperty("elementMap");
+    expect(mermaidBoard.addedCount).toBeGreaterThan(0);
+    expect(mermaidBoard).not.toHaveProperty("elementMap");
     expect(writes).toEqual(["POST /api/scenes"]);
-    const diagramRead = await call("get_board", { boardId: diagram.boardId });
-    expect(diagramRead.elements).toHaveLength(5);
+    const mermaidRead = await call("get_board", {
+      boardId: mermaidBoard.boardId,
+    });
+    expect(mermaidRead.elements.length).toBeGreaterThanOrEqual(5);
     expect(
-      diagramRead.elements.find((e: Record<string, unknown>) => e.id === "a")
-        .text,
-    ).toBe("开始");
-    const edge = diagramRead.elements.find(
-      (e: Record<string, unknown>) => e.type === "arrow",
-    );
-    expect(edge.startBinding.elementId).toBe("a");
-    expect(edge.endBinding.elementId).toBe("b");
-    expect(
-      await call("get_board", { boardId: diagram.boardId, view: "summary" }),
+      await call("get_board", {
+        boardId: mermaidBoard.boardId,
+        view: "summary",
+      }),
     ).toHaveProperty("favorite", true);
     const tools = await client.listTools();
     const core = tools.tools.filter((tool) =>
@@ -153,8 +142,9 @@ it("keeps normal receipts small, exposes IDs on demand and persists semantic dia
     expect(core).toHaveLength(3);
     expect(core.every((tool) => "$defs" in tool.inputSchema)).toBe(true);
     expect(
-      JSON.stringify(tools.tools.find((tool) => tool.name === "create_diagram"))
-        .length,
+      JSON.stringify(
+        tools.tools.find((tool) => tool.name === "create_from_mermaid"),
+      ).length,
     ).toBeLessThan(6_000);
     const invalid = await client.callTool({
       name: "create_board",

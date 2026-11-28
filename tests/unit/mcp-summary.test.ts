@@ -72,7 +72,12 @@ describe("MCP operation summaries", () => {
     expect(summary).toContain("示例");
     expect(summary).not.toContain("99".padEnd(128, "x"));
   });
-  for (const operation of ["create_board", "create_diagram", "create_layout"]) {
+  for (const operation of [
+    "create_board",
+    "create_from_mermaid",
+    "create_from_markdown",
+    "create_layout",
+  ]) {
     it(`${operation} identifies the board and idempotent replay`, () => {
       const data = {
         name: "系统全景图",

@@ -28,7 +28,7 @@ export const getMcpServerInstructions = (runtime: ServerRuntime) =>
   [
     "狐涂画板 MCP 使用简化绘图描述。",
     "查找和读取画板。list_boards 按名称或分类找板，get_board 按 boardId 读单板，get_boards_batch 批读。常规查看用 view=compact，准备修改用 view=input。回写只取 input 视图的 elements。遇到分页、截断或投影警告时，核对读取范围再做增量修改。",
-    "创建时一次提交全部内容。画图工具选型：流程图/时序图/类图/状态图/ER图/甘特图/象限图/时间线优先用 create_from_mermaid（专业图论排版与自动避让）；思维导图/层级知识大纲优先用 create_from_markdown；两级箱体架构或泳道用 create_diagram；卡片网格用 create_layout；自由坐标绘图用 create_board。创建重试复用 idempotencyKey。",
+    "创建时一次提交全部内容。画图工具选型：流程图/时序图/类图/状态图/ER图/甘特图/象限图/时间线/架构图/泳道优先用 create_from_mermaid（专业图论排版与自动避让）；思维导图/层级知识大纲优先用 create_from_markdown；卡片网格用 create_layout；自由坐标绘图用 create_board。创建重试复用 idempotencyKey。",
     "编辑图元。update_board 一次合并多项修改，update_element 按 ID 改单个图元，add_elements 追加，remove_elements 按 ID 移除，copy_elements 同板或跨板复制。随节点移动的连线用绑定箭头，整组移动或复制需传齐图元 ID。",
     "检查布局。measure_text 估算文字尺寸和换行，inspect_layout 检查重叠、溢出和连接。修改后复查，complete=false 时确认检查覆盖范围。",
     "整理画板。manage_board 改名、收藏、移动或改标签，delete_board 移入回收站，restore_board 恢复，batch_manage_boards 批量管理、移入回收站或恢复。",

@@ -290,7 +290,8 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 | `inspect_layout`                   | 只读检查文字重叠、容器文字溢出、可能的元素碰撞与已绑定箭头异常；返回问题图元 ID、严重程度、建议和检测完整性，便于修改后复查。                                                                                                      |
 | `get_boards_batch`                 | 一次读取最多 20 块画板，共享字符预算，逐条返回错误或分页信息；与单读一样 `maxChars` 最少 1000，连必要元数据也放不下则明确报错；不是跨画板一致快照。                                                                                |
 | `create_board`                     | 一次创建并绘制，可同时设置背景、收藏、标签和 `folderId/folderName`；允许同名，省略图元创建空板。                                                                                                                                   |
-| `create_diagram`                   | 自动绘制流程图、时间线、分层架构箱体或多泳道关系图；支持区域、原生分组与真实绑定连线，可同时设置文件夹、标签和收藏。                                                                                                               |
+| `create_from_mermaid`              | 将 Mermaid 定义（流程图、时序图、类图、状态图、ER图、甘特图、饼图等）转换为 Excalidraw 图元并创建或追加到已有画板（支持 `boardId`、`x/y` 偏移与 SVG 净化附件）。                                                               |
+| `create_from_markdown`             | 将 Markdown 标题/列表大纲转换为思维导图并创建或追加到已有画板（支持 `boardId`、`x/y` 偏移）。                                                                                                                                      |
 | `create_layout`                    | 创建卡片网格，指定列数、卡片宽度、间距与内边距；按内容估算行高，每张卡片使用原生分组。                                                                                                                                             |
 | `measure_text`                     | 创建前估算文字宽高、换行和行数，与 MCP 绘制使用同一估算器，返回 `estimated=true`。                                                                                                                                                 |
 | `update_board`                     | 一次合并删除、新增、`updates` 原地修改和画板元数据，原子保存一个修订；顺序为删除→新增→原地修改。                                                                                                                                   |
@@ -310,93 +311,9 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 `manage_board` 和批量 `action=manage` 单传 `tags` 时默认 `tagMode="replace"`，与创建和更新画板的完整标签列表语义一致，`tags:[]` 清空标签。只想追加或移除时须显式使用 `add/remove`；单独传 `tagMode` 而没有 `tags` 仍会明确报错。
 
-无箭头但需要随节点移动的连线使用 `{"type":"arrow","startBinding":{"elementId":"parent"},"endBinding":{"elementId":"child"},"endArrowhead":null}`；`startArrowhead` 默认也为 `null`。`line` 是固定坐标线段，原生编辑器的绑定跟随逻辑只处理 `arrow`，因此不为 `line` 添加另一套绑定语义。自动布局时 `create_diagram.edges` 也可传 `{"from":"parent","to":"child","endArrowhead":null}`，适用于思维导图或组织结构，省略则保留默认箭头。
+无箭头但需要随节点移动的连线使用 `{"type":"arrow","startBinding":{"elementId":"parent"},"endBinding":{"elementId":"child"},"endArrowhead":null}`；`startArrowhead` 默认也为 `null`。`line` 是固定坐标线段，原生编辑器的绑定跟随逻辑只处理 `arrow`，因此不为 `line` 添加另一套绑定语义。
 
-流程图与时间线优先 `create_diagram`，只需表达内容与关系，不需要计算坐标。最多 100 个节点、200 条连接，默认 `layout=flowchart`、`direction=vertical`、`theme=forest`；可选 `timeline`、`horizontal` 和 `paper/ocean`。节点 `id` 可直接用于后续原地修改；省略 `edges` 自动依节点顺序连接，显式 `[]` 则不连线。分支按关系分层，循环节点同层，返回连线在外侧绕行；自动测量文字高度，所有箭头真实绑定到节点。最终仍使用普通 Excalidraw 图元并一次保存，不构成另一套数据模型。示例：
-
-```json
-{
-  "name": "事件时间线",
-  "layout": "timeline",
-  "nodes": [
-    { "id": "early", "title": "2022 年", "body": "发布早期作品" },
-    { "id": "later", "title": "2025 年", "body": "新的发展阶段" }
-  ]
-}
-```
-
-高级布局使用同一个 `create_diagram`，选择 `layout="architecture"` 或 `layout="swimlane"`，新增 `regions` 和 `nodes[].regionId`。最多 24 个区域、100 个节点、200 条边；每个节点必须属于有效叶区域，重复 ID、空区域、循环父级、超深嵌套和无效引用会明确报错。高级模式省略 `edges` 时不自动连接；流程图与时间线保留原来的顺序连接默认值。
-
-分层架构支持两级箱体，外层按输入顺序沿主方向排列，子箱体沿交叉方向排列；叶区域内节点按输入顺序分行，每行最多三列。默认纵向，也支持 `direction="horizontal"`。以下调用创建接入层和包含计算、数据模块的双层平台箱体：
-
-```json
-{
-  "name": "服务架构全景",
-  "layout": "architecture",
-  "regions": [
-    { "id": "access", "title": "接入层" },
-    { "id": "platform", "title": "平台层" },
-    { "id": "compute", "title": "计算模块", "parentId": "platform" },
-    { "id": "data", "title": "数据模块", "parentId": "platform" }
-  ],
-  "nodes": [
-    {
-      "id": "gateway",
-      "title": "API 网关",
-      "body": "统一鉴权与限流",
-      "regionId": "access"
-    },
-    {
-      "id": "worker",
-      "title": "任务服务",
-      "body": "处理业务任务",
-      "regionId": "compute"
-    },
-    {
-      "id": "cache",
-      "title": "缓存服务",
-      "body": "共享结果缓存",
-      "regionId": "data"
-    }
-  ],
-  "edges": [
-    { "from": "gateway", "to": "worker" },
-    { "from": "worker", "to": "cache" }
-  ]
-}
-```
-
-泳道使用平级区域，按连接关系分层，所有泳道共享阶段位置。默认横向推进、泳道上下排列；`direction="vertical"` 时上下推进、泳道左右排列。支持分支、回路和自连接，以下调用创建跨系统泳道：
-
-```json
-{
-  "name": "订单跨系统流程",
-  "layout": "swimlane",
-  "regions": [
-    { "id": "web", "title": "客户端" },
-    { "id": "service", "title": "业务服务" },
-    { "id": "storage", "title": "数据存储" }
-  ],
-  "nodes": [
-    { "id": "submit", "title": "提交订单", "regionId": "web" },
-    {
-      "id": "validate",
-      "title": "校验库存",
-      "body": "库存不足时返回客户端",
-      "regionId": "service"
-    },
-    { "id": "persist", "title": "保存订单", "regionId": "storage" },
-    { "id": "notify", "title": "显示结果", "regionId": "web" }
-  ],
-  "edges": [
-    { "from": "submit", "to": "validate" },
-    { "from": "validate", "to": "persist" },
-    { "from": "persist", "to": "notify" }
-  ]
-}
-```
-
-区域背景、标题和节点共享原生嵌套分组；跨区域连线不归入任一区域的分组，但两端真实绑定节点，移动节点时连接跟随。返回 `regions` 中的 `regionId/backgroundId/titleId/groupId/nodeIds/elementIds/bounds`、`nodeRegions` 和全图 `bounds`；按 ID 的 MCP 操作仍需显式传要修改或复制的 ID。布局复用文字估算器并返回 `estimated=true`，不会把结果宣称为浏览器字体测量。连线通过节点及区域标题之间的留白通道或外围绕行，复杂关系仍可能交叉，生成后可以用 `inspect_layout` 复查。
+流程图、时序图、状态图、甘特图、饼图等优先使用 `create_from_mermaid`，思维导图/知识大纲优先使用 `create_from_markdown`，二者均支持直接新建画板或通过 `boardId` + `(x, y)` 偏移追加到已有画板。
 
 复杂卡片排版可使用 `create_layout`，当前支持 `mode="grid"`。例如：
 
@@ -428,7 +345,7 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 `measure_text` 接受 `text/fontFamily/fontSize/width`，返回 `width/height/text/originalText/lineCount`；`width` 固定换行宽度，省略时估算自然宽度。测量与网格使用现有 MCP 文字估算器，明确返回 `estimated=true`，不宣称浏览器字体测量精度，实际显示仍需打开画板确认。
 
-`create_board/create_diagram/create_layout` 可传 `idempotencyKey`（1–128 字符），记录有效期 24 小时。同一 key、相同创建参数重试，返回原画板当前摘要和 `idempotentReplay:true/addedCount:0`；不会重新创建，也不重复首次生成的图元 ID 或卡片映射，需要时用 `get_board` 读取。`responseMode` 不影响幂等参数判断；同一 key 改动业务参数返回冲突，应为新操作换 key。画板已删除时保留幂等墓碑并报冲突，记录过期后才能复用。记录有容量上限，满时明确报错，保持现有有效记录。
+`create_board/create_layout/create_from_mermaid/create_from_markdown` 可传 `idempotencyKey`（1–128 字符），记录有效期 24 小时。同一 key、相同创建参数重试，返回原画板当前摘要和 `idempotentReplay:true/addedCount:0`；不会重新创建，也不重复首次生成的图元 ID 或卡片映射，需要时用 `get_board` 读取。`responseMode` 不影响幂等参数判断；同一 key 改动业务参数返回冲突，应为新操作换 key。画板已删除时保留幂等墓碑并报冲突，记录过期后才能复用。记录有容量上限，满时明确报错，保持现有有效记录。
 
 自由绘图可在 `create_board/add_elements/update_board` 显式设 `autoBind:true`，对本次新增箭头尚未绑定的端点尝试连接 24 个画布单位以内的最近矩形、椭圆或菱形。默认关闭，保留显式绑定和箭头路径，距离接近的多个候选或推断自连接时不猜测。只检查新箭头，不修改已有装饰箭头；返回 `autoBinding` 的绑定列表、提示和 `complete`，超过容量时保持未处理端点，需改用显式绑定。
 
@@ -500,11 +417,11 @@ MCP 使用 HTTP JSON/SSE，不需要 WebSocket Upgrade。代理需放行 `GET/PO
 
 软删除和还原的实际状态变化也递增 `revision` 并更新 `updated_at`；重复相同状态返回 `noop`，不递增。删除后还原会使旧的 `expectedRevision` 失效，调用方应使用最新回执版本。`list_tags.nextCursor` 是按标签名排序的边界，SQL 读取名称大于该边界的标签，不要求该标签仍存在；分页不是一致快照，期间改名或新增可能影响后续页，完整重新核对时从第一页读取。
 
-完整机器数据在 `structuredContent` 中，`content` 提供最长 1024 字符的中文摘要。客户端应透传 `structuredContent` 并检查 `ok` 和 `error.code`。配置有效的 `PUBLIC_URL` 后，结构化画板结果包含 `webUrl`，原 `url` 字段已替换。画板和文件夹返回的 Unix 毫秒时间字段同时提供 ISO 格式，例如 `updatedAtISO`；有 `deletedAt` 时同时提供 `isDeleted`。绘图写入默认 `responseMode=minimal`，返回修订号、数量及已配置的 `webUrl`。`copy_elements` 始终额外返回 `idMap/warnings`。`create_board/add_elements/update_board/create_diagram/copy_elements` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是本体数量，`elementCount` 是全画板当前图元数量。
+完整机器数据在 `structuredContent` 中，`content` 提供最长 1024 字符的中文摘要。客户端应透传 `structuredContent` 并检查 `ok` 和 `error.code`。配置有效的 `PUBLIC_URL` 后，结构化画板结果包含 `webUrl`，原 `url` 字段已替换。画板和文件夹返回的 Unix 毫秒时间字段同时提供 ISO 格式，例如 `updatedAtISO`；有 `deletedAt` 时同时提供 `isDeleted`。绘图写入默认 `responseMode=minimal`，返回修订号、数量及已配置的 `webUrl`。`copy_elements` 始终额外返回 `idMap/warnings`。`create_board/add_elements/update_board/copy_elements` 在 `responseMode=ids` 时对新增图元使用同一套 `elementMap` 回执；`addedCount` 是实际创建的本体加绑定文字的数量，`requestedElementIds.length` 是本体数量，`elementCount` 是全画板当前图元数量。
 
 `remove_elements` 和 `update_board` 的删除反馈包含 `notFoundIds`（去重后的缺失请求 ID）、`removedCount`（含绑定文字的实际删除总数）、`requestedRemovedCount`（显式请求且存在的图元数）、`cascadeRemovedCount`（未显式请求的级联删除数）及 `elementCount`（操作后的全板图元数）。缺失 ID 不使整次操作失败，仍返回缺失清单；只删除不存在的 ID 时返回 `noop`，不递增修订号。删除标签 ID 只删除标签，删除形状才联动删除其标签。
 
-批量读取与管理只有各项都成功时顶层 `ok=true`；只要有一项失败便为 `false`。成功和失败混合时 `partial=true`，全成功或全失败时为 `false`。`truncated` 表示读取被截断。已完成的批量调用通过逐项 `ok/error` 报告结果，调用方按条目处理失败。`list_boards.view=recent` 只包含打开过的画板，默认按 `lastOpenedAt` 倒序；`view=all,sort=opened` 才包含从未打开的画板并把它们排最后。`create_diagram` 默认生成 `diagram_edge_<从0起序号>` 的边 ID，与用户节点 ID 冲突时会添加后缀；使用 `responseMode=ids` 获取准确的 `elementMap` 后可通过 `update_element` 改箭头样式。
+批量读取与管理只有各项都成功时顶层 `ok=true`；只要有一项失败便为 `false`。成功和失败混合时 `partial=true`，全成功或全失败时为 `false`。`truncated` 表示读取被截断。已完成的批量调用通过逐项 `ok/error` 报告结果，调用方按条目处理失败。`list_boards.view=recent` 只包含打开过的画板，默认按 `lastOpenedAt` 倒序；`view=all,sort=opened` 才包含从未打开的画板并把它们排最后。
 
 常规阅读使用 `compact`，`full` 仅用于调试或小批量检查原生内部字段。`maxChars` 限制业务结果的字符预算，不是整个 HTTP 报文大小。当前画板图元作为单行 JSON 存储，图元分页、筛选和投影仍需读取整个画板，字符预算不限制数据库读取与解析成本；只需画板概要时使用 `summary`，它不读取图元 JSON。
 

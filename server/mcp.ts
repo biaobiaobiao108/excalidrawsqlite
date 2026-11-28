@@ -30,7 +30,6 @@ import {
   type ApiHandler,
 } from "./mcp-internal-api";
 import { compactMcpSchema } from "./mcp-schema";
-import { buildDiagram, diagramSchema } from "./mcp-diagram";
 import {
   measureTextSchema,
   layoutSchema,
@@ -699,83 +698,6 @@ export const createMcpRequestHandler = (
                   ...(autoBinding ? { autoBinding } : {}),
                 });
               }, "create_board"),
-            );
-
-            server.registerTool(
-              "create_diagram",
-              {
-                title: "自动绘制流程、架构或泳道图",
-                description:
-                  "一次传节点标题/正文与连接自动排版。layout支持flowchart/timeline/architecture/swimlane，最多100节点/200连接/24区域。architecture区域最多两级，swimlane平级且默认横向；高级模式传regions与nodes.regionId，省略edges不连线，普通模式省略edges按顺序连接。edges.endArrowhead=null为无箭头绑定连接。返回区域ID/分组/节点归属/边界；文字尺寸为服务端估算，创建后inspect_layout复查。",
-                inputSchema: compactMcpSchema(
-                  diagramSchema.safeExtend({
-                    ...boardMetadataSchema,
-                    responseMode: responseModeSchema,
-                    idempotencyKey: idempotencyKeySchema,
-                  }),
-                ),
-                annotations: {
-                  destructiveHint: false,
-                  idempotentHint: false,
-                  openWorldHint: false,
-                },
-              },
-              safeTool(async (args) => {
-                const intent = createIntent("create_diagram", args);
-                const replay = creationReplay(args.idempotencyKey, intent);
-                if (replay) return replayReceipt(replay);
-                const { diagram, drawing } = measureMcpPhase(
-                  "transformMs",
-                  () => {
-                    const diagram = buildDiagram(args);
-                    return {
-                      diagram,
-                      drawing: createDrawingBatch(diagram.elements),
-                    };
-                  },
-                );
-                const folder = getSceneFolderFields(args, runtime);
-                const board = await api<{
-                  id: string;
-                  name: string;
-                  revision: number;
-                  idempotentReplay?: boolean;
-                }>("/api/scenes", "POST", {
-                  name: args.name,
-                  elements: drawing.elements,
-                  appState: { viewBackgroundColor: "#ffffff" },
-                  ...folder,
-                  tags: args.tags,
-                  favorite: args.favorite,
-                  ...(args.idempotencyKey
-                    ? {
-                        idempotencyKey: args.idempotencyKey,
-                        idempotencyPayload: intent,
-                      }
-                    : {}),
-                });
-                if (board.idempotentReplay) return replayReceipt(board);
-                return result({
-                  boardId: board.id,
-                  name: board.name,
-                  revision: board.revision,
-                  nodeCount: diagram.nodeCount,
-                  edgeCount: diagram.edgeCount,
-                  layout: diagram.layout,
-                  direction: diagram.direction,
-                  theme: diagram.theme,
-                  elementCount: drawing.elements.length,
-                  ...("regions" in diagram
-                    ? {
-                        regions: diagram.regions,
-                        bounds: diagram.bounds,
-                        nodeRegions: diagram.nodeRegions,
-                        estimated: diagram.estimated,
-                      }
-                    : {}),
-                  ...drawingReceipt(drawing.created, args.responseMode),
-                });
-              }, "create_diagram"),
             );
 
             const uploadInternalFile = async (
