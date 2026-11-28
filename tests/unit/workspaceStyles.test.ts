@@ -38,11 +38,25 @@ const readHexToken = (block: string, token: string) => {
   return value!;
 };
 
+const readWorkspaceStyles = async () => {
+  const files = [
+    "WorkspaceHome.scss",
+    "_workspace-theme.scss",
+    "_workspace-navigation.scss",
+    "_workspace-boards.scss",
+    "_workspace-dialogs.scss",
+    "_workspace-responsive.scss",
+    "_workspace-overrides.scss",
+  ];
+  const contents = await Promise.all(
+    files.map((file) => Bun.file(`excalidraw-app/components/${file}`).text()),
+  );
+  return contents.join("\n");
+};
+
 describe("workspace styling guards", () => {
   test("Safari board layout avoids content-visibility to prevent scroll stutter and guards virtual grid", async () => {
-    const scssContent = await Bun.file(
-      "excalidraw-app/components/WorkspaceHome.scss",
-    ).text();
+    const scssContent = await readWorkspaceStyles();
 
     // 1. 确保 .board-card 绝不引入 content-visibility 或 contain-intrinsic-size
     expect(scssContent).toContain(".board-card {");
@@ -63,9 +77,7 @@ describe("workspace styling guards", () => {
   });
 
   test("keeps workspace navigation and empty thumbnails at WCAG AA contrast", async () => {
-    const workspaceStyles = await Bun.file(
-      "excalidraw-app/components/WorkspaceHome.scss",
-    ).text();
+    const workspaceStyles = await readWorkspaceStyles();
     const themeTokens = await Bun.file("excalidraw-app/index.scss").text();
     const lightTokens = readCssBlock(themeTokens, ":root");
     const darkTokens = readCssBlock(themeTokens, "html.dark");
@@ -96,9 +108,7 @@ describe("workspace styling guards", () => {
   });
 
   test("keeps navigation and search controls usable when text is enlarged", async () => {
-    const workspaceStyles = await Bun.file(
-      "excalidraw-app/components/WorkspaceHome.scss",
-    ).text();
+    const workspaceStyles = await readWorkspaceStyles();
     const customSelectStyles = await Bun.file(
       "excalidraw-app/components/CustomSelect.scss",
     ).text();
@@ -124,9 +134,7 @@ describe("workspace styling guards", () => {
   });
 
   test("derives the mobile sidebar surface from the active theme", async () => {
-    const workspaceStyles = await Bun.file(
-      "excalidraw-app/components/WorkspaceHome.scss",
-    ).text();
+    const workspaceStyles = await readWorkspaceStyles();
 
     expect(workspaceStyles).toMatch(
       /\.workspace-sidebar\s*\{[^}]*background:\s*color-mix\(\s*in srgb,\s*var\(--workspace-sidebar\) 97%,\s*transparent\s*\)/s,

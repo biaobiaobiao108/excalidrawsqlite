@@ -1,0 +1,251 @@
+.workspace-layout {
+  display: grid;
+  grid-template-columns: clamp(300px, calc(16rem + 44px), 440px) minmax(
+      0,
+      1fr
+    );
+  min-block-size: 100dvh;
+}
+
+.workspace-sidebar {
+  position: sticky;
+  z-index: 5;
+  inset-block-start: 0;
+  align-self: start;
+  box-sizing: border-box;
+  min-block-size: 100dvh;
+  max-block-size: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: 0.9rem;
+  padding: 1.55rem 1.15rem 1.25rem;
+  min-inline-size: 0;
+  border-inline-end: 1px solid var(--workspace-border);
+  background: var(--workspace-sidebar);
+}
+
+.workspace-nav {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.workspace-nav-shell {
+  display: contents;
+}
+
+.workspace-nav button,
+.folder-row > button:first-child {
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 0.75rem;
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 44px;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--workspace-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  text-align: start;
+  transition: background-color 160ms ease, color 160ms ease,
+    box-shadow 160ms ease, transform 160ms ease;
+}
+
+.folder-row > button:first-child {
+  white-space: normal;
+}
+
+.workspace-nav button:hover,
+.folder-row:hover {
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--workspace-text);
+}
+
+html.dark .workspace-nav button:hover,
+html.dark .folder-row:hover {
+  background: var(--workspace-surface-hover);
+}
+
+.workspace-nav button.is-selected {
+  background: var(--surface-elevated, #fffdfa);
+  box-shadow: 0 4px 12px rgba(40, 62, 49, 0.07);
+  color: var(--workspace-text);
+  font-weight: 650;
+}
+
+.workspace-nav button.is-selected > svg {
+  color: var(--workspace-accent-text);
+}
+
+.folder-row.is-selected {
+  background: var(--surface-elevated, #fffdfa);
+  box-shadow: 0 4px 12px rgba(40, 62, 49, 0.07);
+  color: var(--workspace-text);
+  font-weight: 600;
+}
+
+.folder-row.is-selected > button:first-child {
+  background: transparent;
+  color: inherit;
+}
+
+.workspace-nav button span,
+.folder-row small {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  margin-inline-start: auto;
+  min-inline-size: max(23px, 1.5em);
+  min-block-size: max(23px, 1.35em);
+  padding-inline: 0.3rem;
+  padding-block: 0.12rem;
+  border-radius: 999px;
+  background: var(--workspace-surface-hover);
+  color: var(--workspace-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.folder-heading {
+  display: flex;
+  align-items: center;
+  padding: 0 0.8rem;
+  padding-block-start: 1rem;
+  margin-block-start: 0.35rem;
+  border-block-start: 1px solid var(--workspace-border);
+  color: var(--workspace-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.folder-heading button {
+  display: grid;
+  place-items: center;
+  min-inline-size: 28px;
+  min-block-size: 28px;
+  padding: 0.15rem;
+  margin-inline-start: auto;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--workspace-muted);
+  cursor: pointer;
+}
+
+.folder-heading button:hover {
+  background: var(--workspace-surface-hover);
+  color: var(--workspace-accent-text);
+}
+
+.folder-panel,
+.folder-panel-content {
+  display: contents;
+}
+
+.mobile-folder-toggle {
+  display: none;
+}
+
+.folder-list {
+  display: grid;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  align-content: start;
+  grid-auto-rows: max-content;
+  gap: 0.25rem;
+  margin-block-start: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  position: relative;
+  border-radius: 9px;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.folder-row > button:first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  padding-inline-end: 0.5rem;
+}
+
+.folder-row > button:first-child > span:not(.folder-row-icon) {
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.folder-row-menu {
+  display: grid;
+  flex: 0 0 32px;
+  place-items: center;
+  inline-size: 32px;
+  min-block-size: 36px;
+  margin-inline-end: 0.25rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--workspace-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms ease, background-color 140ms ease,
+    color 140ms ease;
+}
+
+.folder-row-menu svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.folder-row:hover .folder-row-menu,
+.folder-row:focus-within .folder-row-menu {
+  opacity: 1;
+}
+
+.folder-row-menu:hover,
+.folder-row-menu:focus-visible {
+  background: var(--workspace-surface-hover);
+  color: var(--workspace-accent-text);
+}
+
+.folder-row-icon {
+  display: grid;
+  flex: 0 0 25px;
+  place-items: center;
+  inline-size: 25px;
+  block-size: 25px;
+  background: transparent;
+  color: var(--folder-accent);
+}
+
+.folder-row-icon svg {
+  inline-size: 16px;
+  block-size: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.folder-row small {
+  color: var(--workspace-muted);
+}
+
+.folder-row.is-selected .folder-row-icon {
+  color: var(--folder-accent);
+}
+
