@@ -13,7 +13,7 @@ const recoveryActions: Readonly<Partial<Record<string, string>>> = {
   FOLDER_CHANGED: "重新读取文件夹及画板数量，核对后重试。",
   IDEMPOTENCY_KEY_CONFLICT: "原参数重试时复用原 key，修改参数时换一个 key。",
   IDEMPOTENT_BOARD_DELETED:
-    "使用 restore_board 恢复原画板，或换一个 key 创建新画板。",
+    '使用 manage_board(action="restore") 恢复原画板，或换一个 key 创建新画板。',
   READ_BUDGET_EXHAUSTED: "使用 get_board 单独读取该画板。",
   READ_BUDGET_TOO_SMALL: "增大 maxChars、减少读取范围，或改用摘要视图。",
 };
@@ -25,7 +25,8 @@ const notFoundTargets: Readonly<Partial<Record<string, string>>> = {
 };
 
 const notFoundActions: Readonly<Partial<Record<string, string>>> = {
-  board: "使用 list_boards 找到画板；若在回收站，先用 restore_board 恢复。",
+  board:
+    '使用 list_boards 找到画板；若在回收站，先用 manage_board(action="restore") 恢复。',
   folder: "使用 list_folders 找到文件夹，再用正确的 ID 操作。",
   element: "使用 get_board 读取最新图元 ID，再用正确的 ID 操作。",
 };
@@ -185,30 +186,5 @@ export const drawingReceipt = (
           }
         : {}),
     })),
-  };
-};
-
-export const positionReceipt = (
-  elements: readonly ExcalidrawElement[],
-  id: string,
-) => {
-  const element = elements.find((item) => item.id === id && !item.isDeleted);
-  if (!element) return { elementId: id };
-  const geometry = (item: ExcalidrawElement) => ({
-    x: item.x,
-    y: item.y,
-    width: item.width,
-    height: item.height,
-  });
-  const labelId = element.boundElements?.find(
-    (bound) => bound.type === "text",
-  )?.id;
-  const label = labelId
-    ? elements.find((item) => item.id === labelId && !item.isDeleted)
-    : undefined;
-  return {
-    elementId: id,
-    ...geometry(element),
-    ...(label ? { label: { id: label.id, ...geometry(label) } } : {}),
   };
 };

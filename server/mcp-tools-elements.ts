@@ -16,7 +16,6 @@ import { compactMcpSchema } from "./mcp-schema";
 import { HttpError } from "./errors";
 import {
   drawingReceipt,
-  positionReceipt,
   responseModeSchema,
   result as buildMcpResult,
 } from "./mcp-response";
@@ -221,62 +220,6 @@ export const registerElementTools = (
   );
 
   server.registerTool(
-    "remove_elements",
-    {
-      title: "从画板移除图元",
-      description: "按图元 ID 永久移除指定画板中的图元。",
-      inputSchema: compactMcpSchema(
-        z
-          .object({
-            boardId: z.string().min(1).max(128),
-            elementIds: z.array(z.string().min(1).max(128)).min(1).max(1_000),
-            expectedRevision: expectedRevisionSchema,
-          })
-          .strict(),
-      ),
-      annotations: {
-        destructiveHint: true,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    safeTool(async ({ boardId, elementIds, expectedRevision }) => {
-      const current = await api<SceneData>(
-        `/api/scenes/${encodeURIComponent(boardId)}`,
-        "GET",
-      );
-      assertRevision(current, expectedRevision);
-      const { elements, ...removal } = measureMcpPhase("transformMs", () =>
-        removeDrawingElements(current.elements, elementIds),
-      );
-      if (!removal.removedCount) {
-        return result({
-          boardId,
-          ...removal,
-          elementCount: elements.length,
-          revision: current.revision,
-          noop: true,
-        });
-      }
-      const saved = await api<{ revision: number }>(
-        `/api/scenes/${encodeURIComponent(boardId)}`,
-        "PUT",
-        {
-          baseRevision: current.revision,
-          elements,
-          appState: current.appState || {},
-        },
-      );
-      return result({
-        boardId,
-        ...removal,
-        elementCount: elements.length,
-        revision: saved.revision,
-      });
-    }, "remove_elements"),
-  );
-
-  server.registerTool(
     "update_board",
     {
       title: "批量修改画板",
@@ -303,7 +246,7 @@ export const registerElementTools = (
               .max(1_000)
               .optional()
               .describe(
-                "修改对象数组 [{id,...}]，单个修改可用 update_element.update；新增用 elements，可在同次添加后更新该新 ID",
+                "修改对象数组 [{id,...}]；新增用 elements，可在同次添加后更新该新 ID",
               ),
             responseMode: responseModeSchema,
             name: z.string().trim().min(1).max(120).optional(),
@@ -451,68 +394,5 @@ export const registerElementTools = (
       },
       "update_board",
     ),
-  );
-
-  server.registerTool(
-    "update_element",
-    {
-      title: "原地修改图元",
-      description:
-        "输入{boardId,update:{id,...}}，按update.id原地修改，保留ID/连接/其余字段；dx/dy相对移动且标签/箭头跟随，回传最终x/y/width/height及绑定标签label几何。type仅核对已有类型，labelStyle只改标签样式。已有labelId仅核对，不能改名；新建标签可同时传text/labelId。批量用update_board.updates:[{id,...}]一次保存；高比例重叠仅给warnings。",
-      inputSchema: compactMcpSchema(
-        z.strictObject({
-          boardId: z.string().min(1).max(128),
-          update: elementUpdateSchema.describe(
-            "单个修改对象 {id,...}，例如 {id:'node',dx:100}；批量时将这些对象放入 update_board.updates 数组",
-          ),
-          expectedRevision: expectedRevisionSchema,
-        }),
-      ),
-      annotations: {
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: false,
-      },
-    },
-    safeTool(async ({ boardId, update, expectedRevision }) => {
-      const current = await api<SceneData>(
-        `/api/scenes/${encodeURIComponent(boardId)}`,
-        "GET",
-      );
-      assertRevision(current, expectedRevision);
-      const updated = measureMcpPhase("transformMs", () =>
-        updateDrawingElements(current.elements, [update]),
-      );
-      if (!updated.updatedCount) {
-        return result({
-          boardId,
-          revision: current.revision,
-          updatedCount: 0,
-          ...positionReceipt(updated.elements, update.id),
-          noop: true,
-        });
-      }
-      const overlaps = inspectDrawingOverlaps(
-        current.elements,
-        updated.elements,
-        [update.id],
-      );
-      const saved = await api<{ revision: number }>(
-        `/api/scenes/${encodeURIComponent(boardId)}`,
-        "PUT",
-        {
-          baseRevision: current.revision,
-          elements: updated.elements,
-          appState: current.appState,
-        },
-      );
-      return result({
-        boardId,
-        revision: saved.revision,
-        updatedCount: updated.updatedCount,
-        ...positionReceipt(updated.elements, update.id),
-        ...overlaps,
-      });
-    }, "update_element"),
   );
 };

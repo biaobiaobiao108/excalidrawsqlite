@@ -226,17 +226,13 @@ export const formatMcpSummary = (operation: string, data: Data): string => {
       break;
     case "add_elements":
     case "copy_elements":
-    case "remove_elements":
-    case "update_element":
     case "update_board": {
       const action =
         operation === "add_elements"
           ? `已新增 ${count(data, "addedCount")} 个图元`
           : operation === "copy_elements"
             ? `已复制 ${count(data, "addedCount")} 个图元`
-            : operation === "remove_elements"
-              ? `已移除 ${count(data, "removedCount")} 个图元`
-              : `已修改 ${count(data, "updatedCount")} 个图元`;
+            : `已修改 ${count(data, "updatedCount")} 个图元`;
       parts = [
         data.noop === true
           ? "无需修改"
@@ -255,20 +251,17 @@ export const formatMcpSummary = (operation: string, data: Data): string => {
       break;
     }
     case "manage_board":
-    case "delete_board":
-    case "restore_board":
       parts = [
         data.noop === true
           ? "无需修改"
-          : operation === "manage_board"
-            ? "已修改画板元数据"
-            : operation === "delete_board"
-              ? "已将 1 个画板移入回收站"
-              : "已恢复 1 个画板",
+          : data.deleted === true
+            ? "已将 1 个画板移入回收站"
+            : data.deleted === false
+              ? "已恢复 1 个画板"
+              : "已修改画板元数据",
         ...boardLocation(data),
       ];
       break;
-    case "create_folder":
     case "ensure_folder":
     case "update_folder":
     case "delete_folder": {

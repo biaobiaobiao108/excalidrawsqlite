@@ -1065,8 +1065,8 @@ describe("Excalidraw MCP endpoint", () => {
           isDeleted: boolean;
         }>(
           await client.callTool({
-            name: "delete_board",
-            arguments: { boardId: created.boardId },
+            name: "manage_board",
+            arguments: { action: "delete", boardId: created.boardId },
           }),
         );
         expect(deleted.isDeleted).toBe(true);
@@ -1187,19 +1187,14 @@ describe("Excalidraw MCP endpoint", () => {
           "get_board",
           "create_board",
           "add_elements",
-          "remove_elements",
           "update_board",
-          "update_element",
           "get_boards_batch",
           "list_folders",
           "list_tags",
           "ensure_folder",
-          "create_folder",
           "update_folder",
           "delete_folder",
           "manage_board",
-          "delete_board",
-          "restore_board",
           "batch_manage_boards",
         ]),
       );
@@ -1319,10 +1314,10 @@ describe("Excalidraw MCP endpoint", () => {
 
       const removed = toolResult<{ removedCount: number; revision: number }>(
         await client.callTool({
-          name: "remove_elements",
+          name: "update_board",
           arguments: {
             boardId: created.boardId,
-            elementIds: [added.requestedElementIds[2]],
+            removeElementIds: [added.requestedElementIds[2]],
           },
         }),
       );
@@ -1334,10 +1329,10 @@ describe("Excalidraw MCP endpoint", () => {
         revision: number;
       }>(
         await client.callTool({
-          name: "remove_elements",
+          name: "update_board",
           arguments: {
             boardId: created.boardId,
-            elementIds: [added.requestedElementIds[0]],
+            removeElementIds: [added.requestedElementIds[0]],
           },
         }),
       );
@@ -1351,10 +1346,10 @@ describe("Excalidraw MCP endpoint", () => {
       });
       const missingRemoval = toolResult(
         await client.callTool({
-          name: "remove_elements",
+          name: "update_board",
           arguments: {
             boardId: created.boardId,
-            elementIds: ["ghost", "ghost"],
+            removeElementIds: ["ghost", "ghost"],
           },
         }),
       );
@@ -1538,15 +1533,13 @@ describe("Excalidraw MCP endpoint", () => {
         ),
       ).toBe(false);
 
-      for (const name of ["add_elements", "remove_elements", "update_board"]) {
+      for (const name of ["add_elements", "update_board"]) {
         const conflict = await client.callTool({
           name,
           arguments: {
             boardId: complete.boardId,
             expectedRevision: 1,
-            ...(name === "remove_elements"
-              ? { elementIds: [complete.requestedElementIds[1]] }
-              : { elements: [{ type: "text", x: 0, y: 0, text: "不会写入" }] }),
+            elements: [{ type: "text", x: 0, y: 0, text: "不会写入" }],
           },
         });
         expect(conflict.isError).not.toBe(true);
@@ -1578,10 +1571,10 @@ describe("Excalidraw MCP endpoint", () => {
         text: "操作失败：画板不存在或已删除",
       });
       const missingElement = await client.callTool({
-        name: "update_element",
+        name: "update_board",
         arguments: {
           boardId: complete.boardId,
-          update: { id: "missing", dx: 1 },
+          updates: [{ id: "missing", dx: 1 }],
         },
       });
       expect(missingElement.isError).not.toBe(true);
@@ -1689,18 +1682,20 @@ describe("Excalidraw MCP endpoint", () => {
       );
       const moved = toolResult<{ revision: number; updatedCount: number }>(
         await client.callTool({
-          name: "update_element",
+          name: "update_board",
           arguments: {
             boardId: connected.boardId,
             expectedRevision: 1,
-            update: {
-              id: "source",
-              x: 100,
-              strokeColor: "#f00",
-              opacity: 50.5,
-              rotation: 15,
-              roundness: 12,
-            },
+            updates: [
+              {
+                id: "source",
+                x: 100,
+                strokeColor: "#f00",
+                opacity: 50.5,
+                rotation: 15,
+                roundness: 12,
+              },
+            ],
           },
         }),
       );
@@ -1726,10 +1721,10 @@ describe("Excalidraw MCP endpoint", () => {
       });
       const noop = toolResult<{ revision: number; noop: boolean }>(
         await client.callTool({
-          name: "update_element",
+          name: "update_board",
           arguments: {
             boardId: connected.boardId,
-            update: { id: "source", strokeColor: "#f00" },
+            updates: [{ id: "source", strokeColor: "#f00" }],
           },
         }),
       );
@@ -2013,14 +2008,16 @@ describe("Excalidraw MCP endpoint", () => {
       );
       const labelStyleUpdate = toolResult<{ revision: number }>(
         await client.callTool({
-          name: "update_element",
+          name: "update_board",
           arguments: {
             boardId: labelBoard.boardId,
-            update: {
-              id: "rr",
-              labelId: labelBoard.generatedElementIds[0],
-              labelStyle: { fontSize: 24, strokeColor: "#f00", opacity: 70 },
-            },
+            updates: [
+              {
+                id: "rr",
+                labelId: labelBoard.generatedElementIds[0],
+                labelStyle: { fontSize: 24, strokeColor: "#f00", opacity: 70 },
+              },
+            ],
             expectedRevision: labelBoard.revision,
           },
         }),
@@ -2044,13 +2041,15 @@ describe("Excalidraw MCP endpoint", () => {
       expect(styledLabel.elements[0].strokeColor).not.toBe("#f00");
       const labelNoop = toolResult<{ revision: number; noop: boolean }>(
         await client.callTool({
-          name: "update_element",
+          name: "update_board",
           arguments: {
             boardId: labelBoard.boardId,
-            update: {
-              id: "rr",
-              labelStyle: { fontSize: 24, strokeColor: "#f00", opacity: 70 },
-            },
+            updates: [
+              {
+                id: "rr",
+                labelStyle: { fontSize: 24, strokeColor: "#f00", opacity: 70 },
+              },
+            ],
           },
         }),
       );
@@ -2073,10 +2072,10 @@ describe("Excalidraw MCP endpoint", () => {
       );
       expect(labelViaBoard.updatedCount).toBe(1);
       const wrongLabelId = await client.callTool({
-        name: "update_element",
+        name: "update_board",
         arguments: {
           boardId: labelBoard.boardId,
-          update: { id: "rr", labelId: "rename-is-not-an-update" },
+          updates: [{ id: "rr", labelId: "rename-is-not-an-update" }],
         },
       });
       expect(wrongLabelId.structuredContent).toMatchObject({
@@ -2085,20 +2084,20 @@ describe("Excalidraw MCP endpoint", () => {
       });
       const labelUpdate = toolResult<{ revision: number }>(
         await client.callTool({
-          name: "update_element",
+          name: "update_board",
           arguments: {
             boardId: labelBoard.boardId,
-            update: { id: "rr", text: "字".repeat(2_000) },
+            updates: [{ id: "rr", text: "字".repeat(2_000) }],
             expectedRevision: labelViaBoard.revision,
           },
         }),
       );
       for (const id of ["rr", labelBoard.generatedElementIds[0]]) {
         const tooLong = await client.callTool({
-          name: "update_element",
+          name: "update_board",
           arguments: {
             boardId: labelBoard.boardId,
-            update: { id, text: "字".repeat(2_001) },
+            updates: [{ id, text: "字".repeat(2_001) }],
             expectedRevision: labelUpdate.revision,
           },
         });

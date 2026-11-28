@@ -64,7 +64,7 @@ function issueMessage(issue: z.core.$ZodIssue, input: unknown): string {
       issue.keys.includes("id")
     )
       hints.push(
-        'update_element 的图元字段需放入 update，例如 {"boardId":"画板ID","update":{"id":"图元ID","dx":20}}',
+        '修改图元需放入 updates 数组，例如 {"boardId":"画板ID","updates":[{"id":"图元ID","dx":20}]}',
       );
     if (isDrawing) {
       if (

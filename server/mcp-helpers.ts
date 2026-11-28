@@ -29,10 +29,10 @@ export const getMcpServerInstructions = (runtime: ServerRuntime) =>
     "狐涂画板 MCP 使用简化绘图描述。",
     "查找和读取画板。list_boards 按名称或分类找板，get_board 按 boardId 读单板，get_boards_batch 批读。常规查看用 view=compact，准备修改用 view=input。回写只取 input 视图的 elements。遇到分页、截断或投影警告时，核对读取范围再做增量修改。",
     "创建时一次提交全部内容。画图工具选型：流程图/时序图/类图/状态图/ER图/甘特图/象限图/时间线/架构图/泳道优先用 create_from_mermaid（专业图论排版与自动避让）；思维导图/层级知识大纲优先用 create_from_markdown；卡片网格用 create_layout；自由坐标绘图用 create_board。创建重试复用 idempotencyKey。",
-    "编辑图元。update_board 一次合并多项修改，update_element 按 ID 改单个图元，add_elements 追加，remove_elements 按 ID 移除，copy_elements 同板或跨板复制。随节点移动的连线用绑定箭头，整组移动或复制需传齐图元 ID。",
+    "编辑图元。update_board 一次合并删除（removeElementIds）、新增（elements）、原地修改（updates）与元数据更新，add_elements 纯追加，copy_elements 同板或跨板复制。随节点移动的连线用绑定箭头，整组移动或复制需传齐图元 ID。",
     "检查布局。measure_text 估算文字尺寸和换行，inspect_layout 检查重叠、溢出和连接。修改后复查，complete=false 时确认检查覆盖范围。",
-    "整理画板。manage_board 改名、收藏、移动或改标签，delete_board 移入回收站，restore_board 恢复，batch_manage_boards 批量管理、移入回收站或恢复。",
-    "文件夹与标签。list_folders 查文件夹，list_tags 查在用标签。ensure_folder 按名称获取或创建，create_folder 创建且重名时报错，update_folder 改名称、颜色或图标，delete_folder 删除文件夹并把画板移至根目录。",
+    "整理画板。manage_board 改名、收藏、移动、改标签或软删除/恢复（action=manage/delete/restore），batch_manage_boards 批量管理、移入回收站或恢复。",
+    "文件夹与标签。list_folders 查文件夹，list_tags 查在用标签。ensure_folder 按名称获取或创建（ifExists=error 时重名报错），update_folder 改名称、颜色或图标，delete_folder 删除文件夹并把画板移至根目录。",
     "从 structuredContent 读取结果，检查 ok、error.code 和 suggestedAction，批量操作逐项检查结果。修改画板用读到的 revision 作为 expectedRevision，遇到冲突先重读再决定是否重试。",
     runtime.config.trashRetentionDays === 0
       ? "回收站自动清理已禁用。"

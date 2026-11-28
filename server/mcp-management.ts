@@ -231,7 +231,7 @@ export function registerManagementTools(server: McpServer, context: Context) {
       throw new HttpError(
         404,
         "SCENE_NOT_FOUND",
-        "画板已删除，请先 restore_board",
+        '画板已删除，请先使用 manage_board(action="restore") 恢复',
       );
     if (input.tags === undefined && input.tagMode !== undefined)
       throw new HttpError(
@@ -428,29 +428,16 @@ export function registerManagementTools(server: McpServer, context: Context) {
     name: z.string().trim().min(1).max(80),
     icon: iconSchema.optional(),
     color: colorSchema.optional(),
+    ifExists: z
+      .enum(["reuse", "error"])
+      .default("reuse")
+      .describe("重名时默认复用已有文件夹；传 error 时报 FOLDER_NAME_EXISTS"),
   });
-  server.registerTool(
-    "create_folder",
-    {
-      description:
-        "创建文件夹并返回 ID；名称去除首尾空白、区分大小写，已存在时报 FOLDER_NAME_EXISTS。需要复用时使用 ensure_folder。",
-      inputSchema: compactMcpSchema(folderCreateSchema),
-      annotations: {
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: false,
-      },
-    },
-    safeTool(
-      async (args) => result(await api<Folder>("/api/folders", "POST", args)),
-      "create_folder",
-    ),
-  );
   server.registerTool(
     "ensure_folder",
     {
       description:
-        "按去除首尾空白后的精确名称查找或创建文件夹（区分大小写），返回 created；已有文件夹保持颜色和图标。",
+        "按去除首尾空白后的精确名称查找或创建文件夹（区分大小写），返回 created；已有文件夹保持颜色和图标。传 ifExists=error 时重名直接报错。",
       inputSchema: compactMcpSchema(folderCreateSchema),
       annotations: {
         destructiveHint: false,
@@ -458,8 +445,16 @@ export function registerManagementTools(server: McpServer, context: Context) {
         openWorldHint: false,
       },
     },
-    safeTool(async (args) => {
-      const { folder, created } = await ensureNamedFolder(args, runtime, api);
+    safeTool(async ({ ifExists, ...folderArgs }) => {
+      if (ifExists === "error") {
+        const folder = await api<Folder>("/api/folders", "POST", folderArgs);
+        return result({ ...folder, created: true });
+      }
+      const { folder, created } = await ensureNamedFolder(
+        folderArgs,
+        runtime,
+        api,
+      );
       return result({ ...folder, created });
     }, "ensure_folder"),
   );
@@ -570,55 +565,31 @@ export function registerManagementTools(server: McpServer, context: Context) {
     "manage_board",
     {
       description:
-        "一次合并画板改名、收藏、移入文件夹和标签增删替换，不读取或回传完整图元；相同内容返回 noop 且不递增 revision。",
-      inputSchema: compactMcpSchema(metadataSchema),
-      annotations: {
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    safeTool(async (args) => result(await manage(args)), "manage_board"),
-  );
-  const stateSchema = z.strictObject({
-    boardId: z.string().min(1).max(128),
-    expectedRevision: expectedRevisionSchema,
-  });
-  server.registerTool(
-    "delete_board",
-    {
-      description:
-        "将画板软删除到回收站，保留内容和附件，可用 restore_board 还原；实际状态变化 revision+1，已删除时 noop。可传 expectedRevision 防止旧版本操作；没有永久删除选项。",
-      inputSchema: compactMcpSchema(stateSchema),
+        "管理单个画板：默认 action=manage 一次合并改名、收藏、移入文件夹和标签增删替换（相同内容返回 noop 且不递增 revision）；action=delete 软删除到回收站（保留内容与附件，无永久删除）；action=restore 从回收站恢复。",
+      inputSchema: compactMcpSchema(
+        metadataSchema.extend({
+          action: z.enum(["manage", "delete", "restore"]).default("manage"),
+        }),
+      ),
       annotations: {
         destructiveHint: true,
         idempotentHint: true,
         openWorldHint: false,
       },
     },
-    safeTool(
-      async ({ boardId, expectedRevision }) =>
-        result(await setDeleted(boardId, true, expectedRevision)),
-      "delete_board",
-    ),
-  );
-  server.registerTool(
-    "restore_board",
-    {
-      description:
-        "从回收站恢复画板；实际还原 revision+1，已恢复时 noop。使用最新回执的 expectedRevision，删除再还原也会使旧版本失效。",
-      inputSchema: compactMcpSchema(stateSchema),
-      annotations: {
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    safeTool(
-      async ({ boardId, expectedRevision }) =>
-        result(await setDeleted(boardId, false, expectedRevision)),
-      "restore_board",
-    ),
+    safeTool(async ({ action, ...args }) => {
+      if (action === "delete") {
+        return result(
+          await setDeleted(args.boardId, true, args.expectedRevision),
+        );
+      }
+      if (action === "restore") {
+        return result(
+          await setDeleted(args.boardId, false, args.expectedRevision),
+        );
+      }
+      return result(await manage(args));
+    }, "manage_board"),
   );
   const batchRevision = z
     .number()

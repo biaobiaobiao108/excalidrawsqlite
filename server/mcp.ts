@@ -19,7 +19,6 @@ import { measureMcpPhase } from "./mcp-trace";
 import {
   drawingReceipt,
   mcpError,
-  positionReceipt,
   projectMcpRecord,
   responseModeSchema,
   result as buildMcpResult,

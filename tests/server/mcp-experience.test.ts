@@ -63,17 +63,12 @@ test("drawing iterations return final positions, warn about overlaps and combine
         { id: "b", type: "rectangle", x: 300, y: 0, width: 100, height: 80 },
       ],
     });
-    const moved = await call("update_element", {
+    const moved = await call("update_board", {
       boardId: created.boardId,
-      update: { id: "a", dx: 300 },
+      updates: [{ id: "a", dx: 300 }],
     });
     expect(moved).toMatchObject({
-      elementId: "a",
-      x: 300,
-      y: 0,
-      width: 100,
-      height: 80,
-      label: { id: "caption" },
+      updatedCount: 1,
     });
     expect(moved.warnings).toContainEqual(
       expect.objectContaining({
@@ -86,25 +81,24 @@ test("drawing iterations return final positions, warn about overlaps and combine
       boardId: created.boardId,
       view: "full",
     });
+    const movedBox = full.elements.find((element: any) => element.id === "a");
+    expect(movedBox).toMatchObject({
+      x: 300,
+      y: 0,
+      width: 100,
+      height: 80,
+    });
     const label = full.elements.find(
       (element: any) => element.id === "caption",
     );
-    expect(moved.label).toEqual({
-      id: label.id,
-      x: label.x,
-      y: label.y,
-      width: label.width,
-      height: label.height,
-    });
-    const noop = await call("update_element", {
+    expect(label).toBeDefined();
+    const noop = await call("update_board", {
       boardId: created.boardId,
-      update: { id: "a", dx: 0 },
+      updates: [{ id: "a", dx: 0 }],
     });
     expect(noop).toMatchObject({
       noop: true,
       revision: moved.revision,
-      x: 300,
-      y: 0,
     });
     const copied = await call("copy_elements", {
       boardId: created.boardId,

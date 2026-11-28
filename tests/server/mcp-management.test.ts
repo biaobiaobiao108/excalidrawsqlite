@@ -52,8 +52,6 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
         expect(summary.text).toContain(data.boardId);
       if (data.ok && name === "ensure_folder")
         expect(summary.text).toContain(data.created ? "已创建" : "已复用");
-      if (data.ok && name === "create_folder")
-        expect(summary.text).toContain("已创建");
       if (data.noop) expect(summary.text).toContain("无需修改");
       if (name === "batch_manage_boards") {
         expect(summary.text).toContain(`成功 ${data.succeeded}`);
@@ -119,7 +117,8 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
       "mcp-folder-page-b",
       "mcp-folder-page-c",
     ];
-    for (const name of pagedFolderNames) await call("create_folder", { name });
+    for (const name of pagedFolderNames)
+      await call("ensure_folder", { name, ifExists: "error" });
     const firstFolderPage = await call("list_folders", {
       query: "mcp-folder-page-",
       limit: 2,
@@ -156,9 +155,10 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
       await call("update_folder", { folderId: folder.id, color: "#654321" }),
     ).toMatchObject({ ok: true, name: "项目", color: "#654321" });
     for (const color of ["#f00", "#f008", "#ff000080", "red", "transparent"]) {
-      const colored = await call("create_folder", {
+      const colored = await call("ensure_folder", {
         name: `颜色 ${color}`,
         color,
+        ifExists: "error",
       });
       expect(colored).toMatchObject({ ok: true, color });
       expect(
@@ -169,7 +169,7 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
       ).toMatchObject({ ok: true, color: "navy" });
     }
     const invalidColor = await client.callTool({
-      name: "create_folder",
+      name: "ensure_folder",
       arguments: { name: "非法颜色", color: "url(https://example.com)" },
     });
     expect(invalidColor.isError).toBe(true);
@@ -326,13 +326,17 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
       tags: [expect.objectContaining({ boardCount: 1 })],
       nextCursor: expect.any(String),
     });
-    const deleted = await call("delete_board", {
+    const deleted = await call("manage_board", {
+      action: "delete",
       boardId: board.boardId,
       expectedRevision: managed.revision,
     });
     expect(deleted).toMatchObject({ ok: true, deleted: true, noop: false });
     expect(
-      await call("delete_board", { boardId: board.boardId }),
+      await call("manage_board", {
+        action: "delete",
+        boardId: board.boardId,
+      }),
     ).toMatchObject({ ok: true, noop: true });
     expect(
       await call("delete_folder", { folderId: folder.id, dryRun: true }),
@@ -356,12 +360,16 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
       }),
     ).toMatchObject({ ok: true, movedBoards: 1 });
     expect(
-      await call("restore_board", {
+      await call("manage_board", {
+        action: "restore",
         boardId: board.boardId,
         expectedRevision: deleted.revision,
       }),
     ).toMatchObject({ ok: false, error: { code: "REVISION_CONFLICT" } });
-    const restored = await call("restore_board", { boardId: board.boardId });
+    const restored = await call("manage_board", {
+      action: "restore",
+      boardId: board.boardId,
+    });
     // Moving out of the deleted folder and restoring each advance revision.
     expect(restored).toMatchObject({
       ok: true,
@@ -459,12 +467,20 @@ it("MCP supports folders, favorites, tags, safe trash and independent bounded ba
     }
     expect(recentPageIds).toEqual(expectedRecent);
     expect(recentCursor).toBeNull();
-    const originalDuplicate = await call("create_folder", { name: "重复" });
-    expect(await call("create_folder", { name: " 重复 " })).toMatchObject({
+    const originalDuplicate = await call("ensure_folder", {
+      name: "重复",
+      ifExists: "error",
+    });
+    expect(
+      await call("ensure_folder", { name: " 重复 ", ifExists: "error" }),
+    ).toMatchObject({
       ok: false,
       error: { code: "FOLDER_NAME_EXISTS" },
     });
-    const otherFolder = await call("create_folder", { name: "另一个" });
+    const otherFolder = await call("ensure_folder", {
+      name: "另一个",
+      ifExists: "error",
+    });
     expect(
       await call("update_folder", { folderId: otherFolder.id, name: "重复" }),
     ).toMatchObject({ ok: false, error: { code: "FOLDER_NAME_EXISTS" } });

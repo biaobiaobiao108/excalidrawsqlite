@@ -99,17 +99,19 @@ it("supports local linear origins and default tag replacement through the public
         updates: input.elements,
       }),
     ).toMatchObject({ noop: true, revision: board.revision });
-    await invoke("update_element", {
+    await invoke("update_board", {
       boardId: board.boardId,
-      update: {
-        id: "arrow",
-        x: 300,
-        y: 400,
-        points: [
-          [0, 0],
-          [40, 10],
-        ],
-      },
+      updates: [
+        {
+          id: "arrow",
+          x: 300,
+          y: 400,
+          points: [
+            [0, 0],
+            [40, 10],
+          ],
+        },
+      ],
     });
     const updated = await invoke("get_board", {
       boardId: board.boardId,
@@ -210,10 +212,10 @@ it("supports local linear origins and default tag replacement through the public
       expect(rejectedCreate.isError).toBe(true);
       const { type, ...geometry } = element;
       const rejectedUpdate = await client.callTool({
-        name: "update_element",
+        name: "update_board",
         arguments: {
           boardId: board.boardId,
-          update: { id: type === "line" ? "line" : "arrow", ...geometry },
+          updates: [{ id: type === "line" ? "line" : "arrow", ...geometry }],
         },
       });
       expect(rejectedUpdate.isError).toBe(true);

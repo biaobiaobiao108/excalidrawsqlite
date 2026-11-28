@@ -211,8 +211,6 @@ describe("MCP operation summaries", () => {
   for (const [operation, countField, expected] of [
     ["add_elements", "addedCount", "已新增 4 个图元"],
     ["copy_elements", "addedCount", "已复制 4 个图元"],
-    ["remove_elements", "removedCount", "已移除 4 个图元"],
-    ["update_element", "updatedCount", "已修改 4 个图元"],
     ["update_board", "updatedCount", "已修改 4 个图元"],
   ]) {
     it(`${operation} reports actual modifications and no-op`, () => {
@@ -250,17 +248,22 @@ describe("MCP operation summaries", () => {
     ).toContain("已更新画板设置");
   });
 
-  for (const [operation, expected] of [
-    ["manage_board", "已修改画板元数据"],
-    ["delete_board", "已将 1 个画板移入回收站"],
-    ["restore_board", "已恢复 1 个画板"],
-  ]) {
-    it(`${operation} explains state changes and no-op`, () => {
+  for (const [input, expected] of [
+    [{}, "已修改画板元数据"],
+    [{ deleted: true }, "已将 1 个画板移入回收站"],
+    [{ deleted: false }, "已恢复 1 个画板"],
+  ] as const) {
+    it(`manage_board explains state changes and no-op (${expected})`, () => {
       expect(
-        formatMcpSummary(operation!, { boardId: "managed", revision: 2 }),
+        formatMcpSummary("manage_board", {
+          ...input,
+          boardId: "managed",
+          revision: 2,
+        }),
       ).toBe(`${expected}；boardId=managed；修订号 2`);
       expect(
-        formatMcpSummary(operation!, {
+        formatMcpSummary("manage_board", {
+          ...input,
           boardId: "managed",
           revision: 2,
           noop: true,
@@ -270,7 +273,6 @@ describe("MCP operation summaries", () => {
   }
 
   for (const [operation, expected] of [
-    ["create_folder", "已创建文件夹"],
     ["ensure_folder", "已创建文件夹"],
     ["update_folder", "已修改文件夹"],
     ["delete_folder", "已删除文件夹"],

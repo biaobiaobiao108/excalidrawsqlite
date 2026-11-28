@@ -242,7 +242,7 @@ describe("compact MCP schemas", () => {
     });
     const errors =
       result.issues?.map((issue) => issue.message).join("; ") || "";
-    expect(errors).toContain('"update":{"id":"图元ID","dx":20}');
+    expect(errors).toContain('"updates":[{"id":"图元ID","dx":20}]');
     expect(errors).not.toContain("private-board-value");
     expect(errors).not.toContain("private-element-value");
     expect(result).not.toHaveProperty("value");

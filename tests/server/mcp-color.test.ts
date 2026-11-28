@@ -58,7 +58,7 @@ it("returns concise color errors through the public MCP client and rejects befor
         field: "backgroundColor",
       },
       {
-        name: "create_folder",
+        name: "ensure_folder",
         arguments: { name: "invalid folder", color: "#GGGGGG" },
         field: "color",
       },
@@ -123,7 +123,7 @@ it("returns concise color errors through the public MCP client and rejects befor
       viewBackgroundColor: "transparent",
     });
     const folder = await client.callTool({
-      name: "create_folder",
+      name: "ensure_folder",
       arguments: { name: "uppercase folder", color: "ReD" },
     });
     expect(folder.structuredContent).toMatchObject({ color: "red" });
