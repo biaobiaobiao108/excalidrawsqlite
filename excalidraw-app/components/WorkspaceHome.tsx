@@ -6,7 +6,6 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { isDarwin } from "@excalidraw/common";
 
@@ -40,25 +39,9 @@ import {
 
 import { CustomSelect } from "./CustomSelect";
 import { BoardCard } from "./WorkspaceBoardCard";
-import {
-  ConfirmDialog,
-  FolderDialog,
-  MetadataDialog,
-  WorkspaceContextMenu,
-} from "./WorkspaceDialogs";
-import {
-  ClockIcon,
-  EmptyTrashIcon,
-  ExcalidrawMark,
-  FolderAppearanceIcon,
-  FolderIcon,
-  GridIcon,
-  MoreIcon,
-  RestoreIcon,
-  SearchIcon,
-  StarIcon,
-  TrashIcon,
-} from "./WorkspaceIcons";
+import { WorkspaceHomeOverlays } from "./WorkspaceHomeOverlays";
+import { WorkspaceSidebar } from "./WorkspaceSidebar";
+import { EmptyTrashIcon, ExcalidrawMark, TrashIcon } from "./WorkspaceIcons";
 import { refreshWorkspacePage } from "./workspace-page-refresh";
 import { parseWorkspaceSearchQuery } from "./workspace-search";
 import {
@@ -97,16 +80,6 @@ import {
 } from "./workspace-types";
 
 import "./WorkspaceHome.scss";
-
-const LazyAuthDialog = React.lazy(async () => {
-  const { AuthDialog } = await import("./AuthDialog");
-  return { default: AuthDialog };
-});
-
-const LazyWorkspaceCommandPalette = React.lazy(async () => {
-  const { WorkspaceCommandPalette } = await import("./WorkspaceCommandPalette");
-  return { default: WorkspaceCommandPalette };
-});
 
 let workspaceSnapshot: WorkspaceSnapshot | null = null;
 
@@ -2171,208 +2144,41 @@ export const WorkspaceHome = ({
       }}
     >
       <div className="workspace-layout">
-        <aside
-          className="workspace-sidebar"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <header className="workspace-header">
-            <a
-              className="workspace-brand"
-              href="/"
-              aria-label="狐涂画板首页"
-              onClick={(event) => {
-                if (onSelectScene) {
-                  event.preventDefault();
+        <WorkspaceSidebar
+          view={view}
+          selectedFolderId={selectedFolderId}
+          searchQuery={searchQuery}
+          searchInputRef={searchInputRef}
+          workspaceNavRef={workspaceNavRef}
+          workspaceNavOverflow={workspaceNavOverflow}
+          folders={folders}
+          folderSceneCounts={folderSceneCounts}
+          workspaceStats={workspaceStats}
+          mobileFoldersOpen={mobileFoldersOpen}
+          createPending={isActionPending("scene:create")}
+          onBrandNavigate={
+            onSelectScene
+              ? () => {
                   setView("all");
                   setSelectedFolderId(null);
                   setSearchQuery("");
                 }
-              }}
-            >
-              <ExcalidrawMark />
-              <span>狐涂画板</span>
-            </a>
-            <div className="workspace-header-actions">
-              <button
-                className="primary-button header-create-button"
-                type="button"
-                onClick={() => void handleCreateScene()}
-                disabled={isActionPending("scene:create")}
-                title={
-                  selectedFolderId
-                    ? `在${
-                        folders.find((folder) => folder.id === selectedFolderId)
-                          ?.name || "当前文件夹"
-                      }中新建画板`
-                    : "在根目录中新建画板"
-                }
-              >
-                <span aria-hidden="true">＋</span>
-                新建画板
-              </button>
-              <label className="workspace-search">
-                <SearchIcon />
-                <input
-                  ref={searchInputRef}
-                  value={searchQuery}
-                  placeholder="搜索画板"
-                  aria-label="搜索画板"
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  onClick={(event) => event.stopPropagation()}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      searchInputRef.current?.blur();
-                    }
-                  }}
-                />
-                <kbd>{isDarwin ? "⌘K" : "Ctrl+K"}</kbd>
-              </label>
-            </div>
-          </header>
-          <div
-            className={`workspace-nav-shell${
-              workspaceNavOverflow.left ? " has-overflow-left" : ""
-            }${workspaceNavOverflow.right ? " has-overflow-right" : ""}`}
-          >
-            <nav
-              ref={workspaceNavRef}
-              className="workspace-nav"
-              aria-label="画板导航"
-            >
-              <button
-                data-workspace-view="all"
-                className={
-                  view === "all" && !selectedFolderId ? "is-selected" : ""
-                }
-                onClick={() => {
-                  setView("all");
-                  setSelectedFolderId(null);
-                }}
-                type="button"
-              >
-                <GridIcon />
-                所有画板
-                <span>{workspaceStats?.sceneCount ?? "…"}</span>
-              </button>
-              <button
-                data-workspace-view="recent"
-                className={view === "recent" ? "is-selected" : ""}
-                onClick={() => {
-                  setView("recent");
-                  setSelectedFolderId(null);
-                }}
-                type="button"
-              >
-                <ClockIcon />
-                最近打开
-              </button>
-              <button
-                data-workspace-view="favorites"
-                className={view === "favorites" ? "is-selected" : ""}
-                onClick={() => {
-                  setView("favorites");
-                  setSelectedFolderId(null);
-                }}
-                type="button"
-              >
-                <StarIcon />
-                收藏
-                <span>{workspaceStats?.favoriteCount ?? "…"}</span>
-              </button>
-              <button
-                data-workspace-view="trash"
-                className={view === "trash" ? "is-selected" : ""}
-                onClick={() => {
-                  setView("trash");
-                  setSelectedFolderId(null);
-                }}
-                type="button"
-              >
-                <TrashIcon />
-                回收站
-                {!!workspaceStats?.trashCount && (
-                  <span>{workspaceStats.trashCount}</span>
-                )}
-              </button>
-            </nav>
-          </div>
-          <button
-            type="button"
-            className="mobile-folder-toggle"
-            aria-expanded={mobileFoldersOpen}
-            aria-controls="workspace-folder-panel"
-            onClick={() => setMobileFoldersOpen((open) => !open)}
-          >
-            <FolderIcon />
-            <span>文件夹</span>
-            <small>{folders.length}</small>
-            <span className="mobile-folder-chevron" aria-hidden="true" />
-          </button>
-          <div
-            id="workspace-folder-panel"
-            className={`folder-panel${mobileFoldersOpen ? " is-open" : ""}`}
-          >
-            <div className="folder-panel-content">
-              <div className="folder-heading">
-                <span>文件夹</span>
-                <button
-                  type="button"
-                  aria-label="新建文件夹"
-                  onClick={() => openFolderDialog()}
-                >
-                  ＋
-                </button>
-              </div>
-              <div className="folder-list">
-                {folders.map((folder) => (
-                  <div
-                    className={`folder-row ${
-                      selectedFolderId === folder.id && view !== "trash"
-                        ? "is-selected"
-                        : ""
-                    }`.trim()}
-                    key={folder.id}
-                    style={
-                      {
-                        "--folder-accent":
-                          folder.color || DEFAULT_FOLDER_APPEARANCE.color,
-                      } as React.CSSProperties
-                    }
-                    onContextMenu={(event) =>
-                      openFolderContextMenu(folder, event)
-                    }
-                  >
-                    <button
-                      type="button"
-                      className="folder-row-select"
-                      onClick={() => {
-                        setSelectedFolderId(folder.id);
-                        setView("all");
-                      }}
-                    >
-                      <span className="folder-row-icon" aria-hidden="true">
-                        <FolderAppearanceIcon
-                          icon={folder.icon || DEFAULT_FOLDER_APPEARANCE.icon}
-                        />
-                      </span>
-                      <span>{folder.name}</span>
-                      <small>{folderSceneCounts.get(folder.id) || 0}</small>
-                    </button>
-                    <button
-                      type="button"
-                      className="folder-row-menu"
-                      aria-label={`管理文件夹“${folder.name}”`}
-                      title="文件夹操作"
-                      onClick={(event) => openFolderContextMenu(folder, event)}
-                    >
-                      <MoreIcon />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </aside>
+              : undefined
+          }
+          onCreateScene={() => void handleCreateScene()}
+          onSearchChange={setSearchQuery}
+          onChangeView={(nextView) => {
+            setView(nextView);
+            setSelectedFolderId(null);
+          }}
+          onSelectFolder={(folderId) => {
+            setSelectedFolderId(folderId);
+            setView("all");
+          }}
+          onToggleMobileFolders={() => setMobileFoldersOpen((open) => !open)}
+          onOpenFolderDialog={() => openFolderDialog()}
+          onOpenFolderContextMenu={openFolderContextMenu}
+        />
 
         <main
           className="workspace-main"
@@ -2565,164 +2371,90 @@ export const WorkspaceHome = ({
         </main>
       </div>
 
-      {metadataDialog && (
-        <MetadataDialog
-          state={metadataDialog}
-          folders={folders}
-          pending={isActionPending(`scene:${metadataDialog.scene.id}:metadata`)}
-          onChange={(next) =>
-            setMetadataDialog((current) =>
-              current ? { ...current, ...next } : current,
-            )
-          }
-          onClose={() => setMetadataDialog(null)}
-          onSave={() => void handleSaveMetadata()}
-        />
-      )}
-      {folderDialog && (
-        <FolderDialog
-          state={folderDialog}
-          pending={isFolderActionPending(folderDialog.id || "new")}
-          onChange={(name) =>
-            setFolderDialog((current) =>
-              current ? { ...current, name } : current,
-            )
-          }
-          onChangeAppearance={(next) =>
-            setFolderDialog((current) =>
-              current ? { ...current, ...next } : current,
-            )
-          }
-          onClose={() => setFolderDialog(null)}
-          onSave={() => void handleSaveFolder()}
-          onDelete={() => {
-            const folder = folders.find((item) => item.id === folderDialog.id);
-            setFolderDialog(null);
-            if (folder) {
-              handleDeleteFolder(folder);
-            }
-          }}
-        />
-      )}
-      {confirmDialog && (
-        <ConfirmDialog
-          state={confirmDialog}
-          pending={pendingActions.size > 0}
-          onClose={() => setConfirmDialog(null)}
-          onConfirm={() => {
-            const action = confirmDialog.onConfirm;
-            setConfirmDialog(null);
-            void action();
-          }}
-        />
-      )}
-      {authOpen && (
-        <React.Suspense fallback={null}>
-          <LazyAuthDialog
-            isOpen
-            onSuccess={() => {
-              setAuthOpen(false);
-              void loadWorkspace();
-            }}
-            onClose={() => setAuthOpen(false)}
-          />
-        </React.Suspense>
-      )}
-      {commandPaletteOpen && (
-        <React.Suspense fallback={null}>
-          <LazyWorkspaceCommandPalette
-            isOpen
-            onClose={() => setCommandPaletteOpen(false)}
-            scenes={scenes}
-            folders={folders}
-            trashCount={workspaceStats?.trashCount || 0}
-            currentView={view}
-            currentSort={sort}
-            selectedFolderId={selectedFolderId}
-            onSelectScene={navigateToScene}
-            onCreateScene={handleCreateScene}
-            onCreateFolder={() => openFolderDialog()}
-            onChangeView={(nextView) => {
-              setView(nextView);
-              setSelectedFolderId(null);
-            }}
-            onSelectFolder={(folderId) => {
-              setSelectedFolderId(folderId);
-              setView("all");
-            }}
-            onChangeSort={setSort}
-            onSearch={searchWorkspace}
-            onEmptyTrash={handleEmptyTrash}
-            onReload={loadWorkspace}
-          />
-        </React.Suspense>
-      )}
-      {contextMenu && (
-        <WorkspaceContextMenu state={contextMenu} onClose={closeContextMenu} />
-      )}
-      {selectedSceneIds.size > 0 &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <div
-            className="workspace-batch-bar"
-            role="toolbar"
-            aria-label="批量操作"
-          >
-            <div className="workspace-batch-bar-count">
-              已选择 <strong>{selectedSceneIds.size}</strong> 项
-            </div>
-            <div className="workspace-batch-bar-divider" aria-hidden="true" />
-            <div className="workspace-batch-bar-actions">
-              {view !== "trash" ? (
-                <button
-                  type="button"
-                  className="batch-bar-button danger"
-                  onClick={() => void handleBatchMoveToTrash(selectedScenes)}
-                  disabled={batchActionsDisabled}
-                  title={
-                    "将所选 " + selectedSceneIds.size + " 个画板移入回收站"
-                  }
-                >
-                  <TrashIcon />
-                  <span>移入回收站</span>
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="batch-bar-button"
-                    onClick={() => void handleBatchRestore(selectedScenes)}
-                    disabled={batchActionsDisabled}
-                    title={"还原所选 " + selectedSceneIds.size + " 个画板"}
-                  >
-                    <RestoreIcon />
-                    <span>还原</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="batch-bar-button danger"
-                    onClick={() => handleBatchPermanentDelete(selectedScenes)}
-                    disabled={batchActionsDisabled}
-                    title={"彻底删除所选 " + selectedSceneIds.size + " 个画板"}
-                  >
-                    <TrashIcon />
-                    <span>彻底删除</span>
-                  </button>
-                </>
-              )}
-              <button
-                type="button"
-                className="batch-bar-button close"
-                onClick={clearSceneSelection}
-                aria-label="退出多选"
-                title="退出多选 (Esc)"
-              >
-                取消
-              </button>
-            </div>
-          </div>,
-          document.body,
+      <WorkspaceHomeOverlays
+        metadataDialog={metadataDialog}
+        folders={folders}
+        metadataPending={isActionPending(
+          "scene:" + (metadataDialog?.scene.id ?? "") + ":metadata",
         )}
+        onMetadataChange={(next) =>
+          setMetadataDialog((current) =>
+            current ? { ...current, ...next } : current,
+          )
+        }
+        onMetadataClose={() => setMetadataDialog(null)}
+        onMetadataSave={() => void handleSaveMetadata()}
+        folderDialog={folderDialog}
+        folderPending={isFolderActionPending(folderDialog?.id || "new")}
+        onFolderNameChange={(name) =>
+          setFolderDialog((current) =>
+            current ? { ...current, name } : current,
+          )
+        }
+        onFolderAppearanceChange={(next) =>
+          setFolderDialog((current) =>
+            current ? { ...current, ...next } : current,
+          )
+        }
+        onFolderClose={() => setFolderDialog(null)}
+        onFolderSave={() => void handleSaveFolder()}
+        onFolderDelete={() => {
+          const folder = folders.find((item) => item.id === folderDialog?.id);
+          setFolderDialog(null);
+          if (folder) {
+            handleDeleteFolder(folder);
+          }
+        }}
+        confirmDialog={confirmDialog}
+        confirmPending={pendingActions.size > 0}
+        onConfirmClose={() => setConfirmDialog(null)}
+        onConfirm={() => {
+          const action = confirmDialog?.onConfirm;
+          setConfirmDialog(null);
+          if (action) {
+            void action();
+          }
+        }}
+        authOpen={authOpen}
+        onAuthSuccess={() => {
+          setAuthOpen(false);
+          void loadWorkspace();
+        }}
+        onAuthClose={() => setAuthOpen(false)}
+        commandPaletteOpen={commandPaletteOpen}
+        scenes={scenes}
+        trashCount={workspaceStats?.trashCount || 0}
+        currentView={view}
+        currentSort={sort}
+        selectedFolderId={selectedFolderId}
+        onSelectScene={navigateToScene}
+        onCreateScene={handleCreateScene}
+        onCreateFolder={() => openFolderDialog()}
+        onChangeView={(nextView) => {
+          setView(nextView);
+          setSelectedFolderId(null);
+        }}
+        onSelectFolder={(folderId) => {
+          setSelectedFolderId(folderId);
+          setView("all");
+        }}
+        onChangeSort={setSort}
+        onSearch={searchWorkspace}
+        onEmptyTrash={handleEmptyTrash}
+        onReload={() => void loadWorkspace()}
+        onCommandPaletteClose={() => setCommandPaletteOpen(false)}
+        contextMenu={contextMenu}
+        onContextMenuClose={closeContextMenu}
+        selectedCount={selectedSceneIds.size}
+        isTrashView={view === "trash"}
+        batchDisabled={batchActionsDisabled}
+        onBatchMoveToTrash={() => void handleBatchMoveToTrash(selectedScenes)}
+        onBatchRestore={() => void handleBatchRestore(selectedScenes)}
+        onBatchPermanentDelete={() =>
+          handleBatchPermanentDelete(selectedScenes)
+        }
+        onClearSelection={clearSceneSelection}
+      />
     </div>
   );
 };
