@@ -103,6 +103,13 @@ const collectBundleAssets = (
       path.relative(rootDirectory, entryPath).split(path.sep).join("/"),
     );
     const contents = fs.readFileSync(entryPath);
+    const compressedBytes = (
+      extension: ".gz" | ".br",
+      compress: () => number,
+    ) => {
+      const sidecar = `${entryPath}${extension}`;
+      return fs.existsSync(sidecar) ? fs.statSync(sidecar).size : compress();
+    };
 
     assets.push({
       kind,
@@ -110,14 +117,18 @@ const collectBundleAssets = (
       relativePath,
       rawBytes: contents.byteLength,
       compressedBytes: {
-        gzip: gzipSync(contents).byteLength,
+        gzip: compressedBytes(".gz", () => gzipSync(contents).byteLength),
         // Quality 5 keeps this check fast and represents a practical server
         // compression setting while remaining stable across environments.
-        brotli: brotliCompressSync(contents, {
-          params: {
-            [zlibConstants.BROTLI_PARAM_QUALITY]: 5,
-          },
-        }).byteLength,
+        brotli: compressedBytes(
+          ".br",
+          () =>
+            brotliCompressSync(contents, {
+              params: {
+                [zlibConstants.BROTLI_PARAM_QUALITY]: 5,
+              },
+            }).byteLength,
+        ),
       },
     });
   }

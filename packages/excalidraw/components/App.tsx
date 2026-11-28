@@ -4352,12 +4352,6 @@ class App extends React.Component<AppProps, AppState> {
       addEventListener(this.ownerWindow, EVENT.BLUR, this.onBlur, false),
       addEventListener(
         this.excalidrawContainerRef.current,
-        EVENT.WHEEL,
-        this.handleWheel,
-        { passive: false },
-      ),
-      addEventListener(
-        this.excalidrawContainerRef.current,
         EVENT.DRAG_OVER,
         this.disableEvent,
         false,

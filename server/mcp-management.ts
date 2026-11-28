@@ -7,6 +7,7 @@ import type { ServerRuntime } from "./types";
 import { mcpError } from "./mcp-response";
 import { colorSchema } from "./color";
 import { compactMcpSchema } from "./mcp-schema";
+import { getPreparedStatements } from "./routes-shared";
 
 export type ManagementApi = <T>(
   path: string,
@@ -188,19 +189,8 @@ const metadataSchema = z.strictObject({
     ),
 });
 type ManageInput = z.infer<typeof metadataSchema>;
-const queryCache = new WeakMap<
-  ServerRuntime,
-  ReturnType<ServerRuntime["db"]["query"]>
->();
 function readSummary(runtime: ServerRuntime, id: string) {
-  let statement = queryCache.get(runtime);
-  if (!statement) {
-    statement = runtime.db.query(
-      "SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at, scenes.revision, scenes.content_bytes AS size, scenes.element_count, scenes.tags_json, scenes.is_favorite, scenes.folder_id, scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at, folders.name AS folder_name FROM scenes LEFT JOIN folders ON folders.id = scenes.folder_id WHERE scenes.id = ?",
-    );
-    queryCache.set(runtime, statement);
-  }
-  const row = statement.get(id);
+  const row = getPreparedStatements(runtime).getSceneSummaryById.get(id);
   if (!row) throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在");
   return getSceneSummary(row);
 }
