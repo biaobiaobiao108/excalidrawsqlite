@@ -1757,7 +1757,12 @@ html.dark .board-card-actions {
     padding: 0.7rem 0.8rem 0;
     border-inline-end: 0;
     border-block-end: 1px solid var(--workspace-border);
-    background: rgba(244, 242, 236, 0.97);
+    background: var(--workspace-sidebar);
+    background: color-mix(
+      in srgb,
+      var(--workspace-sidebar) 97%,
+      transparent
+    );
     backdrop-filter: blur(14px);
   }
 

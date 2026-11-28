@@ -122,4 +122,15 @@ describe("workspace styling guards", () => {
       /\.custom-select__label\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
     );
   });
+
+  test("derives the mobile sidebar surface from the active theme", async () => {
+    const workspaceStyles = await Bun.file(
+      "excalidraw-app/components/WorkspaceHome.scss",
+    ).text();
+
+    expect(workspaceStyles).toMatch(
+      /\.workspace-sidebar\s*\{[^}]*background:\s*color-mix\(\s*in srgb,\s*var\(--workspace-sidebar\) 97%,\s*transparent\s*\)/s,
+    );
+    expect(workspaceStyles).not.toContain("rgba(244, 242, 236, 0.97)");
+  });
 });

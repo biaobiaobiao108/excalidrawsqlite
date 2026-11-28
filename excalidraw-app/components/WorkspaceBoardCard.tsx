@@ -125,18 +125,24 @@ const BoardThumbnail = ({
       observer.disconnect();
       cancelQueued?.();
     };
-  }, [scene.id, scene.revision, needsRepair]);
+  }, [
+    scene.id,
+    scene.revision,
+    scene.thumbnail_file_id,
+    scene.thumbnailVersion,
+    needsRepair,
+  ]);
 
-  if (!thumbnailId) {
+  if (!thumbnailId || failed) {
     return (
       <EmptyThumbnail
         containerRef={containerRef}
         label={
-          (scene.element_count || 0) > 0
-            ? failed || scene.deleted_at
-              ? "预览暂不可用"
-              : "正在生成预览…"
-            : "空白画板"
+          failed || scene.deleted_at
+            ? "预览暂不可用"
+            : (scene.element_count || 0) > 0
+              ? "正在生成预览…"
+              : "空白画板"
         }
       />
     );
@@ -150,6 +156,7 @@ const BoardThumbnail = ({
         height={400}
         loading={eager ? "eager" : "lazy"}
         fetchPriority={eager ? "high" : "low"}
+        onError={() => setFailed(true)}
       />
     </div>
   );

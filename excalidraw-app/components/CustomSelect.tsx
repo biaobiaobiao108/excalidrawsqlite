@@ -73,6 +73,10 @@ export const CustomSelect = ({
   const selectedIndex = options.findIndex((option) => option.value === value);
   const selectedOption = options[selectedIndex];
   const highlightedOption = options[highlightedIndex];
+  const activeOptionId =
+    open && highlightedIndex >= 0
+      ? `${listboxId}-option-${highlightedIndex}`
+      : undefined;
 
   useEffect(() => {
     if (!open) {
@@ -333,7 +337,7 @@ export const CustomSelect = ({
       {options.map((option, index) => (
         <button
           key={option.value}
-          id={`${listboxId}-option-${option.value}`}
+          id={`${listboxId}-option-${index}`}
           type="button"
           role="option"
           tabIndex={-1}
@@ -368,11 +372,13 @@ export const CustomSelect = ({
       <button
         ref={triggerRef}
         type="button"
+        role="combobox"
         className="custom-select__trigger"
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-controls={listboxId}
+        aria-controls={open ? listboxId : undefined}
+        aria-activedescendant={activeOptionId}
         disabled={disabled}
         onClick={() => (open ? closeMenu() : openMenu())}
         onKeyDown={handleTriggerKeyDown}
