@@ -3,6 +3,7 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
+import packageJson from "../../package.json";
 import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -108,6 +109,10 @@ test("MCP initialization works for Python, curl and ordinary client user agents;
       );
       try {
         await client.connect(transport);
+        expect(client.getServerVersion()).toMatchObject({
+          name: "excalidrawsqlite",
+          version: packageJson.version,
+        });
         const tools = await client.listTools();
         expect(tools.tools.some((tool) => tool.name === "get_board")).toBe(
           true,

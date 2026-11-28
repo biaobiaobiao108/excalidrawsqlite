@@ -206,7 +206,7 @@ AUTH_PASSWORD=your-password bun run dev
 | 环境变量                   | 默认值              |   必填项   | 说明                                                                                                                                                                                                                         |
 | :------------------------- | :------------------ | :--------: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AUTH_PASSWORD`            | _无_                | **二选一** | 访问密码。设置后启用密码验证并下发 HttpOnly 会话 Cookie。                                                                                                                                                                    |
-| `MCP_TOKEN`                | _无_                |     否     | 设置后启用 `/mcp/<URL 编码后的 MCP_TOKEN>` MCP 服务，无需认证请求头。未设置时 MCP 端点关闭。                                                                                                                                 |
+| `MCP_TOKEN`                | _无_                |     否     | 设置后启用 `/mcp/<URL 编码后的 MCP_TOKEN>` MCP 服务，无需认证请求头。未设置时 MCP 端点关闭；生产环境必须至少 32 字符。                                                                                                      |
 | `PUBLIC_URL`                | _无_                |     否     | 网页访问根地址，例如 `https://boards.example.com`。有效的 HTTP(S) 地址用于生成 MCP 的 `webUrl`。 |
 | `MCP_TRACE`                | `false`             |     否     | 临时启用 MCP 业务处理分段计时；记录内部 API 读写、图元转换、回执构建耗时与读写次数，不记录令牌、参数或画板正文。                                                                                                             |
 | `ALLOW_ANONYMOUS`          | `false`             | **二选一** | 设为 `true` 时显式允许免密匿名直接访问；生产环境未设置密码时必须显式开启。                                                                                                                                                   |
@@ -227,7 +227,7 @@ AUTH_PASSWORD=your-password bun run dev
 
 ## 🤖 MCP：让 Agent 读取和绘制画板
 
-MCP 使用标准 Streamable HTTP 传输，端点为 `http://你的服务地址:8080/mcp/<URL 编码后的令牌>`。错误令牌会按客户端地址限流；生产环境的短令牌会触发启动警告。设置高强度随机令牌后重启服务：
+MCP 使用标准 Streamable HTTP 传输，端点为 `http://你的服务地址:8080/mcp/<URL 编码后的令牌>`。错误令牌会按客户端地址限流；生产环境中少于 32 字符的令牌会阻止服务启动。设置高强度随机令牌后重启服务：
 
 ```bash
 MCP_TOKEN=replace-with-a-long-random-secret PUBLIC_URL=http://127.0.0.1:8080 bun run dev
@@ -563,7 +563,7 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
 | `DELETE` | `/api/scenes/:id`           | 软删除画板至回收站                                                                                        |
 | `GET`    | `/api/scenes/trash`         | 获取回收站画板 keyset 分页；支持同样的分页参数                                                            |
 | `POST`   | `/api/scenes/:id/restore`   | 从回收站还原指定画板                                                                                      |
-| `DELETE` | `/api/scenes/trash`         | 彻底清空回收站                                                                                            |
+| `DELETE` | `/api/scenes/trash`         | 按 `before` 时间与 `expectedCount` 快照清空回收站；快照过期返回 `409 TRASH_CHANGED`                       |
 | `GET`    | `/api/folders`              | 获取文件夹列表及各文件夹画板计数                                                                          |
 | `POST`   | `/api/folders`              | 新建文件夹                                                                                                |
 | `PATCH`  | `/api/folders/:id`          | 重命名文件夹                                                                                              |
@@ -581,7 +581,7 @@ MCP 令牌拥有画板读写能力，请像密码一样保管；不要把它提�
    - 挂载点 `./data` 包含 `excalidraw.db`、SQLite WAL 文件与 `files/` 实体图片目录。
 2. **完整备份**：
    - 请求 `/api/backup/full`，获取包含最新数据库快照和全部附件的 `.tar` 归档。
-   - 本项目面向单人自托管，备份是低频操作，预期在暂停编辑时手动执行。SQLite 快照在服务端主线程同步生成，允许短暂延后其他请求，以简化部署和维护。
+   - 本项目面向单人自托管，备份是低频操作，预期在暂停编辑时手动执行。SQLite 快照由 Worker 使用 `VACUUM INTO` 生成；完整备份在短暂持有存储变更锁时冻结数据库与附件版本，随后按流式方式写入 tar，不在主线程同步复制文件。
 3. **数据恢复**：
    - 恢复前先停止容器服务：
      ```bash

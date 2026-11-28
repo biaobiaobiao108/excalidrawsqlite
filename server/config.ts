@@ -17,6 +17,7 @@ export const MAX_FOLDER_NAME_LENGTH = 80;
 export const MAX_TAGS = 12;
 export const MAX_TAG_LENGTH = 32;
 export const MIN_AUTH_PASSWORD_LENGTH_PRODUCTION = 8;
+export const MIN_MCP_TOKEN_LENGTH_PRODUCTION = 32;
 export const MAX_AUTH_PASSWORD_LENGTH = 256;
 export const AUTH_ATTEMPTS_PER_WINDOW = 5;
 export const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -100,9 +101,9 @@ export const createServerConfig = (
         `AUTH_PASSWORD must be at least ${MIN_AUTH_PASSWORD_LENGTH_PRODUCTION} characters long in production`,
       );
     }
-    if (mcpToken && mcpToken.length < 32) {
-      console.warn(
-        "MCP_TOKEN is shorter than 32 characters; use a long, randomly generated token",
+    if (mcpToken && mcpToken.length < MIN_MCP_TOKEN_LENGTH_PRODUCTION) {
+      throw new Error(
+        `MCP_TOKEN must be at least ${MIN_MCP_TOKEN_LENGTH_PRODUCTION} characters long in production`,
       );
     }
   }

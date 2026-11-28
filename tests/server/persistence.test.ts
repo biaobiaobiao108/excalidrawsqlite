@@ -626,13 +626,20 @@ describe("cloud persistence server", () => {
     expect(() =>
       createServerConfig({ NODE_ENV: "production", AUTH_PASSWORD: "short" }),
     ).toThrow("at least 8 characters");
-    expect(
+    expect(() =>
       createServerConfig({
         NODE_ENV: "production",
         AUTH_PASSWORD: "secure-password-123",
         MCP_TOKEN: "too-short",
+      }),
+    ).toThrow("at least 32 characters");
+    expect(
+      createServerConfig({
+        NODE_ENV: "production",
+        AUTH_PASSWORD: "secure-password-123",
+        MCP_TOKEN: "m".repeat(32),
       }).mcpToken,
-    ).toBe("too-short");
+    ).toBe("m".repeat(32));
     expect(() =>
       createServerConfig({
         AUTH_PASSWORD: "a".repeat(257),

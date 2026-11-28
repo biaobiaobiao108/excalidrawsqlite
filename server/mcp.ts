@@ -56,6 +56,7 @@ import {
 import { AUTH_RATE_WINDOW_MS } from "./config";
 import { HttpError } from "./errors";
 import { isAllowedOrigin, jsonResponse, response } from "./http";
+import packageJson from "../package.json";
 import {
   MCP_PATH,
   assertRevision,
@@ -113,7 +114,7 @@ export const createMcpRequestHandler = (
       ? createMcpHandler(
           () => {
             const server = new McpServer(
-              { name: "excalidrawsqlite", version: "1.0.0" },
+              { name: "excalidrawsqlite", version: packageJson.version },
               {
                 maxToolInputElements: 100_000,
                 instructions: getMcpServerInstructions(runtime),
