@@ -855,7 +855,7 @@ export const createMcpRequestHandler = (
                   name: board.name,
                   elements: merged,
                   appState: board.appState,
-                  revision: board.revision,
+                  baseRevision: board.revision,
                 });
                 return result({
                   boardId: saved.id,

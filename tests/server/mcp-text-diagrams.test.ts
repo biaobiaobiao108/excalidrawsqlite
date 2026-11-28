@@ -27,6 +27,10 @@ const withClient = async (
     ) => Promise<{ data: T; text: string }>,
     apiHandler: ReturnType<typeof createRequestHandler>,
   ) => Promise<void>,
+  interceptApi?: (
+    runtime: ReturnType<typeof createRuntime>,
+    apiHandler: ReturnType<typeof createRequestHandler>,
+  ) => ReturnType<typeof createRequestHandler>,
 ) => {
   const directory = path.join(
     os.tmpdir(),
@@ -42,7 +46,10 @@ const withClient = async (
     }),
   });
   const apiHandler = createRequestHandler(runtime);
-  const handler = createMcpRequestHandler(runtime, apiHandler);
+  const handler = createMcpRequestHandler(
+    runtime,
+    interceptApi ? interceptApi(runtime, apiHandler) : apiHandler,
+  );
   const client = new Client(
     { name: "text-diagrams-test", version: "1.0.0" },
     { versionNegotiation: { mode: "auto" } },
@@ -58,7 +65,11 @@ const withClient = async (
     await run(
       async <T>(name: string, args: Record<string, unknown>, ok = true) => {
         const response = await client.callTool({ name, arguments: args });
-        expect(Boolean(response.isError)).toBe(!ok);
+        expect(
+          Boolean(response.isError) ||
+            (response.structuredContent as { ok?: boolean } | undefined)?.ok ===
+              false,
+        ).toBe(!ok);
         expect(response.structuredContent).toMatchObject({ ok });
         expect(response.content).toHaveLength(1);
         const content = response.content[0];
@@ -161,6 +172,62 @@ describe("MCP create_from_mermaid and create_from_markdown", () => {
       const svgBody = await fileRes.text();
       expect(svgBody).toContain("<svg");
     });
+  });
+
+  it("rejects appends when the board changes between read and write", async () => {
+    let injectConflict = false;
+    let conflictInjected = false;
+    let targetBoardId = "";
+
+    await withClient(
+      async (invoke) => {
+        const created = await invoke<{ boardId: string }>(
+          "create_from_mermaid",
+          {
+            name: "并发追加测试",
+            mermaid: 'flowchart LR\n  A["初始"] --> B["完成"]',
+          },
+        );
+        targetBoardId = created.data.boardId;
+        injectConflict = true;
+
+        const failed = await invoke<{
+          error: { code: string; message: string };
+        }>(
+          "create_from_mermaid",
+          {
+            boardId: targetBoardId,
+            mermaid: 'flowchart LR\n  C["追加"] --> D["完成"]',
+          },
+          false,
+        );
+        expect(failed.data.error.code).toBe("REVISION_CONFLICT");
+        expect(conflictInjected).toBe(true);
+
+        const current = await invoke<Board>("get_board", {
+          boardId: targetBoardId,
+          view: "summary",
+        });
+        expect(current.data.revision).toBe(2);
+      },
+      (runtime, apiHandler) =>
+        (async (req: Request) => {
+          if (
+            injectConflict &&
+            req.method === "PUT" &&
+            new URL(req.url).pathname ===
+              `/api/scenes/${encodeURIComponent(targetBoardId)}`
+          ) {
+            injectConflict = false;
+            conflictInjected = true;
+            runtime.db.run(
+              "UPDATE scenes SET revision = revision + 1, updated_at = ? WHERE id = ?",
+              [Date.now(), targetBoardId],
+            );
+          }
+          return apiHandler(req);
+        }) as ReturnType<typeof createRequestHandler>,
+    );
   });
 
   it("reports structured INVALID_INPUT on Mermaid syntax errors", async () => {
