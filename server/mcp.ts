@@ -45,6 +45,7 @@ import { inspectLayout, inspectLayoutSchema } from "./mcp-inspect";
 import {
   buildMarkdownMindmapScene,
   buildMermaidScene,
+  offsetDiagramElements,
 } from "./mcp-text-diagrams";
 
 import { randomBase64Url, timingSafeEqual } from "./crypto";
@@ -59,6 +60,7 @@ import { HttpError } from "./errors";
 import { isAllowedOrigin, jsonResponse, response } from "./http";
 import {
   MCP_PATH,
+  assertRevision,
   autoBindSchema,
   bindCreated,
   boardMetadataSchema,
@@ -808,12 +810,109 @@ export const createMcpRequestHandler = (
               return payload.file.id;
             };
 
+            const persistTextDiagram = async ({
+              args,
+              generatedElements,
+              defaultBgColor,
+              toolName,
+              extraResult,
+            }: {
+              args: {
+                boardId?: string;
+                expectedRevision?: number;
+                name?: string;
+                x?: number;
+                y?: number;
+                folderId?: string | null;
+                folderName?: string;
+                tags?: string[];
+                favorite?: boolean;
+                responseMode?: "minimal" | "ids";
+                idempotencyKey?: string;
+              };
+              generatedElements: ExcalidrawElement[];
+              defaultBgColor: string;
+              toolName: string;
+              extraResult?: Record<string, unknown>;
+            }) => {
+              const positioned = offsetDiagramElements(
+                generatedElements,
+                args.x ?? 0,
+                args.y ?? 0,
+              );
+              if (args.boardId) {
+                const board = await api<SceneData>(
+                  `/api/scenes/${encodeURIComponent(args.boardId)}`,
+                  "GET",
+                );
+                assertRevision(board, args.expectedRevision);
+                const merged = [...board.elements, ...positioned];
+                const saved = await api<{
+                  id: string;
+                  revision: number;
+                  updated_at: number;
+                }>(`/api/scenes/${encodeURIComponent(args.boardId)}`, "PUT", {
+                  name: board.name,
+                  elements: merged,
+                  appState: board.appState,
+                  revision: board.revision,
+                });
+                return result({
+                  boardId: saved.id,
+                  name: board.name,
+                  revision: saved.revision,
+                  elementCount: merged.length,
+                  ...extraResult,
+                  ...drawingReceipt(positioned, args.responseMode),
+                });
+              }
+              if (!args.name) {
+                throw new HttpError(
+                  400,
+                  "INVALID_INPUT",
+                  "新建画板时必须提供 name；若要追加到已有画板，请传 boardId",
+                );
+              }
+              const intent = createIntent(toolName, args);
+              const replay = creationReplay(args.idempotencyKey, intent);
+              if (replay) return replayReceipt(replay);
+              const folder = getSceneFolderFields(args, runtime);
+              const board = await api<{
+                id: string;
+                name: string;
+                revision: number;
+                idempotentReplay?: boolean;
+              }>("/api/scenes", "POST", {
+                name: args.name,
+                elements: positioned,
+                appState: { viewBackgroundColor: defaultBgColor },
+                ...folder,
+                tags: args.tags,
+                favorite: args.favorite,
+                ...(args.idempotencyKey
+                  ? {
+                      idempotencyKey: args.idempotencyKey,
+                      idempotencyPayload: intent,
+                    }
+                  : {}),
+              });
+              if (board.idempotentReplay) return replayReceipt(board);
+              return result({
+                boardId: board.id,
+                name: board.name,
+                revision: board.revision,
+                elementCount: positioned.length,
+                ...extraResult,
+                ...drawingReceipt(positioned, args.responseMode),
+              });
+            };
+
             server.registerTool(
               "create_from_mermaid",
               {
-                title: "通过 Mermaid 语法创建画板",
+                title: "通过 Mermaid 语法创建或追加图表",
                 description:
-                  '将 Mermaid 语法直接转换为 Excalidraw 画板。支持将流程图(flowchart/graph)、时序图(sequenceDiagram)、类图(classDiagram)、状态图(stateDiagram)、ER图(erDiagram)、甘特图(gantt)、象限图(quadrantChart)与时间线(timeline)转为原生可编辑图元；其余 Mermaid 图表自动转为净化后的安全 SVG 图像附件。节点含中文、空格或括号等特殊字符时请用双引号包裹（如 A["用户登录 (OAuth)"]）。',
+                  '将 Mermaid 语法转换为 Excalidraw 图元。传 boardId 可直接追加到已有画板的 (x, y) 位置；不传 boardId 时新建画板（需传 name）。支持将流程图(flowchart/graph)、时序图(sequenceDiagram)、类图(classDiagram)、状态图(stateDiagram)、ER图(erDiagram)、甘特图(gantt)、象限图(quadrantChart)与时间线(timeline)转为原生可编辑图元；其余图表自动转为净化后的安全 SVG 图像附件。节点含中文、空格或括号等特殊字符时请用双引号包裹（如 A["用户登录 (OAuth)"]）。',
                 inputSchema: compactMcpSchema(
                   z.object({
                     name: z
@@ -821,7 +920,25 @@ export const createMcpRequestHandler = (
                       .trim()
                       .min(1)
                       .max(120)
-                      .describe("画板名称"),
+                      .optional()
+                      .describe("新建画板名称（不传 boardId 时必填）"),
+                    boardId: z
+                      .string()
+                      .min(1)
+                      .max(128)
+                      .optional()
+                      .describe("可选目标画板 ID；传入时追加到该画板而非新建"),
+                    expectedRevision: expectedRevisionSchema,
+                    x: z
+                      .number()
+                      .finite()
+                      .optional()
+                      .describe("图表左上角目标 X 坐标（默认 0）"),
+                    y: z
+                      .number()
+                      .finite()
+                      .optional()
+                      .describe("图表左上角目标 Y 坐标（默认 0）"),
                     mermaid: z
                       .string()
                       .min(1)
@@ -841,42 +958,21 @@ export const createMcpRequestHandler = (
                 },
               },
               safeTool(async (args) => {
-                const intent = createIntent("create_from_mermaid", args);
-                const replay = creationReplay(args.idempotencyKey, intent);
-                if (replay) return replayReceipt(replay);
+                if (!args.boardId) {
+                  const intent = createIntent("create_from_mermaid", args);
+                  const replay = creationReplay(args.idempotencyKey, intent);
+                  if (replay) return replayReceipt(replay);
+                }
                 const { elements, convertedAsImage, fileCount } =
                   await measureMcpPhase("transformMs", () =>
                     buildMermaidScene(args.mermaid, uploadInternalFile),
                   );
-                const folder = getSceneFolderFields(args, runtime);
-                const board = await api<{
-                  id: string;
-                  name: string;
-                  revision: number;
-                  idempotentReplay?: boolean;
-                }>("/api/scenes", "POST", {
-                  name: args.name,
-                  elements,
-                  appState: { viewBackgroundColor: "#ffffff" },
-                  ...folder,
-                  tags: args.tags,
-                  favorite: args.favorite,
-                  ...(args.idempotencyKey
-                    ? {
-                        idempotencyKey: args.idempotencyKey,
-                        idempotencyPayload: intent,
-                      }
-                    : {}),
-                });
-                if (board.idempotentReplay) return replayReceipt(board);
-                return result({
-                  boardId: board.id,
-                  name: board.name,
-                  revision: board.revision,
-                  elementCount: elements.length,
-                  convertedAsImage,
-                  fileCount,
-                  ...drawingReceipt(elements, args.responseMode),
+                return await persistTextDiagram({
+                  args,
+                  generatedElements: elements,
+                  defaultBgColor: "#ffffff",
+                  toolName: "create_from_mermaid",
+                  extraResult: { convertedAsImage, fileCount },
                 });
               }, "create_from_mermaid"),
             );
@@ -884,9 +980,9 @@ export const createMcpRequestHandler = (
             server.registerTool(
               "create_from_markdown",
               {
-                title: "通过 Markdown 大纲创建思维导图",
+                title: "通过 Markdown 大纲创建或追加思维导图",
                 description:
-                  "将 Markdown 层级大纲（# 标题与 - 无序列表）直接转换为手绘风格思维导图画板。适合知识结构、脑暴大纲、目录树等树形层级图，无需提供任何坐标或样式。",
+                  "将 Markdown 层级大纲（# 标题与 - 无序列表）转换为手绘风格思维导图。传 boardId 可直接追加到已有画板的 (x, y) 位置；不传 boardId 时新建画板（需传 name）。适合知识结构、脑暴大纲、目录树等树形层级图，无需提供任何坐标或样式。",
                 inputSchema: compactMcpSchema(
                   z.object({
                     name: z
@@ -894,7 +990,25 @@ export const createMcpRequestHandler = (
                       .trim()
                       .min(1)
                       .max(120)
-                      .describe("画板名称"),
+                      .optional()
+                      .describe("新建画板名称（不传 boardId 时必填）"),
+                    boardId: z
+                      .string()
+                      .min(1)
+                      .max(128)
+                      .optional()
+                      .describe("可选目标画板 ID；传入时追加到该画板而非新建"),
+                    expectedRevision: expectedRevisionSchema,
+                    x: z
+                      .number()
+                      .finite()
+                      .optional()
+                      .describe("导图左上角目标 X 坐标（默认 0）"),
+                    y: z
+                      .number()
+                      .finite()
+                      .optional()
+                      .describe("导图左上角目标 Y 坐标（默认 0）"),
                     markdown: z
                       .string()
                       .min(1)
@@ -918,9 +1032,11 @@ export const createMcpRequestHandler = (
                 },
               },
               safeTool(async (args) => {
-                const intent = createIntent("create_from_markdown", args);
-                const replay = creationReplay(args.idempotencyKey, intent);
-                if (replay) return replayReceipt(replay);
+                if (!args.boardId) {
+                  const intent = createIntent("create_from_markdown", args);
+                  const replay = creationReplay(args.idempotencyKey, intent);
+                  if (replay) return replayReceipt(replay);
+                }
                 const { elements, nodeCount } = measureMcpPhase(
                   "transformMs",
                   () =>
@@ -929,37 +1045,12 @@ export const createMcpRequestHandler = (
                       args.theme ?? "light",
                     ),
                 );
-                const folder = getSceneFolderFields(args, runtime);
-                const board = await api<{
-                  id: string;
-                  name: string;
-                  revision: number;
-                  idempotentReplay?: boolean;
-                }>("/api/scenes", "POST", {
-                  name: args.name,
-                  elements,
-                  appState: {
-                    viewBackgroundColor:
-                      args.theme === "dark" ? "#121212" : "#ffffff",
-                  },
-                  ...folder,
-                  tags: args.tags,
-                  favorite: args.favorite,
-                  ...(args.idempotencyKey
-                    ? {
-                        idempotencyKey: args.idempotencyKey,
-                        idempotencyPayload: intent,
-                      }
-                    : {}),
-                });
-                if (board.idempotentReplay) return replayReceipt(board);
-                return result({
-                  boardId: board.id,
-                  name: board.name,
-                  revision: board.revision,
-                  nodeCount,
-                  elementCount: elements.length,
-                  ...drawingReceipt(elements, args.responseMode),
+                return await persistTextDiagram({
+                  args,
+                  generatedElements: elements,
+                  defaultBgColor: args.theme === "dark" ? "#121212" : "#ffffff",
+                  toolName: "create_from_markdown",
+                  extraResult: { nodeCount },
                 });
               }, "create_from_markdown"),
             );

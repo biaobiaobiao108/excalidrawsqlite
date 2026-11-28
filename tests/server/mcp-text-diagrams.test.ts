@@ -225,6 +225,21 @@ describe("MCP create_from_mermaid and create_from_markdown", () => {
         false,
       );
       expect(emptyFailed.data.error.code).toBe("INVALID_INPUT");
+
+      // Test appending to an existing board with (x, y) offset
+      const appended = await invoke<{
+        boardId: string;
+        elementCount: number;
+      }>("create_from_mermaid", {
+        boardId: created.data.boardId,
+        mermaid: 'flowchart LR\n  X["补充节点"] --> Y["完成"]',
+        x: 1000,
+        y: 200,
+      });
+      expect(appended.data.boardId).toBe(created.data.boardId);
+      expect(appended.data.elementCount).toBeGreaterThan(
+        created.data.elementCount,
+      );
     });
   });
 });

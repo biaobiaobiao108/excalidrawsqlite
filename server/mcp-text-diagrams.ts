@@ -150,6 +150,38 @@ export const buildMermaidScene = async (
   };
 };
 
+export const offsetDiagramElements = (
+  elements: ExcalidrawElement[],
+  targetX = 0,
+  targetY = 0,
+): ExcalidrawElement[] => {
+  if ((targetX === 0 && targetY === 0) || elements.length === 0) {
+    return elements;
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  for (const el of elements) {
+    if (el.isDeleted) {
+      continue;
+    }
+    minX = Math.min(minX, el.x);
+    minY = Math.min(minY, el.y);
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+    return elements;
+  }
+  const dx = targetX - minX;
+  const dy = targetY - minY;
+  if (dx === 0 && dy === 0) {
+    return elements;
+  }
+  return elements.map((el) => ({
+    ...el,
+    x: el.x + dx,
+    y: el.y + dy,
+  }));
+};
+
 export const buildMarkdownMindmapScene = (
   markdown: string,
   theme: Theme = "light",
