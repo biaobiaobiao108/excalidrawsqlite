@@ -4,6 +4,10 @@ import path from "node:path";
 const projectRoot = path.resolve(import.meta.dir, "..");
 const outputDirectory = path.join(projectRoot, "server-build");
 const outputFile = path.join(outputDirectory, "server.js");
+const snapshotWorkerFile = path.join(
+  outputDirectory,
+  "backup-snapshot-worker.js",
+);
 
 fs.rmSync(outputDirectory, { recursive: true, force: true });
 fs.mkdirSync(outputDirectory, { recursive: true });
@@ -28,4 +32,26 @@ if (!result.success) {
   process.exit(1);
 }
 
-console.log(`⚡ Bun server build completed -> ${outputFile}`);
+const workerResult = await Bun.build({
+  entrypoints: [path.join(projectRoot, "server", "backup-snapshot-worker.ts")],
+  outdir: outputDirectory,
+  target: "bun",
+  format: "esm",
+  minify: false,
+  sourcemap: "none",
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+  },
+});
+
+if (!workerResult.success) {
+  console.info("❌ Backup snapshot worker build failed with errors:");
+  for (const log of workerResult.logs) {
+    console.info(log);
+  }
+  process.exit(1);
+}
+
+console.log(
+  `⚡ Bun server build completed -> ${outputFile}, ${snapshotWorkerFile}`,
+);

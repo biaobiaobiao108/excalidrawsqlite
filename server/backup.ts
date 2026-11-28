@@ -12,6 +12,13 @@ import type { ServerRuntime } from "./types";
 const activeBackups = new WeakSet<ServerRuntime>();
 const TAR_BLOCK_SIZE = 512;
 const textEncoder = new TextEncoder();
+const SNAPSHOT_TIMEOUT_MS = 5 * 60_000;
+const backupSnapshotWorkerUrl = new URL(
+  import.meta.url.endsWith(".ts")
+    ? "./backup-snapshot-worker.ts"
+    : "./backup-snapshot-worker.js",
+  import.meta.url,
+);
 
 const writeAscii = (
   target: Uint8Array,
@@ -301,37 +308,49 @@ const writeDatabaseSnapshot = async (
   destination: string,
   maxBytes: number,
 ) => {
-  let db: Database | undefined;
-  try {
-    db = new Database(dbPath, { readonly: true });
-    db.run("PRAGMA busy_timeout = 10000;");
-    const pageSize = Number(
-      (db.query("PRAGMA page_size").get() as { page_size: number }).page_size,
+  await new Promise<void>((resolve, reject) => {
+    const worker = new Worker(backupSnapshotWorkerUrl, { type: "module" });
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      void worker.terminate();
+      if (error) reject(error);
+      else resolve();
+    };
+    const timeout = setTimeout(
+      () =>
+        finish(
+          new Error(`数据库快照超时（${SNAPSHOT_TIMEOUT_MS / 60_000} 分钟）`),
+        ),
+      SNAPSHOT_TIMEOUT_MS,
     );
-    const content = db
-      .query(
-        `SELECT COALESCE(SUM(bytes), 0) AS bytes FROM (
-      SELECT length(CAST(id AS BLOB)) + length(CAST(name AS BLOB)) +
-             length(CAST(elements AS BLOB)) + length(CAST(app_state AS BLOB)) +
-             length(CAST(tags_json AS BLOB)) AS bytes FROM scenes
-      UNION ALL SELECT length(CAST(id AS BLOB)) + length(CAST(name AS BLOB)) +
-             length(CAST(icon AS BLOB)) + length(CAST(color AS BLOB)) FROM folders
-      UNION ALL SELECT length(CAST(id AS BLOB)) + COALESCE(length(CAST(storage_path AS BLOB)), 0) +
-             length(CAST(mime_type AS BLOB)) + length(CAST(sha256 AS BLOB)) FROM files
-      UNION ALL SELECT length(CAST(scene_id AS BLOB)) + length(CAST(file_id AS BLOB)) FROM scene_files
-      UNION ALL SELECT length(CAST(token AS BLOB)) FROM sessions
-      UNION ALL SELECT length(CAST(key_sha256 AS BLOB)) + length(CAST(payload_sha256 AS BLOB)) +
-             length(CAST(scene_id AS BLOB)) FROM scene_create_requests
-    )`,
-      )
-      .get() as { bytes: number };
-    if (maxBytes < pageSize || Number(content.bytes) > maxBytes) {
-      throw new HttpError(413, "BACKUP_TOO_LARGE", "备份内容超过大小限制");
-    }
-    db.run(`VACUUM INTO '${destination.replace(/'/g, "''")}'`);
-  } finally {
-    db?.close();
-  }
+    timeout.unref?.();
+    worker.onmessage = (
+      event: MessageEvent<
+        | { ok: true }
+        | {
+            ok: false;
+            code: "BACKUP_TOO_LARGE" | "BACKUP_SNAPSHOT_FAILED";
+            message: string;
+          }
+      >,
+    ) => {
+      const message = event.data;
+      if (message.ok) {
+        finish();
+      } else if (message.code === "BACKUP_TOO_LARGE") {
+        finish(new HttpError(413, "BACKUP_TOO_LARGE", message.message));
+      } else {
+        finish(new Error(message.message));
+      }
+    };
+    worker.onerror = (event) => {
+      finish(new Error(event.message || "数据库快照 Worker 执行失败"));
+    };
+    worker.postMessage({ dbPath, destination, maxBytes });
+  });
 };
 
 export const createDatabaseSnapshot = async (
