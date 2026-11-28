@@ -32,11 +32,6 @@ export const unregisterInternalSession = (
 ) => internalSessions.get(runtime)?.delete(token);
 
 export const cleanupExpiredSessions = (runtime: ServerRuntime, now: number) => {
-  for (const [token, expiresAt] of runtime.sessions) {
-    if (expiresAt <= now) {
-      runtime.sessions.delete(token);
-    }
-  }
   try {
     runtime.db.run("DELETE FROM sessions WHERE expires_at <= ?", [now]);
   } catch (error) {
@@ -112,7 +107,6 @@ export const issueSessionCookie = (runtime: ServerRuntime, req: Request) => {
       "无法创建登录会话，请重试",
     );
   }
-  runtime.sessions.set(token, expiresAt);
   const secure = isSecureRequest(runtime, req);
   const name =
     runtime.config.nodeEnv === "production" && secure
@@ -186,7 +180,6 @@ export const getSessionExpiration = (runtime: ServerRuntime, token: string) => {
     return null;
   }
   if (!expiresAt || expiresAt <= Date.now()) {
-    runtime.sessions.delete(token);
     try {
       runtime.db.run("DELETE FROM sessions WHERE token = ?", [
         hashSessionToken(runtime, token),

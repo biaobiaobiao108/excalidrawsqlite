@@ -721,7 +721,6 @@ describe("Excalidraw MCP endpoint", () => {
       await client.close();
       await handler.close();
     }
-    expect(runtime.sessions.size).toBe(0);
   });
 
   it("inspects selected layout checks through the SDK without changing the board", async () => {
@@ -2209,7 +2208,5 @@ describe("Excalidraw MCP endpoint", () => {
       await client.close();
       await mcpHandler.close();
     }
-
-    expect(runtime.sessions.size).toBe(0);
   });
 });

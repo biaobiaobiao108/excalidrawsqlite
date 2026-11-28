@@ -1099,10 +1099,15 @@ describe("cloud persistence server", () => {
       .get("set-cookie")!
       .split(";", 1)[0]
       .slice("excalidraw_session=".length);
-    expect(runtime.sessions.has(token)).toBe(true);
+    expect(
+      (
+        runtime.db.query("SELECT COUNT(*) AS count FROM sessions").get() as {
+          count: number;
+        }
+      ).count,
+    ).toBe(1);
 
     cleanupExpiredSessions(runtime, Date.now() + 2_000);
-    expect(runtime.sessions.has(token)).toBe(false);
     expect(
       (
         runtime.db.query("SELECT COUNT(*) AS count FROM sessions").get() as {
@@ -1861,7 +1866,6 @@ describe("cloud persistence server", () => {
     });
     expect(login.status).toBe(500);
     expect(login.headers.getSetCookie()).toHaveLength(0);
-    expect(runtime.sessions.size).toBe(0);
     expect(
       (
         runtime.db.query("SELECT COUNT(*) AS count FROM sessions").get() as {

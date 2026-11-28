@@ -44,7 +44,6 @@ export const createRuntime = (options: {
         ? path.resolve(options.staticDir)
         : undefined,
       config,
-      sessions: new Map(),
       authAttempts: new Map(),
       writeAttempts: new Map(),
       bodyMemoryBudget: new BodyMemoryBudget(config.maxInFlightBodyBytes),

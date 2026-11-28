@@ -158,7 +158,6 @@ export type ServerRuntime = {
   activeFileArtifacts: Set<string>;
   staticDir?: string;
   config: ServerConfig;
-  sessions: Map<string, number>;
   authAttempts: Map<string, { startedAt: number; count: number }>;
   writeAttempts: Map<string, { startedAt: number; count: number }>;
   bodyMemoryBudget: BodyMemoryBudget;

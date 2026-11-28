@@ -202,7 +202,6 @@ export const handleBackupAndAuthRoute = async ({
           500,
         );
       }
-      runtime.sessions.delete(token);
       runtime.realtime?.revokeSession?.(token);
     }
     const headers = new Headers({

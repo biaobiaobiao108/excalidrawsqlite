@@ -1300,7 +1300,6 @@ export const createMcpRequestHandler = (
     },
     close: async () => {
       if (internalSessionToken) {
-        runtime.sessions.delete(internalSessionToken);
         unregisterMcpCreateSession(runtime, internalSessionToken);
         unregisterInternalSession(runtime, internalSessionToken);
       }
