@@ -353,6 +353,7 @@ describe("cloud persistence server", () => {
       sceneCount: 0,
       favoriteCount: 0,
       trashCount: 0,
+      trashCutoff: expect.any(Number),
       tags: [],
     });
   });
@@ -415,10 +416,13 @@ describe("cloud persistence server", () => {
         sceneCount: number;
         favoriteCount: number;
         trashCount: number;
+        trashCutoff: number;
         tags: string[];
       }>(await request(handler, "/api/workspace/stats", { headers }));
     const initialStats = await readStats();
-    expect(initialStats).toEqual({
+    const { trashCutoff: initialTrashCutoff, ...initialCounts } = initialStats;
+    expect(Number.isSafeInteger(initialTrashCutoff)).toBe(true);
+    expect(initialCounts).toEqual({
       sceneCount: 105,
       favoriteCount: 53,
       trashCount: 3,
@@ -474,7 +478,9 @@ describe("cloud persistence server", () => {
         );
         expect(next.totalCount).toBe(count);
       }
-      expect(await readStats()).toEqual(initialStats);
+      const { trashCutoff, ...counts } = await readStats();
+      expect(Number.isSafeInteger(trashCutoff)).toBe(true);
+      expect(counts).toEqual(initialCounts);
     }
     const tagged = await readPage("/api/scenes?tag=精确");
     expect(tagged.items.map(({ id }) => id)).toEqual(["stats_0"]);
@@ -492,7 +498,9 @@ describe("cloud persistence server", () => {
       { method: "PATCH", headers },
     );
     expect(updated.status).toBe(200);
-    expect(await readStats()).toEqual({
+    const { trashCutoff: updatedCutoff, ...updatedCounts } = await readStats();
+    expect(Number.isSafeInteger(updatedCutoff)).toBe(true);
+    expect(updatedCounts).toEqual({
       sceneCount: 105,
       favoriteCount: 54,
       trashCount: 3,
@@ -503,7 +511,9 @@ describe("cloud persistence server", () => {
       headers,
     });
     expect(deleted.status).toBe(200);
-    expect(await readStats()).toEqual({
+    const { trashCutoff: deletedCutoff, ...deletedCounts } = await readStats();
+    expect(Number.isSafeInteger(deletedCutoff)).toBe(true);
+    expect(deletedCounts).toEqual({
       sceneCount: 104,
       favoriteCount: 53,
       trashCount: 4,
@@ -514,7 +524,10 @@ describe("cloud persistence server", () => {
       headers,
     });
     expect(restored.status).toBe(200);
-    expect(await readStats()).toEqual({
+    const { trashCutoff: restoredCutoff, ...restoredCounts } =
+      await readStats();
+    expect(Number.isSafeInteger(restoredCutoff)).toBe(true);
+    expect(restoredCounts).toEqual({
       sceneCount: 105,
       favoriteCount: 54,
       trashCount: 3,
@@ -2059,10 +2072,22 @@ describe("cloud persistence server", () => {
       method: "DELETE",
       headers: { Cookie: cookie },
     });
-    const clearTrashRes = await request(handler, "/api/scenes/trash", {
-      method: "DELETE",
-      headers: { Cookie: cookie },
-    });
+    const trashStats = await responseJson<{
+      trashCount: number;
+      trashCutoff: number;
+    }>(
+      await request(handler, "/api/workspace/stats", {
+        headers: { Cookie: cookie },
+      }),
+    );
+    const clearTrashRes = await request(
+      handler,
+      `/api/scenes/trash?before=${trashStats.trashCutoff}&expectedCount=${trashStats.trashCount}`,
+      {
+        method: "DELETE",
+        headers: { Cookie: cookie },
+      },
+    );
     expect(clearTrashRes.status).toBe(200);
     expect(
       await responseJson<{ success: boolean; deletedCount: number }>(
@@ -2082,6 +2107,70 @@ describe("cloud persistence server", () => {
     expect(
       (await responseJson<{ items: Array<unknown> }>(trashAfterClear)).items,
     ).toEqual([]);
+  });
+
+  it("clears only the confirmed trash snapshot and rejects restored snapshots", async () => {
+    const { handler, runtime } = createTestRuntime();
+    const cookie = await authenticate(handler);
+    const headers = { Cookie: cookie };
+    for (const id of ["trash_snapshot_a", "trash_snapshot_b"]) {
+      await jsonRequest(handler, "/api/scenes", { id, name: id }, { headers });
+      await request(handler, `/api/scenes/${id}`, {
+        method: "DELETE",
+        headers,
+      });
+    }
+
+    const firstSnapshot = await responseJson<{
+      trashCount: number;
+      trashCutoff: number;
+    }>(await request(handler, "/api/workspace/stats", { headers }));
+    await request(handler, "/api/scenes/trash_snapshot_a/restore", {
+      method: "POST",
+      headers,
+    });
+    const stale = await request(
+      handler,
+      `/api/scenes/trash?before=${firstSnapshot.trashCutoff}&expectedCount=${firstSnapshot.trashCount}`,
+      { method: "DELETE", headers },
+    );
+    expect(stale.status).toBe(409);
+    expect(await responseJson<{ code: string }>(stale)).toMatchObject({
+      code: "TRASH_CHANGED",
+    });
+
+    const secondSnapshot = await responseJson<{
+      trashCount: number;
+      trashCutoff: number;
+    }>(await request(handler, "/api/workspace/stats", { headers }));
+    await jsonRequest(
+      handler,
+      "/api/scenes",
+      { id: "trash_snapshot_c", name: "trash_snapshot_c" },
+      { headers },
+    );
+    await request(handler, "/api/scenes/trash_snapshot_c", {
+      method: "DELETE",
+      headers,
+    });
+    runtime.db.run("UPDATE scenes SET deleted_at = ? WHERE id = ?", [
+      secondSnapshot.trashCutoff + 1,
+      "trash_snapshot_c",
+    ]);
+
+    const cleared = await request(
+      handler,
+      `/api/scenes/trash?before=${secondSnapshot.trashCutoff}&expectedCount=${secondSnapshot.trashCount}`,
+      { method: "DELETE", headers },
+    );
+    expect(cleared.status).toBe(200);
+    expect(await responseJson<{ deletedCount: number }>(cleared)).toMatchObject(
+      { deletedCount: 1 },
+    );
+    const remaining = await responseJson<{ items: Array<{ id: string }> }>(
+      await request(handler, "/api/scenes/trash?limit=10", { headers }),
+    );
+    expect(remaining.items.map(({ id }) => id)).toEqual(["trash_snapshot_c"]);
   });
 
   it("performs revision-checked scene batch trash, restore, and permanent deletion atomically", async () => {

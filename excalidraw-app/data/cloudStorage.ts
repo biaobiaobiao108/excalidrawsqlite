@@ -525,6 +525,7 @@ export type CloudWorkspaceStats = {
   sceneCount: number;
   favoriteCount: number;
   trashCount: number;
+  trashCutoff: number;
   tags: string[];
 };
 
@@ -947,12 +948,19 @@ export async function permanentlyDeleteCloudScenes(
   return result.ids;
 }
 
-export async function clearCloudTrash(): Promise<{
+export async function clearCloudTrash(
+  trashCutoff: number,
+  expectedCount: number,
+): Promise<{
   success: boolean;
   deletedCount: number;
 }> {
+  const params = new URLSearchParams({
+    before: String(trashCutoff),
+    expectedCount: String(expectedCount),
+  });
   return fetchJson<{ success: boolean; deletedCount: number }>(
-    "/api/scenes/trash",
+    `/api/scenes/trash?${params}`,
     {
       method: "DELETE",
       headers: getHeaders(),

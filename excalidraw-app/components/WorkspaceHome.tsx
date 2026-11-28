@@ -1564,6 +1564,7 @@ export const WorkspaceHome = ({
     const action = "trash:clear";
     if (
       !workspaceStats?.trashCount ||
+      !Number.isSafeInteger(workspaceStats.trashCutoff) ||
       hasBatchActionPending ||
       isActionPending(action)
     ) {
@@ -1579,11 +1580,25 @@ export const WorkspaceHome = ({
           return;
         }
         try {
-          await clearCloudTrash();
+          await clearCloudTrash(
+            workspaceStats.trashCutoff,
+            workspaceStats.trashCount,
+          );
           setTrashScenes([]);
+          setWorkspaceStats((current) =>
+            current ? { ...current, trashCount: 0 } : current,
+          );
+          if (view === "trash") {
+            setPageTotalCount(0);
+          }
           notifyWorkspaceChanged();
         } catch (requestError: any) {
-          handleRequestError(requestError, "清空回收站失败");
+          if (requestError?.code === "TRASH_CHANGED") {
+            setError("回收站内容已发生变化，请重新确认");
+            void loadWorkspace();
+          } else {
+            handleRequestError(requestError, "清空回收站失败");
+          }
         } finally {
           finishPendingAction(action);
         }

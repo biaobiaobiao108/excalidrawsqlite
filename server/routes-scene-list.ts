@@ -9,8 +9,45 @@ import {
   publishWorkspaceChanged,
   type RouteContext,
 } from "./routes-shared";
+import type { ServerRuntime } from "./types";
 
 const MAX_SCENE_BATCH_SIZE = 500;
+
+const trashClearQueries = new WeakMap<
+  ServerRuntime,
+  {
+    count: ReturnType<ServerRuntime["db"]["query"]>;
+    clear: ReturnType<ServerRuntime["db"]["query"]>;
+  }
+>();
+
+const getTrashClearQueries = (runtime: ServerRuntime) => {
+  let queries = trashClearQueries.get(runtime);
+  if (!queries) {
+    queries = {
+      count: runtime.db.query(
+        "SELECT COUNT(*) AS count FROM scenes WHERE deleted_at IS NOT NULL AND deleted_at <= ?",
+      ),
+      clear: runtime.db.query(
+        "DELETE FROM scenes WHERE deleted_at IS NOT NULL AND deleted_at <= ?",
+      ),
+    };
+    trashClearQueries.set(runtime, queries);
+  }
+  return queries;
+};
+
+const parseTrashClearSnapshot = (url: URL) => {
+  const cutoff = Number(url.searchParams.get("before"));
+  const expectedCount = Number(url.searchParams.get("expectedCount"));
+  if (!Number.isSafeInteger(cutoff) || cutoff < 0) {
+    throw new HttpError(400, "INVALID_TRASH_CUTOFF", "回收站快照时间无效");
+  }
+  if (!Number.isSafeInteger(expectedCount) || expectedCount < 0) {
+    throw new HttpError(400, "INVALID_TRASH_COUNT", "回收站快照数量无效");
+  }
+  return { cutoff, expectedCount };
+};
 
 const parseSceneBatchEntries = (body: Record<string, unknown>) => {
   if (
@@ -178,15 +215,28 @@ export const handleSceneListRoute = async ({
   }
 
   if (pathname === "/api/scenes/trash" && req.method === "DELETE") {
-    const result = runtime.db.run(
-      "DELETE FROM scenes WHERE deleted_at IS NOT NULL",
-    );
-    if (result.changes > 0) {
+    const { cutoff, expectedCount } = parseTrashClearSnapshot(url);
+    const queries = getTrashClearQueries(runtime);
+    const transaction = runtime.db.transaction(() => {
+      const currentCount = Number(
+        (queries.count.get(cutoff) as { count: number }).count,
+      );
+      if (currentCount !== expectedCount) {
+        throw new HttpError(
+          409,
+          "TRASH_CHANGED",
+          "回收站内容已发生变化，请重新确认",
+        );
+      }
+      return queries.clear.run(cutoff).changes;
+    });
+    const deletedCount = transaction.immediate();
+    if (deletedCount > 0) {
       publishWorkspaceChanged(runtime, Date.now());
     }
     return jsonResponse(runtime, req, {
       success: true,
-      deletedCount: result.changes,
+      deletedCount,
     });
   }
 

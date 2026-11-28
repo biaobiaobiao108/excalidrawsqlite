@@ -368,6 +368,7 @@ export const ConfirmDialog = ({
           className="secondary-button"
           onClick={onClose}
           disabled={pending}
+          autoFocus={state.confirmVariant === "danger"}
         >
           取消
         </button>
@@ -376,7 +377,7 @@ export const ConfirmDialog = ({
           className={`primary-button ${
             state.confirmVariant === "danger" ? "danger" : ""
           }`}
-          autoFocus
+          autoFocus={state.confirmVariant !== "danger"}
           onClick={onConfirm}
           disabled={pending}
         >

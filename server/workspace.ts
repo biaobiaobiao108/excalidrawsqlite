@@ -15,13 +15,16 @@ const workspaceQueries = new WeakMap<
 >();
 
 export const getWorkspaceStats = (runtime: ServerRuntime) => {
+  // The trash count and cutoff form one clearable snapshot. Newly trashed
+  // boards after this cutoff stay out of a later "empty trash" operation.
+  const trashCutoff = Date.now();
   let queries = workspaceQueries.get(runtime);
   if (!queries) {
     queries = {
       counts: runtime.db.query(`
         SELECT COUNT(CASE WHEN deleted_at IS NULL THEN 1 END) AS sceneCount,
                COUNT(CASE WHEN deleted_at IS NULL AND is_favorite = 1 THEN 1 END) AS favoriteCount,
-               COUNT(deleted_at) AS trashCount
+               COUNT(CASE WHEN deleted_at <= ? THEN 1 END) AS trashCount
         FROM scenes
       `),
       tags: runtime.db.query(`
@@ -33,7 +36,7 @@ export const getWorkspaceStats = (runtime: ServerRuntime) => {
     };
     workspaceQueries.set(runtime, queries);
   }
-  const counts = queries.counts.get() as WorkspaceCounts;
+  const counts = queries.counts.get(trashCutoff) as WorkspaceCounts;
   const tags = queries.tags.all() as Array<{ tag: string }>;
-  return { ...counts, tags: tags.map(({ tag }) => tag) };
+  return { ...counts, trashCutoff, tags: tags.map(({ tag }) => tag) };
 };
