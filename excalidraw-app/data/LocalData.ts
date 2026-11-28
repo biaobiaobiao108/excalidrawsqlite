@@ -124,6 +124,8 @@ const isQuotaExceededError = (error: any) => {
 };
 
 export class LocalData {
+  private static lastSavedFiles: BinaryFiles | null = null;
+
   private static _save = debounce(
     async (
       elements: readonly ExcalidrawElement[],
@@ -134,10 +136,13 @@ export class LocalData {
     ) => {
       saveDataStateToLocalStorage(elements, appState, isCloudScene);
 
-      await this.fileStorage.saveFiles({
-        elements,
-        files,
-      });
+      if (this.lastSavedFiles !== files) {
+        await this.fileStorage.saveFiles({
+          elements,
+          files,
+        });
+        this.lastSavedFiles = files;
+      }
       onFilesSaved();
     },
     SAVE_TO_LOCAL_STORAGE_TIMEOUT,
