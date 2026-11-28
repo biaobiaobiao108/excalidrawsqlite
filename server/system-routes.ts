@@ -123,12 +123,12 @@ const staticFileResponse = async (
 };
 
 /** Handles process health and development reload endpoints. */
-export const handleEarlySystemRequest = (
+export const handleEarlySystemRequest = async (
   runtime: ServerRuntime,
   req: Request,
   pathname: string,
   healthCheck: HealthCheck,
-): Response | undefined => {
+): Promise<Response | undefined> => {
   if (pathname === DEV_RELOAD_PATH) {
     if (runtime.config.nodeEnv !== "development") {
       throw new HttpError(404, "NOT_FOUND", "接口不存在");
@@ -145,8 +145,10 @@ export const handleEarlySystemRequest = (
   if (pathname === "/api/health" && req.method === "GET") {
     try {
       healthCheck.get();
-      fs.accessSync(path.dirname(runtime.dbPath), fs.constants.W_OK);
-      fs.accessSync(runtime.filesDir, fs.constants.W_OK);
+      await Promise.all([
+        fs.promises.access(path.dirname(runtime.dbPath), fs.constants.W_OK),
+        fs.promises.access(runtime.filesDir, fs.constants.W_OK),
+      ]);
       // Keep health checks O(1). Full attachment consistency scans run in
       // the maintenance loop and are intentionally not exposed publicly.
       return jsonResponse(runtime, req, { status: "ok" });

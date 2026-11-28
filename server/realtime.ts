@@ -158,14 +158,12 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
     idleTimeout: 120,
     sendPings: true,
     open: (ws) => {
-      if (ws.data.token) {
-        const expiresAt = getSessionExpiration(runtime, ws.data.token);
-        if (expiresAt === null) {
+      if (ws.data.expiresAt !== undefined) {
+        if (ws.data.expiresAt <= Date.now()) {
           disconnectSession(ws);
           return;
         }
-        ws.data.expiresAt = expiresAt;
-        watchExpiration(expiresAt);
+        watchExpiration(ws.data.expiresAt);
       }
       activeSockets.add(ws);
       ws.subscribe(WORKSPACE_TOPIC);
@@ -285,16 +283,19 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
       const requiresSession =
         !runtime.config.allowAnonymous && Boolean(runtime.config.authPassword);
       const token = requiresSession ? getSessionToken(runtime, req) : undefined;
-      if (
-        requiresSession &&
-        (!token || getSessionExpiration(runtime, token) === null)
-      ) {
-        return jsonResponse(
-          runtime,
-          req,
-          { error: "请先完成访问授权", code: "AUTH_REQUIRED" },
-          401,
-        );
+      let expiresAt: number | undefined;
+      if (requiresSession) {
+        expiresAt = token
+          ? (getSessionExpiration(runtime, token) ?? undefined)
+          : undefined;
+        if (expiresAt === undefined) {
+          return jsonResponse(
+            runtime,
+            req,
+            { error: "请先完成访问授权", code: "AUTH_REQUIRED" },
+            401,
+          );
+        }
       }
       const url = new URL(req.url);
       let sceneId: string | null = null;
@@ -313,7 +314,7 @@ export const createRealtimeHub = (runtime: ServerRuntime) => {
       }
       if (
         !nextServer.upgrade(req, {
-          data: { sceneId, token },
+          data: { sceneId, token, expiresAt },
         })
       ) {
         return jsonResponse(

@@ -73,7 +73,7 @@ export const createRequestHandler = (
     }
 
     try {
-      const systemResponse = handleEarlySystemRequest(
+      const systemResponse = await handleEarlySystemRequest(
         runtime,
         req,
         pathname,

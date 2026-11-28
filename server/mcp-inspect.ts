@@ -344,6 +344,7 @@ export const inspectLayout = (
   const map = new Map(active.map((element) => [element.id, element]));
   const labelBudget = { usedPoints: 0, maxPoints: POINT_LIMIT };
   const polygons = new Map<string, Point[]>(),
+    areas = new Map<string, number>(),
     groups = new Map<string, Set<string>>();
   for (const element of active) {
     if (element.type !== "text" && !shape(element)) continue;
@@ -369,7 +370,9 @@ export const inspectLayout = (
         incomplete(check, "部分图元几何无效，已跳过相关几何检查");
       continue;
     }
-    polygons.set(element.id, polygonFor(displayed));
+    const polygon = polygonFor(displayed);
+    polygons.set(element.id, polygon);
+    areas.set(element.id, area(polygon));
     if (shape(element) && !Array.isArray(element.groupIds))
       incomplete(
         "element_collision",
@@ -386,8 +389,15 @@ export const inspectLayout = (
       ),
     );
   }
-  const sameGroup = (a: ExcalidrawElement, b: ExcalidrawElement) =>
-    [...(groups.get(a.id) || [])].some((id) => groups.get(b.id)?.has(id));
+  const sameGroup = (a: ExcalidrawElement, b: ExcalidrawElement) => {
+    const aGroups = groups.get(a.id);
+    const bGroups = groups.get(b.id);
+    if (!aGroups?.size || !bGroups?.size) return false;
+    for (const id of aGroups) {
+      if (bGroups.has(id)) return true;
+    }
+    return false;
+  };
   for (const check of ["text_overlap", "element_collision"] as const) {
     if (!checkInfo[check]) continue;
     const candidates = active.filter(
@@ -425,7 +435,8 @@ export const inspectLayout = (
           )
             continue;
           const overlap = intersectionArea(polygon, otherPolygon);
-          const ratio = overlap / Math.min(area(polygon), area(otherPolygon));
+          const ratio =
+            overlap / Math.min(areas.get(element.id)!, areas.get(other.id)!);
           if (
             overlap <= 1 ||
             ratio + 1e-10 < (check === "text_overlap" ? 0.08 : 0.15)

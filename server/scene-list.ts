@@ -14,6 +14,10 @@ const sceneCountQueries = new WeakMap<
   ServerRuntime,
   Map<string, ReturnType<ServerRuntime["db"]["query"]>>
 >();
+const sceneListQueries = new WeakMap<
+  ServerRuntime,
+  Map<string, ReturnType<ServerRuntime["db"]["query"]>>
+>();
 
 const getScenePageCount = (
   runtime: ServerRuntime,
@@ -36,6 +40,20 @@ const getScenePageCount = (
     queries.set(where, query);
   }
   return (query.get(...params) as { count: number }).count;
+};
+
+const getSceneListQuery = (runtime: ServerRuntime, sql: string) => {
+  let queries = sceneListQueries.get(runtime);
+  if (!queries) {
+    queries = new Map();
+    sceneListQueries.set(runtime, queries);
+  }
+  let query = queries.get(sql);
+  if (!query) {
+    query = runtime.db.query(sql);
+    queries.set(sql, query);
+  }
+  return query;
 };
 
 const encodeSceneCursor = (row: {
@@ -174,44 +192,61 @@ export const listScenePage = (
   const countConditions = conditions.slice();
   const countParams = params.slice();
   if (cursor) {
-    const column = trashed
-      ? "scenes.deleted_at"
-      : requestedSort === "opened"
-        ? opened === "true"
-          ? "scenes.last_opened_at"
-          : "COALESCE(scenes.last_opened_at, 0)"
-        : requestedSort === "created"
-          ? "scenes.created_at"
-          : "scenes.updated_at";
-    conditions.push(`(${column} < ? OR (${column} = ? AND scenes.id < ?))`);
-    params.push(cursor.timestamp, cursor.timestamp, cursor.id);
+    if (trashed) {
+      conditions.push(
+        "(scenes.deleted_at < ? OR (scenes.deleted_at = ? AND scenes.id < ?))",
+      );
+      params.push(cursor.timestamp, cursor.timestamp, cursor.id);
+    } else if (requestedSort === "opened") {
+      if (opened === "true") {
+        conditions.push(
+          "(scenes.last_opened_at < ? OR (scenes.last_opened_at = ? AND scenes.id < ?))",
+        );
+        params.push(cursor.timestamp, cursor.timestamp, cursor.id);
+      } else if (cursor.timestamp === 0) {
+        conditions.push("(scenes.last_opened_at IS NULL AND scenes.id < ?)");
+        params.push(cursor.id);
+      } else {
+        conditions.push(
+          "(scenes.last_opened_at IS NULL OR scenes.last_opened_at < ? OR (scenes.last_opened_at = ? AND scenes.id < ?))",
+        );
+        params.push(cursor.timestamp, cursor.timestamp, cursor.id);
+      }
+    } else {
+      const column =
+        requestedSort === "created" ? "scenes.created_at" : "scenes.updated_at";
+      conditions.push(`(${column} < ? OR (${column} = ? AND scenes.id < ?))`);
+      params.push(cursor.timestamp, cursor.timestamp, cursor.id);
+    }
   }
 
   const orderColumn = trashed
     ? "scenes.deleted_at"
     : requestedSort === "opened"
-      ? opened === "true"
-        ? "scenes.last_opened_at"
-        : "COALESCE(scenes.last_opened_at, 0)"
+      ? "scenes.last_opened_at"
       : requestedSort === "created"
         ? "scenes.created_at"
         : "scenes.updated_at";
-  const rows = runtime.db
-    .query(
-      `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
+  const cursorValue =
+    !trashed && requestedSort === "opened"
+      ? "COALESCE(scenes.last_opened_at, 0)"
+      : orderColumn;
+  const statement = getSceneListQuery(
+    runtime,
+    `SELECT scenes.id, scenes.name, scenes.created_at, scenes.updated_at,
               scenes.revision, scenes.content_bytes AS size,
               scenes.element_count,
               scenes.tags_json, scenes.is_favorite, scenes.folder_id,
               scenes.last_opened_at, scenes.thumbnail_file_id, scenes.deleted_at,
-              ${orderColumn} AS cursor_value,
+              ${cursorValue} AS cursor_value,
               folders.name AS folder_name
        FROM scenes
        LEFT JOIN folders ON folders.id = scenes.folder_id
        WHERE ${conditions.join(" AND ")}
        ORDER BY ${orderColumn} DESC, scenes.id DESC
        LIMIT ?`,
-    )
-    .all(...params, limit + 1) as Array<{
+  );
+  const rows = statement.all(...params, limit + 1) as Array<{
     id: string;
     updated_at: number;
     deleted_at: number | null;

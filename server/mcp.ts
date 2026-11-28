@@ -1111,15 +1111,21 @@ export const createMcpRequestHandler = (
                       },
                     }),
                   );
-                  const envelopeSize = () =>
-                    JSON.stringify({
-                      ok: false,
-                      boards,
-                      maxChars,
-                      partial: false,
-                      truncated: false,
-                    }).length;
-                  if (envelopeSize() > maxChars) {
+                  const boardLengths = boards.map(
+                    (board) => JSON.stringify(board).length,
+                  );
+                  const emptyEnvelopeChars = JSON.stringify({
+                    ok: false,
+                    boards: [],
+                    maxChars,
+                    partial: false,
+                    truncated: false,
+                  }).length;
+                  let usedChars =
+                    emptyEnvelopeChars +
+                    boardLengths.reduce((total, length) => total + length, 0) +
+                    Math.max(0, boards.length - 1);
+                  if (usedChars > maxChars) {
                     throw new HttpError(
                       400,
                       "READ_BUDGET_TOO_SMALL",
@@ -1129,13 +1135,10 @@ export const createMcpRequestHandler = (
                   for (const [index, boardId] of boardIds.entries()) {
                     // Charge the complete envelope while reserving a bounded outcome for every remaining board.
                     const available =
-                      maxChars -
-                      envelopeSize() +
-                      JSON.stringify(boards[index]).length -
-                      16;
+                      maxChars - usedChars + boardLengths[index] - 16;
                     if (available < 128) continue;
                     try {
-                      boards[index] = {
+                      const nextBoard = {
                         ok: true,
                         ...(await readBoard({
                           boardId,
@@ -1143,6 +1146,10 @@ export const createMcpRequestHandler = (
                           maxChars: available,
                         })),
                       };
+                      const nextLength = JSON.stringify(nextBoard).length;
+                      boards[index] = nextBoard;
+                      usedChars += nextLength - boardLengths[index];
+                      boardLengths[index] = nextLength;
                     } catch (error) {
                       if (!(error instanceof HttpError)) throw error;
                       const outcome = projectMcpRecord({
@@ -1153,8 +1160,12 @@ export const createMcpRequestHandler = (
                           : {}),
                         error: mcpError(error),
                       });
-                      if (JSON.stringify(outcome).length <= available)
+                      const outcomeLength = JSON.stringify(outcome).length;
+                      if (outcomeLength <= available) {
                         boards[index] = outcome;
+                        usedChars += outcomeLength - boardLengths[index];
+                        boardLengths[index] = outcomeLength;
+                      }
                     }
                   }
                   const failed = boards.filter((board) => board.error).length;
