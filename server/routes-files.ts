@@ -98,7 +98,7 @@ export const handleFileRoute = async ({
       );
     }
     const mimeType = validateMimeType(normalizedContentType);
-    const prepared = await stageRequestBodyToFile(runtime, id, req);
+    const prepared = await stageRequestBodyToFile(runtime, id, req, mimeType);
     const sceneEvents: SceneRealtimeEvent[] = [];
     const file = await upsertStagedFile(
       runtime,
@@ -154,11 +154,14 @@ export const handleFileRoute = async ({
       if (String(row.mime_type).toLowerCase() === "image/svg+xml") {
         return response(runtime, req, body, {
           headers: {
-            "Content-Type": "application/octet-stream",
-            "Content-Disposition": `attachment; filename="${id}"`,
+            "Content-Type": "image/svg+xml",
+            "Content-Disposition": `attachment; filename="${id}.svg"`,
+            "Content-Security-Policy":
+              "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+            "X-Content-Type-Options": "nosniff",
             "Content-Length": String(row.byte_size),
             "X-File-Created-At": String(row.created_at),
-            "Cache-Control": "private, no-store",
+            "Cache-Control": cacheControl,
             ...(etag ? { ETag: etag } : {}),
           },
         });

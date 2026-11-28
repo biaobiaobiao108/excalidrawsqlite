@@ -2737,48 +2737,39 @@ describe("cloud persistence server", () => {
     expect(response.status).toBe(404);
   });
 
-  it("rejects SVG uploads and serves stored SVGs as safe downloads", async () => {
-    const { handler, runtime, directory } = createTestRuntime();
+  it("sanitizes SVG uploads and serves stored SVGs with sandboxed download headers", async () => {
+    const { handler, runtime } = createTestRuntime();
     const cookie = await authenticate(handler);
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script /></svg>';
+    const dirtySvg =
+      '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(2)</script><a href="javascript:alert(3)"><rect width="10" height="10" onclick="alert(4)"/></a></svg>';
 
     const directUpload = await request(handler, "/api/files/svg_direct", {
       method: "PUT",
       headers: { Cookie: cookie, "Content-Type": "image/svg+xml" },
-      body: svg,
+      body: dirtySvg,
     });
-    expect(directUpload.status).toBe(415);
-    expect(
-      runtime.db.query("SELECT id FROM files WHERE id = ?").get("svg_direct"),
-    ).toBeNull();
+    expect(directUpload.status).toBe(201);
+    const stored = runtime.db
+      .query("SELECT id, mime_type FROM files WHERE id = ?")
+      .get("svg_direct") as { id: string; mime_type: string } | null;
+    expect(stored?.mime_type).toBe("image/svg+xml");
 
-    const storedPath = path.join(directory, "files", "stored_svg");
-    await fs.writeFile(storedPath, svg);
-    runtime.db.run(
-      `INSERT INTO files
-       (id, storage_path, mime_type, byte_size, sha256, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        "stored_svg",
-        "stored_svg",
-        "image/svg+xml",
-        Buffer.byteLength(svg),
-        "stored-svg-sha256",
-        1,
-        1,
-      ],
-    );
-
-    const download = await request(handler, "/api/files/stored_svg", {
+    const download = await request(handler, "/api/files/svg_direct", {
       headers: { Cookie: cookie, Accept: "image/svg+xml" },
     });
     expect(download.status).toBe(200);
-    expect(download.headers.get("content-type")).toBe(
-      "application/octet-stream",
-    );
+    expect(download.headers.get("content-type")).toBe("image/svg+xml");
     expect(download.headers.get("content-disposition")).toContain("attachment");
-    expect(download.headers.get("cache-control")).toBe("private, no-store");
-    expect(await download.text()).toBe(svg);
+    expect(download.headers.get("content-security-policy")).toContain(
+      "sandbox",
+    );
+    expect(download.headers.get("x-content-type-options")).toBe("nosniff");
+    const cleanSvg = await download.text();
+    expect(cleanSvg).not.toContain("<script");
+    expect(cleanSvg).not.toContain("onload");
+    expect(cleanSvg).not.toContain("onclick");
+    expect(cleanSvg).not.toContain("javascript:");
+    expect(cleanSvg).toContain("<rect");
   });
 
   it("restores the previous file when its metadata update fails", async () => {

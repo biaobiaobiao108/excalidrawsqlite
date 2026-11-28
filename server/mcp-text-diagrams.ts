@@ -1,7 +1,11 @@
 import { DOMParser as LinkedomDOMParser, parseHTML } from "linkedom";
 import { parseMermaidToExcalidraw } from "@excalidraw/mermaid-to-excalidraw";
 import { convertToExcalidrawElements } from "@excalidraw/element";
-import type { ExcalidrawElement, Theme } from "@excalidraw/element/types";
+import type {
+  ExcalidrawElement,
+  ExcalidrawImageElement,
+  Theme,
+} from "@excalidraw/element/types";
 import { MERMAID_TO_EXCALIDRAW_CONFIG } from "@excalidraw/excalidraw/mermaid";
 import {
   OutlineParseError,
@@ -31,10 +35,45 @@ const ensureServerDomForMermaid = () => {
   serverDomInitialized = true;
 };
 
+const decodeDataUrl = (
+  dataUrl: string,
+): { mimeType: string; bytes: Uint8Array<ArrayBuffer> } => {
+  const commaIndex = dataUrl.indexOf(",");
+  if (!dataUrl.startsWith("data:") || commaIndex === -1) {
+    throw new HttpError(400, "INVALID_INPUT", "Mermaid 导出的图像数据格式无效");
+  }
+  const header = dataUrl.slice(5, commaIndex);
+  const payload = dataUrl.slice(commaIndex + 1);
+  const parts = header.split(";").filter(Boolean);
+  const isBase64 = parts[parts.length - 1]?.toLowerCase() === "base64";
+  const mimeType =
+    (isBase64 ? parts.slice(0, -1) : parts)[0] || "image/svg+xml";
+
+  if (isBase64) {
+    return {
+      mimeType,
+      bytes: new Uint8Array(Buffer.from(payload, "base64")),
+    };
+  }
+  return {
+    mimeType,
+    bytes: new TextEncoder().encode(decodeURIComponent(payload)),
+  };
+};
+
+export type UploadedFileHandler = (
+  fileId: string,
+  mimeType: string,
+  bytes: Uint8Array<ArrayBuffer>,
+) => Promise<string>;
+
 export const buildMermaidScene = async (
   mermaidDefinition: string,
+  uploadFile: UploadedFileHandler,
 ): Promise<{
   elements: ExcalidrawElement[];
+  convertedAsImage: boolean;
+  fileCount: number;
 }> => {
   const trimmed = mermaidDefinition.trim();
   if (!trimmed) {
@@ -68,22 +107,47 @@ export const buildMermaidScene = async (
     }
   }
 
-  const elements = convertToExcalidrawElements(parsed.elements, {
+  const converted = convertToExcalidrawElements(parsed.elements, {
     regenerateIds: true,
   }) as ExcalidrawElement[];
 
-  const hasFallbackImage =
-    Object.keys(parsed.files || {}).length > 0 ||
-    (elements.length === 1 && elements[0]?.type === "image");
-  if (hasFallbackImage) {
-    throw new HttpError(
-      400,
-      "INVALID_INPUT",
-      "该 Mermaid 图表类型暂不支持转为原生图元，请改用 flowchart、sequenceDiagram、classDiagram、stateDiagram、erDiagram、gantt、quadrantChart、timeline 或使用 create_diagram",
-    );
+  const files = parsed.files || {};
+  const fileIdMap = new Map<string, string>();
+  for (const [id, fileData] of Object.entries(files)) {
+    if (!fileData?.dataURL) {
+      continue;
+    }
+    const { mimeType, bytes } = decodeDataUrl(fileData.dataURL);
+    const savedId = await uploadFile(id, fileData.mimeType || mimeType, bytes);
+    fileIdMap.set(id, savedId);
   }
 
-  return { elements };
+  const elements =
+    fileIdMap.size > 0
+      ? converted.map((element) => {
+          if (element.type === "image") {
+            const img = element as ExcalidrawImageElement;
+            if (img.fileId && fileIdMap.has(img.fileId)) {
+              return {
+                ...img,
+                fileId: fileIdMap.get(
+                  img.fileId,
+                )! as ExcalidrawImageElement["fileId"],
+              };
+            }
+          }
+          return element;
+        })
+      : converted;
+
+  const convertedAsImage =
+    elements.length === 1 && elements[0]?.type === "image";
+
+  return {
+    elements,
+    convertedAsImage,
+    fileCount: fileIdMap.size,
+  };
 };
 
 export const buildMarkdownMindmapScene = (

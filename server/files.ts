@@ -11,6 +11,7 @@ import {
 } from "./config";
 import { randomHex } from "./crypto";
 import { HttpError } from "./errors";
+import { MAX_SVG_FILE_BYTES, sanitizeSvgBytes } from "./svg";
 import { isRecord, validateId } from "./validation";
 
 import type { ServerRuntime } from "./types";
@@ -373,13 +374,15 @@ export const stageRequestBodyToFile = async (
   runtime: ServerRuntime,
   id: string,
   req: Request,
+  mimeType?: string,
 ): Promise<PreparedFile> => {
+  const isSvg = mimeType?.toLowerCase() === "image/svg+xml";
+  const maxBytes = isSvg
+    ? Math.min(runtime.config.maxFileBytes, MAX_SVG_FILE_BYTES)
+    : runtime.config.maxFileBytes;
   const contentLength = Number(req.headers.get("content-length"));
-  if (
-    Number.isFinite(contentLength) &&
-    contentLength > runtime.config.maxFileBytes
-  ) {
-    throw getFileTooLargeError(runtime.config.maxFileBytes);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw getFileTooLargeError(maxBytes);
   }
   if (!req.body) {
     throw new HttpError(400, "EMPTY_FILE", "文件内容不能为空");
@@ -390,7 +393,7 @@ export const stageRequestBodyToFile = async (
   const tempPath = `${filePath}.${randomHex(8)}.tmp`;
   const activeTempPath = path.resolve(tempPath);
   const reservedBytes = await runtime.bodyMemoryBudget.acquire(
-    runtime.config.maxFileBytes,
+    maxBytes,
     req.signal,
   );
   runtime.activeFileArtifacts.add(activeTempPath);
@@ -399,6 +402,43 @@ export const stageRequestBodyToFile = async (
 
   try {
     reader = req.body.getReader();
+    if (isSvg) {
+      const chunks: Uint8Array[] = [];
+      let rawByteLength = 0;
+      while (true) {
+        const result = await reader.read();
+        if (result.done) {
+          break;
+        }
+        rawByteLength += result.value.byteLength;
+        if (rawByteLength > maxBytes) {
+          await reader.cancel();
+          throw getFileTooLargeError(maxBytes);
+        }
+        chunks.push(result.value);
+      }
+      if (!rawByteLength) {
+        throw new HttpError(400, "EMPTY_FILE", "文件内容不能为空");
+      }
+      const rawBytes = new Uint8Array(rawByteLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        rawBytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      const cleanBytes = sanitizeSvgBytes(rawBytes);
+      writer = Bun.file(tempPath).writer({ highWaterMark: 64 * 1024 });
+      await writer.write(cleanBytes);
+      await writer.end();
+      const hash = new Bun.CryptoHasher("sha256");
+      hash.update(cleanBytes);
+      return {
+        tempPath,
+        byteLength: cleanBytes.byteLength,
+        sha256: hash.digest("hex"),
+      };
+    }
+
     writer = Bun.file(tempPath).writer({ highWaterMark: 64 * 1024 });
     const hash = new Bun.CryptoHasher("sha256");
     let byteLength = 0;
@@ -408,9 +448,9 @@ export const stageRequestBodyToFile = async (
         break;
       }
       byteLength += result.value.byteLength;
-      if (byteLength > runtime.config.maxFileBytes) {
+      if (byteLength > maxBytes) {
         await reader.cancel();
-        throw getFileTooLargeError(runtime.config.maxFileBytes);
+        throw getFileTooLargeError(maxBytes);
       }
       hash.update(result.value);
       await writer.write(result.value);

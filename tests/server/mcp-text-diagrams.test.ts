@@ -14,6 +14,7 @@ import { createServerConfig } from "../../server/config";
 type Element = {
   id: string;
   type: string;
+  fileId?: string;
 };
 type Board = { revision: number; elements: Element[] };
 
@@ -24,6 +25,7 @@ const withClient = async (
       args: Record<string, unknown>,
       ok?: boolean,
     ) => Promise<{ data: T; text: string }>,
+    apiHandler: ReturnType<typeof createRequestHandler>,
   ) => Promise<void>,
 ) => {
   const directory = path.join(
@@ -65,6 +67,7 @@ const withClient = async (
         expect(text.length).toBeGreaterThan(0);
         return { data: response.structuredContent as T, text };
       },
+      apiHandler,
     );
   } finally {
     await client.close();
@@ -88,11 +91,15 @@ describe("MCP create_from_mermaid and create_from_markdown", () => {
         boardId: string;
         revision: number;
         elementCount: number;
+        convertedAsImage: boolean;
+        fileCount: number;
       }>("create_from_mermaid", {
         name: "Mermaid 流程图",
         mermaid,
         idempotencyKey: "mermaid-flow-1",
       });
+      expect(first.data.convertedAsImage).toBe(false);
+      expect(first.data.fileCount).toBe(0);
       expect(first.data.elementCount).toBeGreaterThan(5);
 
       const read = await invoke<Board>("get_board", {
@@ -120,20 +127,39 @@ describe("MCP create_from_mermaid and create_from_markdown", () => {
     });
   });
 
-  it("rejects unsupported Mermaid chart types that fall back to SVG images", async () => {
-    await withClient(async (invoke) => {
-      const failed = await invoke<{
-        error: { code: string; message: string };
-      }>(
-        "create_from_mermaid",
-        {
-          name: "饼图测试",
-          mermaid: 'pie title 占比\n  "A" : 60\n  "B" : 40',
-        },
-        false,
+  it("uploads sanitized SVG fallback files for Mermaid chart types like pie", async () => {
+    await withClient(async (invoke, apiHandler) => {
+      const created = await invoke<{
+        boardId: string;
+        elementCount: number;
+        convertedAsImage: boolean;
+        fileCount: number;
+      }>("create_from_mermaid", {
+        name: "饼图测试",
+        mermaid: 'pie title 占比\n  "A" : 60\n  "B" : 40',
+      });
+      expect(created.data.convertedAsImage).toBe(true);
+      expect(created.data.fileCount).toBe(1);
+      expect(created.data.elementCount).toBe(1);
+
+      const read = await invoke<Board>("get_board", {
+        boardId: created.data.boardId,
+        view: "full",
+      });
+      const imageEl = read.data.elements[0];
+      expect(imageEl?.type).toBe("image");
+      expect(imageEl?.fileId).toBeTruthy();
+
+      const fileRes = await apiHandler(
+        new Request(`http://test.local/api/files/${imageEl.fileId}`),
       );
-      expect(failed.data.error.code).toBe("INVALID_INPUT");
-      expect(failed.data.error.message).toContain("暂不支持");
+      expect(fileRes.status).toBe(200);
+      expect(fileRes.headers.get("content-type")).toBe("image/svg+xml");
+      expect(fileRes.headers.get("content-security-policy")).toContain(
+        "sandbox",
+      );
+      const svgBody = await fileRes.text();
+      expect(svgBody).toContain("<svg");
     });
   });
 
@@ -181,7 +207,7 @@ describe("MCP create_from_mermaid and create_from_markdown", () => {
 
       const read = await invoke<Board>("get_board", {
         boardId: created.data.boardId,
-        view: "elements",
+        view: "full",
       });
       const types = new Set(read.data.elements.map((el) => el.type));
       expect(types.has("rectangle")).toBe(true);

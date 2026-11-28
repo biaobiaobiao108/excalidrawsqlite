@@ -776,12 +776,44 @@ export const createMcpRequestHandler = (
               }, "create_diagram"),
             );
 
+            const uploadInternalFile = async (
+              fileId: string,
+              mimeType: string,
+              bytes: Uint8Array<ArrayBuffer>,
+            ): Promise<string> => {
+              const req = new Request(
+                `http://excalidraw-mcp.internal/api/files/${encodeURIComponent(fileId)}`,
+                {
+                  method: "PUT",
+                  headers: {
+                    Cookie: `excalidraw_session=${internalSessionToken}`,
+                    "Content-Type": mimeType,
+                  },
+                  body: bytes,
+                },
+              );
+              const res = await apiHandler(req);
+              const payload = (await res.json().catch(() => null)) as {
+                file?: { id?: string };
+                code?: string;
+                error?: string;
+              } | null;
+              if (!res.ok || !payload?.file?.id) {
+                throw new HttpError(
+                  res.status || 500,
+                  payload?.code || "MCP_API_ERROR",
+                  payload?.error || "上传 Mermaid 图像附件失败",
+                );
+              }
+              return payload.file.id;
+            };
+
             server.registerTool(
               "create_from_mermaid",
               {
                 title: "通过 Mermaid 语法创建画板",
                 description:
-                  '将 Mermaid 语法直接转换为原生可编辑 Excalidraw 图元并创建画板。支持流程图(flowchart/graph)、时序图(sequenceDiagram)、类图(classDiagram)、状态图(stateDiagram)、ER图(erDiagram)、甘特图(gantt)、象限图(quadrantChart)与时间线(timeline)。节点含中文、空格或括号等特殊字符时请用双引号包裹（如 A["用户登录 (OAuth)"]）。',
+                  '将 Mermaid 语法直接转换为 Excalidraw 画板。支持将流程图(flowchart/graph)、时序图(sequenceDiagram)、类图(classDiagram)、状态图(stateDiagram)、ER图(erDiagram)、甘特图(gantt)、象限图(quadrantChart)与时间线(timeline)转为原生可编辑图元；其余 Mermaid 图表自动转为净化后的安全 SVG 图像附件。节点含中文、空格或括号等特殊字符时请用双引号包裹（如 A["用户登录 (OAuth)"]）。',
                 inputSchema: compactMcpSchema(
                   z.object({
                     name: z
@@ -812,9 +844,10 @@ export const createMcpRequestHandler = (
                 const intent = createIntent("create_from_mermaid", args);
                 const replay = creationReplay(args.idempotencyKey, intent);
                 if (replay) return replayReceipt(replay);
-                const { elements } = await measureMcpPhase("transformMs", () =>
-                  buildMermaidScene(args.mermaid),
-                );
+                const { elements, convertedAsImage, fileCount } =
+                  await measureMcpPhase("transformMs", () =>
+                    buildMermaidScene(args.mermaid, uploadInternalFile),
+                  );
                 const folder = getSceneFolderFields(args, runtime);
                 const board = await api<{
                   id: string;
@@ -841,6 +874,8 @@ export const createMcpRequestHandler = (
                   name: board.name,
                   revision: board.revision,
                   elementCount: elements.length,
+                  convertedAsImage,
+                  fileCount,
                   ...drawingReceipt(elements, args.responseMode),
                 });
               }, "create_from_mermaid"),
