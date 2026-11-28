@@ -797,6 +797,12 @@ const recoverInterruptedFileReplacements = async (runtime: ServerRuntime) => {
           await atomicWrite.cleanup();
           await fs.promises.rm(backupPath, { force: true });
           console.info("[Files] 恢复数据库版本的附件", { filePath });
+        } else {
+          await atomicWrite.restore();
+          console.warn("[Files] 恢复后附件校验不匹配，已回滚并保留备份", {
+            filePath,
+            backupPath,
+          });
         }
       } catch (error) {
         await fs.promises.rm(restoreTempPath, { force: true }).catch(() => {});

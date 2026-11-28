@@ -240,7 +240,7 @@ export const handleSceneThumbnailRoute = async ({
       publishSceneChanged(runtime, {
         type: "scene_changed",
         sceneId: id,
-        revision: sceneRevision,
+        revision: expectedRevision,
         updatedAt: Date.now(),
         changeKind: "thumbnail",
       });

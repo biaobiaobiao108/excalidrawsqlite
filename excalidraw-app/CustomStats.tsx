@@ -66,11 +66,26 @@ const CustomStats = (props: Props) => {
       <Stats.StatsRow heading>{t("stats.version")}</Stats.StatsRow>
       <Stats.StatsRow
         style={{ textAlign: "center", cursor: "pointer" }}
+        role="button"
+        tabIndex={0}
         onClick={async () => {
           try {
             await copyTextToSystemClipboard(getVersion());
             props.setToast(t("toast.copyToClipboard"));
-          } catch {}
+          } catch (error) {
+            console.warn("复制版本号失败", error);
+          }
+        }}
+        onKeyDown={async (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            try {
+              await copyTextToSystemClipboard(getVersion());
+              props.setToast(t("toast.copyToClipboard"));
+            } catch (error) {
+              console.warn("复制版本号失败", error);
+            }
+          }
         }}
         title={t("stats.versionCopy")}
       >

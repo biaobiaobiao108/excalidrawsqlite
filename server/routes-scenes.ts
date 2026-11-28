@@ -303,50 +303,56 @@ export const handleSceneRoute = async ({
 
   if (pathname.startsWith("/api/scenes/") && req.method === "GET") {
     const id = getPathId(pathname, "/api/scenes/", "scene");
-    const versionRow = stmts.getSceneVersionById.get(id) as {
-      id: string;
-      revision: number;
-      updated_at: number;
-      thumbnail_file_id: string | null;
-      last_opened_at: number | null;
-    } | null;
-    if (!versionRow) {
-      throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
-    }
-    const sceneRevision = storedSceneRevision(versionRow.revision);
-    const sceneUpdatedAt = Number(versionRow.updated_at) || 0;
-    // `POST /open` bumps last_opened_at on every visit but does not change
-    // the document. Keeping it out of the validator lets the browser reuse
-    // the cached body instead of re-downloading the whole scene each time.
-    const etag = `"scene-${sha256Hex(
-      JSON.stringify([
-        id,
-        sceneRevision,
-        sceneUpdatedAt,
-        versionRow.thumbnail_file_id,
-      ]),
-    )}"`;
     const ifNoneMatch = req.headers.get("if-none-match");
-    if (
-      ifNoneMatch
-        ?.split(",")
-        .map((value) => value.trim())
-        .some((value) => value === etag || value === "*")
-    ) {
+    const snapshot = runtime.db.transaction(() => {
+      const versionRow = stmts.getSceneVersionById.get(id) as {
+        id: string;
+        revision: number;
+        updated_at: number;
+        thumbnail_file_id: string | null;
+        last_opened_at: number | null;
+      } | null;
+      if (!versionRow) {
+        throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
+      }
+      const sceneRevision = storedSceneRevision(versionRow.revision);
+      const sceneUpdatedAt = Number(versionRow.updated_at) || 0;
+      // `POST /open` bumps last_opened_at on every visit but does not change
+      // the document. Keeping it out of the validator lets the browser reuse
+      // the cached body instead of re-downloading the whole scene each time.
+      const etag = `"scene-${sha256Hex(
+        JSON.stringify([
+          id,
+          sceneRevision,
+          sceneUpdatedAt,
+          versionRow.thumbnail_file_id,
+        ]),
+      )}"`;
+      if (
+        ifNoneMatch
+          ?.split(",")
+          .map((value) => value.trim())
+          .some((value) => value === etag || value === "*")
+      ) {
+        return { etag, row: null };
+      }
+      const row = stmts.getSceneRawById.get(id);
+      if (!row) {
+        throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
+      }
+      return { etag, row };
+    })();
+    if (!snapshot.row) {
       return response(runtime, req, null, {
         status: 304,
         headers: {
-          ETag: etag,
+          ETag: snapshot.etag,
           "Cache-Control": "private, no-cache",
         },
       });
     }
-    const row = stmts.getSceneRawById.get(id);
-    if (!row) {
-      throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
-    }
-    return jsonResponse(runtime, req, parseStoredScene(row), 200, {
-      ETag: etag,
+    return jsonResponse(runtime, req, parseStoredScene(snapshot.row), 200, {
+      ETag: snapshot.etag,
       "Cache-Control": "private, no-cache",
     });
   }
@@ -433,6 +439,7 @@ export const handleSceneRoute = async ({
     }
     const nextUpdatedAt = existing.updated_at;
     const revision = currentRevision + 1;
+    let resolvedTargetFolderId: string | null = existing.folder_id || null;
     const transaction = runtime.db.transaction(() => {
       const targetFolderId = resolveSceneFolder(
         runtime,
@@ -440,6 +447,7 @@ export const handleSceneRoute = async ({
         folderId,
         folderName,
       );
+      resolvedTargetFolderId = targetFolderId;
       if (folderName !== undefined) {
         if (
           targetFolderId === existing.folder_id &&
@@ -565,6 +573,7 @@ export const handleSceneRoute = async ({
     const now = Date.now();
     const nextUpdatedAt = contentChanged ? now : existing.updated_at;
     const revision = currentRevision + 1;
+    let resolvedTargetFolderId: string | null = existing.folder_id || null;
     const transaction = runtime.db.transaction(() => {
       const targetFolderId = resolveSceneFolder(
         runtime,
@@ -572,6 +581,7 @@ export const handleSceneRoute = async ({
         folderId,
         folderName,
       );
+      resolvedTargetFolderId = targetFolderId;
       if (
         folderName !== undefined &&
         isContentAndMetadataUnchanged &&
@@ -633,8 +643,7 @@ export const handleSceneRoute = async ({
     if (!changed) return unchangedResponse();
     const metadataChanged =
       !metadataUnchanged ||
-      folderName !== undefined ||
-      (existing.folder_id || null) !== folderId;
+      (existing.folder_id || null) !== resolvedTargetFolderId;
     publishSceneChanged(runtime, {
       type: "scene_changed",
       sceneId: id,

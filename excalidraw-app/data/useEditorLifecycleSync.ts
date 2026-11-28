@@ -88,6 +88,9 @@ export const useEditorLifecycleSync = ({
                   erroredFiles,
                   elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
                 });
+              })
+              .catch((error) => {
+                console.warn("加载本地附件失败", error);
               });
           }
         }

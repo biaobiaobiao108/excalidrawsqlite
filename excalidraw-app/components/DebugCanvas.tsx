@@ -473,8 +473,8 @@ export const DebugFooter = ({ onChange }: { onChange: () => void }) => {
     <>
       <button
         className="ToolIcon_type_button"
-        data-testid="debug-forward"
-        aria-label="Move forward"
+        data-testid="debug-trash"
+        aria-label="Clear debug frames"
         type="button"
         onClick={trashFrames}
       >
@@ -488,8 +488,8 @@ export const DebugFooter = ({ onChange }: { onChange: () => void }) => {
       </button>
       <button
         className="ToolIcon_type_button"
-        data-testid="debug-forward"
-        aria-label="Move forward"
+        data-testid="debug-backward"
+        aria-label="Move backward"
         type="button"
         onClick={moveBackward}
       >
@@ -503,8 +503,8 @@ export const DebugFooter = ({ onChange }: { onChange: () => void }) => {
       </button>
       <button
         className="ToolIcon_type_button"
-        data-testid="debug-forward"
-        aria-label="Move forward"
+        data-testid="debug-reset"
+        aria-label="Reset debug canvas"
         type="button"
         onClick={reset}
       >
@@ -518,8 +518,8 @@ export const DebugFooter = ({ onChange }: { onChange: () => void }) => {
       </button>
       <button
         className="ToolIcon_type_button"
-        data-testid="debug-backward"
-        aria-label="Move backward"
+        data-testid="debug-forward"
+        aria-label="Move forward"
         type="button"
         onClick={moveForward}
       >

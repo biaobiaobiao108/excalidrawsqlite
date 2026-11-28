@@ -191,12 +191,10 @@ export class LocalData {
             }
           });
 
-          try {
-            // save loaded files back to storage with updated `lastRetrieved`
-            setMany(filesToSave, filesStore);
-          } catch (error) {
+          // save loaded files back to storage with updated `lastRetrieved`
+          void setMany(filesToSave, filesStore).catch((error) => {
             console.warn(error);
-          }
+          });
 
           return { loadedFiles, erroredFiles };
         },

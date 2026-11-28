@@ -385,9 +385,14 @@ const ExcalidrawWrapper = (props: {
     otherDrafts.find((draft) => draft.key === selectedDraftId) ??
     otherDrafts[0];
 
+  const otherDraftsRequestIdRef = useRef(0);
+
   const refreshOtherDrafts = useCallback(async () => {
+    const requestId = ++otherDraftsRequestIdRef.current;
     const drafts = await cloudSaveQueue.listOtherDrafts();
-    setOtherDrafts(drafts);
+    if (requestId === otherDraftsRequestIdRef.current) {
+      setOtherDrafts(drafts);
+    }
     return drafts;
   }, [cloudSaveQueue]);
 
@@ -423,6 +428,7 @@ const ExcalidrawWrapper = (props: {
 
   useEffect(
     () => () => {
+      otherDraftsRequestIdRef.current += 1;
       cloudBootstrapPromiseRef.current = null;
       cloudFileLoadControllerRef.current?.abort();
       cloudFileLoadControllerRef.current = null;
@@ -1293,13 +1299,20 @@ const ExcalidrawWrapper = (props: {
                 erroredFiles,
                 elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
               });
+            })
+            .catch((error) => {
+              console.warn("加载本地附件失败", error);
             });
         }
         // on fresh load, clear unused files from IDB (from previous
         // session)
-        LocalData.fileStorage.clearObsoleteFiles({
-          currentFileIds: fileIds,
-        });
+        LocalData.fileStorage
+          .clearObsoleteFiles({
+            currentFileIds: fileIds,
+          })
+          .catch((error) => {
+            console.warn("清理过期本地附件失败", error);
+          });
       }
     },
     [excalidrawAPI],
@@ -1364,7 +1377,7 @@ const ExcalidrawWrapper = (props: {
         appState,
         files,
         () => {
-          if (excalidrawAPI) {
+          if (excalidrawAPI && !excalidrawAPI.isDestroyed) {
             let didChange = false;
 
             const elements = excalidrawAPI
