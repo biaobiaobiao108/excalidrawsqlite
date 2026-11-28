@@ -45,6 +45,11 @@ import { EmptyTrashIcon, ExcalidrawMark, TrashIcon } from "./WorkspaceIcons";
 import { refreshWorkspacePage } from "./workspace-page-refresh";
 import { parseWorkspaceSearchQuery } from "./workspace-search";
 import {
+  getBackgroundContextMenuItems,
+  getBoardContextMenuItems,
+  getFolderContextMenuItems,
+} from "./workspace-context-menu-items";
+import {
   BOARD_GRID_COLUMNS,
   BOARD_GRID_ESTIMATED_ROW_HEIGHT,
   BOARD_GRID_INITIAL_GAP,
@@ -1704,36 +1709,20 @@ export const WorkspaceHome = ({
     folder: CloudFolder,
     event: React.MouseEvent<HTMLElement>,
   ) => {
-    showContextMenu(event, [
-      {
-        label: "打开文件夹",
-        icon: "open",
-        onSelect: () => {
+    showContextMenu(
+      event,
+      getFolderContextMenuItems({
+        createPending: isActionPending("scene:create"),
+        folderPending: isFolderActionPending(folder.id),
+        onOpen: () => {
           setSelectedFolderId(folder.id);
           setView("all");
         },
-      },
-      {
-        label: "在此文件夹中新建画板",
-        icon: "plus",
-        disabled: isActionPending("scene:create"),
-        onSelect: () => void handleCreateScene(folder.id),
-      },
-      {
-        label: "重命名与自定义外观",
-        icon: "settings",
-        separatorBefore: true,
-        onSelect: () => openFolderDialog(folder),
-      },
-      {
-        label: "删除文件夹",
-        icon: "trash",
-        danger: true,
-        separatorBefore: true,
-        disabled: isFolderActionPending(folder.id),
-        onSelect: () => handleDeleteFolder(folder),
-      },
-    ]);
+        onCreateBoard: () => void handleCreateScene(folder.id),
+        onEdit: () => openFolderDialog(folder),
+        onDelete: () => handleDeleteFolder(folder),
+      }),
+    );
   };
 
   const openBoardContextMenu = (
@@ -1742,343 +1731,85 @@ export const WorkspaceHome = ({
   ) => {
     const isSelected = selectedSceneIds.has(scene.id);
     const selectedCount = selectedScenes.length;
-    const scenePending = isSceneActionPending(scene.id);
-    const batchPending =
-      hasBatchActionPending ||
-      selectedScenes.some((selected) => isSceneActionPending(selected.id));
-    const items: WorkspaceContextMenuItem[] = [];
-    if (view !== "trash") {
-      items.push({
-        label: "打开画板",
-        icon: "open",
-        onSelect: () => {
+    showContextMenu(
+      event,
+      getBoardContextMenuItems(scene, {
+        isTrashView: view === "trash",
+        isSelected,
+        selectedCount,
+        scenePending: isSceneActionPending(scene.id),
+        batchPending:
+          hasBatchActionPending ||
+          selectedScenes.some((selected) => isSceneActionPending(selected.id)),
+        onOpen: () => {
           clearSceneSelection();
           navigateToScene(scene);
         },
-      });
-    }
-    items.push({
-      label: isSelected ? "从多选中移除" : "加入多选",
-      icon: isSelected ? "check" : "plus",
-      onSelect: () => handleToggleSceneSelection(scene.id, { ctrlKey: true }),
-    });
-    if (selectedCount) {
-      items.push({
-        label: "退出多选",
-        icon: "close",
-        separatorBefore: true,
-        onSelect: clearSceneSelection,
-      });
-    }
-
-    if (view === "trash") {
-      items.push({
-        label: "还原画板",
-        icon: "restore",
-        separatorBefore: selectedCount === 0,
-        disabled: scenePending,
-        onSelect: () => void handleRestoreScene(scene),
-      });
-      if (isSelected && selectedCount > 1) {
-        items.push({
-          label: `恢复所选 ${selectedCount} 个画板`,
-          icon: "restore",
-          disabled: batchPending,
-          onSelect: () => void handleBatchRestore(selectedScenes),
-        });
-      }
-      items.push({
-        label: "彻底删除",
-        icon: "trash",
-        danger: true,
-        separatorBefore: true,
-        disabled: scenePending,
-        onSelect: () => handleDeleteScene(scene),
-      });
-      if (isSelected && selectedCount > 1) {
-        items.push({
-          label: `彻底删除所选 ${selectedCount} 个画板`,
-          icon: "trash",
-          danger: true,
-          disabled: batchPending,
-          onSelect: () => handleBatchPermanentDelete(selectedScenes),
-        });
-      }
-    } else {
-      items.push({
-        label: scene.favorite ? "取消收藏" : "收藏画板",
-        icon: "star",
-        separatorBefore: selectedCount === 0,
-        disabled: scenePending,
-        onSelect: () => void handleToggleFavorite(scene),
-      });
-      items.push({
-        label: "编辑画板信息",
-        icon: "edit",
-        separatorBefore: true,
-        disabled: scenePending,
-        onSelect: () => openMetadataDialog(scene),
-      });
-      items.push({
-        label: "移至回收站",
-        icon: "trash",
-        danger: true,
-        separatorBefore: true,
-        disabled: scenePending,
-        onSelect: () => handleDeleteScene(scene),
-      });
-      if (isSelected && selectedCount > 1) {
-        items.push({
-          label: `移入回收站所选 ${selectedCount} 个画板`,
-          icon: "trash",
-          danger: true,
-          disabled: batchPending,
-          onSelect: () => void handleBatchMoveToTrash(selectedScenes),
-        });
-      }
-    }
-    showContextMenu(event, items);
+        onToggleSelection: () =>
+          handleToggleSceneSelection(scene.id, { ctrlKey: true }),
+        onClearSelection: clearSceneSelection,
+        onRestore: () => void handleRestoreScene(scene),
+        onBatchRestore: () => void handleBatchRestore(selectedScenes),
+        onPermanentDelete: () => handleDeleteScene(scene),
+        onBatchPermanentDelete: () =>
+          handleBatchPermanentDelete(selectedScenes),
+        onToggleFavorite: () => void handleToggleFavorite(scene),
+        onEditMetadata: () => openMetadataDialog(scene),
+        onMoveToTrash: () => handleDeleteScene(scene),
+        onBatchMoveToTrash: () => void handleBatchMoveToTrash(selectedScenes),
+      }),
+    );
   };
 
   const openBackgroundContextMenu = (
     event: React.MouseEvent<HTMLDivElement>,
   ) => {
-    const target = event.target;
     event.preventDefault();
-    if (pageTransitionPending) {
+    if (!(event.target instanceof Element)) {
       return;
     }
-    if (!(target instanceof Element)) {
-      return;
-    }
-
-    const input = target.closest<HTMLInputElement | HTMLTextAreaElement>(
-      "input, textarea",
-    );
-    if (input) {
-      const items: WorkspaceContextMenuItem[] = [
-        {
-          label: "全选文本",
-          icon: "check",
-          disabled:
-            input.disabled ||
-            (!["text", "search", "url", "tel", "password", "email"].includes(
-              input.type,
-            ) &&
-              input.tagName !== "TEXTAREA"),
-          onSelect: () => {
-            input.focus();
-            input.select();
-          },
-        },
-      ];
-      if (input === searchInputRef.current) {
-        items.push({
-          label: "清空搜索",
-          icon: "close",
-          disabled: !searchQuery,
-          onSelect: () => {
-            setSearchQuery("");
-            input.focus();
-          },
-        });
-      }
+    const items = getBackgroundContextMenuItems({
+      target: event.target,
+      currentTarget: event.currentTarget,
+      searchInput: searchInputRef.current,
+      searchQuery,
+      view,
+      selectedFolderId,
+      selectedSceneCount: selectedSceneIds.size,
+      trashCount: workspaceStats?.trashCount || 0,
+      pageTransitionPending,
+      loading,
+      createPending: isActionPending("scene:create"),
+      trashClearPending: isActionPending("trash:clear"),
+      batchPending: hasBatchActionPending,
+      onOpenView: (nextView) => {
+        setView(nextView);
+        setSelectedFolderId(null);
+      },
+      onOpenCommandPalette: () => setCommandPaletteOpen(true),
+      onEmptyTrash: handleEmptyTrash,
+      onCreateScene: (folderId) => void handleCreateScene(folderId),
+      onOpenFolderDialog: () => openFolderDialog(),
+      onFocusSearch: () => {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      },
+      onClearSearch: () => setSearchQuery(""),
+      onClearFilters: () => {
+        setSearchQuery("");
+        setSelectedFolderId(null);
+      },
+      onReturnToAll: () => {
+        setView("all");
+        setSelectedFolderId(null);
+        setSearchQuery("");
+      },
+      onClearSelection: clearSceneSelection,
+      onReload: () => void loadWorkspace(),
+    });
+    if (items) {
       showContextMenu(event, items);
-      return;
     }
-
-    // Keep portaled dialogs and the command palette in their own context.
-    if (!event.currentTarget.contains(target)) {
-      const dialog = target.closest('dialog, [role="dialog"]');
-      showContextMenu(event, [
-        {
-          label: "返回当前窗口",
-          icon: "open",
-          onSelect: () =>
-            dialog
-              ?.querySelector<HTMLElement>(
-                'input, button:not(:disabled), [tabindex="0"]',
-              )
-              ?.focus(),
-        },
-      ]);
-      return;
-    }
-
-    const navigation = target.closest<HTMLElement>("[data-workspace-view]");
-    if (navigation) {
-      const nextView = navigation.dataset.workspaceView as BoardView;
-      const labels = {
-        all: "所有画板",
-        recent: "最近打开",
-        favorites: "收藏",
-        trash: "回收站",
-      };
-      const items: WorkspaceContextMenuItem[] = [
-        {
-          label: `打开${labels[nextView]}`,
-          icon:
-            nextView === "favorites"
-              ? "star"
-              : nextView === "trash"
-                ? "trash"
-                : "open",
-          onSelect: () => {
-            setView(nextView);
-            setSelectedFolderId(null);
-          },
-        },
-        {
-          label: "命令菜单",
-          icon: "commands",
-          onSelect: () => setCommandPaletteOpen(true),
-        },
-      ];
-      if (nextView === "trash") {
-        items.push({
-          label: "清空回收站",
-          icon: "trash",
-          separatorBefore: true,
-          danger: true,
-          disabled:
-            !workspaceStats?.trashCount ||
-            isActionPending("trash:clear") ||
-            hasBatchActionPending,
-          onSelect: handleEmptyTrash,
-        });
-      } else {
-        items.push({
-          label: "新建画板",
-          icon: "plus",
-          separatorBefore: true,
-          disabled: isActionPending("scene:create"),
-          onSelect: () => void handleCreateScene(null),
-        });
-      }
-      showContextMenu(event, items);
-      return;
-    }
-
-    const clickedControl = target.closest<HTMLButtonElement>("button");
-    // Dropdown options can unmount when the context menu is clicked; reopen via
-    // their persistent trigger instead of invoking a detached option button.
-    const control =
-      clickedControl
-        ?.closest(".custom-select")
-        ?.querySelector<HTMLButtonElement>(".custom-select__trigger") ||
-      clickedControl;
-    if (control) {
-      const label =
-        control.getAttribute("aria-label") ||
-        control.textContent?.trim() ||
-        control.title ||
-        "打开选项";
-      showContextMenu(event, [
-        {
-          label,
-          icon: control.classList.contains("empty-trash-button")
-            ? "trash"
-            : "open",
-          danger: control.classList.contains("empty-trash-button"),
-          disabled: control.disabled,
-          onSelect: () => control.click(),
-        },
-        {
-          label: "命令菜单",
-          icon: "commands",
-          separatorBefore: true,
-          onSelect: () => setCommandPaletteOpen(true),
-        },
-      ]);
-      return;
-    }
-
-    const inSidebar = !!target.closest(".workspace-sidebar");
-    const inTrash = view === "trash" && !inSidebar;
-    const items: WorkspaceContextMenuItem[] = [];
-    if (!inTrash) {
-      items.push(
-        {
-          label:
-            !inSidebar && selectedFolderId
-              ? "在此文件夹中新建画板"
-              : "新建画板",
-          icon: "plus",
-          disabled: isActionPending("scene:create"),
-          onSelect: () =>
-            void handleCreateScene(inSidebar ? null : selectedFolderId),
-        },
-        {
-          label: "新建文件夹",
-          icon: "folder",
-          onSelect: () => openFolderDialog(),
-        },
-      );
-    }
-    items.push(
-      {
-        label: "搜索画板",
-        icon: "search",
-        separatorBefore: items.length > 0,
-        onSelect: () => {
-          searchInputRef.current?.focus();
-          searchInputRef.current?.select();
-        },
-      },
-      {
-        label: "命令菜单",
-        icon: "commands",
-        onSelect: () => setCommandPaletteOpen(true),
-      },
-      {
-        label: inTrash ? "刷新回收站" : "刷新画板列表",
-        icon: "refresh",
-        disabled: loading,
-        onSelect: () => void loadWorkspace(),
-      },
-    );
-    if (searchQuery || selectedFolderId) {
-      items.push({
-        label: "清除筛选",
-        icon: "close",
-        onSelect: () => {
-          setSearchQuery("");
-          setSelectedFolderId(null);
-        },
-      });
-    }
-    if (selectedSceneIds.size) {
-      items.push({
-        label: "退出多选",
-        icon: "check",
-        onSelect: clearSceneSelection,
-      });
-    }
-    if (inTrash) {
-      items.push(
-        {
-          label: "返回所有画板",
-          icon: "open",
-          separatorBefore: true,
-          onSelect: () => {
-            setView("all");
-            setSelectedFolderId(null);
-            setSearchQuery("");
-          },
-        },
-        {
-          label: "清空回收站",
-          icon: "trash",
-          danger: true,
-          disabled:
-            !workspaceStats?.trashCount ||
-            isActionPending("trash:clear") ||
-            hasBatchActionPending,
-          onSelect: handleEmptyTrash,
-        },
-      );
-    }
-    showContextMenu(event, items);
   };
 
   const boardActionsRef = useRef({
