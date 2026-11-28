@@ -14475,7 +14475,7 @@ class App extends React.Component<AppProps, AppState> {
   };
 
   public reloadSceneFonts = async () => {
-    const fontFaces = await this.fonts.loadSceneFonts();
+    const fontFaces = await this.fonts.loadSceneFonts(true);
     this.fonts.onLoaded(fontFaces);
   };
 

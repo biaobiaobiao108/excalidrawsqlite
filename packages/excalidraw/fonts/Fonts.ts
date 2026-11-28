@@ -140,9 +140,10 @@ export class Fonts {
   };
 
   /**
-   * Load font faces for a given scene and trigger scene update.
+   * Load font faces for a given scene. Force reloads through the browser font
+   * set after stylesheets resolve, even if check() already reports them ready.
    */
-  public loadSceneFonts = async (): Promise<FontFace[]> => {
+  public loadSceneFonts = async (force = false): Promise<FontFace[]> => {
     const sceneFamilies = this.getSceneFamilies();
     const charsPerFamily = Fonts.getCharsPerFamily(
       this.scene.getNonDeletedElements(),
@@ -152,6 +153,7 @@ export class Fonts {
       sceneFamilies,
       charsPerFamily,
       this.ownerDocument,
+      force,
     );
   };
 
@@ -211,6 +213,7 @@ export class Fonts {
     fontFamilies: Array<ExcalidrawTextElement["fontFamily"]>,
     charsPerFamily: Record<number, Set<string>>,
     ownerDocument: Document,
+    force = false,
   ) {
     // add all registered font faces into the `document.fonts` (if not added already)
     for (const { fontFaces, metadata } of Fonts.registered.values()) {
@@ -231,6 +234,7 @@ export class Fonts {
       fontFamilies,
       charsPerFamily,
       ownerDocument,
+      force,
     );
     const concurrency = 10;
     const fontFaces = await new PromisePool(iterator, concurrency).all();
@@ -241,6 +245,7 @@ export class Fonts {
     fontFamilies: Array<ExcalidrawTextElement["fontFamily"]>,
     charsPerFamily: Record<number, Set<string>>,
     ownerDocument: Document,
+    force = false,
   ): Generator<Promise<void | readonly [number, FontFace[]]>> {
     for (const [index, fontFamily] of fontFamilies.entries()) {
       const font = getFontString({
@@ -252,7 +257,7 @@ export class Fonts {
       // instead, we are always checking chars used in the family, so that no required font faces remain unloaded
       const text = Fonts.getCharacters(charsPerFamily, fontFamily);
 
-      if (!ownerDocument.fonts.check(font, text)) {
+      if (force || !ownerDocument.fonts.check(font, text)) {
         yield promiseTry(async () => {
           try {
             // WARN: browser prioritizes loading only font faces with unicode ranges for characters which are present in the document (html & canvas), other font faces could stay unloaded
