@@ -45,9 +45,7 @@ import {
 } from "../data/cloudSync";
 import { getLocalSceneMigrationIdentity } from "../data/localSceneMigration";
 
-import { AuthDialog } from "./AuthDialog";
 import { CustomSelect } from "./CustomSelect";
-import { WorkspaceCommandPalette } from "./WorkspaceCommandPalette";
 import { BoardCard } from "./WorkspaceBoardCard";
 import {
   ConfirmDialog,
@@ -87,6 +85,16 @@ import {
 } from "./workspace-types";
 
 import "./WorkspaceHome.scss";
+
+const LazyAuthDialog = React.lazy(async () => {
+  const { AuthDialog } = await import("./AuthDialog");
+  return { default: AuthDialog };
+});
+
+const LazyWorkspaceCommandPalette = React.lazy(async () => {
+  const { WorkspaceCommandPalette } = await import("./WorkspaceCommandPalette");
+  return { default: WorkspaceCommandPalette };
+});
 
 type BoardView = "all" | "recent" | "favorites" | "trash";
 type SortMode = "updated" | "opened" | "created";
@@ -339,6 +347,18 @@ export const WorkspaceHome = ({
     () => new Set(),
   );
   const pendingActionsRef = useRef<ReadonlySet<string>>(new Set());
+  const pendingActionTargets = useMemo(() => {
+    const scenes = new Set<string>();
+    const folders = new Set<string>();
+    let batch = false;
+    for (const action of pendingActions) {
+      const [scope, target] = action.split(":", 3);
+      if (scope === "scene" && target) scenes.add(target);
+      else if (scope === "folder" && target) folders.add(target);
+      else if (scope === "batch") batch = true;
+    }
+    return { scenes, folders, batch };
+  }, [pendingActions]);
   const beginPendingAction = useCallback((action: string) => {
     if (pendingActionsRef.current.has(action)) {
       return false;
@@ -389,26 +409,14 @@ export const WorkspaceHome = ({
     [pendingActions],
   );
   const isSceneActionPending = useCallback(
-    (sceneId: string) => {
-      const prefix = `scene:${sceneId}:`;
-      return Array.from(pendingActions).some((action) =>
-        action.startsWith(prefix),
-      );
-    },
-    [pendingActions],
+    (sceneId: string) => pendingActionTargets.scenes.has(sceneId),
+    [pendingActionTargets.scenes],
   );
   const isFolderActionPending = useCallback(
-    (folderId: string) => {
-      const prefix = `folder:${folderId}:`;
-      return Array.from(pendingActions).some((action) =>
-        action.startsWith(prefix),
-      );
-    },
-    [pendingActions],
+    (folderId: string) => pendingActionTargets.folders.has(folderId),
+    [pendingActionTargets.folders],
   );
-  const hasBatchActionPending = Array.from(pendingActions).some((action) =>
-    action.startsWith("batch:"),
-  );
+  const hasBatchActionPending = pendingActionTargets.batch;
   const [sceneCursor, setSceneCursor] = useState<string | null>(null);
   const [trashSceneCursor, setTrashSceneCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -1028,6 +1036,10 @@ export const WorkspaceHome = ({
 
   const folderSceneCounts = useMemo(
     () => new Map(folders.map((folder) => [folder.id, folder.scene_count])),
+    [folders],
+  );
+  const foldersById = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder])),
     [folders],
   );
 
@@ -2263,8 +2275,7 @@ export const WorkspaceHome = ({
       isSelected={selectedSceneIds.has(scene.id)}
       folderAppearance={
         scene.folder_id
-          ? folders.find((folder) => folder.id === scene.folder_id) ||
-            DEFAULT_FOLDER_APPEARANCE
+          ? foldersById.get(scene.folder_id) || DEFAULT_FOLDER_APPEARANCE
           : DEFAULT_FOLDER_APPEARANCE
       }
       actionPending={isSceneActionPending(scene.id)}
@@ -2735,39 +2746,47 @@ export const WorkspaceHome = ({
           }}
         />
       )}
-      <AuthDialog
-        isOpen={authOpen}
-        onSuccess={() => {
-          setAuthOpen(false);
-          void loadWorkspace();
-        }}
-        onClose={() => setAuthOpen(false)}
-      />
-      <WorkspaceCommandPalette
-        isOpen={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
-        scenes={scenes}
-        folders={folders}
-        trashCount={workspaceStats?.trashCount || 0}
-        currentView={view}
-        currentSort={sort}
-        selectedFolderId={selectedFolderId}
-        onSelectScene={navigateToScene}
-        onCreateScene={handleCreateScene}
-        onCreateFolder={() => openFolderDialog()}
-        onChangeView={(nextView) => {
-          setView(nextView);
-          setSelectedFolderId(null);
-        }}
-        onSelectFolder={(folderId) => {
-          setSelectedFolderId(folderId);
-          setView("all");
-        }}
-        onChangeSort={setSort}
-        onSearch={searchWorkspace}
-        onEmptyTrash={handleEmptyTrash}
-        onReload={loadWorkspace}
-      />
+      {authOpen && (
+        <React.Suspense fallback={null}>
+          <LazyAuthDialog
+            isOpen
+            onSuccess={() => {
+              setAuthOpen(false);
+              void loadWorkspace();
+            }}
+            onClose={() => setAuthOpen(false)}
+          />
+        </React.Suspense>
+      )}
+      {commandPaletteOpen && (
+        <React.Suspense fallback={null}>
+          <LazyWorkspaceCommandPalette
+            isOpen
+            onClose={() => setCommandPaletteOpen(false)}
+            scenes={scenes}
+            folders={folders}
+            trashCount={workspaceStats?.trashCount || 0}
+            currentView={view}
+            currentSort={sort}
+            selectedFolderId={selectedFolderId}
+            onSelectScene={navigateToScene}
+            onCreateScene={handleCreateScene}
+            onCreateFolder={() => openFolderDialog()}
+            onChangeView={(nextView) => {
+              setView(nextView);
+              setSelectedFolderId(null);
+            }}
+            onSelectFolder={(folderId) => {
+              setSelectedFolderId(folderId);
+              setView("all");
+            }}
+            onChangeSort={setSort}
+            onSearch={searchWorkspace}
+            onEmptyTrash={handleEmptyTrash}
+            onReload={loadWorkspace}
+          />
+        </React.Suspense>
+      )}
       {contextMenu && (
         <WorkspaceContextMenu state={contextMenu} onClose={closeContextMenu} />
       )}
