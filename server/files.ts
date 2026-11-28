@@ -702,17 +702,26 @@ export const cleanupOrphanedFiles = async (runtime: ServerRuntime) => {
   });
 };
 
-export const cleanupUntrackedFiles = async (runtime: ServerRuntime) => {
-  const knownFileIds = new Set(
-    (
-      runtime.db.query("SELECT id FROM files").all() as Array<{ id: string }>
-    ).map((row) => row.id),
-  );
+const readStorageSnapshot = async (runtime: ServerRuntime) => ({
+  diskEntries: await fs.promises.readdir(runtime.filesDir, {
+    withFileTypes: true,
+  }),
+  fileRows: runtime.db
+    .query("SELECT id, storage_path FROM files")
+    .all() as Array<{ id: string; storage_path: string | null }>,
+});
+
+type StorageSnapshot = Awaited<ReturnType<typeof readStorageSnapshot>>;
+
+export const cleanupUntrackedFiles = async (
+  runtime: ServerRuntime,
+  snapshot?: StorageSnapshot,
+) => {
+  const current = snapshot ?? (await readStorageSnapshot(runtime));
+  const knownFileIds = new Set(current.fileRows.map((row) => row.id));
   const cutoff = Date.now() - ORPHAN_FILE_GRACE_MS;
   let cleaned = 0;
-  for (const entry of await fs.promises.readdir(runtime.filesDir, {
-    withFileTypes: true,
-  })) {
+  for (const entry of current.diskEntries) {
     if (
       cleaned >= UNTRACKED_FILE_CLEANUP_BATCH_SIZE ||
       !entry.isFile() ||
@@ -983,19 +992,18 @@ export const cleanupStaleFileArtifacts = async (runtime: ServerRuntime) => {
   }
 };
 
-export const inspectStorageConsistency = async (runtime: ServerRuntime) => {
-  const diskEntries = await fs.promises.readdir(runtime.filesDir, {
-    withFileTypes: true,
-  });
+export const inspectStorageConsistency = async (
+  runtime: ServerRuntime,
+  snapshot?: StorageSnapshot,
+) => {
+  const { diskEntries, fileRows } =
+    snapshot ?? (await readStorageSnapshot(runtime));
   const diskFileNames = new Set(
     diskEntries.filter((entry) => entry.isFile()).map((entry) => entry.name),
   );
-  const rows = runtime.db
-    .query("SELECT id, storage_path FROM files")
-    .all() as Array<{ id: string; storage_path: string | null }>;
   const missingFiles: string[] = [];
   const knownFileIds = new Set<string>();
-  for (const row of rows) {
+  for (const row of fileRows) {
     knownFileIds.add(row.id);
     if (row.storage_path && !diskFileNames.has(row.id)) {
       missingFiles.push(row.id);
@@ -1021,4 +1029,11 @@ export const inspectStorageConsistency = async (runtime: ServerRuntime) => {
       .get() as { count: number }
   ).count;
   return { missingFiles, untrackedFiles, orphanedReferences };
+};
+
+export const maintainStorageConsistency = async (runtime: ServerRuntime) => {
+  const snapshot = await readStorageSnapshot(runtime);
+  const consistency = await inspectStorageConsistency(runtime, snapshot);
+  await cleanupUntrackedFiles(runtime, snapshot);
+  return consistency;
 };

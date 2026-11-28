@@ -1,5 +1,3 @@
-import fs from "node:fs";
-
 import { sha256Hex } from "./crypto";
 import { HttpError } from "./errors";
 import {
@@ -47,13 +45,15 @@ export const handleSceneThumbnailRoute = async ({
       "/api/scenes/",
       "scene",
     );
-    const existing = stmts.getSceneById.get(id);
+    const existing = stmts.getSceneVersionById.get(id) as {
+      id: string;
+      revision: number;
+      thumbnail_file_id: string | null;
+    } | null;
     if (!existing) {
       throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
     }
-    const sceneRevision = storedSceneRevision(
-      (stmts.getSceneRevision.get(id) as { revision: number } | null)?.revision,
-    );
+    const sceneRevision = storedSceneRevision(existing.revision);
     const rawContentType = req.headers.get("content-type") || "";
     const contentType = rawContentType.split(";")[0].trim().toLowerCase();
     if (
@@ -116,38 +116,31 @@ export const handleSceneThumbnailRoute = async ({
         });
       }
       const prepared = await stageRequestBodyToFile(runtime, thumbnailId, req);
-      try {
-        assertThumbnailRevision();
-        await upsertStagedFile(
-          runtime,
-          thumbnailId,
-          contentType,
-          prepared,
-          undefined,
-          thumbnailVersion,
-          assertThumbnailRevision,
-          undefined,
-          false,
-          () => {
-            const linked = runtime.db.run(
-              `UPDATE scenes SET thumbnail_file_id = ? WHERE id = ? AND deleted_at IS NULL
+      await upsertStagedFile(
+        runtime,
+        thumbnailId,
+        contentType,
+        prepared,
+        undefined,
+        thumbnailVersion,
+        assertThumbnailRevision,
+        undefined,
+        false,
+        () => {
+          const linked = runtime.db.run(
+            `UPDATE scenes SET thumbnail_file_id = ? WHERE id = ? AND deleted_at IS NULL
                AND revision = ?`,
-              [thumbnailId, id, expectedRevision],
+            [thumbnailId, id, expectedRevision],
+          );
+          if (linked.changes !== 1) {
+            throw new HttpError(
+              409,
+              "REVISION_CONFLICT",
+              "画板内容已更新，请重新生成预览",
             );
-            if (linked.changes !== 1) {
-              throw new HttpError(
-                409,
-                "REVISION_CONFLICT",
-                "画板内容已更新，请重新生成预览",
-              );
-            }
-          },
-        );
-      } finally {
-        if (prepared.tempPath) {
-          await fs.promises.rm(prepared.tempPath, { force: true });
-        }
-      }
+          }
+        },
+      );
       publishSceneChanged(runtime, {
         type: "scene_changed",
         sceneId: id,
@@ -173,16 +166,15 @@ export const handleSceneThumbnailRoute = async ({
       "/api/scenes/",
       "scene",
     );
-    const existing = stmts.getSceneThumbnailById.get(id) as {
+    const existing = stmts.getSceneVersionById.get(id) as {
       id: string;
+      revision: number;
       thumbnail_file_id: string | null;
     } | null;
     if (!existing) {
       throw new HttpError(404, "SCENE_NOT_FOUND", "画板不存在或已删除");
     }
-    const sceneRevision = storedSceneRevision(
-      (stmts.getSceneRevision.get(id) as { revision: number } | null)?.revision,
-    );
+    const sceneRevision = storedSceneRevision(existing.revision);
     const thumbnailId = `thumbnail_${sha256Hex(id)}`;
     const thumbnailVersion = parseThumbnailVersion(req);
     const revisionParam = url.searchParams.get("revision");

@@ -19,6 +19,7 @@ import { readJson, releaseJsonBodyMemoryBudget } from "../../server/http";
 import {
   cleanupOrphanedFiles,
   cleanupUntrackedFiles,
+  maintainStorageConsistency,
   stageRequestBodyToFile,
   upsertStagedFile,
   withStorageMutationLock,
@@ -973,6 +974,21 @@ describe("cloud persistence server", () => {
 
     expect(existsSync(blockedPath)).toBe(true);
     expect(existsSync(removablePath)).toBe(false);
+  });
+
+  it("reports and cleans storage from one maintenance snapshot", async () => {
+    const { runtime } = createTestRuntime();
+    const filePath = path.join(runtime.filesDir, crypto.randomUUID());
+    await fs.writeFile(filePath, "stale");
+    const staleTime = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await fs.utimes(filePath, staleTime, staleTime);
+
+    const consistency = await maintainStorageConsistency(runtime);
+
+    expect(consistency.untrackedFiles).toEqual([path.basename(filePath)]);
+    expect(consistency.missingFiles).toEqual([]);
+    expect(consistency.orphanedReferences).toBe(0);
+    expect(existsSync(filePath)).toBe(false);
   });
 
   it("advances orphan cleanup past a batch of attachments that cannot be quarantined", async () => {

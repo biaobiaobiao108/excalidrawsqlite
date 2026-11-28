@@ -6,8 +6,7 @@ import { performDatabaseMaintenance } from "./database";
 import {
   cleanupOrphanedFiles,
   cleanupStaleFileArtifacts,
-  cleanupUntrackedFiles,
-  inspectStorageConsistency,
+  maintainStorageConsistency,
 } from "./files";
 import { DEV_RELOAD_PATH, closeDevReloadSubscribers } from "./dev-reload";
 import { createRequestHandler } from "./routes";
@@ -27,7 +26,11 @@ export { createServerConfig } from "./config";
 export { initializeDatabase, performDatabaseMaintenance } from "./database";
 export { cleanupExpiredRateLimits, cleanupExpiredSessions } from "./auth";
 export { createRuntime } from "./runtime";
-export { cleanupStaleFileArtifacts, inspectStorageConsistency } from "./files";
+export {
+  cleanupStaleFileArtifacts,
+  inspectStorageConsistency,
+  maintainStorageConsistency,
+} from "./files";
 export { createRequestHandler } from "./routes";
 export type {
   RequestAddressResolver,
@@ -234,12 +237,7 @@ export const startServer = async () => {
 
   const runStorageScanMaintenance = () => {
     trackBackgroundTask(
-      cleanupUntrackedFiles(runtime).catch((error) => {
-        console.info("[Files] untracked file cleanup failed", error);
-      }),
-    );
-    trackBackgroundTask(
-      inspectStorageConsistency(runtime).then((consistency) => {
+      maintainStorageConsistency(runtime).then((consistency) => {
         if (
           consistency.missingFiles.length ||
           consistency.untrackedFiles.length ||
@@ -294,12 +292,7 @@ export const startServer = async () => {
     }),
   );
   trackBackgroundTask(
-    cleanupUntrackedFiles(runtime).catch((error) => {
-      console.info("[Files] initial untracked file cleanup failed", error);
-    }),
-  );
-  trackBackgroundTask(
-    inspectStorageConsistency(runtime).then((consistency) => {
+    maintainStorageConsistency(runtime).then((consistency) => {
       if (
         consistency.missingFiles.length ||
         consistency.untrackedFiles.length ||
